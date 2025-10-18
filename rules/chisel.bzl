@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""chisel build rules"""
 
 load("@io_bazel_rules_scala//scala:scala.bzl", "scala_binary", "scala_library", "scala_test")
 load("@rules_hdl//verilator:defs.bzl", "verilator_cc_library")
