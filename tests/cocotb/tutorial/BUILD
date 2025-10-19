@@ -51,10 +51,11 @@ cocotb_test_suite(
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
             "@rules_python//python/runfiles",
         ],
-        "data": glob(["**/*.elf"]),
+        "data": [":coralnpu_v2_program"],
     },
     vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = glob(["**/*.elf"]) + [
+    vcs_data = [
+        ":coralnpu_v2_program",
         "//tests/cocotb:coverage_exclude.cfg",
     ],
     vcs_defines = VCS_DEFINES,
