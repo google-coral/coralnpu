@@ -15,6 +15,8 @@
 """Common build arguments for cocotb tests."""
 
 VERILATOR_BUILD_ARGS = [
+    "--threads 16",
+    "-O3",
     "-Wno-WIDTH",
     "-Wno-CASEINCOMPLETE",
     "-Wno-LATCH",
