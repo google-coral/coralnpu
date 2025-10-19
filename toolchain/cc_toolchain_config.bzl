@@ -155,49 +155,6 @@ def _impl(ctx):
         ],
     )
 
-    optimization_cpp_compile_flag_set = flag_set(
-        actions = cpp_compile_actions,
-        flag_groups = [
-            flag_group(
-                flags = [
-                    "-g3",
-                    "-O3",
-                    "-ffunction-sections",
-                    "-fdata-sections",
-                    "-fno-exceptions",
-                    "-fno-rtti",
-                    "-DNDEBUG",
-                ],
-            ),
-        ],
-    )
-
-    optimization_other_compile_flag_set = flag_set(
-        actions = other_compile_actions,
-        flag_groups = [
-            flag_group(
-                flags = [
-                    "-g3",
-                    "-O3",
-                    "-ffunction-sections",
-                    "-fdata-sections",
-                    "-DNDEBUG",
-                ],
-            ),
-        ],
-    )
-
-    optimization_link_flag_set = flag_set(
-        actions = all_link_actions,
-        flag_groups = [
-            flag_group(
-                flags = [
-                    "-Wl,--gc-sections",
-                ],
-            ),
-        ],
-    )
-
     architecture_flag_set = flag_set(
         actions = all_compile_actions,
         flag_groups = [
@@ -253,13 +210,99 @@ def _impl(ctx):
         ],
     )
 
+    gc_sections = flag_set(
+        actions = all_link_actions,
+        flag_groups = [
+            flag_group(
+                flags = [
+                    "-Wl,--gc-sections",
+                ],
+            ),
+        ],
+    )
+
+    no_rtti = flag_set(
+        actions = cpp_compile_actions,
+        flag_groups = [
+            flag_group(
+                flags = [
+                    "-fno-rtti",
+                ],
+            ),
+        ],
+    )
+
+    no_exceptions = flag_set(
+        actions = cpp_compile_actions,
+        flag_groups = [
+            flag_group(
+                flags = [
+                    "-fno-exceptions",
+                ],
+            ),
+        ],
+    )
+
+    baseline_compilation_flags_feature = feature(
+        name = "baseline_compilation_flags",
+        enabled = True,
+        flag_sets = [
+            no_rtti,
+            no_exceptions,
+            # Section GC is always on for code size.
+            gc_sections,
+        ],
+    )
+
+    define_ndebug_feature = feature(
+        name = "define_ndebug",
+        enabled = False,
+        flag_sets = [
+            flag_set(
+                actions = all_compile_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-DNDEBUG",
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    opt_compile_flag_set = flag_set(
+        actions = all_compile_actions,
+        flag_groups = [
+            flag_group(
+                flags = [
+                    # No debug symbols here
+                    # Ideally we want -Os here, but our current gcc is very stupid at -Os.
+                    "-O3",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                ],
+            ),
+        ],
+    )
+
+    opt_feature = feature(
+        name = "opt",
+        enabled = False,
+        flag_sets = [
+            opt_compile_flag_set,
+        ],
+        provides = ["compilation_mode"],
+        implies = ["define_ndebug"],
+    )
+
     dbg_flag_set = flag_set(
         actions = all_compile_actions,
         flag_groups = [
             flag_group(
                 flags = [
                     "-g3",
-                    "-O0",
+                    "-Og",
                 ],
             ),
         ],
@@ -274,28 +317,27 @@ def _impl(ctx):
         provides = ["compilation_mode"],
     )
 
+    fastbuild_flag_set = flag_set(
+        actions = all_compile_actions,
+        flag_groups = [
+            flag_group(
+                flags = [
+                    "-g3",
+                    "-O1",
+                ],
+            ),
+        ],
+    )
+
     fastbuild_feature = feature(
         name = "fastbuild",
         enabled = False,
         flag_sets = [
-            optimization_cpp_compile_flag_set,
-            optimization_other_compile_flag_set,
-            optimization_link_flag_set,
+            fastbuild_flag_set,
         ],
         provides = ["compilation_mode"],
+        implies = ["define_ndebug"],
     )
-
-    opt_feature = feature(
-        name = "opt",
-        enabled = False,
-        flag_sets = [
-            optimization_cpp_compile_flag_set,
-            optimization_other_compile_flag_set,
-            optimization_link_flag_set,
-        ],
-        provides = ["compilation_mode"],
-    )
-
 
     strip_debug_symbols_feature = feature(
         name = "strip_debug_symbols",
@@ -312,8 +354,6 @@ def _impl(ctx):
         ],
     )
 
-
-
     return cc_common.create_cc_toolchain_config_info(
         ctx = ctx,
         toolchain_identifier = "coralnpu_v2_toolchain",
@@ -329,6 +369,8 @@ def _impl(ctx):
             printf_float_feature,
             sys_feature,
             warnings_feature,
+            baseline_compilation_flags_feature,
+            define_ndebug_feature,
             dbg_feature,
             fastbuild_feature,
             opt_feature,
@@ -340,7 +382,7 @@ def _impl(ctx):
 coralnpu_v2_cc_toolchain_config = rule(
     implementation = _impl,
     attrs = {
-        "semihosting": attr.bool()
+        "semihosting": attr.bool(),
     },
     provides = [CcToolchainConfigInfo],
 )

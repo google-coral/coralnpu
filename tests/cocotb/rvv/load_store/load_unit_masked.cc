@@ -31,14 +31,12 @@ __attribute__((used, retain)) void test_unit_load8() {
       "vmv.v.x v8, %[load_filler];"
       "vle8.v v8, %[load_addr], v0.t;"
       "vse8.v v8, %[store_data];"
-      : [store_data] "=m"(store_data)
-      : [vl] "r"(vl),
-        [vtype] "r"(vtype),
-        [load_filler] "r"(load_filler),
-        [mask_data] "m"(mask_data),
-        [load_addr] "m"(*reinterpret_cast<const uint8_t(*)[128]>(load_addr))
-      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15",
-        "vl", "vtype");
+      : [store_data] "=A"(store_data)
+      : [vl] "r"(vl), [vtype] "r"(vtype), [load_filler] "r"(load_filler),
+        [mask_data] "A"(mask_data),
+        [load_addr] "A"(*reinterpret_cast<const uint8_t (*)[128]>(load_addr))
+      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",
+        "vtype");
 }
 
 __attribute__((used, retain)) void test_unit_load16() {
@@ -47,14 +45,12 @@ __attribute__((used, retain)) void test_unit_load16() {
       "vmv.v.x v8, %[load_filler];"
       "vle16.v v8, %[load_addr], v0.t;"
       "vse16.v v8, %[store_data];"
-      : [store_data] "=m"(store_data)
-      : [vl] "r"(vl),
-        [vtype] "r"(vtype),
-        [load_filler] "r"(load_filler),
-        [mask_data] "m"(mask_data),
-        [load_addr] "m"(*reinterpret_cast<const uint16_t(*)[64]>(load_addr))
-      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15",
-        "vl", "vtype");
+      : [store_data] "=A"(store_data)
+      : [vl] "r"(vl), [vtype] "r"(vtype), [load_filler] "r"(load_filler),
+        [mask_data] "A"(mask_data),
+        [load_addr] "A"(*reinterpret_cast<const uint16_t (*)[64]>(load_addr))
+      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",
+        "vtype");
 }
 
 __attribute__((used, retain)) void test_unit_load32() {
@@ -63,14 +59,12 @@ __attribute__((used, retain)) void test_unit_load32() {
       "vmv.v.x v8, %[load_filler];"
       "vle32.v v8, %[load_addr], v0.t;"
       "vse32.v v8, %[store_data];"
-      : [store_data] "=m"(store_data)
-      : [vl] "r"(vl),
-        [vtype] "r"(vtype),
-        [load_filler] "r"(load_filler),
-        [mask_data] "m"(mask_data),
-        [load_addr] "m"(*reinterpret_cast<const uint32_t(*)[32]>(load_addr))
-      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15",
-        "vl", "vtype");
+      : [store_data] "=A"(store_data)
+      : [vl] "r"(vl), [vtype] "r"(vtype), [load_filler] "r"(load_filler),
+        [mask_data] "A"(mask_data),
+        [load_addr] "A"(*reinterpret_cast<const uint32_t (*)[32]>(load_addr))
+      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",
+        "vtype");
 }
 }
 

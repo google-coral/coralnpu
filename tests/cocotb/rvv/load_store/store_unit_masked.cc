@@ -29,13 +29,11 @@ __attribute__((used, retain)) void test_unit_store8() {
       "vlm.v v0, %[mask_data];"
       "vle8.v v8, %[load_data];"
       "vse8.v v8, %[store_addr], v0.t;"
-      : [store_addr] "=m"(*reinterpret_cast<uint8_t(*)[128]>(store_addr))
-      : [vl] "r"(vl),
-        [vtype] "r"(vtype),
-        [mask_data] "m"(mask_data),
-        [load_data] "m"(load_data)
-      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15",
-        "vl", "vtype");
+      : [store_addr] "=A"(*reinterpret_cast<uint8_t (*)[128]>(store_addr))
+      : [vl] "r"(vl), [vtype] "r"(vtype), [mask_data] "A"(mask_data),
+        [load_data] "A"(load_data)
+      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",
+        "vtype");
 }
 
 __attribute__((used, retain)) void test_unit_store16() {
@@ -43,13 +41,11 @@ __attribute__((used, retain)) void test_unit_store16() {
       "vlm.v v0, %[mask_data];"
       "vle16.v v8, %[load_data];"
       "vse16.v v8, %[store_addr], v0.t;"
-      : [store_addr] "=m"(*reinterpret_cast<uint16_t(*)[64]>(store_addr))
-      : [vl] "r"(vl),
-        [vtype] "r"(vtype),
-        [mask_data] "m"(mask_data),
-        [load_data] "m"(load_data)
-      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15",
-        "vl", "vtype");
+      : [store_addr] "=A"(*reinterpret_cast<uint16_t (*)[64]>(store_addr))
+      : [vl] "r"(vl), [vtype] "r"(vtype), [mask_data] "A"(mask_data),
+        [load_data] "A"(load_data)
+      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",
+        "vtype");
 }
 
 __attribute__((used, retain)) void test_unit_store32() {
@@ -57,13 +53,11 @@ __attribute__((used, retain)) void test_unit_store32() {
       "vlm.v v0, %[mask_data];"
       "vle32.v v8, %[load_data];"
       "vse32.v v8, %[store_addr], v0.t;"
-      : [store_addr] "=m"(*reinterpret_cast<uint32_t(*)[32]>(store_addr))
-      : [vl] "r"(vl),
-        [vtype] "r"(vtype),
-        [mask_data] "m"(mask_data),
-        [load_data] "m"(load_data)
-      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15",
-        "vl", "vtype");
+      : [store_addr] "=A"(*reinterpret_cast<uint32_t (*)[32]>(store_addr))
+      : [vl] "r"(vl), [vtype] "r"(vtype), [mask_data] "A"(mask_data),
+        [load_data] "A"(load_data)
+      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",
+        "vtype");
 }
 }
 
