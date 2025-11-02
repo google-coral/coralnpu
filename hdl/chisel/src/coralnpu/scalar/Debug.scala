@@ -105,12 +105,16 @@ class DebugModule(p: Parameters) extends Module {
     io.resumereq := resumereq
 
     val dmcontrol = RegInit(1.U(32.W))
-    val dmactive = dmcontrol(0)
+    val dmactive = RegInit(0.U(1.W))
+    val dmactive_wvalid = (req.fire && req.bits.isAddrDmcontrol && req.bits.isWrite)
+    dmactive := MuxCase(dmactive, Seq(
+        dmactive_wvalid -> req.bits.data(0)
+    ))
 
     val data0 = RegInit(0.U(32.W))
     val cmderr = RegInit(0.U(32.W))
 
-    val dmcontrol_wvalid = (req.fire && req.bits.isAddrDmcontrol && req.bits.isWrite)
+    val dmcontrol_wvalid = (req.fire && req.bits.isAddrDmcontrol && req.bits.isWrite && dmactive)
     for (i <- 0 until nHart) {
         haltreq(i) := MuxCase(haltreq(i), Seq(
             dmcontrol_wvalid -> req.bits.data(31),
@@ -126,7 +130,6 @@ class DebugModule(p: Parameters) extends Module {
         assert(in.getWidth == 32)
         val new_dmcontrol = Wire(UInt(32.W))
         val ndmreset = req.bits.data(1)
-        val dmactive = req.bits.data(0)
         val hartsel = Min(req.bits.data(25,6), 1.U(20.W))
         new_dmcontrol := Cat(dmcontrol(31,26), hartsel, dmcontrol(5,2), ndmreset, dmactive)
         new_dmcontrol
