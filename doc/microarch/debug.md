@@ -122,7 +122,7 @@ The `dmcontrol` register is used to control the debug module and the core.
 | 31    | haltreq   | Request to halt the core.                                                   |
 | 30    | resumereq | Request to resume the core.                                                 |
 | 29:2  | reserved  | Reserved for future use.                                                    |
-| 1     | ndmreset  | Reset the debug module.                                                     |
+| 1     | ndmreset  | Reset the non-debug module.                                                 |
 | 0     | dmactive  | Activate the debug module.                                                  |
 
 ### dmstatus (0x11)
