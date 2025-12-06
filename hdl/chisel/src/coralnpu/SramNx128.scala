@@ -71,6 +71,6 @@ class Sram_Nx128(tcmEntries: Int) extends Module {
 
   // Mux read output
   val selectedSramRead = RegNext(selectedSram, 0.U(sramSelectBits.W))
-  io.rdata := MuxLookup(selectedSramRead, 0.U(sramAddrBits.W))(
+  io.rdata := MuxLookup(selectedSramRead, 0.U(128.W))(
       (0 until nSramModules).map(i => i.U -> sramModules(i).io.rdata))
 }
