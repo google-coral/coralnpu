@@ -77,9 +77,20 @@ class RetirementBuffer(p: Parameters) extends Module {
     val noFireFault = ((i == 0).B && noFire0Fault)
     val faultingInstr = (decodeFaultValid && ((faultPc === io.inst(i).bits.addr)))
 
+    // Store detection per RISC-V spec section 7.3 Table 11
+    // Scalar store: opcode 0x23
     val scalarStore = (io.inst(i).bits.inst(6,0) === "b0100011".U)
-    val floatStore = io.inst(i).bits.inst(6,2) === "b01101".U && ((io.inst(i).bits.inst(14,12) === "b10".U) || (io.inst(i).bits.inst(14,12) === "b01".U))
-    val vectorStore = (io.inst(i).bits.inst(6,0) === "b0100111".U)
+    val width = io.inst(i).bits.inst(14,12)
+    // Float store: opcode 0x27 with width ∈ {001, 010, 011, 100}
+    // These are 16b, 32b, 64b, 128b FP stores
+    val floatStore = (io.inst(i).bits.inst(6,0) === "b0100111".U) &&
+                     (width === "b001".U || width === "b010".U ||
+                      width === "b011".U || width === "b100".U)
+    // Vector store: opcode 0x27 with width ∈ {000, 101, 110, 111}
+    // These are 8b, 16b, 32b, 64b element vector stores
+    val vectorStore = (io.inst(i).bits.inst(6,0) === "b0100111".U) &&
+                      (width === "b000".U || width === "b101".U ||
+                       width === "b110".U || width === "b111".U)
     val store = scalarStore || floatStore || vectorStore
 
     val instr = Wire(new Instruction)
