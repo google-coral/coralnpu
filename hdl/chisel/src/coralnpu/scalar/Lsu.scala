@@ -968,8 +968,15 @@ class LsuV2(p: Parameters) extends Lsu(p) {
   val transactionUpdatedSlot = Mux(slot.store,
       slot.storeUpdate(storeUpdate), loadUpdatedSlot)
   val lsu2RvvFire = if (p.enableRvv) { io.lsu2rvv.get(0).fire } else { false.B }
-  val storeComplete = slotFired && slot.store && !slot.slotIdle() && transactionUpdatedSlot.slotIdle() &&
-    (!LsuOp.isVector(slot.op) || lsu2RvvFire)
+  // For scalar stores: complete when transaction is done (slotFired && all bytes written)
+  // For vector stores: complete when lsu2rvv handshake fires with last=1
+  // These happen in different cycles, so we can't AND them together.
+  val scalarStoreComplete = slotFired && slot.store && !slot.slotIdle() &&
+      transactionUpdatedSlot.slotIdle() && !LsuOp.isVector(slot.op)
+  val vectorStoreComplete = if (p.enableRvv) {
+      lsu2RvvFire && io.lsu2rvv.get(0).bits.last
+  } else { false.B }
+  val storeComplete = scalarStoreComplete || vectorStoreComplete
   io.storeComplete := Mux(storeComplete, MakeValid(slot.pc), MakeInvalid(UInt(32.W)))
 
   // ==========================================================================
