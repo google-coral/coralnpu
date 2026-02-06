@@ -18,7 +18,7 @@ import chisel3._
 import chisel3.util._
 
 class Sram_Nx128(tcmEntries: Int) extends Module {
-  override val desiredName = "SRAM_" + tcmEntries + "x128"
+  override val desiredName = "SRAM_" + tcmEntries + "x128" + "_wrapper"
   val addrBits = log2Ceil(tcmEntries)
   val io = IO(new Bundle {
     val addr = Input(UInt(addrBits.W))
