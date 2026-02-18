@@ -105,12 +105,16 @@ class DebugModule(p: Parameters) extends Module {
     io.resumereq := resumereq
 
     val dmcontrol = RegInit(1.U(32.W))
-    val dmactive = dmcontrol(0)
+    val dmactive = RegInit(0.U(1.W))
+    val dmactive_wvalid = (req.fire && req.bits.isAddrDmcontrol && req.bits.isWrite)
+    dmactive := MuxCase(dmactive, Seq(
+        dmactive_wvalid -> req.bits.data(0)
+    ))
 
     val data0 = RegInit(0.U(32.W))
     val cmderr = RegInit(0.U(32.W))
 
-    val dmcontrol_wvalid = (req.fire && req.bits.isAddrDmcontrol && req.bits.isWrite)
+    val dmcontrol_wvalid = (req.fire && req.bits.isAddrDmcontrol && req.bits.isWrite && dmactive.asBool())
     for (i <- 0 until nHart) {
         haltreq(i) := MuxCase(haltreq(i), Seq(
             dmcontrol_wvalid -> req.bits.data(31),
@@ -126,7 +130,6 @@ class DebugModule(p: Parameters) extends Module {
         assert(in.getWidth == 32)
         val new_dmcontrol = Wire(UInt(32.W))
         val ndmreset = req.bits.data(1)
-        val dmactive = req.bits.data(0)
         val hartsel = Min(req.bits.data(25,6), 1.U(20.W))
         new_dmcontrol := Cat(dmcontrol(31,26), hartsel, dmcontrol(5,2), ndmreset, dmactive)
         new_dmcontrol
@@ -157,7 +160,7 @@ class DebugModule(p: Parameters) extends Module {
         "x7B4".U(12.W) /* dataaddr */
     )
 
-    val abstractCmdValid = req.valid && req.bits.isWrite && req.bits.isAddrCommand
+    val abstractCmdValid = req.valid && req.bits.isWrite && req.bits.isAddrCommand && dmactive.asBool()
     val cmdtypeIsAccessRegister = (req.bits.cmdtype === AccessRegisterCommand.Cmdtype)
     val regnoIsCsr = (req.bits.regno >= 0.U(16.W)) && (req.bits.regno < "x1000".U(16.W))
     val regnoIsScalar = (req.bits.regno >= "x1000".U(16.W)) && (req.bits.regno < "x1020".U(16.W))
@@ -183,7 +186,7 @@ class DebugModule(p: Parameters) extends Module {
     io.csr.bits.rs1 := 0.U
     io.csr_rs1 := MuxOR(req.bits.write, data0)
 
-    val abstractcs_wvalid = (req.fire && req.bits.isAddrAbstractcs && req.bits.isWrite)
+    val abstractcs_wvalid = (req.fire && req.bits.isAddrAbstractcs && req.bits.isWrite && dmactive.asBool())
     cmderr := MuxCase(cmderr, Seq(
         abstractcs_wvalid -> (cmderr & ~(req.bits.data(10,8))), // cmderr is W1C
         (abstractCmdValid && !io.halted(0)) -> 4.U(3.W),
@@ -203,46 +206,46 @@ class DebugModule(p: Parameters) extends Module {
     )
 
     val scalarRegno = req.bits.regno(4,0)
-    io.scalar_rd.valid := io.halted(0) && abstractCmdValid && (req.bits.cmdtype === AccessRegisterCommand.Cmdtype) && regnoIsScalar && req.bits.write
+    io.scalar_rd.valid := io.halted(0) && abstractCmdValid && (req.bits.cmdtype === AccessRegisterCommand.Cmdtype) && regnoIsScalar && req.bits.write && dmactive.asBool()
     io.scalar_rd.bits.addr := scalarRegno
     io.scalar_rd.bits.data := data0
     io.scalar_rs.idx := MuxOR(io.halted(0) && abstractCmdValid && (req.bits.cmdtype === AccessRegisterCommand.Cmdtype) && regnoIsScalar && !req.bits.write, scalarRegno)
 
     if (p.enableFloat) {
         val floatRegno = req.bits.regno(4,0)
-        io.float_rd.get.valid := io.halted(0) && abstractCmdValid && (req.bits.cmdtype === AccessRegisterCommand.Cmdtype) && regnoIsFloat && req.bits.write
+        io.float_rd.get.valid := io.halted(0) && abstractCmdValid && (req.bits.cmdtype === AccessRegisterCommand.Cmdtype) && regnoIsFloat && req.bits.write && dmactive.asBool()
         io.float_rd.get.addr := floatRegno
         io.float_rd.get.data := Fp32.fromWord(data0)
-        io.float_rs.get.valid := io.halted(0) && abstractCmdValid && (req.bits.cmdtype === AccessRegisterCommand.Cmdtype) && regnoIsFloat && !req.bits.write
+        io.float_rs.get.valid := io.halted(0) && abstractCmdValid && (req.bits.cmdtype === AccessRegisterCommand.Cmdtype) && regnoIsFloat && !req.bits.write && dmactive.asBool()
         io.float_rs.get.addr := floatRegno
     }
 
     data0 := MuxCase(data0, Seq(
-        (req.valid && req.bits.isAddrData0 && req.bits.isWrite) -> req.bits.data,
-        (abstractCmdComplete && cmdtypeIsAccessRegister && io.halted(0) && req.valid && !req.bits.write && regnoIsCsr && io.csr_rd.valid) -> io.csr_rd.bits,
-        (abstractCmdComplete && cmdtypeIsAccessRegister && io.halted(0) && req.valid && !req.bits.write && regnoIsScalar) -> io.scalar_rs.data,
-        (abstractCmdComplete && cmdtypeIsAccessRegister && io.halted(0) && req.valid && !req.bits.write && regnoIsFloat) -> io.float_rs.map(_.data).getOrElse(Fp32.Zero(false.B)).asWord,
-        !dmactive -> 0.U(32.W),
+        (req.valid && req.bits.isAddrData0 && req.bits.isWrite && dmactive.asBool()) -> req.bits.data,
+        (abstractCmdComplete && cmdtypeIsAccessRegister && io.halted(0) && req.valid && !req.bits.write && regnoIsCsr && io.csr_rd.valid && dmactive.asBool()) -> io.csr_rd.bits,
+        (abstractCmdComplete && cmdtypeIsAccessRegister && io.halted(0) && req.valid && !req.bits.write && regnoIsScalar && dmactive.asBool()) -> io.scalar_rs.data,
+        (abstractCmdComplete && cmdtypeIsAccessRegister && io.halted(0) && req.valid && !req.bits.write && regnoIsFloa && dmactive.asBool()) -> io.float_rs.map(_.data).getOrElse(Fp32.Zero(false.B)).asWord,
+        !dmactive.asBool() -> 0.U(32.W),
     ))
 
     val rsp = req.map(reqBits => {
         val rspBits = Wire(new DebugModuleRspIO(p))
         rspBits.op := MuxCase(DmRspOp.BUSY, Seq(
-            (req.bits.isAddrData0 && req.bits.isOp) -> DmRspOp.SUCCESS,
-            (req.bits.isAddrDmcontrol && req.bits.isOp) -> DmRspOp.SUCCESS,
-            (req.bits.isAddrDmstatus && req.bits.isOp) -> DmRspOp.SUCCESS,
-            (req.bits.isAddrHartinfo && req.bits.isOp) -> DmRspOp.SUCCESS,
-            (req.bits.isAddrAbstractcs && req.bits.isOp) -> DmRspOp.SUCCESS,
-            (req.bits.isAddrCommand && req.bits.isOp && regnoInvalid) -> DmRspOp.FAILED,
-            (req.bits.isAddrCommand && req.bits.isOp) -> DmRspOp.SUCCESS,
+            (req.bits.isAddrData0 && req.bits.isOp && dmactive.asBool()) -> DmRspOp.SUCCESS,
+            (req.bits.isAddrDmcontrol && req.bits.isOp && dmactive.asBool()) -> DmRspOp.SUCCESS,
+            (req.bits.isAddrDmstatus && req.bits.isOp && dmactive.asBool()) -> DmRspOp.SUCCESS,
+            (req.bits.isAddrHartinfo && req.bits.isOp && dmactive.asBool()) -> DmRspOp.SUCCESS,
+            (req.bits.isAddrAbstractcs && req.bits.isOp && dmactive.asBool()) -> DmRspOp.SUCCESS,
+            (req.bits.isAddrCommand && req.bits.isOp && regnoInvalid && dmactive.asBool()) -> DmRspOp.FAILED,
+            (req.bits.isAddrCommand && req.bits.isOp && dmactive.asBool()) -> DmRspOp.SUCCESS,
         ))
         rspBits.data := MuxCase(0.U(32.W), Seq(
-            (req.bits.isAddrData0 && req.bits.isRead) -> data0,
-            (req.bits.isAddrDmcontrol && req.bits.isRead) -> dmcontrol,
-            (req.bits.isAddrDmstatus && req.bits.isRead) -> dmstatus,
-            (req.bits.isAddrHartinfo && req.bits.isRead) -> hartinfo,
-            (req.bits.isAddrAbstractcs && req.bits.isRead) -> abstractcs,
-            (req.bits.isAddrCommand && req.bits.isRead) -> 0.U(32.W),
+            (req.bits.isAddrData0 && req.bits.isRead && dmactive.asBool()) -> data0,
+            (req.bits.isAddrDmcontrol && req.bits.isRead && dmactive.asBool()) -> dmcontrol,
+            (req.bits.isAddrDmstatus && req.bits.isRead && dmactive.asBool()) -> dmstatus,
+            (req.bits.isAddrHartinfo && req.bits.isRead && dmactive.asBool()) -> hartinfo,
+            (req.bits.isAddrAbstractcs && req.bits.isRead && dmactive.asBool()) -> abstractcs,
+            (req.bits.isAddrCommand && req.bits.isRead && dmactive.asBool()) -> 0.U(32.W),
         ))
         rspBits
     })
