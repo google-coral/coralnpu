@@ -356,9 +356,7 @@ module RvvFrontEnd#(parameter N = 4,
           !inst_config_state[i+1].vill;
 
       // Combine instruction + arch state into command
-`ifdef TB_SUPPORT
       unaligned_cmd_data[i].inst_pc = inst_q[i].pc;
-`endif
       unaligned_cmd_data[i].opcode = inst_q[i].opcode;
       unaligned_cmd_data[i].bits = inst_q[i].bits;
       unaligned_cmd_data[i].arch_state = inst_config_state[i+1];

@@ -75,9 +75,7 @@ typedef struct packed {
 // been read from the scalar register file if necessary. It also contains
 // additional data to track configuration register state (ie: SEW, LMUL, etc).
 typedef struct packed {
-`ifdef TB_SUPPORT
   logic [`PC_WIDTH-1:0] inst_pc;
-`endif
   RVVOpCode             opcode;
   logic [24:0]          bits;
   logic [31:0]          rs1;

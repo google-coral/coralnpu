@@ -42,6 +42,9 @@ module rvv_backend
     rd_valid_rob2rt_o,
   `endif
 
+    discard_trap_valid,
+    discard_trap_data,
+
     rvv_idle,
 
     rd_rob2rt_o
@@ -89,6 +92,10 @@ module rvv_backend
   `ifdef TB_SUPPORT
     output  logic     [`NUM_RT_UOP-1:0]               rd_valid_rob2rt_o;
   `endif
+
+// discard trap: backend detected instruction with invalid encoding
+    output  logic                                     discard_trap_valid;
+    output  RVVInstruction                            discard_trap_data;
 
 // rvv_backend is not active.(IDLE)
     output  logic                                     rvv_idle;
@@ -203,6 +210,8 @@ module rvv_backend
   // Decode to uop queue
     logic        [`NUM_DE_UOP-1:0]        push_de2uq;
     UOP_QUEUE_t  [`NUM_DE_UOP-1:0]        data_de2uq;
+  // Decode discard detection
+    logic        [`NUM_DE_INST-1:0]       inst_discard_de;
     logic                                 fifo_full_uq2de; 
     logic        [`NUM_DE_UOP-1:0]        fifo_almost_full_uq2de;
   // Uop queue to dispatch
@@ -409,7 +418,9 @@ module rvv_backend
         .fifo_full_uq2de          (fifo_full_uq2de),
         .fifo_almost_full_uq2de   (fifo_almost_full_uq2de),
       // trap-flush
-        .trap_flush_rvv           (trap_flush_rvv)
+        .trap_flush_rvv           (trap_flush_rvv),
+      // discard detection
+        .inst_discard             (inst_discard_de)
     );
 
   // Uop queue
@@ -1007,10 +1018,20 @@ module rvv_backend
 `ifdef TB_SUPPORT
   assign rd_valid_rob2rt_o = rd_valid_rob2rt & rd_ready_rt2rob;
 `endif
+  assign rd_rob2rt_o = rd_rob2rt;
+
+  // -------------------------------------------------------------------
+  // Discard trap: when decode rejects an instruction (0 UOPs produced),
+  // raise an illegal-instruction trap via the discard_trap_* ports
+  // instead of silently dropping the instruction.
+  // -------------------------------------------------------------------
+  assign discard_trap_valid       = |inst_discard_de;
+  assign discard_trap_data.pc     = inst_discard_de[0] ? inst_pkg_cq2de[0].inst_pc : inst_pkg_cq2de[1].inst_pc;
+  assign discard_trap_data.opcode = inst_discard_de[0] ? inst_pkg_cq2de[0].opcode  : inst_pkg_cq2de[1].opcode;
+  assign discard_trap_data.bits   = inst_discard_de[0] ? inst_pkg_cq2de[0].bits    : inst_pkg_cq2de[1].bits;
 
   // rvv_backend IDLE
   assign rvv_idle = fifo_empty_cq2de&uq_empty&rob_empty;
-  assign rd_rob2rt_o = rd_rob2rt;
 
 `endif // TB_BRINGUP
 

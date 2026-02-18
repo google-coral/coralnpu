@@ -99,6 +99,11 @@ module RvvCore #(parameter N = 4,
   logic [N-1:0] frontend_cmd_valid;
   RVVCmd [N-1:0] frontend_cmd_data;
   logic [$clog2(2*N + 1)-1:0] queue_capacity_internal;
+
+  // Frontend trap (VILL) uses intermediate signals so we can OR with backend
+  logic frontend_trap_valid;
+  RVVInstruction frontend_trap_data;
+
   RvvFrontEnd#(.N(N)) frontend(
       .clk(clk),
       .rstn(rstn),
@@ -118,8 +123,8 @@ module RvvCore #(parameter N = 4,
       .cmd_data_o(frontend_cmd_data),
       .queue_capacity_i(queue_capacity_internal),
       .queue_capacity_o(queue_capacity),
-      .trap_valid_o(trap_valid_o),
-      .trap_data_o(trap_data_o),
+      .trap_valid_o(frontend_trap_valid),
+      .trap_data_o(frontend_trap_data),
       .config_state_valid(config_state_valid),
       .config_state(config_state)
   );
@@ -213,6 +218,15 @@ module RvvCore #(parameter N = 4,
   ROB2RT_t [`NUM_RT_UOP-1:0] rd_rob2rt;
   assign rd_rob2rt_o = rd_rob2rt;
 
+  // Backend discard trap
+  logic          backend_discard_valid;
+  RVVInstruction backend_discard_data;
+
+  // Combine frontend (VILL) and backend (discard) traps
+  // Frontend trap has priority since it occurs earlier in the pipeline
+  assign trap_valid_o = frontend_trap_valid | backend_discard_valid;
+  assign trap_data_o  = frontend_trap_valid ? frontend_trap_data : backend_discard_data;
+
   logic   [`ISSUE_LANE-1:0] insts_ready_cq2rvs;
   logic rvv_backend_idle;
   assign rvv_idle = rvv_backend_idle && (frontend_cmd_valid == 0);
@@ -246,6 +260,8 @@ module RvvCore #(parameter N = 4,
 `ifdef TB_SUPPORT
       .rd_valid_rob2rt_o(),
 `endif
+      .discard_trap_valid(backend_discard_valid),
+      .discard_trap_data(backend_discard_data),
       .rvv_idle(rvv_backend_idle),
       .rd_rob2rt_o(rd_rob2rt)
   );
