@@ -171,12 +171,8 @@ module rvv_backend_decode_ctrl
   assign fifo_ready = (compress_valid=='b0) ? 'b0 : ((compress_valid&fifo_almost_full_uq2de)=='b0);
       
   // get pop signal to Command Queue
-  // When inst0 is a discard (0 UOPs), block inst1 pop so we raise exactly one
-  // discard trap per cycle.
-  logic inst0_discard;
-  assign inst0_discard = pkg_valid[0] & (uop_valid_de2uq[0][`NUM_DE_UOP-1:0]=='b0);
-  assign pop[0] =          pkg_valid[0]&((last_uop_unit[0]&fifo_ready) || inst0_discard);
-  assign pop[1] = (pop[0] & !inst0_discard) ? pkg_valid[1]&((last_uop_unit[1]&fifo_ready) || (uop_valid_de2uq[1][`NUM_DE_UOP-1:0]=='b0)) : 'b0;
+  assign pop[0] =          pkg_valid[0]&((last_uop_unit[0]&fifo_ready) || (uop_valid_de2uq[0][`NUM_DE_UOP-1:0]=='b0));
+  assign pop[1] = pop[0] ? pkg_valid[1]&((last_uop_unit[1]&fifo_ready) || (uop_valid_de2uq[1][`NUM_DE_UOP-1:0]=='b0)) : 'b0;
   
   // instantiate cdffr for uop_index
   // clear signal

@@ -5,7 +5,7 @@
 // feature list:
 // 1. One instruction can be decoded to 8 uops at most according to RISC-V spec.
 // 2. Decoder will push 4 uops at most into Uops Queue, so decoder only decode to 4 uops at most per cycle.  
-// 3. If the instruction is in wrong encoding, a trap is raised via discard_trap.
+// 3. If the instruction is in wrong encoding, it will be discarded directly without applying a trap.
 // 4. When decoding, if the elements of one uop all belongs to ¡®prestart¡¯, this uop will be discarded.
 // 5. The vstart of the instruction will be calculated to a new value for every decoded uops.
 // 6. Fault-only-first load instruction will be regarded as regular unit-stride load instruction.
@@ -30,8 +30,7 @@ module rvv_backend_decode
   data_de2uq,
   fifo_full_uq2de, 
   fifo_almost_full_uq2de,
-  trap_flush_rvv,
-  inst_discard
+  trap_flush_rvv
 );
 //
 // interface signals
@@ -54,9 +53,6 @@ module rvv_backend_decode
 
   // trap-flush
   input   logic                         trap_flush_rvv;
-
-  // discard detection: instruction popped from CQ but produced 0 UOPs
-  output  logic   [`NUM_DE_INST-1:0]    inst_discard;
 
 //
 // internal signals
@@ -125,9 +121,5 @@ module rvv_backend_decode
     .fifo_almost_full_uq2de (fifo_almost_full_uq2de),
     .trap_flush_rvv         (trap_flush_rvv)
   );
-
-  // Discard detection: CQ popped but decode produced 0 UOPs
-  assign inst_discard[0] = pop_de2cq[0] & (uop_valid_de2uq[0][`NUM_DE_UOP-1:0] == '0);
-  assign inst_discard[1] = pop_de2cq[1] & (uop_valid_de2uq[1][`NUM_DE_UOP-1:0] == '0);
 
 endmodule
