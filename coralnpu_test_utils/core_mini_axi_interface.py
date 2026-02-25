@@ -20,7 +20,7 @@ import random
 
 
 from cocotb.clock import Clock
-from cocotb.handle import LogicObject, LogicArrayObject
+from cocotb.handle import LogicObject, LogicArrayObject, Immediate
 from cocotb.queue import Queue
 from cocotb.triggers import Timer, ClockCycles, RisingEdge, FallingEdge
 from elftools.elf.elffile import ELFFile
@@ -441,11 +441,11 @@ class CoreMiniAxiInterface:
         self.axi_master_write_resp.clear_valid()
 
   async def reset(self):
-    self.dut.io_aresetn.setimmediatevalue(1)
+    self.dut.io_aresetn.set(Immediate(1))
     await Timer(self.clock_ns, unit="ns")
-    self.dut.io_aresetn.setimmediatevalue(0)
+    self.dut.io_aresetn.set(Immediate(0))
     await Timer(self.clock_ns, unit="ns")
-    self.dut.io_aresetn.setimmediatevalue(1)
+    self.dut.io_aresetn.set(Immediate(1))
     await Timer(self.clock_ns, unit="ns")
 
   async def halt(self):
