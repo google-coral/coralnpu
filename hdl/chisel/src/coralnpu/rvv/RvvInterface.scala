@@ -87,6 +87,10 @@ class RvvCoreIO(p: Parameters) extends Bundle {
     val rvv_idle = Output(Bool())
     val queue_capacity = Output(UInt(4.W))
 
+    // Scalar trap flush handshake.
+    val scalarTrapValid = Input(Bool())
+    val scalarTrapReady = Output(Bool())
+
     // ROB to RT stage writes.
     val rd_rob2rt_o = Vec(4, new Rob2Rt(p))
 }

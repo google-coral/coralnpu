@@ -898,6 +898,7 @@ class LsuV2(p: Parameters) extends Lsu(p) {
   // ==========================================================================
   // Transaction update
   val faultReg = RegInit(MakeInvalid(new LsuFault(p)))
+  opQueue.io.flush := faultReg.valid
 
   // First stage of load update: Update results based on bus read
   val loadUpdatedSlot = Mux(readFired.valid,

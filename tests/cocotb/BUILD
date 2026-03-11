@@ -556,6 +556,30 @@ coralnpu_v2_binary(
     srcs = ["vector_store_fault.cc"],
 )
 
+coralnpu_v2_binary(
+    name = "lost_trap_test",
+    srcs = ["lost_trap_test.S"],
+)
+
+cocotb_test_suite(
+    name = "lost_trap_cocotb",
+    simulators = ["verilator"],
+    testcases = ["lost_trap_test"],
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniAxi",
+        "waves": False,
+        "seed": "42",
+        "test_module": ["lost_trap_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        "data": [":lost_trap_test.elf"],
+        "size": "medium",
+    },
+    verilator_model = ":rvv_core_mini_axi_model",
+)
+
 cocotb_test_suite(
     name = "rvv_load_store_test",
     simulators = [

@@ -430,6 +430,20 @@ class SCore(p: Parameters) extends Module {
     csr.io.rvv.get.vtype := io.rvvcore.get.configState.bits.vtype
     csr.io.rvv.get.vxrm := io.rvvcore.get.csr.vxrm
     csr.io.rvv.get.vxsat := io.rvvcore.get.csr.vxsat
+
+    // Scalar trap flush handshake with the RVV core. When a fault fires and
+    // the RVV core has pending operations, request a flush. The guard on
+    // !rvv_idle prevents deadlock when the ROB is empty (no entry to retire
+    // with trap_flag). The rvv_idle clear handles the edge case where the
+    // RVV core becomes idle through other means before the handshake completes.
+    val rvvTrapRequest = RegInit(false.B)
+    when (fault_manager.io.out.valid && !io.rvvcore.get.rvv_idle) {
+      rvvTrapRequest := true.B
+    }
+    when (io.rvvcore.get.scalarTrapReady || io.rvvcore.get.rvv_idle) {
+      rvvTrapRequest := false.B
+    }
+    io.rvvcore.get.scalarTrapValid := rvvTrapRequest
   }
   val isBranching = bru.map(_.io.taken.valid).reduce(_||_)
   val hasFetchedInstructions = fetch.io.inst.lanes.map(_.valid).reduce(_||_)

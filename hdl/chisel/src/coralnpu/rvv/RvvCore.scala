@@ -160,7 +160,9 @@ object GenerateCoreShimSource {
         |    output trap_valid,
         |    output [31:0] trap_bits_pc,
         |    output [1:0] trap_bits_opcode,
-        |    output [24:0] trap_bits_bits,""".stripMargin
+        |    output [24:0] trap_bits_bits,
+        |    input scalarTrapValid,
+        |    output scalarTrapReady,""".stripMargin
 
     // Add vxsat backend update outputs
     moduleInterface += """
@@ -330,7 +332,9 @@ object GenerateCoreShimSource {
         |      .trap_valid_o(trap_valid),
         |      .trap_data_o(trap_data),
         |      .wr_vxsat_valid_o(wr_vxsat_valid_o),
-        |      .wr_vxsat_o(wr_vxsat_o)
+        |      .wr_vxsat_o(wr_vxsat_o),
+        |      .trap_valid_rvs2rvv(scalarTrapValid),
+        |      .trap_ready_rvv2rvs(scalarTrapReady)
         |""".stripMargin.replaceAll("GENN", instructionLanes.toString)
     coreInstantiation += "  );\n"
 
@@ -437,6 +441,9 @@ class RvvCoreWrapper(p: Parameters) extends BlackBox with HasBlackBoxInline
     val configVill = Output(Bool())
     val rvv_idle = Output(Bool())
     val queue_capacity = Output(UInt(4.W))
+
+    val scalarTrapValid = Input(Bool())
+    val scalarTrapReady = Output(Bool())
   })
   dontTouch(io.rd_rob2rt_o)
 
@@ -551,6 +558,8 @@ class RvvCoreShim(p: Parameters) extends Module {
   io.configState.bits.vill        := rvvCoreWrapper.io.configVill
   io.rvv_idle                     := rvvCoreWrapper.io.rvv_idle
   io.queue_capacity               := rvvCoreWrapper.io.queue_capacity
+  rvvCoreWrapper.io.scalarTrapValid := io.scalarTrapValid
+  io.scalarTrapReady              := rvvCoreWrapper.io.scalarTrapReady
 
   val vstart_wdata = MuxCase(vstart, Seq(
       rvvCoreWrapper.io.vcsr_valid -> rvvCoreWrapper.io.vcsr_vstart,

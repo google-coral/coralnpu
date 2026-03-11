@@ -98,7 +98,11 @@ module RvvCore #(parameter N = 4,
 
   // VXSAT update from backend (fixes C3 bug: previously dead-end wires)
   output logic                            wr_vxsat_valid_o,
-  output logic    [`VCSR_VXSAT_WIDTH-1:0] wr_vxsat_o
+  output logic    [`VCSR_VXSAT_WIDTH-1:0] wr_vxsat_o,
+
+  // Scalar trap flush handshake
+  input  logic trap_valid_rvs2rvv,
+  output logic trap_ready_rvv2rvs
 );
   logic [N-1:0] frontend_cmd_valid;
   RVVCmd [N-1:0] frontend_cmd_data;
@@ -201,13 +205,6 @@ module RvvCore #(parameter N = 4,
   // CSR Update, unused for now
   logic                            wr_vxsat_valid;
   logic    [`VCSR_VXSAT_WIDTH-1:0] wr_vxsat;
-
-  // Trap handling tie-off
-  logic  trap_valid_rvs2rvv;
-  logic  trap_ready_rvv2rvs;
-  always_comb begin
-    trap_valid_rvs2rvv = 0;
-  end
 
   // Tie-off floating point writeback until implemented.
   assign async_frd_valid = 0;
