@@ -1,0 +1,41 @@
+name: RVV Mini Regression
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mini_regression:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          ssh-key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+
+      - name: Run mini regression
+        run: |
+          python3 my_outputs/rvv_core_mini_axi_sim/scripts/run_regression.py \
+            --list my_outputs/rvv_core_mini_axi_sim/regression/mini_regression.list \
+            --out-dir my_outputs/rvv_core_mini_axi_sim/regression \
+            --timeout-s 900
+
+      - name: Capture latest run directory
+        run: |
+          RUN_DIR="$(ls -td my_outputs/rvv_core_mini_axi_sim/regression/run_* | head -1)"
+          echo "RUN_DIR=${RUN_DIR}" >> "${GITHUB_ENV}"
+          echo "Latest run dir: ${RUN_DIR}"
+          test -f "${RUN_DIR}/summary.md"
+          sed -n '1,220p' "${RUN_DIR}/summary.md"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rvv-mini-regression
+          path: ${{ env.RUN_DIR }}
+          if-no-files-found: error
