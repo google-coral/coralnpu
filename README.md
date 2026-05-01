@@ -30,6 +30,14 @@ Coral NPU offers the following top-level feature set:
 
 ## Quick Start
 
+You can run all steps automatically via:
+
+```bash
+./run_core_min_axi_sim_cocotb.sh
+```
+
+Or step through them manually:
+
 ```bash
 # Ensure that test suite passes
 bazel run //tests/cocotb:core_mini_axi_sim_cocotb
