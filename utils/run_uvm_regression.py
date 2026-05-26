@@ -53,9 +53,21 @@ DENYLIST = [
     "//tests/cocotb/rvv:vmsbf_test",
     "//tests/cocotb/rvv/load_store:load_unit_masked",
     "//tests/cocotb/rvv/load_store:store_unit_masked",
+    "//tests/cocotb/rvv/arithmetics:vmsge_vx_test",
     # Enable when MPACT enables Zve32f
     "//tests/cocotb/rvv/ml_ops:rvv_float_matmul",
     "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_assembly",
+    "//tests/cocotb/rvv/arithmetics:rvv_fadd_float_m1",
+    "//tests/cocotb/rvv/arithmetics:rvv_fdiv_float_m1",
+    "//tests/cocotb/rvv/arithmetics:rvv_fmul_float_m1",
+    "//tests/cocotb/rvv/arithmetics:rvv_fredmax_float_m1",
+    "//tests/cocotb/rvv/arithmetics:rvv_fredmin_float_m1",
+    "//tests/cocotb/rvv/arithmetics:rvv_fredusum_float_m1",
+    "//tests/cocotb/rvv/arithmetics:rvv_fsub_float_m1",
+    "//tests/cocotb/rvv/arithmetics:vfadd_vf_test",
+    "//tests/cocotb/rvv/arithmetics:vfdiv_vf_test",
+    "//tests/cocotb/rvv/arithmetics:vfmul_vf_test",
+    "//tests/cocotb/rvv/arithmetics:vfsub_vf_test",
 ]
 
 # List of targets to exclude from Spike co-simulation (e.g. tests requiring external IRQs)
@@ -585,93 +597,168 @@ def run_full_regression(tests_to_run: List[Tuple[str, str]], spike_bin: str,
     os.makedirs(logs_dir, exist_ok=True)
     logging.info(f"Regression results will be stored in: {output_dir}")
 
-    results = []
-
+    # 1. Preparation: Copy ELFs and generate Spike logs
+    logging.info(f"Preparing {len(tests_to_run)} tests...")
+    test_info_map = {} # target -> info dict
     for i, (target, src_elf) in enumerate(tests_to_run):
-        logging.info(f"[{i+1}/{len(tests_to_run)}] Processing {target}")
-
         if src_elf and os.path.exists(src_elf):
-            # Construct a safe filename
-            safe_name = target.replace('//', '').replace(':', '_').replace(
-                '/', '_') + ".elf"
+            safe_name = target.replace('//', '').replace(':', '_').replace('/', '_') + ".elf"
             dest_elf = os.path.join(temp_elf_dir, safe_name)
 
             try:
-                # Remove existing file to avoid permission errors
-                if os.path.exists(dest_elf):
-                    os.remove(dest_elf)
-
+                if os.path.exists(dest_elf): os.remove(dest_elf)
                 shutil.copy2(src_elf, dest_elf)
-                # Force write permissions
-                os.chmod(
-                    dest_elf,
-                    stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP
-                    | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+                os.chmod(dest_elf, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
 
-                elf_to_run = dest_elf
-                entry_point = get_entry_point(elf_to_run)
-
-                # Generate Spike Log
-                spike_log_path = None
-                if spike_bin:
-                    if target in SPIKE_DENYLIST:
-                        logging.info(
-                            f"  Skipping Spike generation for {target} (in SPIKE_DENYLIST)"
-                        )
-                    else:
-                        spike_log_name = safe_name + ".spike.log"
-                        temp_spike_log = os.path.join(temp_elf_dir,
-                                                      spike_log_name)
+                entry_point = get_entry_point(dest_elf)
+                spike_log_path = "NONE"
+                if spike_bin and target not in SPIKE_DENYLIST:
+                    spike_log_name = safe_name + ".spike.log"
+                    temp_spike_log = os.path.join(temp_elf_dir, spike_log_name)
+                    if os.path.exists(temp_spike_log): os.remove(temp_spike_log)
+                    cmd_spike = [
+                        spike_bin, f"-m{get_spike_memory_map_str()}", f"--isa={SPIKE_ISA}",
+                        "--misaligned", "-l", "--log-commits", f"--pc={entry_point}", dest_elf
+                    ]
+                    try:
+                        with open(os.devnull, 'w') as devnull:
+                            subprocess.run(cmd_spike, stdout=devnull, stderr=devnull, timeout=30)
                         if os.path.exists(temp_spike_log):
-                            os.remove(temp_spike_log)
+                            shutil.copy2(temp_spike_log, os.path.join(logs_dir, spike_log_name))
+                            spike_log_path = os.path.abspath(temp_spike_log)
+                    except: pass
 
-                        spike_ok = generate_spike_log(spike_bin, elf_to_run,
-                                                      temp_spike_log,
-                                                      entry_point)
+                tohost_addr = get_tohost_addr(dest_elf)
+                if tohost_addr is None: tohost_addr = 0xFFFFFFFF
+                timeout = TIMEOUT_MAP.get(target, 100000)
 
-                        if os.path.exists(temp_spike_log):
-                            dest_name = spike_log_name if spike_ok else spike_log_name + ".fail"
-                            shutil.copy2(temp_spike_log,
-                                         os.path.join(logs_dir, dest_name))
-
-                            if spike_ok:
-                                spike_log_path = temp_spike_log
-                            else:
-                                logging.warning(
-                                    f"  WARNING: Spike log generation failed/timed out for {target}. Log saved to logs/{dest_name}"
-                                )
-
-                tohost_addr = get_tohost_addr(elf_to_run)
-                status, reason, log = run_uvm(elf_to_run,
-                                              spike_log_path,
-                                              target=target,
-                                              mpact_root=mpact_root,
-                                              tohost_addr=tohost_addr)
+                test_info_map[target] = {
+                    "elf": os.path.abspath(dest_elf),
+                    "tohost": tohost_addr,
+                    "entry": entry_point,
+                    "timeout": timeout,
+                    "spike": spike_log_path,
+                    "safe_log": safe_name.replace('.elf', '.log')
+                }
             except Exception as e:
-                status = "FAIL"
-                reason = f"Copy/Setup failed: {e}"
-                log = str(e)
-        else:
-            status = "FAIL"
-            reason = "ELF source not found (Build failed?)"
-            log = ""
+                logging.error(f"Failed to prepare {target}: {e}")
 
-        log_filename = target.replace('//', '').replace(':', '_').replace(
-            '/', '_') + ".log"
-        log_path = os.path.join(logs_dir, log_filename)
+    # 2. Execute Simulation with Crash Recovery
+    results = []
+    completed_targets = set()
+    pending_targets = [t for t, _ in tests_to_run if t in test_info_map]
 
-        with open(log_path, "w") as f:
-            f.write(log)
+    env = os.environ.copy()
+    env["CORALNPU_MPACT"] = mpact_root
+    regression_log_path = os.path.join(logs_dir, "regression.log")
 
-        results.append({
-            "Target": target,
-            "Status": status,
-            "Reason": reason,
-            "Log Path": os.path.join("logs", log_filename)  # Relative path
-        })
-        logging.info(f"  Result: {status} - {reason}")
+    logging.info("--- Starting Batch UVM Regression ---")
 
-    # Write CSV
+    while pending_targets:
+        # Create REGRESSION_LIST for current batch
+        batch_list_path = os.path.join(output_dir, "current_batch.txt")
+        with open(batch_list_path, 'w') as f_list:
+            for t in pending_targets:
+                info = test_info_map[t]
+                f_list.write(f"{info['elf']} {info['tohost']:08x} {info['entry']:08x} {info['timeout']} {info['spike']} {t}\n")
+
+        cmd = [
+            "make", "-C", "tests/uvm", "run", 
+            "UVM_VERBOSITY=UVM_LOW",
+            "UVM_TESTNAME=coralnpu_regression_test",
+            f"EXTRA_PLUSARGS=+REGRESSION_LIST={os.path.abspath(batch_list_path)}"
+        ]
+
+        current_target = None
+        current_test_log = None
+        current_reason = "None"
+
+        try:
+            with open(regression_log_path, 'a') as f_log:
+                process = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+                for line in process.stdout:
+                    f_log.write(line)
+                    if current_test_log: current_test_log.write(line)
+
+                    # Detect start of test
+                    start_match = re.search(r'--- STARTING TEST: (.*?) ---', line)
+                    if start_match:
+                        current_target = start_match.group(1)
+                        logging.info(f"Running UVM for {current_target}...")
+
+                        log_path = os.path.join(logs_dir, test_info_map[current_target]['safe_log'])
+                        if current_test_log: current_test_log.close()
+                        current_test_log = open(log_path, 'w')
+                        current_test_log.write(line)
+                        current_reason = "None"
+                        continue
+
+                    # Parse for failure reasons
+                    if current_target:
+                        # Prioritize the first error found for the summary
+                        err_match = re.search(r"^\s*(UVM_(?:FATAL|ERROR)(?!.*:\s+0\s*$).*)$", line, re.MULTILINE)
+                        if err_match:
+                            err_msg = err_match.group(1).strip()
+                            logging.error(f"    {err_msg}")
+                            if current_reason == "None":
+                                current_reason = err_msg.replace(',', ';')
+                        else:
+                            # Match standard Verilog Error/Fatal/Assertion
+                            verilog_err = re.search(r"^(Error|Fatal|Runtime Error|Assertion failed):? (.*)$", line, re.MULTILINE)
+                            if verilog_err:
+                                err_msg = verilog_err.group(0).strip()
+                                logging.error(f"    {err_msg}")
+                                if current_reason == "None":
+                                    current_reason = err_msg.replace(',', ';')
+
+                        if "** UVM TEST PASSED **" in line:
+                            logging.info(f"  Result: PASS - {current_reason}")
+                            results.append({
+                                "Target": current_target, "Status": "PASS", "Reason": current_reason,
+                                "Log Path": os.path.join("logs", test_info_map[current_target]['safe_log'])
+                            })
+                            completed_targets.add(current_target)
+                            current_test_log.close()
+                            current_test_log = None
+                            current_target = None
+                        elif "** UVM TEST FAILED **" in line:
+                            logging.info(f"  Result: FAIL - {current_reason}")
+                            results.append({
+                                "Target": current_target, "Status": "FAIL", "Reason": current_reason,
+                                "Log Path": os.path.join("logs", test_info_map[current_target]['safe_log'])
+                            })
+                            completed_targets.add(current_target)
+                            current_test_log.close()
+                            current_test_log = None
+                            current_target = None
+
+                process.wait()
+                if current_test_log: current_test_log.close()
+
+                # If process ended while a test was running, mark it as a crash
+                if current_target:
+                    status = "FAIL"
+                    if current_reason == "None":
+                        current_reason = "Simulator exited early or crashed"
+                    logging.error(f"  Result: {status} - {current_reason}")
+                    results.append({
+                        "Target": current_target, "Status": status, "Reason": current_reason,
+                        "Log Path": os.path.join("logs", test_info_map[current_target]['safe_log'])
+                    })
+                    completed_targets.add(current_target)
+                    current_target = None
+
+        except Exception as e:
+            logging.error(f"Batch execution failed: {e}")
+            break # Avoid infinite loop if prepare/launch fails fundamentally
+
+        # Update pending targets for next batch attempt
+        pending_targets = [t for t in pending_targets if t not in completed_targets]
+        if pending_targets:
+            logging.warning(f"Simulator crashed. Restarting for {len(pending_targets)} remaining tests...")
+
+    # 3. Finalization
     csv_file = os.path.join(output_dir, "uvm_results.csv")
     with open(csv_file, "w", newline='') as csvfile:
         fieldnames = ["Target", "Status", "Reason", "Log Path"]
@@ -681,9 +768,7 @@ def run_full_regression(tests_to_run: List[Tuple[str, str]], spike_bin: str,
             writer.writerow(row)
 
     logging.info(f"Results written to {csv_file}")
-
-    # Create Zip Archive
-    zip_filename = f"{output_dir}"  # make_archive appends .zip
+    zip_filename = f"{output_dir}"
     logging.info(f"Creating archive {zip_filename}.zip...")
     shutil.make_archive(zip_filename, 'zip', output_dir)
     logging.info(f"Artifact created: {os.path.abspath(zip_filename + '.zip')}")

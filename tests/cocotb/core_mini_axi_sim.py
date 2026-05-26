@@ -479,7 +479,7 @@ async def core_mini_axi_backdoor_load_test(dut):
   await core_mini_axi.write(0x10000, np.zeros(0x8000, dtype=np.uint8))
 
   with open(elf_path, "rb") as f:
-    await core_mini_axi.load_elf(f)
+    await core_mini_axi.load_elf_axi(f)
     # We'll read back ITCM (0x0-0x2000) and DTCM (0x10000-0x18000)
     itcm_front = await core_mini_axi.read(0x0, 0x2000)
     dtcm_front = await core_mini_axi.read(0x10000, 0x8000)

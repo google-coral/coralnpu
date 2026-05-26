@@ -17,6 +17,7 @@
 #include <stddef.h>
 
 #include "fpga/sw/clk.h"
+#include "fpga/sw/dma.h"
 #include "fpga/sw/gpio.h"
 #include "fpga/sw/spi.h"
 
@@ -155,6 +156,36 @@ void spi_flash_read(uint32_t addr, uint8_t* data, uint32_t len) {
   for (uint32_t i = 0; i < len; i++) {
     data[i] = spi_xfer_local(0x00);
   }
+  spi_flash_cs_deassert();
+}
+
+void spi_flash_read_dma(uint32_t addr, uint8_t* data, uint32_t len) {
+  if (len == 0) return;
+
+  uint32_t base = flash_base();
+  spi_flash_cs_assert();
+  spi_xfer_local(SPI_FLASH_CMD_READ);
+  spi_xfer_local((addr >> 16) & 0xFF);
+  spi_xfer_local((addr >> 8) & 0xFF);
+  spi_xfer_local(addr & 0xFF);
+
+  // Enable Half-Duplex RX mode via RMW
+  uint32_t ctrl = spi_get_control(base);
+  spi_set_control(base, ctrl | SPI_CTRL_HDRX);
+
+  // Use a stack-based descriptor to avoid initialization/relocation issues in
+  // ROM.
+  struct dma_descriptor desc __attribute__((aligned(32)));
+  desc.src_addr = base + SPI_REG_RXDATA;
+  desc.dst_addr = (uint32_t)(uintptr_t)data;
+  desc.len_flags = dma_make_len_flags(len, 0, 1, 0, 0);
+  desc.next_desc = 0;
+
+  dma_start((uint32_t)(uintptr_t)&desc);
+  dma_wait_done();
+
+  // Restore control register
+  spi_set_control(base, ctrl);
   spi_flash_cs_deassert();
 }
 

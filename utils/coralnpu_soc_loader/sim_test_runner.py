@@ -53,6 +53,7 @@ class SimTestRunner:
         highmem=False,
         itcm_size_kbytes=8,
         dtcm_size_kbytes=32,
+        loader_mode="backdoor",
     ):
         self.elf_file = elf_file
         self.sim_timeout = sim_timeout
@@ -60,6 +61,7 @@ class SimTestRunner:
         self.highmem = highmem
         self.itcm_size_kbytes = itcm_size_kbytes
         self.dtcm_size_kbytes = dtcm_size_kbytes
+        self.loader_mode = loader_mode
         self.test_result = None  # None=unknown, True=pass, False=fail
         self.sim_proc = None
         self.loader_proc = None
@@ -167,6 +169,8 @@ class SimTestRunner:
             sim_cmd = [sim_bin_path]
             if self.trace_file:
                 sim_cmd.append(f"--trace={self.trace_file}")
+            if self.loader_mode == "backdoor":
+                sim_cmd.append(f"--load_elf={self.elf_file}")
 
             logging.warning(f"SIM_TEST: Starting simulator on port {port}")
             self.sim_proc = subprocess.Popen(
@@ -254,8 +258,15 @@ class SimTestRunner:
             uart_thread.start()
             self.threads.append(uart_thread)
 
-            # Load ELF
-            logging.warning(f"SIM_TEST: Loading ELF: {self.elf_file}")
+            # Load ELF (or just kick off, if segments were backdoor-loaded by
+            # the simulator).
+            if self.loader_mode == "backdoor":
+                logging.warning(
+                    f"SIM_TEST: Backdoor-loaded ELF: {self.elf_file}; "
+                    "running loader in --csr_only mode."
+                )
+            else:
+                logging.warning(f"SIM_TEST: Loading ELF over SPI: {self.elf_file}")
             loader_cmd = [
                 loader_path,
                 self.elf_file,
@@ -264,6 +275,8 @@ class SimTestRunner:
                 "--dtcm_size_kbytes",
                 str(self.dtcm_size_kbytes),
             ]
+            if self.loader_mode == "backdoor":
+                loader_cmd.append("--csr_only")
             self.loader_proc = subprocess.Popen(
                 loader_cmd,
                 env=sim_env,
@@ -366,6 +379,16 @@ def main():
     parser.add_argument(
         "--dtcm_size_kbytes", type=int, default=32, help="DTCM size in KBytes."
     )
+    parser.add_argument(
+        "--loader",
+        choices=["backdoor", "spi"],
+        default="backdoor",
+        help="How to deliver the ELF to the SoC. 'backdoor' (default) uses "
+             "sram_load_elf via DPI in the simulator and only fires the "
+             "kickoff CSR writes over SPI. 'spi' streams the entire ELF over "
+             "the spi2tlul bridge (kept for spi2tlul-loader regression "
+             "coverage).",
+    )
     args = parser.parse_args()
 
     runner = SimTestRunner(
@@ -375,6 +398,7 @@ def main():
         args.highmem,
         args.itcm_size_kbytes,
         args.dtcm_size_kbytes,
+        args.loader,
     )
     sys.exit(runner.run())
 

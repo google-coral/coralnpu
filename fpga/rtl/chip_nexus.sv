@@ -16,8 +16,13 @@ module chip_nexus
     #(parameter MemInitFile = "",
       parameter int ClockFrequencyMhz = 50,
       parameter int IspClockFrequencyMhz = 10,
-      parameter int SpimClockFrequencyMhz = 100)
-    (input clk_p_i,
+      parameter int SpimClockFrequencyMhz = 100,
+      parameter int BootAddr = 0,
+      parameter int EnableAutoboot = 0,
+      parameter int ItcmSizeKBytes = 8,
+      parameter int DtcmSizeKBytes = 32
+) (
+     input clk_p_i,
      input clk_n_i,
      input rst_ni,
      input spi_clk_i,
@@ -369,7 +374,10 @@ module chip_nexus
   coralnpu_soc #(.MemInitFile(MemInitFile),
                  .ClockFrequencyMhz(ClockFrequencyMhz),
                  .IspClockFrequencyMhz(IspClockFrequencyMhz),
-                 .SpimClockFrequencyMhz(SpimClockFrequencyMhz))
+                 .SpimClockFrequencyMhz(SpimClockFrequencyMhz),
+                 .EnableAutoboot(EnableAutoboot),
+                 .ItcmSizeKBytes(ItcmSizeKBytes),
+                 .DtcmSizeKBytes(DtcmSizeKBytes))
   i_coralnpu_soc(
     .clk_i(clk),
     .clk_isp_i(clk_isp),
@@ -383,7 +391,7 @@ module chip_nexus
     .spim_mosi_o(spim_mosi_o),
     .spim_miso_i(spim_miso_i),
     .spim_clk_i(clk_spim),
-    .boot_addr_i(32'h10000000),
+    .boot_addr_i(BootAddr),
     .spim_flash_sclk_o(spim_flash_sclk_o),
     .spim_flash_csb_o(spim_flash_csb_o),
     .spim_flash_mosi_o(spim_flash_mosi_o),

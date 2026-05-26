@@ -31,6 +31,15 @@ extern "C" {
 // A C-ABI wrapper for SramBackdoorLoad to allow dynamic invocation from Python.
 __attribute__((visibility("default"))) bool sram_backdoor_load_c(
     uint64_t global_addr, const uint8_t* data, size_t len);
+
+// Zero every registered SRAM. Safe to call only after SRAM modules have run
+// their `sram_init` DPI registration (i.e. after the simulator has executed
+// at least one cycle).
+void sram_clear();
+
+// Parse an ELF file and call SramBackdoorLoad for each PT_LOAD segment.
+// Same timing constraint as sram_clear — call after SRAMs have registered.
+void sram_load_elf(const char* filename);
 }
 
 #endif  // HDL_VERILOG_SRAM_BACKDOOR_H_

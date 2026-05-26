@@ -31,6 +31,8 @@ def _sim_test_impl(ctx):
     if ctx.attr.highmem:
         highmem_arg = "--highmem"
 
+    loader_arg = "--loader=" + ctx.attr.loader
+
     # Generate a wrapper script that invokes the test runner with the ELF path.
     script = ctx.actions.declare_file(ctx.label.name + "_run.sh")
     ctx.actions.write(
@@ -38,7 +40,7 @@ def _sim_test_impl(ctx):
         content="""\
 #!/bin/bash
 exec {runner} {elf} --sim_timeout {timeout} {trace_arg} {highmem_arg} \
-    --itcm_size_kbytes {itcm_size} --dtcm_size_kbytes {dtcm_size}
+    --itcm_size_kbytes {itcm_size} --dtcm_size_kbytes {dtcm_size} {loader_arg}
 """.format(
             runner=runner.short_path,
             elf=elf.short_path,
@@ -47,6 +49,7 @@ exec {runner} {elf} --sim_timeout {timeout} {trace_arg} {highmem_arg} \
             highmem_arg=highmem_arg,
             itcm_size=ctx.attr.itcm_size_kbytes,
             dtcm_size=ctx.attr.dtcm_size_kbytes,
+            loader_arg=loader_arg,
         ),
         is_executable=True,
     )
@@ -75,6 +78,15 @@ _sim_test = rule(
         "highmem": attr.bool(default=False),
         "itcm_size_kbytes": attr.int(default=8),
         "dtcm_size_kbytes": attr.int(default=32),
+        "loader": attr.string(
+            default = "backdoor",
+            values = ["backdoor", "spi"],
+            doc = (
+                "ELF delivery path: 'backdoor' uses sram_load_elf inside the " +
+                "simulator (fast, default); 'spi' streams the ELF over the " +
+                "spi2tlul bridge (kept for spi2tlul-loader regression cover)."
+            ),
+        ),
         "_runner": attr.label(
             default="//utils/coralnpu_soc_loader:sim_test_runner",
             executable=True,
@@ -95,6 +107,7 @@ def coralnpu_v2_sim_test(
     sim_timeout=30,
     trace=False,
     highmem=False,
+    loader="backdoor",
     size="large",
     tags=[],
     **kwargs,
@@ -133,6 +146,7 @@ def coralnpu_v2_sim_test(
         sim_timeout=sim_timeout,
         trace=trace,
         highmem=highmem,
+        loader=loader,
         itcm_size_kbytes=kwargs.get("itcm_size_kbytes", 1024 if highmem else 8),
         dtcm_size_kbytes=kwargs.get("dtcm_size_kbytes", 1024 if highmem else 32),
         size=size,

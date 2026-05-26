@@ -17,7 +17,10 @@ module chip_verilator #(
     parameter int ClockFrequencyMhz = 50,
     parameter int IspClockFrequencyMhz = 10,
     parameter int SpimClockFrequencyMhz = 50,
-    parameter int BootAddr = 0
+    parameter int BootAddr = 0,
+    parameter int EnableAutoboot = 0,
+    parameter int ItcmSizeKBytes = 8,
+    parameter int DtcmSizeKBytes = 32
 ) (
     input clk_i,
     input rst_ni,
@@ -220,7 +223,10 @@ module chip_verilator #(
   coralnpu_soc #(.MemInitFile(MemInitFile),
                  .ClockFrequencyMhz(ClockFrequencyMhz),
                  .IspClockFrequencyMhz(IspClockFrequencyMhz),
-                 .SpimClockFrequencyMhz(SpimClockFrequencyMhz))
+                 .SpimClockFrequencyMhz(SpimClockFrequencyMhz),
+                 .EnableAutoboot(EnableAutoboot),
+                 .ItcmSizeKBytes(ItcmSizeKBytes),
+                 .DtcmSizeKBytes(DtcmSizeKBytes))
   i_coralnpu_soc(
       .clk_i(clk_i),
       .clk_isp_i(clk_isp),

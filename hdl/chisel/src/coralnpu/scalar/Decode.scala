@@ -165,7 +165,7 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   // Instructions that should dispatch out of slot 0, with no other instructions
   // dispatched on the same cycle.
   def forceSlot0Only(): Bool = {
-    isFency() || isCsr()
+    isFency() || isCsr() || isFloat() || rvvReadsFloatRs1() || rvvWritesFrd()
   }
 
   // Checks if an instruction is a jump or changes context switch. Instructions
@@ -180,6 +180,14 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   def floatReadsFloatRs1(): Bool = { float.map(f => f.valid && f.bits.float_rs1).getOrElse(false.B) }
   def floatReadsRs2(): Bool = { float.map(f => f.valid && f.bits.uses_rs2).getOrElse(false.B) }
   def floatReadsRs3(): Bool = { float.map(f => f.valid && f.bits.uses_rs3).getOrElse(false.B) }
+
+  def rvvReadsFloatRs1(): Bool = {
+    rvv.map(x => x.valid && x.bits.readsFloatRs1()).getOrElse(false.B)
+  }
+
+  def rvvWritesFrd(): Bool = {
+    rvv.map(x => x.valid && x.bits.writesFrd()).getOrElse(false.B)
+  }
 
   def rvvWritesRd(): Bool = {
     if (p.enableRvv) {
@@ -246,6 +254,7 @@ class Dispatch(p: Parameters) extends Module {
     val busRead = Vec(p.instructionLanes, Flipped(new RegfileBusAddrIO))
     val rdMark_flt = Option.when(p.enableFloat)(Flipped(new RegfileWriteAddrIO))
     val rvvRdMark = Option.when(p.enableRvv)(Vec(p.instructionLanes, Flipped(new RegfileWriteAddrIO)))
+    val frs1Read = Option.when(p.enableFloat)(Vec(p.instructionLanes, Flipped(new RegfileReadAddrIO)))
 
     // ALU interface.
     val alu = Vec(p.instructionLanes, Valid(new AluCmd))
@@ -356,19 +365,27 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   // ---------------------------------------------------------------------------
   // Floating-point Scoreboard
   val rs3Addr = io.inst.map(_.bits.inst(31,27))
-  val writesFloatRd = decodedInsts.map(d => d.isFloat() && !d.floatWritesRd())
+  val writesFloatRd = decodedInsts.map(d =>
+      (d.isFloat() && !d.floatWritesRd()) ||
+      d.rvvWritesFrd()
+  )
   val floatReadScoreboard = if (p.enableFloat) { (0 until p.instructionLanes).map(i =>
-    MuxOR(decodedInsts(i).floatReadsFloatRs1(), UIntToOH(rs1Addr(i), 32)) |
+    MuxOR(decodedInsts(i).floatReadsFloatRs1() || decodedInsts(i).rvvReadsFloatRs1(), UIntToOH(rs1Addr(i), 32)) |
     MuxOR(decodedInsts(i).floatReadsRs2(), UIntToOH(rs2Addr(i), 32)) |
     MuxOR(decodedInsts(i).floatReadsRs3(), UIntToOH(rs3Addr(i), 32))
   ) } else { (0 until p.instructionLanes).map(_ => 0.U(32.W)) }
+
   val floatRdScoreboard = if (p.enableFloat) { (0 until p.instructionLanes).map(i =>
     MuxOR(writesFloatRd(i), UIntToOH(rdAddr(i), 32))
   ) } else { (0 until p.instructionLanes).map(_ => 0.U(32.W)) }
+
+  val floatScoreboardScan = floatRdScoreboard.scan(0.U(32.W))(_ | _)
+  val fcomb = floatScoreboardScan.map(_ | io.fscoreboard.getOrElse(0.U))
+
   val floatReadAfterWrite = (0 until p.instructionLanes).map(i =>
-      (floatReadScoreboard(i) & io.fscoreboard.getOrElse(0.U)) =/= 0.U(32.W))
+      (floatReadScoreboard(i) & fcomb(i)) =/= 0.U(32.W))
   val floatWriteAfterWrite = (0 until p.instructionLanes).map(i =>
-      (floatRdScoreboard(i) & io.fscoreboard.getOrElse(0.U)) =/= 0.U(32.W))
+      (floatRdScoreboard(i) & fcomb(i)) =/= 0.U(32.W))
   // For floating point store
   if (p.enableFloat) {
     io.fbusPortAddr.get := rs2Addr(0)
@@ -747,6 +764,11 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     io.rs2Set(i).valid := io.inst(i).fire && d.rs2Set()
     io.rs2Set(i).value := MuxCase(d.imm12, IndexedSeq((d.auipc || d.lui) -> d.imm20))
 
+    if (p.enableFloat) {
+      io.frs1Read.get(i).valid := io.inst(i).fire && d.rvvReadsFloatRs1()
+      io.frs1Read.get(i).addr  := rs1Addr(i)
+    }
+
     // Set scalar registers to write
     val rdMark_valid =
         io.alu(i).fire || io.mlu(i).fire || io.dvu(i).fire ||
@@ -761,9 +783,21 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
     // Set floating point registers to write
     if (p.enableFloat && (i == 0)) {
-      val rdMark_flt_valid = (io.float.get.fire && !d.float.get.bits.scalar_rd) || (io.lsu(i).fire && d.isFloatLoad())
+      val rvvWritesFrd = if (p.enableRvv) { io.rvv.get(0).fire && d.rvvWritesFrd() } else { false.B }
+
+      // Double-check that our slot0 restriction is working: no other lane should fire a write.
+      if (p.instructionLanes > 1) {
+        val rvvWritesFrdOtherLanes = io.rvv.map(x =>
+          (1 until p.instructionLanes).map(j => x(j).fire && x(j).bits.writesFrd())
+        ).getOrElse(Seq.fill(p.instructionLanes - 1)(false.B))
+        assert(!VecInit(rvvWritesFrdOtherLanes).asUInt.orR)
+      }
+
+      val rdMark_flt_valid = (io.float.get.fire && !d.float.get.bits.scalar_rd) ||
+                             (io.lsu(0).fire && d.isFloatLoad()) ||
+                             rvvWritesFrd
       io.rdMark_flt.get.valid := rdMark_flt_valid
-      io.rdMark_flt.get.addr := rdAddr(i)
+      io.rdMark_flt.get.addr := rdAddr(0)
     }
 
     // Set RVV vector registers to write

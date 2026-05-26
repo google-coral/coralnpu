@@ -158,6 +158,12 @@ void sram_cleanup(void *handle) {
   delete sram;
 }
 
+void sram_clear() {
+  for (auto const& [base, sram] : registered_srams) {
+    std::fill(sram->data.begin(), sram->data.end(), 0);
+  }
+}
+
 bool sram_backdoor_load_c(uint64_t global_addr, const uint8_t *data,
                           size_t len) {
   return SramBackdoorLoad(global_addr, data, len);

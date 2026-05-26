@@ -199,16 +199,24 @@ module coralnpu_tb_top;
   // Reset Generation and Initial IRQ/TE Driving
   //--------------------------------------------------------------------------
   initial begin
+    uvm_event pulse_reset_event;
+    pulse_reset_event = new("pulse_reset_event");
+    uvm_config_db#(uvm_event)::set(null, "*", "pulse_reset_event", pulse_reset_event);
+
     // Initialize signals before reset
     irq_if.irq = 1'b0;
     irq_if.te  = 1'b0;
+    resetn = 1'b0; // Start in reset
 
-    // Reset Sequence
-    resetn = 1'b0; // Assert reset
-    `uvm_info("TB_TOP", "Reset Asserted", UVM_LOW)
-    repeat (5) @(posedge clk);
-    resetn = 1'b1; // Deassert reset
-    `uvm_info("TB_TOP", "Reset Deasserted", UVM_LOW)
+    forever begin
+      // Reset Sequence
+      resetn = 1'b0; // Assert reset
+      `uvm_info("TB_TOP", "Reset Asserted", UVM_LOW)
+      repeat (5) @(posedge clk);
+      resetn = 1'b1; // Deassert reset
+      `uvm_info("TB_TOP", "Reset Deasserted", UVM_LOW)
+      pulse_reset_event.wait_trigger();
+    end
   end
 
   //--------------------------------------------------------------------------
@@ -228,24 +236,22 @@ module coralnpu_tb_top;
   //--------------------------------------------------------------------------
   // ELF Memory Loading and `tohost` Monitor
   //--------------------------------------------------------------------------
-  import "DPI-C" function void sram_load_elf(input string filename);
-
   initial begin
     string test_elf;
     string tohost_addr_str;
     logic [31:0] tohost_addr;
     uvm_event tohost_written_event;
+    uvm_event test_start_event;
 
     tohost_written_event = new("tohost_written_event");
     uvm_config_db#(uvm_event)::set(null, "*",
                                    "tohost_written_event",
                                    tohost_written_event);
 
-    // Load memories at time 0
-    if ($value$plusargs("TEST_ELF=%s", test_elf)) begin
-      `uvm_info("TB_TOP", $sformatf("Backdoor loading ELF from %s", test_elf), UVM_LOW)
-      sram_load_elf(test_elf);
-    end
+    test_start_event = new("test_start_event");
+    uvm_config_db#(uvm_event)::set(null, "*",
+                                   "test_start_event",
+                                   test_start_event);
 
     // Get the tohost address from the plusargs
     if ($value$plusargs("TOHOST_ADDR=%s", tohost_addr_str)) begin
@@ -256,35 +262,42 @@ module coralnpu_tb_top;
       end
     end
 
-    // Fork a process that waits for the write
+    // Fork a process that waits for start, then monitors for write
     fork
       forever begin
-        @(posedge clk);
-        // Check internal data bus (dbus)
-        if (u_dut.core.io_dbus_valid && u_dut.core.io_dbus_write &&
-            u_dut.core.io_dbus_addr == tohost_addr) begin
-          if (u_dut.core.io_dbus_wdata[0] == 1'b1) begin
-            `uvm_info("TB_TOP_MONITOR", "tohost write detected on DBUS.", UVM_LOW)
-            uvm_config_db#(logic [127:0])::set(null, "*",
-                "final_tohost_data", u_dut.core.io_dbus_wdata);
-            tohost_written_event.trigger();
-            break; // Stop monitoring once triggered
-          end
-        end
+        test_start_event.wait_trigger();
 
-        // Check external bus (ebus)
-        if (u_dut.core.io_ebus_dbus_valid && u_dut.core.io_ebus_dbus_ready &&
-            u_dut.core.io_ebus_dbus_write && u_dut.core.io_ebus_dbus_addr == tohost_addr) begin
-          if (u_dut.core.io_ebus_dbus_wdata[0] == 1'b1) begin
-            `uvm_info("TB_TOP_MONITOR", "tohost write detected on EBUS.", UVM_LOW)
-            uvm_config_db#(logic [127:0])::set(null, "*",
-                "final_tohost_data", u_dut.core.io_ebus_dbus_wdata);
-            tohost_written_event.trigger();
-            break; // Stop monitoring once triggered
+        // Dynamic tohost update support
+        void'(uvm_config_db#(logic [31:0])::get(null, "*", "tohost_addr", tohost_addr));
+
+        forever begin
+          @(posedge clk);
+          // Check internal data bus (dbus)
+          if (u_dut.core.io_dbus_valid && u_dut.core.io_dbus_write &&
+              u_dut.core.io_dbus_addr == tohost_addr) begin
+            if (u_dut.core.io_dbus_wdata[0] == 1'b1) begin
+              `uvm_info("TB_TOP_MONITOR", "tohost write detected on DBUS.", UVM_LOW)
+              uvm_config_db#(logic [127:0])::set(null, "*",
+                  "final_tohost_data", u_dut.core.io_dbus_wdata);
+              tohost_written_event.trigger();
+              break; // Stop monitoring for this test
+            end
+          end
+
+          // Check external bus (ebus)
+          if (u_dut.core.io_ebus_dbus_valid && u_dut.core.io_ebus_dbus_ready &&
+              u_dut.core.io_ebus_dbus_write && u_dut.core.io_ebus_dbus_addr == tohost_addr) begin
+            if (u_dut.core.io_ebus_dbus_wdata[0] == 1'b1) begin
+              `uvm_info("TB_TOP_MONITOR", "tohost write detected on EBUS.", UVM_LOW)
+              uvm_config_db#(logic [127:0])::set(null, "*",
+                  "final_tohost_data", u_dut.core.io_ebus_dbus_wdata);
+              tohost_written_event.trigger();
+              break; // Stop monitoring for this test
+            end
           end
         end
       end
-    join
+    join_none
   end
 
 

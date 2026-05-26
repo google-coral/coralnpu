@@ -395,6 +395,7 @@ py_library(
     deps = [
         "//coralnpu_test_utils:TileLinkULInterface",
         "//coralnpu_test_utils:axi_slave",
+        "//coralnpu_test_utils:backdoor",
         "//coralnpu_test_utils:spi_master",
         requirement("pyelftools"),
         "@bazel_tools//tools/python/runfiles",
@@ -414,6 +415,7 @@ cocotb_test_suite(
         "deps": [
             "//coralnpu_test_utils:TileLinkULInterface",
             "//coralnpu_test_utils:axi_slave",
+            "//coralnpu_test_utils:backdoor",
             "//coralnpu_test_utils:spi_master",
             requirement("pyelftools"),
             "@bazel_tools//tools/python/runfiles",

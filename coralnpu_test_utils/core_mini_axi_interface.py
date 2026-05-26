@@ -821,8 +821,24 @@ class CoreMiniAxiInterface:
     data.append(beat_data[offset:offset+4])
     return np.concatenate(data)
 
-  async def load_elf(self, f):
-    """Loads an ELF file into DUT memory, and returns the entry point address."""
+  async def load_elf(self, f, backdoor: bool = True):
+    """Loads an ELF into DUT memory and returns the entry point.
+
+    Defaults to the fast `load_elf_backdoor` path. Pass `backdoor=False` to
+    force the classic AXI bus-write path (`load_elf_axi`) for tests that
+    specifically exercise frontdoor loading.
+    """
+    # Check environment variable override
+    if os.environ.get("COCOTB_USE_FRONTDOOR") == "1":
+      backdoor = False
+
+    if backdoor:
+      return await self.load_elf_backdoor(f)
+    return await self.load_elf_axi(f)
+
+  async def load_elf_axi(self, f):
+    """Loads an ELF file into DUT memory via AXI bus writes (frontdoor),
+    and returns the entry point address."""
     elf_file = ELFFile(f)
     entry_point = elf_file.header["e_entry"]
     for segment in elf_file.iter_segments(type="PT_LOAD"):
@@ -838,13 +854,25 @@ class CoreMiniAxiInterface:
     return entry_point
 
   async def load_elf_backdoor(self, f):
-    """Loads an ELF file into DUT memory via backdoor, and returns the entry point address."""
+    """Loads an ELF file into DUT memory via backdoor, and returns the entry point address.
+
+    Segments landing in the testbench-side AXI slave region (`self.memory`)
+    are written directly to that numpy array — matching `load_elf_axi`'s
+    handling. The DPI `sram_backdoor_load_c` only reaches Chisel-emitted
+    SRAMs inside the DUT, not the Python AxiSlave model.
+    """
     elf_file = ELFFile(f)
     entry_point = elf_file.header["e_entry"]
     for segment in elf_file.iter_segments(type="PT_LOAD"):
       header = segment.header
       data = np.frombuffer(segment.data(), dtype=np.uint8)
       if len(data) == 0:
+        continue
+      if self._axi_memory_contains(header["p_paddr"]) and \
+         self._axi_memory_contains(header["p_paddr"] + len(data) - 1):
+        memory_start = header["p_paddr"] - self.memory_base_addr
+        memory_end = memory_start + len(data)
+        self.memory[memory_start:memory_end] = data
         continue
       self.dut._log.info(f"Backdoor loading {len(data)} bytes to 0x{header['p_paddr']:08x}")
       backdoor_load(header["p_paddr"], data)

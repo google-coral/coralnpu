@@ -61,6 +61,26 @@ parameters:
     description: Path to ROM
     default: ""
     paramtype: vlogparam
+  BootAddr:
+    datatype: int
+    description: "PC reset value. 0 for ITCM, 0x10000000 for ROM boot."
+    default: 0
+    paramtype: vlogparam
+  EnableAutoboot:
+    datatype: int
+    description: "Enable autonomous boot release"
+    default: 0
+    paramtype: vlogparam
+  ItcmSizeKBytes:
+    datatype: int
+    description: "ITCM size in KBytes"
+    default: 8
+    paramtype: vlogparam
+  DtcmSizeKBytes:
+    datatype: int
+    description: "DTCM size in KBytes"
+    default: 32
+    paramtype: vlogparam
   USE_GENERIC:
     datatype: bool
     description: "Use generic primitives"
@@ -102,6 +122,10 @@ targets:
       - IspClockFrequencyMhz
       - SpimClockFrequencyMhz
       - MemInitFile
+      - BootAddr
+      - EnableAutoboot
+      - ItcmSizeKBytes
+      - DtcmSizeKBytes
       - USE_GENERIC=true
       - FPGA_XILINX=true
       - TB_SUPPORT=true

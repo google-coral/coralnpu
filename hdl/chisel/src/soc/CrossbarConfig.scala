@@ -70,7 +70,8 @@ class CrossbarConfig(itcmSize: MemorySize, dtcmSize: MemorySize) {
       HostConfig("spi2tlul", width = 128),
       HostConfig("dma", width = 128),
       HostConfig("ispyocto_m1", width = 64, clockDomain = "isp_axi_clk"),
-      HostConfig("ispyocto_m2", width = 64, clockDomain = "isp_axi_clk")
+      HostConfig("ispyocto_m2", width = 64, clockDomain = "isp_axi_clk"),
+      HostConfig("autoboot", width = 32)
     )
     if (enableTestHarness) {
       baseHosts :+ HostConfig("test_host_32", width = 32, clockDomain = "test")
@@ -127,7 +128,8 @@ class CrossbarConfig(itcmSize: MemorySize, dtcmSize: MemorySize) {
       "spi2tlul" -> Seq("coralnpu_device", "sram", "ddr_ctrl", "ddr_mem"),
       "dma" -> Seq("sram", "coralnpu_device", "rom", "ddr_ctrl", "ddr_mem", "spi_master", "gpio", "i2c_master", "uart0", "uart1", "spi_master_flash", "clint", "plic", "ispyocto_ctrl", "clk_table"),
       "ispyocto_m1" -> Seq("sram", "ddr_mem", "coralnpu_device"),
-      "ispyocto_m2" -> Seq("sram", "ddr_mem", "coralnpu_device")
+      "ispyocto_m2" -> Seq("sram", "ddr_mem", "coralnpu_device"),
+      "autoboot" -> Seq("coralnpu_device")
     )
     if (enableTestHarness) {
       baseConnections + ("test_host_32" -> Seq("rom", "sram", "uart0", "coralnpu_device", "ddr_ctrl", "ddr_mem", "spi_master", "gpio", "i2c_master", "dma", "spi_master_flash", "clint", "plic", "ispyocto_ctrl", "clk_table"))

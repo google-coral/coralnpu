@@ -73,6 +73,9 @@ bool spi_flash_page_program(uint32_t addr, const uint8_t* data, uint32_t len);
 // Read data from flash
 void spi_flash_read(uint32_t addr, uint8_t* data, uint32_t len);
 
+// Read data from flash using DMA in half-duplex RX mode.
+void spi_flash_read_dma(uint32_t addr, uint8_t* data, uint32_t len);
+
 // Read SFDP data
 void spi_flash_read_sfdp(uint32_t addr, uint8_t* data, uint32_t len);
 

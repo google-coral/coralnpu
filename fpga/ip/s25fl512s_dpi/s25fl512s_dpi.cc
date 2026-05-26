@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 
 #include "svdpi.h"
@@ -443,6 +444,17 @@ extern "C" {
 S25fl512sState* s25fl512s_dpi_init() {
   S25fl512sState* ctx = new S25fl512sState();
   memset(ctx->memory, 0xFF, FLASH_SIZE);
+
+  const char* init_file = getenv("FLASH_INIT_FILE");
+  if (init_file) {
+    std::ifstream fs(init_file, std::ios::binary);
+    if (fs) {
+      fs.read(reinterpret_cast<char*>(ctx->memory), FLASH_SIZE);
+      std::cout << "DPI: Loaded " << fs.gcount() << " bytes from " << init_file
+                << " into flash." << std::endl;
+    }
+  }
+
   ctx->status_reg = 0;
   flash_reset(ctx);
   std::cout << "DPI: S25FL512S Flash Model Initialized (" << FLASH_SIZE / 1024
@@ -459,7 +471,6 @@ void s25fl512s_dpi_close(S25fl512sState* ctx) {
 
 void s25fl512s_dpi_reset(S25fl512sState* ctx) {
   if (ctx) {
-    memset(ctx->memory, 0xFF, FLASH_SIZE);
     ctx->status_reg = 0;
     flash_reset(ctx);
   }

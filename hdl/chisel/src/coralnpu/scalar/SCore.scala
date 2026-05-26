@@ -319,22 +319,30 @@ class SCore(p: Parameters) extends Module {
   if (p.enableFloat) {
     lsu.io.busPort_flt.get := fRegfile.get.io.busPort
     fRegfile.get.io.busPortAddr := dispatch.io.fbusPortAddr.get
-    floatCore.get.io.read_ports <> fRegfile.get.io.read_ports
-    floatCore.get.io.write_ports <> fRegfile.get.io.write_ports
     fRegfile.get.io.scoreboard_set :=
       MuxOR(dispatch.io.rdMark_flt.get.valid, UIntToOH(dispatch.io.rdMark_flt.get.addr))
-    // Mux input to read port
+    // Mux input to read port 0
     fRegfile.get.io.read_ports(0).valid := MuxCase(false.B, Seq(
       io.dm.float_rs.get.valid -> true.B,
       floatCore.get.io.read_ports(0).valid -> true.B,
+      dispatch.io.frs1Read.get(0).valid -> true.B,
     ))
     fRegfile.get.io.read_ports(0).addr := MuxCase(0.U, Seq(
       io.dm.float_rs.get.valid -> io.dm.float_rs.get.addr,
       floatCore.get.io.read_ports(0).valid -> floatCore.get.io.read_ports(0).addr,
+      dispatch.io.frs1Read.get(0).valid -> dispatch.io.frs1Read.get(0).addr,
     ))
-    // Broadcast data back from read port
-    io.dm.float_rs.get.data := fRegfile.get.io.read_ports(0).data
     floatCore.get.io.read_ports(0).data := fRegfile.get.io.read_ports(0).data
+
+    // Connect read ports 1 and 2 to floatCore
+    for (j <- 1 until 3) {
+      fRegfile.get.io.read_ports(j).valid := floatCore.get.io.read_ports(j).valid
+      fRegfile.get.io.read_ports(j).addr := floatCore.get.io.read_ports(j).addr
+      floatCore.get.io.read_ports(j).data := fRegfile.get.io.read_ports(j).data
+    }
+
+    // Broadcast data back from read port 0 to debug interface
+    io.dm.float_rs.get.data := fRegfile.get.io.read_ports(0).data
 
     // Mux input to write port
     fRegfile.get.io.write_ports(0).valid := MuxCase(false.B, Seq(
@@ -351,9 +359,26 @@ class SCore(p: Parameters) extends Module {
     ))
     fRegfile.get.io.dm_write_valid := io.dm.float_rd.get.valid
 
-    // TODO(derekjchow): Stub-off scalar fp writeback
+    // Route RVV async FP writeback (vfmv.f.s) through fRegfile write port 1.
+    // The LSU FP-load (floatCore.write_ports(1)) takes priority; async_frd
+    // uses the port only when LSU isn't writing. The scoreboard is pre-marked
+    // via rdMark_flt (see Decode.scala), so clearing on this write doesn't
+    // trip FRegfile's scoreboard_error assertion.
+    // Port 1: Arbitrate between LSU FP-load and RVV async writeback.
+    // LSU takes priority; RVV is stalled if LSU is writing.
+    val lsuWriting = floatCore.get.io.write_ports(1).valid
     if (p.enableRvv) {
-      io.rvvcore.get.async_frd.ready := false.B
+      val asyncFrd = io.rvvcore.get.async_frd
+      asyncFrd.ready := !lsuWriting
+      fRegfile.get.io.write_ports(1).valid := lsuWriting || asyncFrd.valid
+      fRegfile.get.io.write_ports(1).addr := Mux(lsuWriting,
+        floatCore.get.io.write_ports(1).addr,
+        asyncFrd.bits.addr)
+      fRegfile.get.io.write_ports(1).data := Mux(lsuWriting,
+        floatCore.get.io.write_ports(1).data,
+        Fp32.fromWord(asyncFrd.bits.data))
+    } else {
+      fRegfile.get.io.write_ports(1) := floatCore.get.io.write_ports(1)
     }
 
     floatCore.get.io.inst <> dispatch.io.float.get
@@ -415,9 +440,16 @@ class SCore(p: Parameters) extends Module {
     io.rvvcore.get.rs := regfile.io.readData
     // Floating point register inputs. Stub-off if unused.
     if (p.enableFloat) {
-      io.rvvcore.get.frs(0) := fRegfile.get.io.read_ports(0).data.asWord
-      for (i <- 1 until p.instructionLanes) {
-        io.rvvcore.get.frs(i) := 0.U
+      // The RVV front-end expects scalar operands to arrive one cycle after
+      // dispatch (registered), similar to how the integer regfile's readData
+      // ports work.
+      val rvvFrsReg = Reg(Vec(p.instructionLanes, UInt(32.W)))
+      for (i <- 0 until p.instructionLanes) {
+        // We use read_ports(0) for all lanes because scalar float operands
+        // are currently restricted to slot 0.
+        rvvFrsReg(i) :=
+          Mux(dispatch.io.frs1Read.get(i).valid, fRegfile.get.io.read_ports(0).data.asWord, rvvFrsReg(i))
+        io.rvvcore.get.frs(i) := rvvFrsReg(i)
       }
     } else {
       for (i <- 0 until p.instructionLanes) {

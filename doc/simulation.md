@@ -33,3 +33,13 @@ vcs_testbench_test(
 
 By default, we disable VCS within bazel. Invoke
 `bazel {build,run,test} --config=vcs` to enable VCS support.
+
+### Troubleshooting
+
+#### CCACHE and VCS (Read-only filesystem error)
+If you encounter an error like `ccache: error: Failed to create temporary file ... Read-only file system` during a VCS simulation, it is because `ccache` is attempting to write to your home directory from within the Bazel sandbox.
+
+**Fix:** Prepend `CCACHE_DISABLE=1` to your command:
+```bash
+bazel --action_env=CCACHE_DISABLE=1 test --config=vcs //...
+```

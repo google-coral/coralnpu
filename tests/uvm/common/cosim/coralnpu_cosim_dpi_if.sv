@@ -23,6 +23,7 @@ package coralnpu_cosim_dpi_if;
     int unsigned itcm_start_address;    // Start address of the ITCM range.
     int unsigned itcm_length;           // Length of the ITCM range.
     int unsigned initial_misa_value;    // Initial value of the misa register.
+    int unsigned architecture;          // 0 - M2, 1 - M3
   } sim_config_t;
 
   // Function to initialize the MPACT simulator.

@@ -42,6 +42,11 @@ module Sram #(
     end
   endgenerate
 
+  // Note on RTSEL/WTSEL: Different macro sizes require different timing control settings.
+  // The simulation models check these pins and may error out if they don't match recommended values.
+  // For synthesized netlist simulation (GLS), the ifdef's area already evaluated and cannot be changed
+  // Use +define+TSMC_NO_TESTPINS_DEFAULT_VALUE_CHECK in VCS, to skip checks in simulation
+  // RTSEL and WTSEL for synthesis may be required for tuning
   if (NUM_ENTRIES == 2048) begin
     TS1N12FFCLLMBLVTD2048X128M4SWBSHO u_sram (
         .BIST(1'b0),
@@ -70,7 +75,7 @@ module Sram #(
 `endif
     );
   end else if (NUM_ENTRIES == 512) begin
-    TS1N12FFCLLMBLVTD512X128M4SWBSHO u_sram (
+    TS1N12FFCLLSBLVTD512X128M4SWBSHO u_sram (
         .BIST(1'b0),
         .SLP(1'b0),
         .DSLP(1'b0),
@@ -93,34 +98,7 @@ module Sram #(
         .WTSEL(2'b0)
 `else
         .RTSEL(2'b1),
-        .WTSEL(2'b1)
-`endif
-    );
-  end else if (NUM_ENTRIES == 128) begin
-    TS1N12FFCLLMBLVTD128X128M4SWBSHO u_sram (
-        .BIST(1'b0),
-        .SLP(1'b0),
-        .DSLP(1'b0),
-        .SD(1'b0),
-        .CLK(clock),
-        .CEB(~enable),
-        .WEB(~write),
-        .A(addr),
-        .D(wdata),
-        .BWEB(nwmask),
-        .CEBM(1'b0),
-        .WEBM(1'b0),
-        .AM(7'b0),
-        .DM(128'b0),
-        .BWEBM({128{1'b1}}),
-        .Q(rdata),
-        .PUDELAY(),
-`ifndef SIMULATION
-        .RTSEL(2'b0),
         .WTSEL(2'b0)
-`else
-        .RTSEL(2'b1),
-        .WTSEL(2'b1)
 `endif
     );
   end else begin
@@ -166,7 +144,7 @@ module Sram #(
         .BC2(1'b0)
     );
   end else if (NUM_ENTRIES == 512) begin
-    sasdulssd8LOW1p512x128m4b2w0c0p0d0l0rm3sdrw01 u_sram (
+    sasdulssd8LOW1p512x128m4b1w0c0p0d0l0rm3sdrw01 u_sram (
         .Q(rdata),
         .ADR(addr),
         .D(wdata),

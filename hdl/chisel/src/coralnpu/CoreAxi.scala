@@ -181,7 +181,7 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
     // This matches the 1-cycle SRAM read latency: rdata reflects the previous cycle's request source.
     val inItcmReg = RegNext(inItcm, true.B)
     core.io.ibus.rdata := Mux(inItcmReg, itcmArbiter.io.source(0).readData.bits, ibus2axi.io.ibus.rdata)
-    core.io.ibus.ready := Mux(inItcm, true.B, ibus2axi.io.ibus.ready)
+    core.io.ibus.ready := Mux(inItcm, inItcmReg, ibus2axi.io.ibus.ready)
     core.io.ibus.fault := ibus2axi.io.ibus.fault
 
     // Build DTCM and connect to dbus

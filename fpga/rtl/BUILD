@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-package(default_visibility = ["//visibility:public"])
-
+load("@lowrisc_opentitan_gh//rules:fusesoc.bzl", "fusesoc_build")
 load("@rules_hdl//verilog:providers.bzl", "verilog_library")
+
+package(default_visibility = ["//visibility:public"])
 
 verilog_library(
     name = "fpga_rtl",
     srcs = [
+        "autoboot.sv",
         "top_pkg.sv",
         "top_racl_pkg.sv",
     ],
@@ -32,5 +34,7 @@ filegroup(
     srcs = glob([
         "*.sv",
         "*.core",
+        "*.cc",
+        "*.vlt",
     ]),
 )

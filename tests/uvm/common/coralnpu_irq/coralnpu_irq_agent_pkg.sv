@@ -61,7 +61,21 @@ package coralnpu_irq_agent_pkg;
   //--------------------------------------------------------------------------
   // Class: coralnpu_irq_sequencer
   //--------------------------------------------------------------------------
-  typedef uvm_sequencer #(irq_transaction) coralnpu_irq_sequencer;
+  class coralnpu_irq_sequencer extends uvm_sequencer #(irq_transaction);
+    `uvm_component_utils(coralnpu_irq_sequencer)
+    virtual coralnpu_irq_if.TB_IRQ_DRIVER vif;
+
+    function new(string name = "coralnpu_irq_sequencer", uvm_component parent = null);
+      super.new(name, parent);
+    endfunction
+
+    virtual function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      if (!uvm_config_db#(virtual coralnpu_irq_if.TB_IRQ_DRIVER)::get(this, "", "vif", vif)) begin
+         `uvm_fatal(get_type_name(), "Virtual interface 'vif' not found for coralnpu_irq_sequencer")
+      end
+    endfunction
+  endclass
 
   //--------------------------------------------------------------------------
   // Class: coralnpu_irq_agent

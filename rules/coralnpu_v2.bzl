@@ -230,6 +230,7 @@ def coralnpu_v2_binary(
         heap_size = "",
         heap_location = "DTCM",
         enable_vmem = True,
+        crt = None,
         **kwargs):
     """A helper macro for generating binary artifacts for the CoralNPU V2 core.
 
@@ -247,6 +248,7 @@ def coralnpu_v2_binary(
       heap_size: Size of heap (e.g. "1K", "128M").
       heap_location: Memory region for heap ("DTCM", "EXTMEM", "DDR").
       enable_vmem: Whether to generate a VMEM file.
+      crt: Optional label for custom CRT. If not provided, uses default CRT.
       **kwargs: Additional arguments forward to cc_binary.
     Emits rules:
       filegroup              named: <name>.bin
@@ -256,7 +258,10 @@ def coralnpu_v2_binary(
     """
 
     deps = kwargs.pop("deps", [])
-    if semihosting:
+    if crt != None:
+        if crt:
+            deps.append(crt)
+    elif semihosting:
         deps.append("//toolchain/crt:crt_semihosting")
     else:
         deps.append("//toolchain/crt")

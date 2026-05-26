@@ -52,6 +52,9 @@ class spike_trace_service extends uvm_object;
   // Function: open_trace
   // Opens the Spike log file for reading. Returns 1 on success, 0 on failure.
   function bit open_trace(string fname);
+    if (is_open && fd != 0) begin
+       $fclose(fd);
+    end
     filename = fname;
     fd = $fopen(filename, "r");
     if (fd == 0) begin

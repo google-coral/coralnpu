@@ -64,6 +64,13 @@ def main():
     parser.add_argument(
         "--dtcm_size_kbytes", type=int, default=32, help="DTCM size in KBytes."
     )
+    parser.add_argument(
+        "--csr_only",
+        action="store_true",
+        help="Skip ELF segment writes; only fire the kickoff CSR sequence "
+             "(PC, clock-gate release, reset release). Use when segments have "
+             "already been backdoor-loaded by the simulator.",
+    )
     args = parser.parse_args()
 
     driver = None
@@ -81,32 +88,38 @@ def main():
             elffile = ELFFile(f)
             entry_point = elffile.header.e_entry
 
-            for segment in elffile.iter_segments():
-                if segment['p_type'] != 'PT_LOAD':
-                    continue
+            if args.csr_only:
+                logging.warning(
+                    "LOADER: --csr_only set; skipping segment writes "
+                    "(segments expected to be backdoor-loaded)."
+                )
+            else:
+                for segment in elffile.iter_segments():
+                    if segment['p_type'] != 'PT_LOAD':
+                        continue
 
-                paddr = segment['p_paddr']
-                data = segment.data()
-                logging.warning(f"LOADER: Loading segment to address 0x{paddr:08x}, size {len(data)} bytes")
+                    paddr = segment['p_paddr']
+                    data = segment.data()
+                    logging.warning(f"LOADER: Loading segment to address 0x{paddr:08x}, size {len(data)} bytes")
 
-                # Load data in pages (up to some reasonable size)
-                original_len = len(data)
-                # Pad data to be a multiple of 16 bytes (a line)
-                if len(data) % 16 != 0:
-                    data += b'\x00' * (16 - (len(data) % 16))
+                    # Load data in pages (up to some reasonable size)
+                    original_len = len(data)
+                    # Pad data to be a multiple of 16 bytes (a line)
+                    if len(data) % 16 != 0:
+                        data += b'\x00' * (16 - (len(data) % 16))
 
-                page_size = 4096
-                for i in range(0, len(data), page_size):
-                    page_addr = paddr + i
-                    page_data_bytes = data[i:i+page_size]
+                    page_size = 4096
+                    for i in range(0, len(data), page_size):
+                        page_addr = paddr + i
+                        page_data_bytes = data[i:i+page_size]
 
-                    write_lines_via_spi(driver, page_addr, page_data_bytes)
+                        write_lines_via_spi(driver, page_addr, page_data_bytes)
 
-                    bytes_written = min(i + len(page_data_bytes), original_len)
-                    logging.warning(f"  ... wrote {bytes_written}/{original_len} bytes")
-                logging.warning(f"  ... wrote {original_len}/{original_len} bytes")
+                        bytes_written = min(i + len(page_data_bytes), original_len)
+                        logging.warning(f"  ... wrote {bytes_written}/{original_len} bytes")
+                    logging.warning(f"  ... wrote {original_len}/{original_len} bytes")
 
-        logging.warning("LOADER: Binary loaded successfully.")
+                logging.warning("LOADER: Binary loaded successfully.")
 
         # --- Execute Program ---
         # In the default configuration, CSRs are at 0x30000.

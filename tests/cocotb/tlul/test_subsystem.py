@@ -22,6 +22,7 @@ from bazel_tools.tools.python.runfiles import runfiles
 
 from coralnpu_test_utils.TileLinkULInterface import TileLinkULInterface, create_a_channel_req
 from coralnpu_test_utils.axi_slave import AxiSlave
+from coralnpu_test_utils.backdoor import backdoor_load
 from coralnpu_test_utils.spi_master import SPIMaster
 
 # --- Constants ---
@@ -59,7 +60,40 @@ async def setup_dut(dut, boot_addr=0):
 
     return clock
 
-async def load_elf(dut, elf_file, host_if):
+async def load_elf(dut, elf_file, host_if=None, backdoor: bool = True):
+    """Loads an ELF into DUT memory and returns the entry point.
+
+    Defaults to the fast `load_elf_backdoor` path. Pass `backdoor=False` (and
+    a `host_if`) to force the classic TLUL host bus-write path
+    (`load_elf_tlul_host`) for tests that specifically exercise frontdoor
+    loading. Tests that exercise the spi2tlul frontdoor path should call
+    `load_elf_via_spi` directly.
+    """
+    if backdoor:
+        return await load_elf_backdoor(dut, elf_file)
+    assert host_if is not None, "frontdoor TLUL load requires host_if"
+    return await load_elf_tlul_host(dut, elf_file, host_if)
+
+
+async def load_elf_backdoor(dut, elf_file):
+    """Loads an ELF into DUT memory via the sram_backdoor DPI.
+
+    Skips bus traffic entirely; reaches into Chisel-emitted SRAMs through
+    the same `sram_backdoor_load_c` symbol used by `CoreMiniAxiInterface`.
+    """
+    elf = ELFFile(elf_file)
+    entry_point = elf.header.e_entry
+    for segment in elf.iter_segments(type='PT_LOAD'):
+        paddr = segment.header.p_paddr
+        data = np.frombuffer(segment.data(), dtype=np.uint8)
+        if len(data) == 0:
+            continue
+        dut._log.info(f"Backdoor loading {len(data)} bytes to 0x{paddr:08x}")
+        backdoor_load(paddr, data)
+    return entry_point
+
+
+async def load_elf_tlul_host(dut, elf_file, host_if):
     """Parses an ELF file and loads its segments into memory via TileLink."""
     elf = ELFFile(elf_file)
     entry_point = elf.header.e_entry
@@ -254,7 +288,12 @@ async def test_tlul_passthrough(dut):
 
 @cocotb.test()
 async def test_program_execution_via_host(dut):
-    """Loads and executes a program via an external host port."""
+    """Loads and executes a program via an external host port.
+
+    Pinned to the frontdoor TLUL-host load path: this is the regression
+    test for `load_elf_tlul_host`. Other tests in this file silently use
+    the backdoor default.
+    """
     clock = await setup_dut(dut)
 
     # Instantiate a TL-UL host
@@ -274,7 +313,7 @@ async def test_program_execution_via_host(dut):
     assert elf_path, "Could not find ELF file"
 
     with open(elf_path, "rb") as f:
-        entry_point = await load_elf(dut, f, host_if)
+        entry_point = await load_elf(dut, f, host_if, backdoor=False)
 
     dut._log.info(f"Program loaded. Entry point: 0x{entry_point:08x}")
 

@@ -189,6 +189,8 @@ cc_library(
     srcs = ["sw/spi_flash.c"],
     hdrs = ["sw/spi_flash.h"],
     deps = [
+        ":clk",
+        ":dma",
         ":gpio",
         ":spi",
     ],
@@ -234,6 +236,10 @@ coralnpu_v2_binary(
 coralnpu_v2_sim_test(
     name = "trivial_pass_sim_test",
     srcs = ["sw/trivial_pass_test.cc"],
+    # Pinned to the SPI loader path so we keep regression coverage of the
+    # spi2tlul ELF-load bridge. Every other coralnpu_v2_sim_test uses the
+    # default backdoor loader.
+    loader = "spi",
     deps = [":uart"],
 )
 
@@ -382,18 +388,57 @@ filegroup(
     output_group = "bin_file",
 )
 
-_MEM_VARIANTS = {
-    "default": {
+filegroup(
+    name = "rom_test_vmem",
+    srcs = [":rom_test"],
+    output_group = "vmem_file",
+)
+
+filegroup(
+    name = "rom_test_highmem_vmem",
+    srcs = [":rom_test_highmem"],
+    output_group = "vmem_file",
+)
+
+# Configuration for different memory variants
+_MEM_CONFIGS = [
+    {
+        "name": "default",
+        "suffix": "",
         "chisel_core": "//fpga/ip/coralnpu_chisel_subsystem_default:coralnpu_chisel_subsystem_default.core",
         "chisel_rtl": "//fpga/ip/coralnpu_chisel_subsystem_default:rtl_files",
         "verilator_options": ":verilator_options_default",
+        "itcm": "8",
+        "dtcm": "32",
+        "rom_vmem": ":rom_test_vmem",
+        "rom_vmem_file": "$(location :rom_test_vmem)",
     },
-    "highmem": {
+    {
+        "name": "highmem",
+        "suffix": "_highmem",
         "chisel_core": "//fpga/ip/coralnpu_chisel_subsystem_highmem:coralnpu_chisel_subsystem_highmem.core",
         "chisel_rtl": "//fpga/ip/coralnpu_chisel_subsystem_highmem:rtl_files",
         "verilator_options": ":verilator_options_highmem",
+        "itcm": "1024",
+        "dtcm": "1024",
+        "rom_vmem": ":rom_test_highmem_vmem",
+        "rom_vmem_file": "$(location :rom_test_highmem_vmem)",
     },
-}
+]
+
+# Boot modes to generate for each memory variant
+_BOOT_MODES = [
+    {
+        "name": "itcm",
+        "suffix": "",
+        "is_rom": False,
+    },
+    {
+        "name": "rom",
+        "suffix": "_rom",
+        "is_rom": True,
+    },
+]
 
 CORALNPU_SOC_SRCS_COMMON = [
     ":rtl_files_common",
@@ -451,23 +496,30 @@ VERILATOR_COMMON_CORES = [
     "//fpga/ip/ispyocto:ispyocto_core",
 ]
 
+# Generate Verilator build targets
 _VERILATOR_NAME_MAP = {
-    "build_chip_verilator" + ("_highmem" if name == "highmem" else ""): {
-        "cores": CORALNPU_SOC_CORES_COMMON + VERILATOR_COMMON_CORES + [cfg["chisel_core"]],
-        "srcs": VERILATOR_COMMON_SRCS + [cfg["chisel_rtl"]],
-        "verilator_options": cfg["verilator_options"],
+    "build_chip_verilator" + m["suffix"] + b["suffix"]: {
+        "cores": CORALNPU_SOC_CORES_COMMON + VERILATOR_COMMON_CORES + [m["chisel_core"]],
+        "srcs": VERILATOR_COMMON_SRCS + [m["chisel_rtl"]] + ([m["rom_vmem"]] if b["is_rom"] else []),
+        "verilator_options": m["verilator_options"],
+        "flags": [
+            "--ClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,
+            "--IspClockFrequencyMhz=" + _ISP_CLOCK_FREQUENCY_MHZ,
+            "--SpimClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,
+            "--ItcmSizeKBytes=" + m["itcm"],
+            "--DtcmSizeKBytes=" + m["dtcm"],
+        ] + ([
+            "--EnableAutoboot=1",
+            "--BootAddr=268435456",
+        ] if b["is_rom"] else []),
     }
-    for name, cfg in _MEM_VARIANTS.items()
+    for m in _MEM_CONFIGS
+    for b in _BOOT_MODES
 }
 
 template_rule(
     fusesoc_build,
     _VERILATOR_NAME_MAP,
-    flags = [
-        "--ClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,
-        "--IspClockFrequencyMhz=" + _ISP_CLOCK_FREQUENCY_MHZ,
-        "--SpimClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,  # Verilator uses clk_i for spim
-    ],
     make_options = ":make_options",
     output_groups = {
         "binary": ["com.google.coralnpu_fpga_chip_verilator_0.1/sim-verilator/Vchip_verilator"],
@@ -510,21 +562,26 @@ NEXUS_COMMON_CORES = [
     "//fpga/ip/ispyocto:tlul2ahblite_files",
 ] + DDR_CORES
 
+# Generate Nexus build targets (bitstream and synth_only)
 _NEXUS_NAME_MAP = {
-    "build_chip_nexus_" + build_type + ("_" + name if name != "default" else ""): {
-        "cores": CORALNPU_SOC_CORES_COMMON + NEXUS_COMMON_CORES + [cfg["chisel_core"]],
+    "build_chip_nexus_" + build_type + m["suffix"] + b["suffix"]: {
+        "cores": CORALNPU_SOC_CORES_COMMON + NEXUS_COMMON_CORES + [m["chisel_core"]],
+        "srcs": NEXUS_COMMON_SRCS + [m["chisel_rtl"]] + ([m["rom_vmem"]] if b["is_rom"] else []),
         "flags": [
             "--ClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,
             "--IspClockFrequencyMhz=" + _ISP_CLOCK_FREQUENCY_MHZ,
             "--SpimClockFrequencyMhz=" + _SPIM_CLOCK_FREQUENCY_MHZ,
-        ] + (["--pnr=none"] if build_type == "synth_only" else []),
-        "srcs": NEXUS_COMMON_SRCS + [cfg["chisel_rtl"]],
+            "--ItcmSizeKBytes=" + m["itcm"],
+            "--DtcmSizeKBytes=" + m["dtcm"],
+        ] + ([
+            "--EnableAutoboot=1",
+            "--MemInitFile=" + m["rom_vmem_file"],
+            "--BootAddr=268435456",
+        ] if b["is_rom"] else []) + (["--pnr=none"] if build_type == "synth_only" else []),
     }
-    for name, cfg in _MEM_VARIANTS.items()
-    for build_type in [
-        "bitstream",
-        "synth_only",
-    ]
+    for m in _MEM_CONFIGS
+    for b in _BOOT_MODES
+    for build_type in ["bitstream", "synth_only"]
 }
 
 template_rule(
@@ -564,6 +621,110 @@ genrule(
     cmd = "cp $< $@",
 )
 
+filegroup(
+    name = "chip_verilator_rom_binary",
+    srcs = [":build_chip_verilator_rom"],
+    output_group = "binary",
+)
+
+genrule(
+    name = "copy_chip_verilator_rom_binary",
+    srcs = [":chip_verilator_rom_binary"],
+    outs = ["Vchip_verilator_rom"],
+    cmd = "cp $< $@",
+)
+
+filegroup(
+    name = "chip_verilator_highmem_rom_binary",
+    srcs = [":build_chip_verilator_highmem_rom"],
+    output_group = "binary",
+)
+
+genrule(
+    name = "copy_chip_verilator_highmem_rom_binary",
+    srcs = [":chip_verilator_highmem_rom_binary"],
+    outs = ["Vchip_verilator_highmem_rom"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "gen_flash_boot_bin",
+    srcs = [":trivial_pass_sim_test_binary.elf"],
+    outs = ["flash_boot.bin"],
+    cmd = "$(location sw/rom_boot/make_flash_image.py) $< $@",
+    tools = ["sw/rom_boot/make_flash_image.py"],
+)
+
+py_test(
+    name = "rom_boot_sim_test",
+    srcs = [
+        "sw/rom_boot/rom_boot_sim_test.py",
+        "sw/rom_boot/make_flash_image.py",
+    ],
+    args = [
+        "--sim_binary",
+        "coralnpu_hw/fpga/Vchip_verilator_rom",
+        "--rom_vmem",
+        "coralnpu_hw/fpga/rom_test.vmem",
+        "--flash_image",
+        "coralnpu_hw/fpga/flash_boot.bin",
+        "--sim_timeout",
+        "600",
+    ],
+    main = "sw/rom_boot/rom_boot_sim_test.py",
+    tags = ["exclusive"],
+    timeout = "long",
+    data = [
+        ":copy_chip_verilator_rom_binary",
+        ":rom_test.elf",
+        ":rom_test_vmem",
+        ":flash_boot.bin",
+    ],
+    deps = [
+        "//utils/coralnpu_soc_loader:spi_driver",
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+genrule(
+    name = "gen_flash_boot_highmem_bin",
+    srcs = [":trivial_pass_highmem_sim_test_binary.elf"],
+    outs = ["flash_boot_highmem.bin"],
+    cmd = "$(location sw/rom_boot/make_flash_image.py) $< $@",
+    tools = ["sw/rom_boot/make_flash_image.py"],
+)
+
+py_test(
+    name = "rom_boot_highmem_sim_test",
+    srcs = [
+        "sw/rom_boot/rom_boot_sim_test.py",
+        "sw/rom_boot/make_flash_image.py",
+    ],
+    args = [
+        "--sim_binary",
+        "coralnpu_hw/fpga/Vchip_verilator_highmem_rom",
+        "--rom_vmem",
+        "coralnpu_hw/fpga/rom_test_highmem.vmem",
+        "--flash_image",
+        "coralnpu_hw/fpga/flash_boot_highmem.bin",
+        "--sim_timeout",
+        "600",
+    ],
+    main = "sw/rom_boot/rom_boot_sim_test.py",
+    tags = ["exclusive"],
+    timeout = "long",
+    data = [
+        ":copy_chip_verilator_highmem_rom_binary",
+        ":rom_test_highmem.elf",
+        ":rom_test_highmem_vmem",
+        ":flash_boot_highmem.bin",
+    ],
+    deps = [
+        "//utils/coralnpu_soc_loader:spi_driver",
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
 # Ensure bazel clean is run if internal dir is added or removed from tree
 py_test(
     name = "check_pins_test",
@@ -586,6 +747,36 @@ py_test(
 )
 
 # Rules to available ispyocto and axi2sramcrs in the sandbox
+cc_library(
+    name = "rom_boot_crt0",
+    srcs = ["sw/rom_boot/crt0.S"],
+    target_compatible_with = ["//platforms/cpu:coralnpu_v2"],
+)
+
+coralnpu_v2_binary(
+    name = "rom_test",
+    srcs = ["sw/rom_boot/main.c"],
+    crt = ":rom_boot_crt0",
+    linker_script = "sw/rom_boot/rom.ld",
+    deps = [
+        ":dma",
+        ":spi_flash",
+        ":uart",
+    ],
+)
+
+coralnpu_v2_binary(
+    name = "rom_test_highmem",
+    srcs = ["sw/rom_boot/main.c"],
+    crt = ":rom_boot_crt0",
+    linker_script = "sw/rom_boot/rom_highmem.ld",
+    deps = [
+        ":dma",
+        ":spi_flash",
+        ":uart",
+    ],
+)
+
 genrule(
     name = "unpack_ispyocto",
     srcs = ["@ispyocto//:ispyocto_rtl_files"],

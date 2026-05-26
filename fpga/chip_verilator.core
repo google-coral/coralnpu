@@ -67,6 +67,21 @@ parameters:
     description: "PC reset value. 0 for ITCM, 0x10000000 for ROM boot."
     default: 0
     paramtype: vlogparam
+  EnableAutoboot:
+    datatype: int
+    description: "Enable autonomous boot release"
+    default: 0
+    paramtype: vlogparam
+  ItcmSizeKBytes:
+    datatype: int
+    description: "ITCM size in KBytes"
+    default: 8
+    paramtype: vlogparam
+  DtcmSizeKBytes:
+    datatype: int
+    description: "DTCM size in KBytes"
+    default: 32
+    paramtype: vlogparam
 
 targets:
   default: &default_target
@@ -85,6 +100,9 @@ targets:
       - SpimClockFrequencyMhz
       - MemInitFile
       - BootAddr
+      - EnableAutoboot
+      - ItcmSizeKBytes
+      - DtcmSizeKBytes
     tools:
       verilator:
         mode: cc

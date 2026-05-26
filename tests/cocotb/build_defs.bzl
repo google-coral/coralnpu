@@ -75,6 +75,20 @@ VCS_DEFINES = {
     "TB_SUPPORT": "",
     "ZVE32F_ON": "",
     "VLEN_128": "",
+    # Skips default value checks for RTSEL and WTSEL pins in TSMC simulation models
+    "TSMC_NO_TESTPINS_DEFAULT_VALUE_CHECK": "",
+}
+
+VCS_NETLIST_BUILD_ARGS = [
+    arg
+    for arg in VCS_BUILD_ARGS
+    if arg not in ["-I../hdl/verilog", "../hdl/verilog/sram_backdoor.cc"]
+]
+
+VCS_NETLIST_DEFINES = {
+    k: v
+    for k, v in VCS_DEFINES.items()
+    if k != "USE_GENERIC"
 }
 
 def rvv_core_mini_axi_netlist_test_suite(
@@ -82,6 +96,7 @@ def rvv_core_mini_axi_netlist_test_suite(
         vcs_verilog_sources,
         vcs_build_args_extra = [],
         vcs_data_extra = [],
+        vcs_netlist_defines = VCS_NETLIST_DEFINES,  # Allow overriding netlist defines for technology-specific needs
         **kwargs):
     """A generic template for creating netlist tests for RvvCoreMiniAxi."""
     cocotb_test_suite(
@@ -120,13 +135,13 @@ def rvv_core_mini_axi_netlist_test_suite(
             "data": ["//tests/cocotb:cocotb_test_binary_targets"],
             "size": "enormous",
         },
-        vcs_netlist_build_args = VCS_BUILD_ARGS + vcs_build_args_extra,
+        vcs_netlist_build_args = VCS_NETLIST_BUILD_ARGS + vcs_build_args_extra,
         vcs_netlist_data = [
             "//tests/cocotb:cocotb_test_binary_targets",
             "//tests/cocotb:coverage_exclude.cfg",
             "//tests/cocotb:xprop.cfg",
         ] + vcs_data_extra,
-        vcs_netlist_defines = VCS_DEFINES,
+        vcs_netlist_defines = vcs_netlist_defines,
         vcs_netlist_test_args = VCS_TEST_ARGS,
         vcs_netlist_verilog_sources = vcs_verilog_sources,
         **kwargs

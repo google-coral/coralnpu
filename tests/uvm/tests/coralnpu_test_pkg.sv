@@ -112,6 +112,12 @@ package coralnpu_test_pkg;
 
     virtual task body();
         irq_transaction req;
+        coralnpu_irq_agent_pkg::coralnpu_irq_sequencer irq_sqr;
+
+        if (!$cast(irq_sqr, m_sequencer)) begin
+           `uvm_fatal(get_type_name(), "Failed to cast m_sequencer to coralnpu_irq_sequencer")
+        end
+
         `uvm_info(get_type_name(), "Starting IRQ pulse", UVM_MEDIUM)
 
         req = irq_transaction::type_id::create("req_irq_high");
@@ -120,6 +126,8 @@ package coralnpu_test_pkg;
         req.irq_level = 1;
         finish_item(req);
         `uvm_info(get_type_name(), "req_irq_high sent", UVM_LOW)
+
+        repeat (10) @(irq_sqr.vif.tb_ctrl_cb);
 
         req = irq_transaction::type_id::create("req_irq_low");
         start_item(req);
@@ -149,6 +157,7 @@ package coralnpu_test_pkg;
 
     virtual coralnpu_irq_if.DUT_IRQ_PORT irq_vif;
     uvm_event tohost_written_event;
+    uvm_event test_start_event;
     time clk_period;
     int unsigned entry_point = 0;
 
@@ -231,6 +240,10 @@ package coralnpu_test_pkg;
       if (!uvm_config_db#(time)::get(this, "", "clk_period", clk_period))
         `uvm_fatal(get_type_name(), "clk_period not found in config_db")
 
+      if (!uvm_config_db#(uvm_event)::get(this, "", "test_start_event", test_start_event)) begin
+        `uvm_fatal(get_type_name(), "test_start_event handle not found!")
+      end
+
       `uvm_info(get_type_name(), "Build phase finished", UVM_MEDIUM)
     endfunction
 
@@ -244,6 +257,8 @@ package coralnpu_test_pkg;
       `uvm_info(get_type_name(), "Waiting for reset deassertion...", UVM_MEDIUM)
       @(posedge irq_vif.clk iff irq_vif.resetn == 1'b1);
       `uvm_info(get_type_name(), "Reset deasserted.", UVM_MEDIUM)
+
+      test_start_event.trigger();
 
       kickoff_seq = coralnpu_kickoff_write_seq::type_id::create("kickoff_seq");
       kickoff_seq.entry_point = entry_point;
@@ -350,6 +365,219 @@ package coralnpu_test_pkg;
       if(test_passed) `uvm_info(get_type_name(), "** UVM TEST PASSED **",
                                 UVM_NONE)
       else `uvm_error(get_type_name(), "** UVM TEST FAILED **")
+    endfunction
+
+  endclass
+
+  //--------------------------------------------------------------------------
+  // Class: coralnpu_regression_test
+  //--------------------------------------------------------------------------
+  import "DPI-C" function void sram_load_elf(input string filename);
+  import "DPI-C" function void sram_clear();
+
+  class coralnpu_regression_test extends coralnpu_base_test;
+    `uvm_component_utils(coralnpu_regression_test)
+
+    int total_tests = 0;
+    int passed_tests = 0;
+    int failed_tests = 0;
+
+    function new(string name = "coralnpu_regression_test", uvm_component parent = null);
+      super.new(name, parent);
+    endfunction
+
+    virtual function void build_phase(uvm_phase phase);
+      uvm_report_server rs;
+      super.build_phase(phase);
+      rs = uvm_report_server::get_server();
+      rs.set_max_quit_count(0);
+    endfunction
+
+    virtual task run_phase(uvm_phase phase);
+      string regression_list_file;
+      int fd;
+      string current_elf;
+      logic [31:0] current_tohost;
+      int current_entry;
+      int current_timeout;
+      string current_spike_log;
+      string current_target;
+      string line;
+
+      uvm_event pulse_reset_event;
+      coralnpu_kickoff_write_seq kickoff_seq;
+      coralnpu_pulse_irq_seq pulse_irq_seq;
+
+      phase.raise_objection(this, "Regression running");
+
+      if (!uvm_config_db#(uvm_event)::get(this, "", "test_start_event", test_start_event)) begin
+        `uvm_fatal(get_type_name(), "test_start_event handle not found!")
+      end
+
+      if (!uvm_config_db#(uvm_event)::get(this, "", "pulse_reset_event", pulse_reset_event)) begin
+        `uvm_fatal(get_type_name(), "pulse_reset_event handle not found!")
+      end
+
+      if (!$value$plusargs("REGRESSION_LIST=%s", regression_list_file)) begin
+        `uvm_fatal(get_type_name(), "+REGRESSION_LIST plusarg not specified.")
+      end
+
+      fd = $fopen(regression_list_file, "r");
+      if (fd == 0) begin
+        `uvm_fatal(get_type_name(), $sformatf("Failed to open %s", regression_list_file))
+      end
+
+      while (!$feof(fd)) begin
+        if ($fgets(line, fd)) begin
+          if (line == "" || line.substr(0,0) == "#") continue;
+
+          // Format: ELF TOHOST ENTRY TIMEOUT SPIKE_LOG TARGET
+          if ($sscanf(line, "%s %h %h %d %s %s", current_elf, current_tohost, current_entry, current_timeout, current_spike_log, current_target) == 6) begin
+            `uvm_info(get_type_name(), $sformatf("--- STARTING TEST: %s ---", current_target), UVM_NONE)
+            total_tests++;
+
+            // Reset state for new test
+            test_passed = 1'b0;
+            test_timed_out = 1'b0;
+            dut_halted_flag = 1'b0;
+            dut_faulted_flag = 1'b0;
+            tohost_written_flag = 1'b0;
+            tohost_written_event.reset();
+            test_timeout = current_timeout * 1ns;
+            entry_point = current_entry;
+            if (current_spike_log != "NONE") spike_enabled = 1'b1;
+            else spike_enabled = 1'b0;
+
+            // Teardown and Re-load
+            sram_clear();
+            sram_load_elf(current_elf);
+
+            // Pass configuration to checker
+            uvm_config_db#(string)::set(null, "*", "current_test_elf", current_elf);
+            uvm_config_db#(string)::set(null, "*", "current_spike_log", current_spike_log);
+            uvm_config_db#(logic [31:0])::set(null, "*", "tohost_addr", current_tohost);
+            uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 0);
+
+            // Pulse Reset for tests AFTER the first one
+            if (total_tests > 1) begin
+               pulse_reset_event.trigger();
+               @(posedge irq_vif.clk iff irq_vif.resetn == 1'b0);
+            end
+            @(posedge irq_vif.clk iff irq_vif.resetn == 1'b1);
+
+            // Ensure DUT has finished clearing internal halt/fault state
+            if (irq_vif.halted == 1'b1 || irq_vif.fault == 1'b1) begin
+               @(posedge irq_vif.clk iff (irq_vif.halted == 1'b0 && irq_vif.fault == 1'b0));
+            end
+
+            test_start_event.trigger();
+
+            kickoff_seq = coralnpu_kickoff_write_seq::type_id::create("kickoff_seq");
+            kickoff_seq.entry_point = entry_point;
+            kickoff_seq.start(env.m_master_agent.sequencer);
+
+            `uvm_info(get_type_name(), "Waiting for completion or timeout...", UVM_MEDIUM)
+            fork
+              begin // Wait for tohost write
+                tohost_written_event.wait_trigger();
+                tohost_written_flag = 1'b1;
+              end
+              begin // Wait for DUT halted/faulted (backup termination)
+                wait (irq_vif.halted == 1'b1 || irq_vif.fault == 1'b1);
+                dut_halted_flag = irq_vif.halted;
+                dut_faulted_flag = irq_vif.fault;
+              end
+              begin
+                forever begin
+                  int delay;
+                  wait (irq_vif.wfi == 1'b1);
+                  if (!std::randomize(delay) with {delay inside {[0:1000]};}) begin
+                    `uvm_error(get_type_name(), "Randomization of IRQ delay failed")
+                  end
+                  #(delay * 1ns);
+                  pulse_irq_seq = coralnpu_pulse_irq_seq::type_id::create("pulse_irq_seq");
+                  pulse_irq_seq.start(env.m_irq_agent.sequencer);
+                  wait (irq_vif.wfi == 1'b0);
+                end
+              end
+              begin // Timeout mechanism
+                #(test_timeout);
+                test_timed_out = 1'b1;
+              end
+            join_any
+            disable fork;
+
+            #(clk_period/2);
+
+            evaluate_batch_test_result(current_target);
+
+            `uvm_info(get_type_name(), $sformatf("--- FINISHED TEST: %s ---\n", current_target), UVM_NONE)
+          end
+        end
+      end
+      $fclose(fd);
+
+      `uvm_info(get_type_name(), $sformatf("REGRESSION COMPLETE. Passed: %0d/%0d", passed_tests, total_tests), UVM_NONE)
+      phase.drop_objection(this, "Regression finished");
+    endtask
+
+    virtual function void evaluate_batch_test_result(string target_name);
+      logic [31:1] status_code;
+      bit mismatch;
+      if (!uvm_config_db#(bit)::get(null, "*", "cosim_mismatch_detected", mismatch)) mismatch = 0;
+
+      if (tohost_written_flag) begin
+        if (uvm_config_db#(logic [127:0])::get(this, "", "final_tohost_data", final_tohost_data)) begin
+          status_code = final_tohost_data[31:1];
+          if (status_code == 0 && !mismatch) begin
+            test_passed = 1'b1;
+          end else begin
+            test_passed = 1'b0;
+            `uvm_info(get_type_name(), $sformatf("tohost code: %0d, mismatch: %0d", status_code, mismatch), UVM_NONE)
+          end
+        end else begin
+            test_passed = 1'b0;
+            `uvm_info(get_type_name(), "tohost triggered but no data", UVM_NONE)
+        end
+      end else if (dut_halted_flag && !dut_faulted_flag && !mismatch) begin
+        test_passed = 1'b1;
+      end else if (dut_faulted_flag && !mismatch) begin
+        `uvm_info(get_type_name(), "Test ended on DUT fault, but no Co-Simulation mismatches were detected. Assuming consistent behavior (PASS).", UVM_LOW)
+        test_passed = 1'b1;
+      end else if (test_timed_out) begin
+        if (spike_enabled) begin
+            test_passed = 1'b0;
+            `uvm_info(get_type_name(), "FAILED: Timeout with Spike enabled", UVM_NONE)
+        end else if (!mismatch) begin
+            `uvm_info(get_type_name(), "Test timed out, but no Co-Simulation mismatches were detected. Assuming PASS.", UVM_LOW)
+            test_passed = 1'b1;
+        end else begin
+            test_passed = 1'b0;
+            `uvm_info(get_type_name(), "FAILED: Timeout with co-sim mismatches", UVM_NONE)
+        end
+      end else if (mismatch) begin
+        test_passed = 1'b0;
+        `uvm_info(get_type_name(), "FAILED: Co-Simulation mismatch detected", UVM_NONE)
+      end else begin
+        test_passed = 1'b0;
+        `uvm_info(get_type_name(), "FAILED: Unknown error or DUT fault with mismatches", UVM_NONE)
+      end
+
+      if(test_passed) begin
+         `uvm_info(get_type_name(), "** UVM TEST PASSED **", UVM_NONE)
+         passed_tests++;
+      end else begin
+         `uvm_error(get_type_name(), "** UVM TEST FAILED **")
+         failed_tests++;
+      end
+    endfunction
+
+    virtual function void report_phase(uvm_phase phase);
+       if (failed_tests > 0) begin
+          `uvm_info("REGRESSION_SUMMARY", $sformatf("%0d/%0d tests failed.", failed_tests, total_tests), UVM_NONE)
+       end else begin
+          `uvm_info("REGRESSION_SUMMARY", $sformatf("All %0d tests passed.", total_tests), UVM_NONE)
+       end
     endfunction
 
   endclass

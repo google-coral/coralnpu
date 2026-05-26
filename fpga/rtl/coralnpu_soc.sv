@@ -16,8 +16,13 @@ module coralnpu_soc
     #(parameter MemInitFile = "",
       parameter int ClockFrequencyMhz = 50,
       parameter int IspClockFrequencyMhz = 10,
-      parameter int SpimClockFrequencyMhz = 100)
-    (input clk_i,
+      parameter int SpimClockFrequencyMhz = 100,
+      parameter int EnableAutoboot = 0,
+      parameter int ItcmSizeKBytes = 8,
+      parameter int DtcmSizeKBytes = 32
+      ) (
+
+input clk_i,
      input clk_isp_i,
      input rst_ni,
      input spi_clk_i,
@@ -186,6 +191,24 @@ module coralnpu_soc
   coralnpu_tlul_pkg_32::tl_h2d_t tl_clk_table_h2d;
   coralnpu_tlul_pkg_32::tl_d2h_t tl_clk_table_d2h;
 
+  coralnpu_tlul_pkg_32::tl_h2d_t tl_autoboot_h2d;
+  coralnpu_tlul_pkg_32::tl_d2h_t tl_autoboot_d2h;
+
+  localparam logic [31:0] CsrBaseAddr = (ItcmSizeKBytes == 8 && DtcmSizeKBytes == 32) ? 32'h00030000 : 32'h00200000;
+
+  if (EnableAutoboot) begin : gen_autoboot
+    autoboot #(
+      .CsrBaseAddr(CsrBaseAddr)
+    ) i_autoboot (
+      .clk_i(clk_i),
+      .rst_ni(rst_ni),
+      .tl_o(tl_autoboot_h2d),
+      .tl_i(tl_autoboot_d2h)
+    );
+  end else begin : gen_no_autoboot
+    assign tl_autoboot_h2d = '0;
+  end
+
   clk_table #(.MainFreqMhz(ClockFrequencyMhz),
               .IspFreqMhz(IspClockFrequencyMhz),
               .SpimFreqMhz(SpimClockFrequencyMhz))
@@ -255,14 +278,14 @@ module coralnpu_soc
                .lsio_trigger_o(uart_sideband_o[1].lsio_trigger));
 
   logic rom_req;
-  logic [10 : 0] rom_addr;
+  logic [12 : 0] rom_addr;
   logic [31 : 0] rom_rdata;
   logic rom_we;
   logic [31 : 0] rom_wdata;
   logic [3 : 0] rom_wmask;
   logic rom_rvalid;
 
-  tlul_adapter_sram #(.SramAw(11),
+  tlul_adapter_sram #(.SramAw(13),
                       .SramDw(32),
                       .ErrOnWrite(1),
                       .CmdIntgCheck(1'b1),
@@ -292,7 +315,7 @@ module coralnpu_soc
                     .write_pending_i(1'b0));
 
   prim_rom_adv #(.Width(32),
-                 .Depth(2048),
+                 .Depth(8192),
                  .MemInitFile(MemInitFile))
       i_rom(.clk_i(clk_i),
             .rst_ni(rst_ni),
@@ -727,6 +750,32 @@ module coralnpu_soc
     .io_ispyocto_m2_axi_write_resp_ready(isp_m2_bready),
     .io_ispyocto_m2_axi_write_resp_bits_id(isp_m2_bid),
     .io_ispyocto_m2_axi_write_resp_bits_resp(isp_m2_bresp),
+
+    // External Host: autoboot
+    .io_external_hosts_autoboot_a_ready(tl_autoboot_d2h.a_ready),
+    .io_external_hosts_autoboot_a_valid(tl_autoboot_h2d.a_valid),
+    .io_external_hosts_autoboot_a_bits_opcode(tl_autoboot_h2d.a_opcode),
+    .io_external_hosts_autoboot_a_bits_param(tl_autoboot_h2d.a_param),
+    .io_external_hosts_autoboot_a_bits_size(tl_autoboot_h2d.a_size),
+    .io_external_hosts_autoboot_a_bits_source(tl_autoboot_h2d.a_source),
+    .io_external_hosts_autoboot_a_bits_address(tl_autoboot_h2d.a_address),
+    .io_external_hosts_autoboot_a_bits_mask(tl_autoboot_h2d.a_mask),
+    .io_external_hosts_autoboot_a_bits_data(tl_autoboot_h2d.a_data),
+    .io_external_hosts_autoboot_a_bits_user_rsvd(tl_autoboot_h2d.a_user.rsvd),
+    .io_external_hosts_autoboot_a_bits_user_instr_type(tl_autoboot_h2d.a_user.instr_type),
+    .io_external_hosts_autoboot_a_bits_user_cmd_intg(tl_autoboot_h2d.a_user.cmd_intg),
+    .io_external_hosts_autoboot_a_bits_user_data_intg(tl_autoboot_h2d.a_user.data_intg),
+    .io_external_hosts_autoboot_d_ready(tl_autoboot_h2d.d_ready),
+    .io_external_hosts_autoboot_d_valid(tl_autoboot_d2h.d_valid),
+    .io_external_hosts_autoboot_d_bits_opcode(tl_autoboot_d2h.d_opcode),
+    .io_external_hosts_autoboot_d_bits_param(tl_autoboot_d2h.d_param),
+    .io_external_hosts_autoboot_d_bits_size(tl_autoboot_d2h.d_size),
+    .io_external_hosts_autoboot_d_bits_source(tl_autoboot_d2h.d_source),
+    .io_external_hosts_autoboot_d_bits_sink(tl_autoboot_d2h.d_sink),
+    .io_external_hosts_autoboot_d_bits_data(tl_autoboot_d2h.d_data),
+    .io_external_hosts_autoboot_d_bits_error(tl_autoboot_d2h.d_error),
+    .io_external_hosts_autoboot_d_bits_user_rsp_intg(tl_autoboot_d2h.d_user.rsp_intg),
+    .io_external_hosts_autoboot_d_bits_user_data_intg(tl_autoboot_d2h.d_user.data_intg),
 
     .io_ispyocto_m2_axi_read_addr_valid(1'b0),
     .io_ispyocto_m2_axi_read_addr_ready(),

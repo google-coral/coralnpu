@@ -12,11 +12,50 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstring>
 #include <iostream>
+#include <string>
 
+#include "sim_ctrl_extension.h"
+#include "sram_backdoor.h"
 #include "verilated_toplevel.h"
 #include "verilator_memutil.h"
 #include "verilator_sim_ctrl.h"
+
+namespace {
+
+// SimCtrl extension that backdoor-loads an ELF into the Chisel SRAMs once
+// the SRAM modules have registered themselves with sram_backdoor.cc. The
+// registration happens in SV `initial` blocks, which Verilator runs during
+// the first eval(); waiting until the first OnClock callback guarantees they
+// are in the registered_srams map.
+class BackdoorElfLoader : public SimCtrlExtension {
+ public:
+  bool ParseCLIArguments(int argc, char** argv, bool& exit_app) override {
+    static const char kFlag[] = "--load_elf=";
+    static const size_t kFlagLen = sizeof(kFlag) - 1;
+    for (int i = 1; i < argc; ++i) {
+      if (argv[i] && std::strncmp(argv[i], kFlag, kFlagLen) == 0) {
+        path_ = argv[i] + kFlagLen;
+      }
+    }
+    return true;
+  }
+
+  void OnClock(unsigned long sim_time) override {
+    if (loaded_ || path_.empty()) return;
+    std::cerr << "[Backdoor] Loading ELF: " << path_ << std::endl;
+    sram_clear();
+    sram_load_elf(path_.c_str());
+    loaded_ = true;
+  }
+
+ private:
+  std::string path_;
+  bool loaded_ = false;
+};
+
+}  // namespace
 
 #if defined(CHISEL_SUBSYSTEM_HIGHMEM)
 constexpr bool highmem = true;
@@ -53,6 +92,9 @@ int main(int argc, char **argv) {
   memutil.RegisterMemoryArea("itcm", 0x00000000, &itcm);
   memutil.RegisterMemoryArea("dtcm", dtcm_addr, &dtcm);
   simctrl.RegisterExtension(&memutil);
+
+  BackdoorElfLoader backdoor_loader;
+  simctrl.RegisterExtension(&backdoor_loader);
 
   simctrl.SetInitialResetDelay(20);
   simctrl.SetResetDuration(10);

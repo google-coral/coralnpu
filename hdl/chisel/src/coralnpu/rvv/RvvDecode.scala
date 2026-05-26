@@ -114,18 +114,30 @@ class RvvCompressedInstruction extends Bundle {
         ((funct3() === "b111".U) && (bits(24, 18) === "b1000000".U))
   }
 
+  def readsFloatRs1(): Bool = {
+    // OP FV F
+    opcode === RvvCompressedOpcode.RVVALU && funct3() === "b101".U
+  }
+
   def writesRd(): Bool = {
     isVset() ||
     // OP MVV, VWXUNARY0 (all): vmv.x.s, vcpop, vfirst.
     (opcode === RvvCompressedOpcode.RVVALU && funct3() === "b010".U && funct6() === "b010000".U)
   }
 
+  def writesFrd(): Bool = {
+    // OP FVV, VWRFUNARY0: vfmv.f.s.
+    opcode === RvvCompressedOpcode.RVVALU && funct3() === "b001".U && funct6() === "b010000".U
+  }
+
   def writesVectorRegister(): Bool = {
     // A vector instruction writes to a vector register if it's an ALU operation
     // or a load operation. Store operations do not write to a vector register.
     // vset* instructions write to a scalar register (rd), not a vector register.
-    // Scalar-write instructions (vmv.x.s, vcpop, vfirst) also do not write vector registers.
-    opcode === RvvCompressedOpcode.RVVLOAD || (opcode === RvvCompressedOpcode.RVVALU && !writesRd())
+    // Scalar-write instructions (vmv.x.s, vcpop, vfirst, vfmv.f.s) also do not
+    // write vector registers.
+    opcode === RvvCompressedOpcode.RVVLOAD ||
+        (opcode === RvvCompressedOpcode.RVVALU && !writesRd() && !writesFrd())
   }
 
   override def toPrintable: Printable = {

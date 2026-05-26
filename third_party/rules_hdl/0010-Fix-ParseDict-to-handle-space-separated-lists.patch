@@ -1,0 +1,31 @@
+From 6099df399bcfbce0f37173f704abb7d367abf1c6 Mon Sep 17 00:00:00 2001
+From: Stefan Hall <stefanhall@google.com>
+Date: Tue, 5 May 2026 17:43:55 -0700
+Subject: [PATCH] Fix ParseDict to handle space-separated lists
+
+---
+ cocotb/cocotb_wrapper.py | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/cocotb/cocotb_wrapper.py b/cocotb/cocotb_wrapper.py
+index ba37573..2c4f0ef 100644
+--- a/cocotb/cocotb_wrapper.py
++++ b/cocotb/cocotb_wrapper.py
+@@ -60,9 +60,11 @@ def cocotb_argument_parser():
+     class ParseDict(argparse.Action):
+         def __call__(self, parser, namespace, values, option_string=None):
+             setattr(namespace, self.dest, dict())
+-            for value in values:
+-                key, value = value.split("=")
+-                getattr(namespace, self.dest)[key] = value
++            for val in values:
++                for item in val.split(" "):
++                    if "=" in item:
++                        key, value = item.split("=")
++                        getattr(namespace, self.dest)[key] = value
+ 
+     parser = argparse.ArgumentParser(description="Runs the Cocotb framework from Bazel")
+ 
+-- 
+2.45.0.118.g7fe29c98d7-goog
+

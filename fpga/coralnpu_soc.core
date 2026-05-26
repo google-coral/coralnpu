@@ -19,6 +19,7 @@ filesets:
     files:
       - rtl/coralnpu_soc.sv
       - rtl/clk_table.sv
+      - rtl/autoboot.sv
     file_type: systemVerilogSource
 
   sim_src:
@@ -52,6 +53,11 @@ parameters:
     datatype: str
     description: Path to ROM
     default: ""
+    paramtype: vlogparam
+  EnableAutoboot:
+    datatype: int
+    description: "Enable autonomous boot release"
+    default: 0
     paramtype: vlogparam
   USE_GENERIC:
     datatype: bool

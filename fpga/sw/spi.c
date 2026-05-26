@@ -23,7 +23,8 @@
 uint32_t spi_get_master_base_addr(void) { return SPI_MASTER_BASE; }
 uint32_t spi_get_flash_base_addr(void) { return SPI_FLASH_BASE; }
 
-void spi_init(uint32_t base_addr, uint32_t target_mhz, uint32_t cpol, uint32_t cpha) {
+void spi_init(uint32_t base_addr, uint32_t target_mhz, uint32_t cpol,
+              uint32_t cpha) {
   uint32_t spim_freq_mhz = clk_get_spim_freq_mhz();
   uint32_t div = (spim_freq_mhz / (2 * target_mhz)) - 1;
   if (spim_freq_mhz < 2 * target_mhz) div = 0;
@@ -35,6 +36,10 @@ void spi_init(uint32_t base_addr, uint32_t target_mhz, uint32_t cpol, uint32_t c
 
 void spi_set_control(uint32_t base_addr, uint32_t ctrl) {
   REG32(base_addr + SPI_REG_CONTROL) = ctrl;
+}
+
+uint32_t spi_get_control(uint32_t base_addr) {
+  return REG32(base_addr + SPI_REG_CONTROL);
 }
 
 void spi_set_csid(uint32_t base_addr, uint32_t csid) {

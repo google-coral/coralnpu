@@ -89,24 +89,10 @@ package coralnpu_cosim_checker_pkg;
          `uvm_fatal(get_type_name(), "RVVI virtual interface not found!")
       end
 
-      // Get the ELF file path
-      if (!uvm_config_db#(string)::get(this, "",
-          "elf_file_for_iss", test_elf)) begin
-        `uvm_fatal(get_type_name(), "TEST_ELF file path not found!")
-      end
-
       if (!uvm_config_db#(int unsigned)::get(this, "",
           "initial_misa_value", initial_misa_value)) begin
         `uvm_fatal(get_type_name(),
           "'initial_misa_value' not found in config_db")
-      end
-
-      if ($test$plusargs("SPIKE_LOG")) begin
-        string spike_log_path;
-        if ($value$plusargs("SPIKE_LOG=%s", spike_log_path)) begin
-          spike_checker = spike_cosim_checker::type_id::create("spike_checker");
-          spike_checker.initialize(spike_log_path);
-        end
       end
 
       // Create the event that this component will wait on.
@@ -171,7 +157,6 @@ package coralnpu_cosim_checker_pkg;
         `uvm_error("COSIM_PC_MISMATCH",
           $sformatf("MPACT PC 0x%h mismatches retired RTL PCs: %s",
                     mpact_pc, rtl_pcs_str))
-        phase.drop_objection(this, "Terminating on PC mismatch.");
         mismatch_detected = 1;
         return;
       end
@@ -183,7 +168,6 @@ package coralnpu_cosim_checker_pkg;
 
       if (mpact_step(rtl_instr) != 0) begin
         `uvm_error("COSIM_STEP_FAIL", "mpact_step() DPI call failed.")
-        phase.drop_objection(this, "Terminating on MPACT step fail.");
         mismatch_detected = 1;
         return;
       end
@@ -194,7 +178,6 @@ package coralnpu_cosim_checker_pkg;
 
       // Check return status and terminate on failure
       if (!step_and_compare(retired_instr_q[match_index])) begin
-        phase.drop_objection(this, "Terminating on mismatch.");
         mismatch_detected = 1;
         return;
       end
@@ -208,6 +191,11 @@ package coralnpu_cosim_checker_pkg;
       sim_config_t dpi_cfg_s;
       logic [31:0] itcm_start_address;
       logic [31:0] itcm_length;
+      uvm_event test_start_event;
+
+      if (!uvm_config_db#(uvm_event)::get(this, "", "test_start_event", test_start_event)) begin
+         // If not found, assume it is provided by the test via top
+      end
 
       itcm_start_address = memory_map_pkg::ITCM_START_ADDR;
       itcm_length = memory_map_pkg::ITCM_LENGTH;
@@ -222,24 +210,69 @@ package coralnpu_cosim_checker_pkg;
       dpi_cfg_s = {<<32{
           itcm_start_address,
           itcm_length,
-          initial_misa_value
+          initial_misa_value,
+          32'd1 // M3
       }};
 
-      if (mpact_init() != 0)
-        `uvm_fatal(get_type_name(), "MPACT simulator DPI init failed.")
-      if (mpact_config(dpi_cfg_s) != 0)
-        `uvm_fatal(get_type_name(), "MPACT simulator DPI config failed.")
-      if (mpact_load_program(test_elf) != 0)
-        `uvm_fatal(get_type_name(), "MPACT simulator DPI load program failed.")
-
-      // Main co-simulation loop
       forever begin
-        collect_retired_instructions(retired_instr_q);
+        string current_test_elf;
+        string current_spike_log;
 
-        while (retired_instr_q.size() > 0) begin
-          process_instruction(retired_instr_q, phase);
-          if (mismatch_detected) return;
+        // Wait for the next test to start
+        test_start_event.wait_trigger();
+
+        // Reset state
+        mismatch_detected = 0;
+        retired_instr_q.delete();
+        uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 0);
+
+        if (uvm_config_db#(string)::get(this, "", "current_test_elf", current_test_elf)) begin
+           test_elf = current_test_elf;
         end
+
+        // Spike checker initialization per test
+        if (uvm_config_db#(string)::get(this, "", "current_spike_log", current_spike_log) && current_spike_log != "" && current_spike_log != "NONE") begin
+           if (spike_checker == null) begin
+              spike_checker = spike_cosim_checker::type_id::create("spike_checker");
+           end
+           spike_checker.initialize(current_spike_log);
+        end else begin
+           spike_checker = null;
+        end
+
+        `uvm_info(get_type_name(), $sformatf("Initializing Co-Sim for %s", test_elf), UVM_LOW)
+
+        void'(mpact_fini());
+
+        if (mpact_init() != 0)
+          `uvm_error(get_type_name(), "MPACT simulator DPI init failed.")
+        if (mpact_config(dpi_cfg_s) != 0)
+          `uvm_error(get_type_name(), "MPACT simulator DPI config failed.")
+        if (mpact_load_program(test_elf) != 0)
+          `uvm_error(get_type_name(), "MPACT simulator DPI load program failed.")
+
+        // Inner loop for processing instructions for the current test
+        fork
+          begin : cosim_process_loop
+            forever begin
+              collect_retired_instructions(retired_instr_q);
+
+              while (retired_instr_q.size() > 0) begin
+                process_instruction(retired_instr_q, phase);
+                if (mismatch_detected) begin
+                  uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 1);
+                  break;
+                end
+              end
+              if (mismatch_detected) break;
+            end
+          end
+          begin : wait_for_next_test
+             // Wait for the event again (which signals next test) to kill the processing loop
+             test_start_event.wait_trigger();
+          end
+        join_any
+        disable fork;
       end
     endtask
 

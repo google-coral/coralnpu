@@ -42,6 +42,9 @@ module RvvFrontEnd#(parameter N = 4,
   input logic [(2*N)-1:0] reg_read_valid_i,
   input logic [(2*N)-1:0][31:0] reg_read_data_i,
 
+  // Floating point register file input (scalar rs1 for OPFVF instructions).
+  input logic [N-1:0][31:0] freg_read_data_i,
+
   // Scalar Regfile writeback for configuration functions.
   output logic [N-1:0] reg_write_valid_o,
   output logic [N-1:0][4:0] reg_write_addr_o,
@@ -364,8 +367,14 @@ module RvvFrontEnd#(parameter N = 4,
       unaligned_cmd_data[i].bits = inst_q[i].bits;
       unaligned_cmd_data[i].arch_state = inst_config_state[i+1];
       // TODO: Handle rs propagation for loads/stores
+      // funct3 == inst[14:12] == bits[7:5]; bits[7] == funct3[2] indicates
+      // scalar rs1 is used (OPIVX, OPFVF, OPMVX, OPCFG). For OPFVF the scalar
+      // comes from the floating-point regfile.
       unaligned_cmd_data[i].rs1 =
-          inst_q[i].bits[7] ? reg_read_data_i[2*i] : 0;
+          inst_q[i].bits[7] ?
+              ((inst_q[i].bits[7:5] == 3'b101) ? freg_read_data_i[i]  // OPFVF
+                                               : reg_read_data_i[2*i])
+            : 0;
 
       // Write new value of vl into rd for configuration function.
       reg_write_valid_o[i] = is_setvl[i];

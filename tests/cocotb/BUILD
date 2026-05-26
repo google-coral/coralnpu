@@ -293,13 +293,23 @@ RVV_LOAD_STORE_TESTCASES = [
 # BEGIN_TESTCASES_FOR_rvv_arithmetic_cocotb_test
 RVV_ARITHMETIC_TESTCASES = [
     "arithmetic_m1_vanilla_ops",
+    "float32_arithmetic_m1_vanilla_ops",
     "reduction_m1_vanilla_ops",
+    "float32_reduction_m1_vanilla_ops",
     "reduction_m1_failure_ops",
     "widen_math_ops_test_impl",
     "vnclip_test",
     "vnclipu_test",
     "vnsra_test",
     "vnsrl_test",
+    "ternary_op_vx",
+    "comparison_op_vx",
+    "comparison_op_vv",
+    "carry_op_vx",
+    "merge_op_vv",
+    "widen_wide_math_ops_test",
+    "extension_op_test",
+    "immediate_op_test",
     ("binary_op_vx", "large"),
 ]
 # END_TESTCASES_FOR_rvv_arithmetic_cocotb_test
@@ -590,6 +600,14 @@ coralnpu_v2_binary(
     ],
 )
 
+# This test is used for baseline vector power analysis.
+coralnpu_v2_binary(
+    name = "nop_test",
+    srcs = [
+        "nop_test.cc",
+    ],
+)
+
 coralnpu_v2_binary(
     name = "registers",
     srcs = [
@@ -683,8 +701,11 @@ pkg_zip(
 
 # BEGIN_TESTCASES_FOR_rvv_ml_ops_cocotb_test
 RVV_ML_OPS_TESTCASES = [
-    "core_mini_rvv_matmul_test",
-    "core_mini_rvv_float_matmul_test",
+    "core_mini_rvv_matmul_c_test",
+    "core_mini_rvv_matmul_asm_test",
+    "core_mini_rvv_float_matmul_c_test",
+    "core_mini_rvv_float_matmul_asm_test",
+    "core_mini_rvv_float_matmul_optimized_c_test",
 ]
 # END_TESTCASES_FOR_rvv_ml_ops_cocotb_test
 
@@ -713,6 +734,33 @@ cocotb_test_suite(
     vcs_defines = VCS_DEFINES,
     vcs_test_args = VCS_TEST_ARGS,
     vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
+    verilator_model = ":rvv_core_mini_axi_model",
+)
+
+# This test is used for baseline vector power analysis.
+cocotb_test_suite(
+    name = "nop_stress_test",
+    simulators = [
+        "verilator",
+    ],
+    testcases = [
+        "nop_stress_test",
+    ],
+    testcases_vname = "NOP_STRESS_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniAxi",
+        "waves": False,
+        "seed": "42",
+        "test_module": ["nop_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        "data": [
+            ":nop_test.elf",
+        ],
+        "size": "medium",
+    },
     verilator_model = ":rvv_core_mini_axi_model",
 )
 
