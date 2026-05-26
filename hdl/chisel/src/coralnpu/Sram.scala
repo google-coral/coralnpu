@@ -1,8 +1,5 @@
 // Copyright 2024 Google LLC
 //
-// NOTE: On case-insensitive filesystems (macOS), SRAM.scala and Sram.scala
-// collide. Both classes are defined here in a single file.
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -60,5 +57,3 @@ class SRAM(p: Parameters, sramAddressWidth: Int) extends Module {
   io.sram.mask := maskData
   io.fabric.writeResp := true.B
 }
-
-
