@@ -27,5 +27,18 @@ bazel-testlogs/
 external
 # riscv-vector-tests generated ELFs
 third_party/riscv_vector_tests/out/
-# firtool jars
-tools/firtool/*.jar
+# firtool binaries (downloaded by make setup-firtool)
+tools/firtool/META-INF/
+tools/firtool/org.chipsalliance/
+
+# riscv-vector-tests Go generator binary
+third_party/riscv_vector_tests/generator
+
+# macOS stub libatomic (superseded by 0011 patch)
+libatomic.dylib
+
+# Reasonix tool logs
+.reasonix/
+
+# Git worktrees
+.worktrees/
