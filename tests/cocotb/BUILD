@@ -312,6 +312,12 @@ HIGHMEM_TESTCASES = [
 ]
 # END_TESTCASES_FOR_highmem_test
 
+# BEGIN_TESTCASES_FOR_rvv_compliance_test
+RVV_COMPLIANCE_TESTCASES = [
+    "test_all_compliance",
+]
+# END_TESTCASES_FOR_rvv_compliance_test
+
 COCOTB_DEBUG_TEST_BINARY_TARGETS = [
     ":fptr.elf",
     ":loop.elf",
@@ -445,6 +451,26 @@ cocotb_test_suite(
             "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem.elf",
         ],
         "size": "large",
+    },
+    verilator_model = ":rvv_core_mini_highmem_axi_model",
+)
+
+cocotb_test_suite(
+    name = "rvv_compliance_tests",
+    simulators = ["verilator"],
+    testcases = RVV_COMPLIANCE_TESTCASES,
+    testcases_vname = "RVV_COMPLIANCE_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
+        "waves": False,
+        "seed": "42",
+        "test_module": ["rvv_compliance_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:core_mini_axi_sim_interface",
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        "size": "enormous",
     },
     verilator_model = ":rvv_core_mini_highmem_axi_model",
 )

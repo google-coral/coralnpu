@@ -102,6 +102,7 @@ chisel_library(
         "rvv/RvvFrontEnd.scala",
         "rvv/RvvInterface.scala",
         "rvv/RvvPrimitives.scala",
+        "rvv/RvvReductionUnit.scala",
         "rvv/RvvRob.scala",
         "rvv/RvvVrf.scala",
     ],
@@ -277,7 +278,6 @@ chisel_library(
 chisel_library(
     name = "srams",
     srcs = [
-        "Sram.scala",
         "SramNx128.scala",
     ],
     deps = [

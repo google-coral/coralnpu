@@ -82,13 +82,22 @@ build:coralnpu_v2 --platforms=//platforms:coralnpu_v2
 build --incompatible_enable_cc_toolchain_resolution
 build --use_top_level_targets_for_symlinks=false
 
-# Use GNU BFD linker (compatible with GCC 15 .sframe)
-build --host_linkopt=-fuse-ld=bfd
-build --linkopt=-fuse-ld=bfd
+# Use GNU BFD linker (compatible with GCC 15 .sframe) — disabled on macOS
+#build --host_linkopt=-fuse-ld=bfd
+#build --linkopt=-fuse-ld=bfd
 
-# Disable LLD-specific "start-lib" optimization (incompatible with BFD)
-build --host_features=-supports_start_end_lib
-build --features=-supports_start_end_lib
+# macOS: stub libatomic (macOS has atomics in libSystem)
+# macOS: libatomic patched out via rules_hdl patch
+# macOS: fix aligned allocation errors in Verilator-generated C++
+build --copt=-faligned-allocation
+build --host_copt=-faligned-allocation
+
+# macOS: disable sandbox for Verilate to fix cc_wrapper.sh path resolution
+build --strategy=Verilate=local
+
+# Disable LLD-specific "start-lib" optimization (incompatible with BFD) — disabled on macOS
+#build --host_features=-supports_start_end_lib
+#build --features=-supports_start_end_lib
 
 # Import user config, if it exists (gitignored).
 try-import %workspace%/.bazelrc.user

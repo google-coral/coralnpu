@@ -32,48 +32,52 @@ class RvvCoreShim(p: Parameters) extends Module {
   // ---- Native Chisel RVV pipeline ----
   val rvvCoreNative = Module(new RvvCoreNative(p))
 
-  // Connect all IO directly
-  rvvCoreNative.io.inst        := io.inst
-  rvvCoreNative.io.rs          := io.rs
-  rvvCoreNative.io.rd          := io.rd
+  // Connect IO with correct directions:
+  // INPUTs to core (driven by external): rs, frs, lsu2rvv, csr.frm
+  rvvCoreNative.io.rs          <> io.rs
   rvvCoreNative.io.frs         := io.frs
-  rvvCoreNative.io.async_rd    <> io.async_rd
-  rvvCoreNative.io.async_frd   <> io.async_frd
-  rvvCoreNative.io.rd_rob2rt_o := io.rd_rob2rt_o
-  rvvCoreNative.io.trap        := io.trap
-  rvvCoreNative.io.rvv2lsu     <> io.rvv2lsu
   rvvCoreNative.io.lsu2rvv     <> io.lsu2rvv
-  rvvCoreNative.io.configState <> io.configState
-  rvvCoreNative.io.rvv_idle     := io.rvv_idle
-  rvvCoreNative.io.queue_capacity := io.queue_capacity
+
+  // BIDIRECTIONAL (Decoupled with ready flowing opposite): inst
+  rvvCoreNative.io.inst        <> io.inst
+
+  // OUTPUTs from core (driven by native → external)
+  io.rd          <> rvvCoreNative.io.rd
+  io.rvv2lsu     <> rvvCoreNative.io.rvv2lsu
+  io.async_rd    <> rvvCoreNative.io.async_rd
+  io.async_frd   <> rvvCoreNative.io.async_frd
+  io.rd_rob2rt_o <> rvvCoreNative.io.rd_rob2rt_o
+  io.trap        <> rvvCoreNative.io.trap
+  io.configState <> rvvCoreNative.io.configState
+  io.rvv_idle     := rvvCoreNative.io.rvv_idle
+  io.queue_capacity := rvvCoreNative.io.queue_capacity
 
   // ---- CSR State with external write support ----
+  // Shim manages CSR state. Native core uses its own internal defaults.
   val vstart = RegInit(0.U(log2Ceil(p.rvvVlen).W))
   val vxrm   = RegInit(0.U(2.W))
   val vxsat  = RegInit(false.B)
 
+  // CSR writes from scalar core
+  when (io.csr.vstart_write.valid) { vstart := io.csr.vstart_write.bits }
+  when (io.csr.vxrm_write.valid)   { vxrm   := io.csr.vxrm_write.bits }
+  when (io.csr.vxsat_write.valid)  { vxsat  := io.csr.vxsat_write.bits }
+
+  // Output CSR values to external
+  io.csr.vstart := vstart
+  io.csr.vxrm   := vxrm
+  io.csr.vxsat  := vxsat
+
+  // Native core reads frm from external
   rvvCoreNative.io.csr.frm := io.csr.frm
 
-  // CSR update from scalar core writes or backend
-  val vstartWdata = MuxCase(vstart, Seq(
-    io.csr.vstart_write.valid -> io.csr.vstart_write.bits,
-  ))
-  vstart := vstartWdata
-
-  val vxrmWdata = MuxCase(vxrm, Seq(
-    io.csr.vxrm_write.valid -> io.csr.vxrm_write.bits,
-  ))
-  vxrm := vxrmWdata
-
-  val vxsatWdata = MuxCase(vxsat, Seq(
-    io.csr.vxsat_write.valid -> io.csr.vxsat_write.bits,
-  ))
-  vxsat := vxsatWdata
-
-  // Provide current CSR values to native core
-  rvvCoreNative.io.csr.vstart := vstart
-  rvvCoreNative.io.csr.vxrm   := vxrm
-  rvvCoreNative.io.csr.vxsat  := vxsat
+  // CSR write ports on native core — not used (shim manages CSR), drive defaults
+  rvvCoreNative.io.csr.vstart_write.valid := false.B
+  rvvCoreNative.io.csr.vstart_write.bits  := 0.U
+  rvvCoreNative.io.csr.vxrm_write.valid   := false.B
+  rvvCoreNative.io.csr.vxrm_write.bits    := 0.U
+  rvvCoreNative.io.csr.vxsat_write.valid  := false.B
+  rvvCoreNative.io.csr.vxsat_write.bits   := false.B
 
   // Output CSR values
   io.csr.vstart := vstart

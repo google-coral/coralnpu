@@ -1,0 +1,3 @@
+[submodule "riscv-vector-tests"]
+	path = riscv-vector-tests
+	url = https://github.com/chipsalliance/riscv-vector-tests.git

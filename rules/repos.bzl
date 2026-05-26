@@ -133,6 +133,7 @@ def coralnpu_repos2():
             "@coralnpu_hw//third_party/rules_hdl:0007-Suppress-skywater-pdk-loading.patch",
             "@coralnpu_hw//third_party/rules_hdl:0008-Use-glob-for-verilator_bin-data-files.patch",
             "@coralnpu_hw//third_party/rules_hdl:0009-Suppress-Verilator-C-warnings.patch",
+            "@coralnpu_hw//third_party/rules_hdl:0010-Remove-latomic-on-macOS.patch",
         ],
         patch_args = ["-p1"],
     )
@@ -151,11 +152,10 @@ def coralnpu_repos2():
         url = "https://github.com/bazelbuild/rules_foreign_cc/archive/refs/tags/0.9.0.tar.gz",
     )
 
-    http_archive(
+    native.new_local_repository(
         name = "llvm_firtool",
-        urls = ["https://repo1.maven.org/maven2/org/chipsalliance/llvm-firtool/1.114.0/llvm-firtool-1.114.0.jar"],
+        path = "tools/firtool",
         build_file = "@coralnpu_hw//third_party/llvm-firtool:BUILD.bazel",
-        sha256 = "f93a831e6b5696df2e3327626df3cc183e223bf0c9c0fddf9ae9e51f502d0492",
     )
 
     http_archive(

@@ -1,0 +1,28 @@
+--- a/dependency_support/verilator/verilator.BUILD.bazel
++++ b/dependency_support/verilator/verilator.BUILD.bazel
+@@ -432,8 +432,10 @@
+     ],
+     linkopts = [
+         "-lpthread",
+-        "-latomic",
+-    ],
++    ] + select({
++        "@platforms//os:linux": ["-latomic"],
++        "//conditions:default": [],
++    }),
+     visibility = ["//visibility:public"],
+     deps = [":verilator_libV3"],
+ )
+@@ -447,8 +449,10 @@
+     ],
+     linkopts = [
+         "-lpthread",
+-        "-latomic",
+-    ],
++    ] + select({
++        "@platforms//os:linux": ["-latomic"],
++        "//conditions:default": [],
++    }),
+     visibility = ["//visibility:public"],
+     deps = [":verilator_libV3"],
+     data = [

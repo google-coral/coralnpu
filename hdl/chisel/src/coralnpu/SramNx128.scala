@@ -73,3 +73,9 @@ class Sram_Nx128(tcmEntries: Int, globalBaseAddr: Int = 0) extends Module {
   }
   io.rvalid := RegNext(io.enable)
 }
+
+// SramBlock — moved here from Sram.scala (macOS case-insensitive FS workaround)
+class SramBlock(numEntries: Int, globalBaseAddr: Int = 0) extends SRAM128(numEntries, globalBaseAddr) with HasBlackBoxResource {
+  override val desiredName = "Sram"
+  addResource("Sram.v")
+}

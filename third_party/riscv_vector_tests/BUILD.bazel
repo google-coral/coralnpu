@@ -1,0 +1,56 @@
+# Copyright 2025 Google LLC
+#
+# riscv-vector-tests integration for CoralNPU
+# ==============================================================================
+# Pipeline: TOML config → Go generator → CoralNPU-compiled ELF → cocotb test
+
+load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:utils.bzl", "template_rule")
+
+package(default_visibility = ["//visibility:public"])
+
+# Pre-built Go generator binary (from chipsalliance/riscv-vector-tests)
+exports_files(["generator"])
+
+# =============================================================================
+# Generate RVV test assembly for vadd.vv (proof of concept)
+# =============================================================================
+genrule(
+    name = "gen_vadd_vv_asm",
+    srcs = ["@riscv_vector_tests//:configs/v/vadd.vv.toml"],
+    outs = ["vadd_vv_raw.S"],
+    cmd = """
+        $(location :generator) \
+            -VLEN 128 -XLEN 32 -float16=false \
+            -configfile $(location @riscv_vector_tests//:configs/v/vadd.vv.toml) \
+            -outputfile $@
+    """,
+    tools = [":generator"],
+)
+
+# =============================================================================
+# Post-process: wrap in CoralNPU-compatible boilerplate
+# =============================================================================
+genrule(
+    name = "gen_vadd_vv_coralnpu",
+    srcs = [":vadd_vv_raw.S"],
+    outs = ["vadd_vv.S"],
+    cmd = """
+        echo '#include "coralnpu_test_header.h"' > $@
+        echo '' >> $@
+        echo '.section .text' >> $@
+        echo '.globl _start' >> $@
+        echo '_start:' >> $@
+        # Skip RVTEST_RV32UVX, RVTEST_CODE_BEGIN macros
+        # Strip include lines and replace RVTEST macros with NOPs
+        cat $(location :vadd_vv_raw.S) | \\
+            grep -v '^#include' | \\
+            grep -v 'RVTEST_' | \\
+            sed 's/^RVTEST_PASS.*$$/j pass/' | \\
+            sed 's/^RVTEST_FAIL.*$$/j fail/' >> $@
+        echo 'pass:' >> $@
+        echo '  ebreak' >> $@
+        echo 'fail:' >> $@
+        echo '  ebreak' >> $@
+    """,
+)

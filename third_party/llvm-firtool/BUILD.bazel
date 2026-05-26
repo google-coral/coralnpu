@@ -12,14 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-exports_files(glob(["org.chipsalliance/llvm-firtool/linux-x64/bin/**"]))
-
 package(default_visibility = ["//visibility:public"])
 
+exports_files(glob(["org.chipsalliance/**"]))
+
+# Local firtool installation in tools/firtool/
 sh_binary(
     name = "firtool",
     srcs = [":firtool.sh"],
-    data = [
-        "@llvm_firtool//:org.chipsalliance/llvm-firtool/linux-x64/bin/firtool",
-    ]
+    data = select({
+        "@platforms//os:macos": ["@llvm_firtool//:org.chipsalliance/llvm-firtool/macos-x64/bin/firtool"],
+        "//conditions:default": ["@llvm_firtool//:org.chipsalliance/llvm-firtool/linux-x64/bin/firtool"],
+    }),
 )

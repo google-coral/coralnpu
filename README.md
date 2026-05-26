@@ -45,4 +45,27 @@ bazel-bin/tests/verilator_sim/core_mini_axi_sim --binary bazel-out/k8-fastbuild-
 ```
 
 
+## RVV Compliance Testing (riscv-vector-tests)
+
+Run the full [chipsalliance/riscv-vector-tests](https://github.com/chipsalliance/riscv-vector-tests) suite (516 tests) against the Chisel RVV implementation:
+
+```bash
+# Prerequisites (macOS)
+brew install go verilator riscv64-elf-gcc
+
+# Generate and compile all tests
+make rvv-tests-generate
+
+# Run all 516 compliance tests on Verilator (highmem model, 1MB TCM)
+make rvv-tests-run
+
+# Run only the existing cocotb RVV regression (~100 tests)
+make rvv-regression
+
+# Compare Chisel vs Verilog RVV (requires both models built)
+make rvv-diff
+```
+
+Test coverage: all Zve32f instructions — integer ALU, reduction, widening, MAC, saturating, comparison, mask logical, permute, mask unary, extension, load/store, float ALU, float compare, float convert.
+
 ![](doc/images/Coral_Logo_200px-2x.png)

@@ -1,0 +1,22 @@
+# Standalone BUILD for riscv-vector-tests compliance testing
+load("//rules:coco_tb.bzl", "cocotb_test_suite")
+
+cocotb_test_suite(
+    name = "rvv_vector_compliance",
+    simulators = ["verilator"],
+    testcases = ["test_all_vectors"],
+    testcases_vname = "COMPLIANCE_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
+        "waves": False,
+        "seed": "42",
+        "test_module": ["rvv_vector_compliance_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:core_mini_axi_sim_interface",
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        "verilator_model": "//tests/cocotb:rvv_core_mini_highmem_axi_model",
+        "vcs_verilog_sources": [],
+    },
+)

@@ -24,6 +24,7 @@ class RvvConfigState(p: Parameters) extends Bundle {
   val ma = Output(Bool())
   val ta = Output(Bool())
   val xrm = Output(UInt(2.W))
+  val xsat = Output(Bool())
   val sew = Output(UInt(3.W))
   // This may be reduced according to vl.
   val lmul = Output(UInt(3.W))

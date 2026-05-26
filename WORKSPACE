@@ -227,3 +227,15 @@ local_repository(
     name = "synthesis_internal",
     path = "../synthesis_internal",
 )
+
+# riscv-vector-tests for RVV compliance testing
+new_local_repository(
+    name = "riscv_vector_tests",
+    path = "/Users/ust/riscv-vector-tests",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+filegroup(name = "all_configs", srcs = glob(["configs/**/*.toml"]))
+filegroup(name = "all_headers", srcs = glob(["env/**/*.h", "macros/**/*.h"]))
+exports_files(glob(["**"]))
+""",
+)
