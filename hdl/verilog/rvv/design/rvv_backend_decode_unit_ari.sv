@@ -3267,7 +3267,9 @@ module rvv_backend_decode_unit_ari
     endcase
   end
 
-  assign inst_is_nop = inst_encoding_correct & (~check_vl_not_0 | ~check_vstart_sle_vl);
+  // Per RISC-V V spec, vl=0 or vstart>=vl means the instruction is a no-op
+  // regardless of encoding validity. Compatible with PR #71's trap mechanism.
+  assign inst_is_nop = inst_valid & (~check_vl_not_0 | ~check_vstart_sle_vl);
 
 `ifdef ZVE32F_ON
   // check FP rounding mode is legal
@@ -3340,7 +3342,7 @@ module rvv_backend_decode_unit_ari
     lcmd.cmd.arch_state.vstart   = evstart;
   end
 
-  assign lcmd_valid              = inst_encoding_correct;
+  assign lcmd_valid              = inst_encoding_correct | inst_is_nop;
   assign lcmd.eew_vs1            = eew_vs1;
   assign lcmd.eew_vs2            = eew_vs2;
   assign lcmd.eew_vd             = eew_vd;

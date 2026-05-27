@@ -3005,16 +3005,14 @@ module rvv_backend_decode_unit_lsu
     endcase
   end
 
-  // Note: check_evl_not_0 and check_vstart_sle_evl are intentionally excluded.
-  // Per RISC-V V spec, vl=0 and vstart>=evl are valid states where the
-  // instruction is a no-op, not an encoding error. Fixes #89.
+  //check common requirements for all instructions
   assign check_common = check_vd_align&check_vs2_align&check_vd_in_range&check_sew&check_lmul
                       `ifdef ZVE32F_ON
                         `ifdef CHECK_FRM
                         &check_frm
                         `endif
                       `endif
-                        ;
+                        &check_evl_not_0&check_vstart_sle_evl;
 
   // check whether vd is aligned to emul_vd
   always_comb begin
@@ -3159,9 +3157,10 @@ module rvv_backend_decode_unit_lsu
   // check vstart < evl
   assign check_vstart_sle_evl = {1'b0,csr_vstart} < evl;
 
-  // Detect valid no-op: encoding is correct but no elements to process.
-  // Force uop_index_max=0 so exactly one NOP uop is generated to pop the CQ.
-  assign inst_is_nop = inst_encoding_correct & (~check_evl_not_0 | ~check_vstart_sle_evl);
+  // Per RISC-V V spec, vl=0 or vstart>=evl means the instruction is a no-op
+  // regardless of encoding validity. This bypasses all encoding checks to
+  // prevent pipeline deadlock, and is compatible with PR #71's trap mechanism.
+  assign inst_is_nop = valid_lsu & (~check_evl_not_0 | ~check_vstart_sle_evl);
 
 `ifdef ZVE32F_ON
   // check FP rounding mode is legal
@@ -3188,7 +3187,7 @@ module rvv_backend_decode_unit_lsu
                               ((check_vd_overlap_vs2==1'b0)&(eew_vd!=eew_vs2)&(eew_vd!=EEW_NONE)&(eew_vs2!=EEW_NONE));
 
   // result
-  assign lcmd_valid              = inst_encoding_correct;
+  assign lcmd_valid              = inst_encoding_correct | inst_is_nop;
   assign lcmd.cmd                = inst;
   assign lcmd.eew_vs1            = EEW_NONE;
   assign lcmd.eew_vs2            = eew_vs2;
