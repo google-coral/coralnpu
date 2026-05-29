@@ -3167,15 +3167,15 @@ module rvv_backend_decode_unit_lsu
   assign check_frm = inst.arch_state.frm < 3'd5;
 `endif
 
-  `ifdef ASSERT_ON
-    `ifdef TB_SUPPORT
-      `rvv_forbid((inst_valid==1'b1)&(inst_encoding_correct==1'b0))
-      else $warning("pc(0x%h) instruction will be discarded directly.\n",$sampled(inst.inst_pc));
-    `else
-      `rvv_forbid((inst_valid==1'b1)&(inst_encoding_correct==1'b0))
-      else $warning("This instruction will be discarded directly.\n");
-    `endif
+`ifdef ASSERT_ON
+  `ifdef TB_SUPPORT
+    `rvv_forbid((inst_valid==1'b1)&(inst_encoding_correct==1'b0)&(inst_is_nop==1'b0))
+    else $warning("pc(0x%h) instruction will be discarded directly.\n",$sampled(inst.inst_pc));
+  `else
+    `rvv_forbid((inst_valid==1'b1)&(inst_encoding_correct==1'b0)&(inst_is_nop==1'b0))
+    else $warning("This instruction will be discarded directly.\n");
   `endif
+`endif
 
   // update force_vma_agnostic
     //When source and destination registers overlap and have different EEW, the instruction is mask- and tail-agnostic.
