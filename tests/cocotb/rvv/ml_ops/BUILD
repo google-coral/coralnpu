@@ -64,6 +64,12 @@ template_rule(
             "srcs": ["float_matmul_runner.cc", "rvv_float_matmul_assembly.cc"],
             "hdrs": ["//sw/utils:utils.h"],
         },
+	"rvv_flashattention_test": {
+            "srcs": ["rvv_flashattention_kernel.cc", "rvv_flashattention_runner.cc"],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 512,
+            "dtcm_size_kbytes": 512,
+	},
     },
 )
 
@@ -75,5 +81,6 @@ filegroup(
         ":rvv_float_matmul_assembly.elf",
         ":rvv_float_matmul.elf",
         ":rvv_float_matmul_optimized.elf",
+	":rvv_flashattention_test.elf",
     ],
 )

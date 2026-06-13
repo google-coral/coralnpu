@@ -707,6 +707,52 @@ RVV_ML_OPS_TESTCASES = [
 ]
 # END_TESTCASES_FOR_rvv_ml_ops_cocotb_test
 
+# BEGIN_TESTCASES_FOR_rvv_flashattention_cocotb_test
+RVV_FLASHATTENTION_TESTCASES = [
+    "core_mini_rvv_flashattention_test",
+]
+# END_TESTCASES_FOR_rvv_flashattention_cocotb_test
+
+cocotb_test_suite(
+    name = "rvv_flashattention_cocotb_test",
+    simulators = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_FLASHATTENTION_TESTCASES,
+    testcases_vname = "RVV_FLASHATTENTION_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMini_ITCM512KB_DTCM512KBAxi",
+        "waves": False,
+        "seed": "42",
+        "test_module": ["rvv_flashattention_cocotb_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        "data": [
+            "//tests/cocotb/rvv/ml_ops:rvv_flashattention_test.elf",
+            "gemma_q.npy",
+            "gemma_k.npy",
+            "gemma_v.npy",
+            "gemma_o.npy",
+        ],
+        "size": "enormous",
+    },
+    vcs_build_args = VCS_BUILD_ARGS,
+    vcs_data = [
+        "//tests/cocotb/rvv/ml_ops:rvv_flashattention_test.elf",
+        "gemma_q.npy",
+        "gemma_k.npy",
+        "gemma_v.npy",
+        "gemma_o.npy",
+    ] + VCS_COMMON_DATA,
+    vcs_defines = VCS_DEFINES,
+    vcs_test_args = VCS_TEST_ARGS,
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
+    verilator_model = ":rvv_core_mini_itcm512kb_dtcm512kb_axi_model",
+)
+
 cocotb_test_suite(
     name = "rvv_ml_ops_cocotb_test",
     simulators = [
@@ -890,4 +936,5 @@ exports_files([
     "coverage_exclude.cfg",
     "xprop.cfg",
     "rvv_ml_ops_cocotb_test.py",
+    "rvv_flashattention_cocotb_test.py",
 ])
