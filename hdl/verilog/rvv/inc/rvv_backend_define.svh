@@ -23,7 +23,7 @@
   `define PMTRDT_RS_DEPTH       4
   `define MUL_RS_DEPTH          8
   `define DIV_RS_DEPTH          4
-  `define FMA_RS_DEPTH          8
+  `define FALU_RS_DEPTH         8
   `define FRDT_RS_DEPTH         4
   `define LSU_RS_DEPTH          4
   `define LSUMAP_DEPTH          8
@@ -47,7 +47,7 @@
   `define PMTRDT_RS_DEPTH       8
   `define MUL_RS_DEPTH          4
   `define DIV_RS_DEPTH          4
-  `define FMA_RS_DEPTH          4
+  `define FALU_RS_DEPTH         4
   `define FRDT_RS_DEPTH         4
   `define LSU_RS_DEPTH          4
   `define LSUMAP_DEPTH          8
@@ -68,21 +68,25 @@
 `define NUM_DIV                 1
 
 `ifdef ZVE32F_ON
-  `define NUM_FMA               2
+  `define NUM_FALU              2
   `define NUM_FRDT              1
   `define NUM_FDIV              1
   `define NUM_FSUB              4
-  `define NUM_ARI               (`NUM_ALU+`NUM_PMTRDT+`NUM_MUL+`NUM_DIV+`NUM_FMA)
-  `define NUM_PU                (`NUM_ARI+`NUM_LSU)
 `else
-  // Define FP variables even if not used
-  // TODO(derekjchow): Remove FP modules from chisel build once float is
-  // configurable.
-  `define NUM_FMA               0
-
-  `define NUM_ARI               (`NUM_ALU+`NUM_PMTRDT+`NUM_MUL+`NUM_DIV)
-  `define NUM_PU                (`NUM_ARI+`NUM_LSU)
+  `define NUM_FALU              0
+  `define NUM_FRDT              0
+  `define NUM_FDIV              0
+  `define NUM_FSUB              0
 `endif
+
+`ifdef ZVT_ON
+  `define NUM_VME               1
+`else
+  `define NUM_VME               0
+`endif
+
+`define NUM_ARI               (`NUM_ALU+`NUM_PMTRDT+`NUM_MUL+`NUM_DIV+`NUM_FALU+`NUM_VME)
+`define NUM_PU                (`NUM_ARI+`NUM_LSU)
 
 `ifdef ARBITER_ON
 `define NUM_SMPORT              4
@@ -169,5 +173,30 @@
 // V0 mask regsiter index
 `define V0_INDEX                5'b00000
 
+// ZVT
+`ifdef ZVT_ON
+  `define ZVT_RS_DEPTH        (`ZVT_LMUL*2)
+  
+  `define NUM_ACC             16
+  // 16 byte each subtile
+  `define SUBTILE_SIZE        16
+  `define NUM_BLK             4
+  
+  `define TE                  (`VLEN/8)
+
+  `ifdef ZVT_MAXCOMPUTING
+  `define COMPRATIO           1/4
+  `else       
+  `define COMPRATIO           4/`TE
+  `endif 
+
+  `define PROCESS_DELAY       (1/`COMPRATIO)
+  `define ZVT_LMUL            (`WORD_WIDTH*`TE/`VLEN)
+  `define NUM_PE              (`COMPRATIO*`TE*`TE)
+  // The quantity of subtile for each acc
+  `define NUM_SUBTILE         (`TE*`TE/`SUBTILE_SIZE)
+  // The quantity of subtile ports for each block
+  `define NUM_BLKPORT         ($ceil(`TE/4*`COMPRATIO)*`TE/4)
+`endif // ZVT_ON
 
 `endif // HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH

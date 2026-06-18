@@ -1,7 +1,7 @@
-`ifndef FMA_DEFINE_SVH
-`define FMA_DEFINE_SVH
+`ifndef HDL_VERILOG_RVV_INC_FALU_SVH
+`define HDL_VERILOG_RVV_INC_FALU_SVH
 
-//FMA subunit struct, 
+//FALU subunit struct, 
 typedef struct packed {   
   logic   [3:0]                       ftype;
 `ifdef TB_SUPPORT
@@ -60,4 +60,4 @@ typedef struct packed {
   RVFEXP_t  [3:0]                     fpexp;
 } SUB2ROB_t;
 
-`endif // FMA_DEFINE_SVH
+`endif // HDL_VERILOG_RVV_INC_FALU_SVH

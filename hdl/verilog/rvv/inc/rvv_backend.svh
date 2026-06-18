@@ -79,6 +79,12 @@ typedef struct packed {
   RVVSEW                        sew;
   RVVLMUL                       lmul;
   RVVLMUL                       lmul_orig;
+`ifdef ZVT_ON
+  logic                         altfmt;
+  logic [1:0]                   mtwiden;
+  logic [$clog2(`TE):0]         tm;
+  logic [2:0]                   tk;
+`endif
 } RVVConfigState;
 
 // Enum to encode the major opcode of the instruction. See "Section 5. Vector
@@ -141,6 +147,9 @@ typedef struct packed {
   EEW_e                           eew_vs1;
   EEW_e                           eew_vs2;
   EEW_e                           eew_vd;
+`ifdef ZVT_ON
+  EEW_e                           eew_mt;
+`endif
   EEW_e                           eew_max;
   EMUL_e                          emul_vs1;
   EMUL_e                          emul_vs2;
@@ -154,7 +163,7 @@ typedef struct packed {
 } LCMD_t;
 
 // execution unit
-typedef enum logic [3:0] {
+typedef enum logic [4:0] {
   ALU,
   MUL,
   MAC,
@@ -172,15 +181,22 @@ typedef enum logic [3:0] {
   FDIV,
   FTBL,
 `endif
+`ifdef ZVT_ON
+  VME,
+  VMELSU,
+`endif
   MISC
 } EXE_UNIT_e;
 
 // when EXE_UNIT_e is LSU, it identifys what LSU instruction, unit-stride load or indexed store or ..? based on inst_encoding[31:26]
-typedef enum logic [1:0] {
+typedef enum logic [2:0] {
   US,         // Unit-Stride
   IU,         // Indexed Unordered
   CS,         // Constant Stride
   IO          // Indexed Ordered
+`ifdef ZVT_ON
+  ,TILELDST
+`endif
 } LSU_MOP_e;
 
 // It identifys what unit-stride instruction when LSU_MOP_e=US, based on inst_encoding[24:20]
@@ -190,12 +206,6 @@ typedef enum logic [1:0] {
   US_MK,         // MasK load/store, EEW=8(inst_encoding[14:12]=3'b000)
   US_FF          // Faul-only-First load
 } LSU_UMOP_e;
-
-// It identifys what inst_encoding[11:7] is used for when LSU instruction, based on inst_encoding[5]
-typedef enum logic [0:0] {
-  IS_LOAD,       
-  IS_STORE       
-} LSU_IS_STORE_e;
 
 // segment load/store 
 typedef enum logic [0:0] {
@@ -207,7 +217,6 @@ typedef enum logic [0:0] {
 typedef struct packed {
   LSU_MOP_e         lsu_mop;
   LSU_UMOP_e        lsu_umop;
-  LSU_IS_STORE_e    lsu_is_store;
   LSU_IS_SEG_e      lsu_is_seg;
 } LSU_TYPE_t;
 
@@ -252,6 +261,7 @@ typedef struct packed {
   FUNCT6_u                            uop_funct6;
   EXE_UNIT_e                          uop_exe_unit; 
   UOP_CLASS_e                         uop_class;   
+  logic                               lsu_is_store;
   RVVConfigState                      vector_csr;  
   logic   [`VL_WIDTH-1:0]             vs_evl;             
   logic                               ignore_vma;
@@ -268,6 +278,10 @@ typedef struct packed {
 `ifdef ZVE32F_ON
   logic                               fd_valid; 
 `endif
+`ifdef ZVT_ON
+  logic                               mt_valid; 
+  EEW_e                               mt_eew;
+`endif
   logic   [`REGFILE_INDEX_WIDTH-1:0]  vs1;              
   EEW_e                               vs1_eew;            
   logic                               vs1_valid;
@@ -275,7 +289,7 @@ typedef struct packed {
   EEW_e                               vs2_eew;
   logic                               vs2_valid;
   logic   [`XLEN-1:0] 	              rs1_data;           
-  logic        	                      rs1_data_valid;                                
+  logic        	                      rs1_data_valid;    
   logic   [`UOP_INDEX_WIDTH-1:0]      uop_index;          
   logic                               first_uop_valid;    
   logic                               last_uop_valid;     
@@ -465,7 +479,7 @@ typedef struct packed {
   logic          	                    rs1_data_valid;   
   logic                               last_uop_valid;
   logic   [`UOP_INDEX_WIDTH_ALU-1:0]  uop_index;      
-} FMA_RS_t;  
+} FALU_RS_t;  
 
 //
 // EX stage, 
@@ -491,7 +505,7 @@ typedef struct packed {
 `endif
   logic                               valid;
   logic   [`ROB_DEPTH_WIDTH-1:0]      rob_entry;
-  LSU_IS_STORE_e                      lsu_class; 
+  logic                               lsu_is_store;
   logic	[`REGFILE_INDEX_WIDTH-1:0] 	  vregfile_write_addr;  
 } LSU_MAP_INFO_t; 
 
@@ -606,5 +620,121 @@ typedef struct packed {
   logic   [`VLEN-1:0]                 rt_data;
   logic   [`VLENB-1:0]                rt_strobe; 
 }RT2VRF_t;
+
+// ZVT
+`ifdef ZVT_ON
+
+typedef struct packed {
+`ifdef TB_SUPPORT
+  logic [`PC_WIDTH-1:0]    		  uop_pc;		
+  logic [2:0]	                  uop_index;	
+`endif
+  logic [`VLEN-1:0]   			    r_data;		
+} UOP_VME2LSU_t;
+
+typedef struct packed {
+`ifdef TB_SUPPORT
+  logic [`PC_WIDTH-1:0]    		  uop_pc;		
+  logic [2:0]	                  uop_index;	
+`endif
+  logic [`VLEN-1:0]   			    w_data;		
+} UOP_LSU2VME_t;
+
+typedef struct packed {
+  logic [$clog2(`NUM_ACC)-1:0]  tile;
+  logic                         pattern;
+  logic [$clog2(`TE)-1:0]       index;
+} TSS_t;
+
+typedef enum logic [1:0] {
+  FPMUL,        // src2 is fp 
+  INTMUL,       // src2 is signed int
+  UINTMUL       // src2 is unsigned int
+} PEOPCODE_e;
+
+typedef struct packed {
+`ifdef TB_SUPPORT
+  logic   [`PC_WIDTH-1:0]                       uop_pc;
+`endif
+  logic   [`ROB_DEPTH_WIDTH-1:0]                rob_entry;
+  FUNCT6_u                                      uop_funct6;  
+  logic   [`FUNCT3_WIDTH-1:0]                   uop_funct3;
+  logic   [`REGFILE_INDEX_WIDTH-1:0]            vs2;
+  logic                                         is_lsu;
+  logic                                         is_store;
+  logic   [`VSTART_WIDTH-1:0]                   vstart;
+  logic                                         altfmt;
+  logic   [1:0]                                 mtwiden;
+  logic   [$clog2(`TE):0]                       tm;
+  logic   [$clog2(`TE):0]                       vl;      
+  logic   [2:0]                                 tk;
+  RVVSEW                                        sew;
+  EEW_e                                         eew_mt;
+  fpnew_pkg::roundmode_e                        rndMode; 
+  TSS_t                                         tss;
+  logic   [`VLEN-1:0]                           vs1_data;           
+  logic   [`VLEN-1:0]                           vs2_data;	        
+  logic   [`REGFILE_INDEX_WIDTH-1:0]            dst_index;
+  logic                                         first_uop_valid;
+  logic                                         last_uop_valid;
+  logic   [$clog2(`EMUL_MAX)-1:0]               uop_index; 
+} ZVT_RS_t;
+
+typedef struct packed {
+`ifdef TB_SUPPORT
+  logic   [`PC_WIDTH-1:0]                       uop_pc;
+`endif
+  logic [`TE/2*`COMPRATIO-1:0][`WORD_WIDTH-1:0] va;
+  logic [`TE/2*`COMPRATIO-1:0][3:0]             vaMask;    
+  fpnew_pkg::roundmode_e                        rndMode;
+  PEOPCODE_e                                    op;    
+  logic                                         opMod;
+  fpnew_pkg::fp_format_e                        fsrcFmt;
+  fpnew_pkg::int_format_e                       isrcFmt; 
+  fpnew_pkg::fp_format_e                        fdstFmt; 
+  fpnew_pkg::int_format_e                       idstFmt;    
+  logic [$clog2(`NUM_ACC)-1:0]                  readAccIdx; 
+  logic [$clog2(`PROCESS_DELAY)-1:0]            readAccId;        
+} PEVAINFO_t;
+
+typedef struct packed {
+  logic [`TE/2-1:0][`WORD_WIDTH-1:0]            vb;
+  logic [`TE/2-1:0][3:0]                        vbMask;       
+} PEVBINFO_t;
+
+typedef struct packed {
+  PEVAINFO_t                                    vaInfo;
+  PEVBINFO_t                                    vbInfo;
+} BLKCMD_t;
+
+typedef struct packed {
+`ifdef TB_SUPPORT
+  logic [`PC_WIDTH-1:0]                         uop_pc;
+`endif
+  fpnew_pkg::roundmode_e                        rndMode;
+  PEOPCODE_e                                    op;   
+  fpnew_pkg::fp_format_e                        fdstFmt; 
+  fpnew_pkg::int_format_e                       idstFmt; 
+  logic [$clog2(`NUM_ACC)-1:0]                  readAccIdx; 
+  logic [$clog2(`PROCESS_DELAY)-1:0]            readAccId;
+} MULBULKTAG_t;
+
+typedef struct packed {
+  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][`WORD_WIDTH-1:0]  res;
+  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][3:0]              resMask;  
+  fpnew_pkg::status_t [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]     status;
+  MULBULKTAG_t                                              tag; 
+} MULBULKRES_t;
+
+typedef struct packed {
+`ifdef TB_SUPPORT
+  logic [`PC_WIDTH-1:0]                                     uop_pc;
+`endif
+  fpnew_pkg::status_t [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]     status;
+  logic [$clog2(`NUM_ACC)-1:0]                              writeAccIdx; 
+  logic [$clog2(`PROCESS_DELAY)-1:0]                        writeAccId;
+} ADDERTAG_t;
+
+`endif  // ZVT_ON 
 
 `endif  // HDL_VERILOG_RVV_DESIGN_RVV_SVH

@@ -74,7 +74,7 @@
   parameter VWRXUNARY0      =   6'b010_000;     
   parameter VXUNARY0        =   6'b010_010;     
   parameter VMUNARY0        =   6'b010_100;     
-  parameter VCOMPRESS       =   6'b010_111;
+  parameter VCOMPRESS_VTMVTV =  6'b010_111;
   parameter VMANDN          =   6'b011_000;
   parameter VMAND           =   6'b011_001;
   parameter VMOR            =   6'b011_010;
@@ -207,6 +207,7 @@
   parameter  UNORDERED_INDEX   = 3'b001;
   parameter  CONSTANT_STRIDE   = 3'b010;
   parameter  ORDERED_INDEX     = 3'b011;
+  parameter  TILE_LDST         = 3'b100;
 
   parameter  US_REGULAR        = 5'b00000;
   parameter  US_WHOLE_REGISTER = 5'b01000;
@@ -228,5 +229,13 @@
   parameter NF6 = 3'b101;
   parameter NF7 = 3'b110;
   parameter NF8 = 3'b111;
+
+// ZVT
+`ifdef ZVT_ON
+  parameter VT_F_MMTVV  = 6'b111_100; 
+  // vwxunary0 and vrxunary0
+  parameter VTMVVT      = 5'b11111;
+  parameter VTZERO      = 5'b11110;
+`endif // ZVT_ON
 
 `endif // HDL_VERILOG_RVV_OPCODE_SVH
