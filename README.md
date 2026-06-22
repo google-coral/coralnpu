@@ -45,4 +45,11 @@ bazel-bin/tests/verilator_sim/core_mini_axi_sim --binary bazel-out/k8-fastbuild-
 ```
 
 
+## Documentation
+
+* [Integration guide](doc/integration_guide.md)
+* [Simulation guide](doc/simulation.md)
+* [Writing Coral NPU programs](doc/tutorials/writing_coralnpu_programs.md)
+* [Host AXI boot sequence](doc/tutorials/host_axi_boot_sequence.md)
+
 ![](doc/images/Coral_Logo_200px-2x.png)
