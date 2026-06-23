@@ -102,6 +102,19 @@ verilator_cocotb_model(
     ],
 )
 
+# VME (Zvt) variant. Adds -DZVT_ON so the SystemVerilog `RVVConfigState`
+# struct gets the matrix-extension fields it needs.
+verilator_cocotb_model(
+    name = "vme_core_mini_axi_model",
+    cflags = VERILATOR_BUILD_ARGS + ["-DZVT_ON"],
+    hdl_toplevel = "VmeCoreMiniAxi",
+    trace = False,
+    verilog_source = "//hdl/chisel/src/coralnpu:VmeCoreMiniAxi.sv",
+    deps = [
+        "//hdl/verilog:sram_backdoor",
+    ],
+)
+
 # BEGIN_TESTCASES_FOR_core_mini_axi_sim_cocotb
 CORE_MINI_AXI_SIM_TESTCASES = [
     ("core_mini_axi_basic_write_read_memory", "large"),

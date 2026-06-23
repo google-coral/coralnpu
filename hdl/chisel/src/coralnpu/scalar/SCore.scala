@@ -494,6 +494,11 @@ class SCore(p: Parameters) extends Module {
     csr.io.rvv.get.vtype   := io.rvvcore.get.configState.bits.vtype
     csr.io.rvv.get.vxrm    := io.rvvcore.get.csr.vxrm
     csr.io.rvv.get.vxsat   := io.rvvcore.get.csr.vxsat
+    if (p.enableVme) {
+      csr.io.rvv.get.mtype := io.rvvcore.get.configState.bits.mtype.get
+    } else {
+      csr.io.rvv.get.mtype := 0.U
+    }
   }
   val isBranching            = bru.map(_.io.taken.valid).reduce(_ || _)
   val hasFetchedInstructions = fetch.io.inst.lanes.map(_.valid).reduce(_ || _)

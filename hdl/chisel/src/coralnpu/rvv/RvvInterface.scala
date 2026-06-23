@@ -30,6 +30,16 @@ class RvvConfigState(p: Parameters) extends Bundle {
   // This is the original one set in vset(i)vl(i)
   val lmul_orig = Output(UInt(3.W))
   val vill      = Output(Bool())
+  // VME (Zvt) non-tile state. Packed mtype view assembled from {tm, tk,
+  // mtwiden} per §15.1.1.2.
+  // Note: The spec (v0.3) has a discrepancy: it defines tk as tk[2:0] (3 bits,
+  // values 0-4) but allocates it to bits 6:5 (2 bits). We assume tk is 3 bits
+  // and occupies bits 7:5, which shifts the reserved bits above it to 9:8.
+  // tm is in [23:10] (14 bits), mtwiden is in [1:0] (2 bits).
+  val mtype   = Option.when(p.enableVme)(Output(UInt(p.xlen.W)))
+  val mtwiden = Option.when(p.enableVme)(Output(UInt(2.W)))
+  val tm      = Option.when(p.enableVme)(Output(UInt(14.W)))
+  val tk      = Option.when(p.enableVme)(Output(UInt(3.W)))
 
   /** Construct the vtype CSR value. See section 3.4 of the RISC-V Vector Specification v1.0.
     */

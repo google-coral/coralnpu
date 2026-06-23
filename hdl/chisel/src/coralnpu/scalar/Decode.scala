@@ -200,6 +200,15 @@ class DecodedInstruction(p: Parameters) extends Bundle {
     }
   }
 
+  // True for the VME (Zvt) mset* family. Always false when enableVme is off.
+  def isVmeMset(): Bool = {
+    if (p.enableVme) {
+      rvv.get.valid && rvv.get.bits.isMsetAny()
+    } else {
+      false.B
+    }
+  }
+
   def readsRs1(): Bool = {
     isCondBr() || isAluReg() || isAluImm() || isAlu1Bit() || isAlu2Bit() ||
     isCsr() || isMul() || isDvu() || jalr || floatReadsScalarRs1() ||
@@ -754,10 +763,13 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       )
       val csr_bits_index                   = io.inst(0).bits.inst(31, 20)
       val (csr_address, csr_address_valid) = CsrAddress.safe(csr_bits_index)
-      // Stall reads of vxsat (0x009) and vcsr (0x00F) until the vector unit is
-      // idle. Only these CSRs can be modified by in-flight vector instructions
-      // (saturating arithmetic sets vxsat; vcsr contains vxsat as a bitfield).
-      val isVxsatOrVcsr     = csr_bits_index === 0x009.U || csr_bits_index === 0x00f.U
+      // Stall reads of vxsat (0x009), vcsr (0x00F), and (when VME is enabled)
+      // mtype (0xC23) until the vector unit is idle. These CSRs can be
+      // modified by in-flight vector instructions: saturating arithmetic sets
+      // vxsat (vcsr contains vxsat as a bitfield); mset* updates mtype.
+      val isVxsatOrVcsr = csr_bits_index === 0x009.U || csr_bits_index === 0x00f.U ||
+        (if (p.enableVme) { csr_bits_index === 0xc23.U }
+         else { false.B })
       val rvvIdleOrNotVxsat = io.rvvIdle.getOrElse(true.B) || !isVxsatOrVcsr
       io.csr.valid := tryDispatch && csr.valid && csr_address_valid && (if (p.enableFloat) {
                                                                           io.float.get.ready

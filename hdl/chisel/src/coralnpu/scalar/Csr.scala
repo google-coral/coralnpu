@@ -26,6 +26,8 @@ class CsrRvvIO(p: Parameters) extends Bundle {
   val vtype  = Input(UInt(32.W))
   val vxrm   = Input(UInt(2.W))
   val vxsat  = Input(Bool())
+  // VME (Zvt). Tied to 0 when enableVme=false.
+  val mtype = Input(UInt(p.xlen.W))
   // From Csr to RvvCore
   val vstart_write = Output(Valid(UInt(log2Ceil(p.rvvVlen).W)))
   val vxrm_write   = Output(Valid(UInt(2.W)))
@@ -84,6 +86,7 @@ object CsrAddress extends ChiselEnum {
   val VL        = Value(0xc20.U(12.W))
   val VTYPE     = Value(0xc21.U(12.W))
   val VLENB     = Value(0xc22.U(12.W))
+  val MTYPE     = Value(0xc23.U(12.W))
   val MVENDORID = Value(0xf11.U(12.W))
   val MARCHID   = Value(0xf12.U(12.W))
   val MIMPID    = Value(0xf13.U(12.W))
@@ -391,6 +394,9 @@ class Csr(p: Parameters) extends Module {
   val minstrethEn = csr_address === CsrAddress.MINSTRETH
   // Vector CSRs.
   val vlenbEn = Option.when(p.enableRvv) { csr_address === CsrAddress.VLENB }
+  // Matrix CSRs (Zvt). Read-only; updated by mset* through the RVV frontend.
+  val mtypeEn = Option.when(p.enableVme) { csr_address === CsrAddress.MTYPE }
+
   // M-mode information CSRs.
   val mvendoridEn = csr_address === CsrAddress.MVENDORID
   val marchidEn   = csr_address === CsrAddress.MARCHID
@@ -487,6 +493,14 @@ class Csr(p: Parameters) extends Module {
             vxrmEn.get   -> io.rvv.get.vxrm,
             vxsatEn.get  -> io.rvv.get.vxsat,
             vlenbEn.get  -> 16.U(32.W) // Vector length in Bytes
+          )
+        }
+        .getOrElse(Seq())
+      ++
+      Option
+        .when(p.enableVme) {
+          Seq(
+            mtypeEn.get -> io.rvv.get.mtype
           )
         }
         .getOrElse(Seq())

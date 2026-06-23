@@ -100,6 +100,9 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen
   // indexing a single byte within one vector register
   def rvvByteIndexWidth: Int = log2Ceil(rvvVlenb)
 
+  // Enable VME (Zvt) non-tile state and mset* instructions. Requires enableRvv.
+  var enableVme = false
+
   def useRetirementBuffer: Boolean = { enableVerification }
 
   // Scalar Floating point

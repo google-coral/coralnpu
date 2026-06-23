@@ -139,6 +139,13 @@ module RvvFrontEnd#(parameter N = 4,
   logic [31:0] vlmax [N-1:0];
   logic is_setvl [N-1:0];
   logic [`VL_WIDTH-1:0] vl_minus_one [N-1:0];
+`ifdef ZVT_ON
+  // VME (Zvt) msettm / msettk write rd with the new field value (and do not
+  // set vl). msettn falls through the is_setvl path which already writes
+  // vl-to-rd.
+  logic mset_writes_rd [N-1:0];
+  logic [31:0] mset_rd_data [N-1:0];
+`endif
   always_comb begin
     inst_config_state[0] = config_state_q;
     inst_config_state[0].vstart = vstart_i;
@@ -152,6 +159,10 @@ module RvvFrontEnd#(parameter N = 4,
       avl[i] = 0;
       vlmax[i] = 0;
       is_setvl[i] = 0;
+`ifdef ZVT_ON
+      mset_writes_rd[i] = 0;
+      mset_rd_data[i] = 0;
+`endif
 
       if (valid_inst_q[i] &&
           (inst_q[i].opcode == RVV) &&
@@ -179,7 +190,10 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].ta = inst_q[i].bits[19];
           inst_config_state[i+1].ma = inst_q[i].bits[20];
           is_setvl[i] = 1;
-        end else if (inst_q[i].bits[24:23] == 2'b10) begin  // vsetvl
+        end else if (inst_q[i].bits[24:18] == 7'b1000000) begin  // vsetvl
+          // Tightened from "bits[24:23] == 2'b10" so we don't accidentally
+          // catch VME mset* instructions which share the bit24=1,bit23=0
+          // prefix. vsetvl proper has bits[30:25] = 000000.
           // Set AVL based on encoding (see Section 6.2 of RVV spec)
           unique case (inst_q[i].bits[12:8])
             0: unique case (inst_q[i].bits[4:0])
@@ -196,6 +210,62 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].ma = reg_read_data_i[(2*i) + 1][7];
           is_setvl[i] = 1;
         end
+`ifdef ZVT_ON
+        // VME (Zvt) §15.1.1.4 mset* family. Bit31=1 distinguishes from
+        // vsetvli/vsetivli; bits[30:25] (=bits[24:18] in compressed view)
+        // selects sub-family.
+        else if (inst_q[i].bits[24:18] == 7'b1000001) begin  // msetmtype
+          // mtype <- rs1, vtype <- rs2 (vsetvl semantics), vl <- 0.
+          inst_config_state[i+1].mtwiden = reg_read_data_i[2*i][1:0];
+          inst_config_state[i+1].tk     = reg_read_data_i[2*i][6:5];
+          inst_config_state[i+1].tm     = reg_read_data_i[2*i][23:10];
+          inst_config_state[i+1].lmul_orig =
+              RVVLMUL'(reg_read_data_i[(2*i) + 1][2:0]);
+          inst_config_state[i+1].sew =
+              RVVSEW'(reg_read_data_i[(2*i) + 1][5:3]);
+          inst_config_state[i+1].ta = reg_read_data_i[(2*i) + 1][6];
+          inst_config_state[i+1].ma = reg_read_data_i[(2*i) + 1][7];
+          // avl stays 0 -> setvl post-processing will set vl=0 (when not vill).
+          is_setvl[i] = 1;
+        end else if (inst_q[i].bits[24:18] == 7'b1000010) begin
+          unique case (inst_q[i].bits[15:13])
+            3'b000: begin  // msettn rd, rs1 - vl <- min(rs1, vlmax); rd <- vl
+              avl[i] = reg_read_data_i[2*i];
+              is_setvl[i] = 1;
+            end
+            3'b001: begin  // msettm rd, rs1 - mtype.tm <- rs1 (saturated)
+              logic [13:0] msettm_new_tm;
+              msettm_new_tm = (reg_read_data_i[2*i] > 32'h3FFF) ? 14'h3FFF
+                                                                : reg_read_data_i[2*i][13:0];
+              inst_config_state[i+1].tm = msettm_new_tm;
+              mset_writes_rd[i] = 1;
+              mset_rd_data[i] = {18'd0, msettm_new_tm};
+            end
+            3'b010: begin  // msettk rd, rs1 - mtype.tk <- min(rs1, KMAX). Field
+                            // is 2 bits per literal spec, so clamp to 0..3.
+              logic [1:0] msettk_new_tk;
+              msettk_new_tk = (reg_read_data_i[2*i] > 32'd3) ? 2'd3
+                                                                : reg_read_data_i[2*i][1:0];
+              inst_config_state[i+1].tk = msettk_new_tk;
+              mset_writes_rd[i] = 1;
+              mset_rd_data[i] = {30'd0, msettk_new_tk};
+            end
+            3'b011: begin  // msetmtypei - imm[4:0] -> mtype low bits,
+                            // imm[1:0] (bits[17:16]) -> vtype.sew, rest zeroed.
+              inst_config_state[i+1].mtwiden = inst_q[i].bits[9:8];
+              inst_config_state[i+1].tk     = 2'b0;
+              inst_config_state[i+1].tm     = 14'd0;
+              inst_config_state[i+1].sew     =
+                  RVVSEW'({1'b0, inst_q[i].bits[17:16]});
+              inst_config_state[i+1].lmul_orig = LMUL1;
+              inst_config_state[i+1].ta = 0;
+              inst_config_state[i+1].ma = 0;
+              is_setvl[i] = 1;
+            end
+            default: ;
+          endcase
+        end
+`endif  // ZVT_ON
       end
 
       if (is_setvl[i]) begin
@@ -354,6 +424,14 @@ module RvvFrontEnd#(parameter N = 4,
       config_state_q.sew <= SEW8;
       config_state_q.lmul <= LMUL1;
       config_state_q.lmul_orig <= LMUL1;
+`ifdef ZVT_ON
+      // VME (Zvt) §15.1.1.2 says mtype is implicitly zero when mtwiden==0
+      // ("matrix unit is not configured"). Reset to that state.
+      config_state_q.altfmt  <= 1'b0;
+      config_state_q.mtwiden <= 2'b00;
+      config_state_q.tk     <= 2'b00;
+      config_state_q.tm     <= 14'd0;
+`endif
     end else begin
       // Update config state next cycle
       config_state_q <= inst_config_state[N];
@@ -391,9 +469,17 @@ module RvvFrontEnd#(parameter N = 4,
             : 0;
 
       // Write new value of vl into rd for configuration function.
-      reg_write_valid_o[i] = is_setvl[i];
+      // For VME msettm/msettk, write the new field value to rd instead.
+      reg_write_valid_o[i] = is_setvl[i]
+`ifdef ZVT_ON
+                             || mset_writes_rd[i]
+`endif
+                             ;
       reg_write_addr_o[i] = inst_q[i].bits[4:0];
       reg_write_data_o[i] =
+`ifdef ZVT_ON
+          mset_writes_rd[i] ? mset_rd_data[i] :
+`endif
           {{(`XLEN-`VL_WIDTH){1'b0}}, inst_config_state[i+1].vl};
     end
   end
@@ -444,6 +530,11 @@ module RvvFrontEnd#(parameter N = 4,
         (inst_q[i].bits[7:5] == 'b100) ||  // OPIVX
         (inst_q[i].bits[7:5] == 'b110) ||  // OPMVX
         ((inst_q[i].bits[7:5] == 'b111) && (inst_q[i].bits[24:23] != 2'b11))  // vsetvl and vsetvli
+`ifdef ZVT_ON
+        // VME msetmtype (bits[24:18]=1000001) reads rs1; bits[24:23] is part
+        // of rs2 there so it may equal 11, evading the clause above.
+        || ((inst_q[i].bits[7:5] == 'b111) && (inst_q[i].bits[24:18] == 7'b1000001))
+`endif
       );
       requires_rs1_read[i] =
           lsu_requires_rs1_read[i] || non_lsu_requires_rs1_read[i];
@@ -454,7 +545,12 @@ module RvvFrontEnd#(parameter N = 4,
       // vsetvl is only non LSU instruction that reads rs2
       non_lsu_requires_rs2_read[i] = (inst_q[i].opcode == RVV) &&
           (inst_q[i].bits[7:5] == 3'b111) &&
-          (inst_q[i].bits[24:18] == 7'b1000000);
+          ((inst_q[i].bits[24:18] == 7'b1000000)
+`ifdef ZVT_ON
+            // VME msetmtype reads rs2 for the new vtype value.
+            || (inst_q[i].bits[24:18] == 7'b1000001)
+`endif
+          );
       requires_rs2_read[i] =
           lsu_requires_rs2_read[i] || non_lsu_requires_rs2_read[i];
     end

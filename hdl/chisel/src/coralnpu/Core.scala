@@ -109,6 +109,8 @@ object EmitCore extends App {
       p.fetchDataBits = arg.split("=")(1).toInt
     } else if (arg.startsWith("--enableRvv")) {
       p.enableRvv = arg.split("=")(1).toBoolean
+    } else if (arg.startsWith("--enableVme")) {
+      p.enableVme = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--enableFloat")) {
       p.enableFloat = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--enableZfbfmin")) {
@@ -138,6 +140,7 @@ object EmitCore extends App {
     }
   }
   assert(!(useAxi && useTlul))
+  require(!p.enableVme || p.enableRvv, "--enableVme requires --enableRvv=True")
 
   val finalModuleName =
     if (

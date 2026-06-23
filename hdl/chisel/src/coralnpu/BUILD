@@ -765,6 +765,68 @@ filegroup(
     srcs = [":rvv_core_mini_tlul_cc_library_verilog"],
 )
 
+# VME (Zvt) variant. Adds the non-tile mset* CSR plumbing on top of the RVV
+# core. Kept as a separate template_rule call so the RVV-only targets above
+# remain byte-identical (the ZVT_ON define widens the RVVConfigState struct).
+VME_CORE_MINI_AXI_COMMON_GEN_FLAGS = RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS + [
+    "--enableVme=True",
+]
+
+template_rule(
+    chisel_cc_library,
+    {
+        "vme_core_mini_axi_cc_library": {
+            "verilog_file_path": "VmeCoreMiniAxi.sv",
+            "extra_outs": [
+                "VVmeCoreMiniAxi_parameters.h",
+                "VmeCoreMiniAxi.zip",
+            ],
+            "gen_flags": [
+                "--moduleName=VmeCoreMini",
+                "--itcmSizeKBytes=8",
+                "--dtcmSizeKBytes=32",
+            ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
+            "module_name": "VmeCoreMiniAxi",
+        },
+    },
+    chisel_lib = ":coralnpu",
+    emit_class = "coralnpu.EmitCore",
+    vopts = [
+        "-DUSE_GENERIC",
+        # RVV
+        "-DTB_SUPPORT",
+        "-DVLEN_128",
+        "-DZVE32F_ON",
+        # VME (Zvt) non-tile state and mset* instructions.
+        "-DZVT_ON",
+        "-Wno-WIDTH",
+        "-Wno-CASEINCOMPLETE",
+        "-Wno-LATCH",
+        "-Wno-SIDEEFFECT",
+        "-Wno-MULTIDRIVEN",
+        "-Wno-UNOPTFLAT",
+        "-Wno-BLKANDNBLK",
+        "-Wno-CASEX",
+        # FPNEW
+        "-Wno-ASCRANGE",
+        "-Wno-WIDTHEXPAND",
+        "-Wno-WIDTHTRUNC",
+        "-Wno-UNSIGNED",
+        "-Wno-WIDTHCONCAT",
+        "-Ihdl/verilog/rvv/design/FPnew/common_cells/inc",
+    ],
+)
+
+vcstatic_lint(
+    name = "vme_core_mini_axi_cc_library_lint",
+    blackbox_designs = CORE_MINI_AXI_BLACKBOX_DESIGNS,
+    goal = "lint_rtl",
+    lint_tags = CORE_MINI_AXI_LINT_TAGS,
+    module = "VmeCoreMiniAxi",
+    package = "vme_core_mini_axi_cc_library_verilog",
+    waive_tags = ["UndrivenInTerm-ML"],
+)
+
 verilog_zip_bundle(
     name = "core_mini_axi_bundle",
     lib = ":core_mini_axi_cc_library_verilog",

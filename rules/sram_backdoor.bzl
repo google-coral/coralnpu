@@ -22,4 +22,5 @@ SRAM_BACKDOOR_TOPLEVELS = [
     "RvvCoreMini_ITCM512KB_DTCM512KBAxi",
     "CoralNPUChiselSubsystemTestHarness",
     "CoralNPUChiselSubsystemHighmemTestHarness",
+    "VmeCoreMiniAxi",
 ]

@@ -106,20 +106,43 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     (opcode === RvvCompressedOpcode.RVVALU && funct3() === "b111".U)
   }
 
+  // VME (Zvt) mset* family. All share opcode 1010111 and funct3 111 with
+  // vset*vl*, distinguished by bit31=1 and the funct7 / sub-funct fields.
+  // In the 25-bit `bits` view (which is instr[31:7]):
+  //   bits(24,18)  = instr[31:25] = funct7
+  //   bits(15,13)  = instr[22:20] = sub-funct (for the 000010 family)
+  def isMsetmtype(): Bool =
+    isVset() && bits(24, 18) === "b1000001".U
+  def isMsettn(): Bool =
+    isVset() && bits(24, 18) === "b1000010".U && bits(15, 13) === "b000".U
+  def isMsettm(): Bool =
+    isVset() && bits(24, 18) === "b1000010".U && bits(15, 13) === "b001".U
+  def isMsettk(): Bool =
+    isVset() && bits(24, 18) === "b1000010".U && bits(15, 13) === "b010".U
+  def isMsetmtypei(): Bool =
+    isVset() && bits(24, 18) === "b1000010".U && bits(15, 13) === "b011".U
+  def isMsetAny(): Bool =
+    isMsetmtype() || isMsettn() || isMsettm() || isMsettk() || isMsetmtypei()
+
   def isLoadStore(): Bool = {
     opcode.isOneOf(RvvCompressedOpcode.RVVLOAD, RvvCompressedOpcode.RVVSTORE)
   }
 
   def readsRs1(): Bool = {
     isLoadStore() ||
-    (funct3() === "b100".U) ||                              // OPIVX
-    (funct3() === "b110".U) ||                              // OPMVX
-    ((funct3() === "b111".U) && (bits(24, 23) =/= "b11".U)) // vsetvl and vsetvli
+    (funct3() === "b100".U) ||                                 // OPIVX
+    (funct3() === "b110".U) ||                                 // OPMVX
+    ((funct3() === "b111".U) && (bits(24, 23) =/= "b11".U)) || // vsetvl(i)
+    // VME mset*: msetmtype/msettn/msettm/msettk all read rs1. Above clause
+    // already covers msettn/m/k (bits[24:23]=00) but not msetmtype (bits[24:23]
+    // is rs2 high bits, which can be 11).
+    isMsetmtype() || isMsettn() || isMsettm() || isMsettk()
   }
 
   def readsRs2(): Bool = {
     (isLoadStore() && (mop === RvvAddressingMode.STRIDED)) ||
-    ((funct3() === "b111".U) && (bits(24, 18) === "b1000000".U))
+    ((funct3() === "b111".U) && (bits(24, 18) === "b1000000".U)) ||
+    isMsetmtype()
   }
 
   def readsFloatRs1(): Bool = {
