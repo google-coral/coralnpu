@@ -6,6 +6,8 @@
 `include "rvv_backend_sva.svh"
 `endif
 
+// TODO: tail uops
+
 module rvv_backend_decode_unit_lsu_de2
 (
   lcmd_valid,
@@ -35,8 +37,10 @@ module rvv_backend_decode_unit_lsu_de2
   logic   [`FUNCT3_WIDTH-1:0]                         inst_funct3;      // inst original encoding[14:12]
   logic   [`REGFILE_INDEX_WIDTH-1:0]                  inst_vd;          // inst original encoding[11:7]
   RVVOpCode                                           inst_opcode;      // inst original encoding[6:0]
+  logic                                               lsu_is_store;
   RVVConfigState                                      vector_csr_lsu;
   logic   [`VSTART_WIDTH-1:0]                         csr_vstart;
+  logic   [`XLEN-1:0]                                 rs1;
   logic   [`UOP_INDEX_WIDTH-1:0]                      uop_index_max;         
   RVVLMUL                                             reduced_lmul;  
   EMUL_e                                              emul_vd;          
@@ -53,6 +57,7 @@ module rvv_backend_decode_unit_lsu_de2
   logic   [`NUM_DE_UOP-1:0][`UOP_INDEX_WIDTH:0]       uop_index_current;   
   logic   [`NUM_DE_UOP-1:0]                           first_uop_valid;    
   logic   [`NUM_DE_UOP-1:0]                           last_uop_valid;     
+  EXE_UNIT_e                                          uop_exe_unit; 
   UOP_CLASS_e                                         uop_class;   
   RVVConfigState  [`NUM_DE_UOP-1:0]                   vector_csr;  
   logic   [`NUM_DE_UOP-1:0][`REGFILE_INDEX_WIDTH-1:0] vd_index;           
@@ -62,6 +67,9 @@ module rvv_backend_decode_unit_lsu_de2
   logic   [`NUM_DE_UOP-1:0][`REGFILE_INDEX_WIDTH-1:0] vs2_index; 	        
   logic   [`NUM_DE_UOP-1:0][$clog2(`EMUL_MAX)-1:0]    vs2_offset;
   logic   [`NUM_DE_UOP-1:0]                           vs2_valid;
+`ifdef ZVT_ON
+  logic                                               mt_valid; 
+`endif
   logic   [`NUM_DE_UOP-1:0][`UOP_INDEX_WIDTH-1:0]     uop_index;          
   logic   [`NUM_DE_UOP-1:0][$clog2(`EMUL_MAX)-1:0]    seg_field_index;
   logic   [`NUM_DE_UOP-1:0]                           pshrob_valid;  
@@ -82,6 +90,7 @@ module rvv_backend_decode_unit_lsu_de2
   assign inst_opcode    = lcmd_valid ? lcmd.cmd.opcode : RVV;
   assign vector_csr_lsu = lcmd_valid ? lcmd.cmd.arch_state : 'b0;
   assign csr_vstart     = lcmd_valid ? lcmd.cmd.arch_state.vstart : 'b0;
+  assign rs1            = lcmd_valid ? lcmd.cmd.rs1 : 'b0;
   assign uop_index_max  = lcmd_valid ? lcmd.uop_index_max : 'b0;
   assign emul_vd        = lcmd_valid ? lcmd.emul_vd : EMUL_NONE; 
   assign emul_vs2       = lcmd_valid ? lcmd.emul_vs2 : EMUL_NONE;
@@ -92,26 +101,16 @@ module rvv_backend_decode_unit_lsu_de2
   assign reduced_lmul   = lcmd_valid ? lcmd.cmd.arch_state.lmul : LMULRESERVED;  
 
   // valid signal
+  assign valid_lsu_opcode = inst_opcode==LOAD || inst_opcode==STORE;
+  
   assign valid_lsu = valid_lsu_opcode&valid_lsu_mop&lcmd_valid;
 
   // identify load or store
-  always_comb begin
-    funct6_lsu.lsu_funct6.lsu_is_store = IS_LOAD;
-    valid_lsu_opcode                   = 'b0;
-
-    case(inst_opcode)
-      LOAD: begin
-        funct6_lsu.lsu_funct6.lsu_is_store = IS_LOAD;
-        valid_lsu_opcode                   = 1'b1;
-      end
-      STORE: begin
-        funct6_lsu.lsu_funct6.lsu_is_store = IS_STORE;
-        valid_lsu_opcode                   = 1'b1;
-      end
-    endcase
+  assign lsu_is_store = inst_opcode == STORE;
 
   // lsu_mop distinguishes unit-stride, constant-stride, unordered index, ordered index
   // lsu_umop identifies what unit-stride instruction belong to when lsu_mop=US
+  always_comb begin
     // initial 
     funct6_lsu.lsu_funct6.lsu_mop    = US;
     funct6_lsu.lsu_funct6.lsu_umop   = US_US;
@@ -160,6 +159,13 @@ module rvv_backend_decode_unit_lsu_de2
         valid_lsu_mop                    = 1'b1;
         funct6_lsu.lsu_funct6.lsu_is_seg = (inst_nf!=NF1) ? IS_SEGMENT : NONE;
       end
+    `ifdef ZVT_ON
+      TILE_LDST: begin
+        funct6_lsu.lsu_funct6.lsu_mop    = TILELDST;  
+        valid_lsu_mop                    = 1'b1;
+        funct6_lsu.lsu_funct6.lsu_is_seg = NONE;
+      end
+      `endif
     endcase
   end
 
@@ -190,6 +196,13 @@ module rvv_backend_decode_unit_lsu_de2
       last_uop_valid[i] = uop_index_current[i][`UOP_INDEX_WIDTH-1:0] == uop_index_max;
     end
   end
+  
+  // execution unit
+`ifdef ZVT_ON
+  assign uop_exe_unit = inst_funct6[2:0] == TILE_LDST ? VMELSU : LSU;
+`else
+  assign uop_exe_unit = LSU;
+`endif
 
   // update uop class
   always_comb begin
@@ -199,6 +212,9 @@ module rvv_backend_decode_unit_lsu_de2
     case(inst_opcode) 
       LOAD:begin
         case(inst_funct6[2:0])
+        `ifdef ZVT_ON
+          TILE_LDST,
+        `endif
           UNIT_STRIDE,
           CONSTANT_STRIDE: begin
             uop_class = XXX;
@@ -220,6 +236,11 @@ module rvv_backend_decode_unit_lsu_de2
           ORDERED_INDEX: begin
             uop_class = VVX;
           end
+        `ifdef ZVT_ON
+          TILE_LDST: begin
+            uop_class = XXX;
+          end
+        `endif
         endcase
       end
     endcase
@@ -624,8 +645,12 @@ module rvv_backend_decode_unit_lsu_de2
     end
   end
 
+`ifdef ZVT_ON
+  assign mt_valid = lsu_is_store && inst_funct6[2:0]== TILE_LDST;
+`endif
+
   // update vs2 index and eew 
-always_comb begin
+  always_comb begin
     for(int i=0;i<`NUM_DE_UOP;i++) begin: GET_VS2
       vs2_index[i] = inst_vs2 + {2'b0, vs2_offset[i]}; 
     end
@@ -710,6 +735,11 @@ always_comb begin
   // pshrob_valid decide on whether this uop is pushed into ROB.
   always_comb begin
     for(int i=0;i<`NUM_DE_UOP;i++) begin: PSHROB_VLD
+    `ifdef ZVT_ON
+      if(uop_exe_unit==VMELSU)
+        pshrob_valid[i] = 'b0;
+      else
+    `endif
       // EEW_vs2>EEW_vd for index load/store
       case({eew_vs2,eew_vd})
         // 2:1
@@ -738,12 +768,13 @@ always_comb begin
 
   // pshlsu_valid decide on whether this uop is pushed into LSU RS.
 `ifdef UNMK_USCS_LOAD_NOHANDSHAKE
-  assign pshlsu_valid = !( inst_vm & 
-                          (funct6_lsu.lsu_funct6.lsu_is_store==IS_LOAD) &
+  assign pshlsu_valid = (uop_exe_unit==LSU) &&
+                        !( inst_vm & 
+                          !lsu_is_store &
                           ((funct6_lsu.lsu_funct6.lsu_mop==US)||(funct6_lsu.lsu_funct6.lsu_mop==CS))
                          );
 `else
-  assign pshlsu_valid = 1'b1;
+  assign pshlsu_valid = uop_exe_unit==LSU;
 `endif
 
   // assign result to output
@@ -755,8 +786,9 @@ always_comb begin
     `endif  
       assign uop[j].uop_funct3          = inst_funct3;
       assign uop[j].uop_funct6          = funct6_lsu;
-      assign uop[j].uop_exe_unit        = LSU; 
+      assign uop[j].uop_exe_unit        = uop_exe_unit;
       assign uop[j].uop_class           = uop_class;   
+      assign uop[j].lsu_is_store        = lsu_is_store;   
       assign uop[j].vector_csr          = vector_csr[j];  
       assign uop[j].vs_evl              = lcmd.evl;
       assign uop[j].ignore_vma          = 'b0;
@@ -765,7 +797,11 @@ always_comb begin
       assign uop[j].force_vta_agnostic  = lcmd.force_vta_agnostic;
       assign uop[j].vm                  = inst_vm;
       assign uop[j].v0_valid            = 'b1;          
+    `ifdef ZVT_ON
+      assign uop[j].dst_index           = mt_valid ? inst_vd : vd_index[j];
+    `else
       assign uop[j].dst_index           = vd_index[j];          
+    `endif
       assign uop[j].vd_eew              = lcmd.eew_vd;  
       assign uop[j].vd_valid            = vd_valid;
       assign uop[j].vs3_valid           = vs3_valid;
@@ -773,14 +809,22 @@ always_comb begin
     `ifdef ZVE32F_ON
       assign uop[j].fd_valid            = 'b0; 
     `endif
+    `ifdef ZVT_ON
+      assign uop[j].mt_valid            = mt_valid;
+      assign uop[j].mt_eew              = lcmd.eew_mt;
+    `endif
       assign uop[j].vs1                 = 'b0;              
       assign uop[j].vs1_eew             = EEW_NONE;           
       assign uop[j].vs1_valid           = 'b0;
       assign uop[j].vs2_index 	        = vs2_index[j]; 	       
       assign uop[j].vs2_eew             = lcmd.eew_vs2;
       assign uop[j].vs2_valid           = vs2_valid[j];
-      assign uop[j].rs1_data            = 'b0;           
+      assign uop[j].rs1_data            = rs1;           
+    `ifdef ZVT_ON
+      assign uop[j].rs1_data_valid      = uop_exe_unit == VMELSU;
+    `else
       assign uop[j].rs1_data_valid      = 'b0;    
+    `endif
       assign uop[j].uop_index           = uop_index[j];         
       assign uop[j].first_uop_valid     = first_uop_valid[j];   
       assign uop[j].last_uop_valid      = last_uop_valid[j];    

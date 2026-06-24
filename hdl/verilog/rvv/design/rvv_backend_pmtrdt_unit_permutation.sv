@@ -276,7 +276,7 @@ module rvv_backend_pmtrdt_unit_permutation
     end
     assign compress_overflow = compress_vfirst >= pmt_uop.vl;
     assign compress_vs1_d = compress_vs1 & ~compress_vmsof;
-    edff #(.T(logic[`VLEN-1:0])) compress_vs1_reg (.q(compress_vs1_q), .d(compress_vs1_d), .e((pmt_uop.uop_funct6==VCOMPRESS) & |(pmt_t0_valid&pmt_t0_ready)), .clk(clk), .rst_n(rst_n));
+    edff #(.T(logic[`VLEN-1:0])) compress_vs1_reg (.q(compress_vs1_q), .d(compress_vs1_d), .e((pmt_uop.uop_funct6==VCOMPRESS_VTMVTV) & |(pmt_t0_valid&pmt_t0_ready)), .clk(clk), .rst_n(rst_n));
     always_comb begin
       if (compress_overflow)
         compress_cnt_d = '0;
@@ -288,7 +288,7 @@ module rvv_backend_pmtrdt_unit_permutation
         endcase
     end
     assign compress_cnt_en = compress_overflow | 
-                             ((pmt_uop.uop_funct6==VCOMPRESS) & |(pmt_t0_valid&pmt_t0_ready));
+                             ((pmt_uop.uop_funct6==VCOMPRESS_VTMVTV) & |(pmt_t0_valid&pmt_t0_ready));
     edff #(.T(logic[VLENB_WIDTH-1:0])) compress_cnt_reg (.q(compress_cnt_q), .d(compress_cnt_d), .e(compress_cnt_en), .clk(clk), .rst_n(rst_n));
     for (i=0; i<`VLENB; i++) begin : gen_compress_info_t0
       always_comb begin
@@ -314,7 +314,7 @@ module rvv_backend_pmtrdt_unit_permutation
         compress_info_t0[i].rs_valid = '0;
         compress_info_t0[i].index = compress_overflow ? pmt_uop.dst_index : pmt_uop.vs2_index + compress_offset[i][VLENB_WIDTH+:3];
         compress_info_t0[i].offset = compress_overflow ? i[0+:VLENB_WIDTH] : compress_offset[i][0+:VLENB_WIDTH];
-        compress_info_t0[i].vs_valid = (pmt_uop.uop_funct6 == VCOMPRESS);
+        compress_info_t0[i].vs_valid = (pmt_uop.uop_funct6 == VCOMPRESS_VTMVTV);
       end
     end
 
@@ -332,7 +332,7 @@ module rvv_backend_pmtrdt_unit_permutation
       end
       always_comb begin
         case (pmt_uop.uop_funct6)
-          VCOMPRESS: pmt_info_valid[i] =  compress_info_enable[i] & pmt_go;
+          VCOMPRESS_VTMVTV: pmt_info_valid[i] =  compress_info_enable[i] & pmt_go;
           //VSLIDE1UP, 
           //VSLIDE1DOWN,
           //VSLIDEDOWN,
@@ -406,8 +406,8 @@ module rvv_backend_pmtrdt_unit_permutation
 
 // pmt_uop_ready
   assign pmt_go = ((rob_rptr==pmt_uop.rob_entry) | ~pmt_uop.first_uop_valid);
-  assign pmt_uop_ready = pmt_uop.uop_funct6 == VCOMPRESS ? (compress_cnt_d == '0) & pmt_t0_ready[`VLENB-1] & pmt_go
-                                                         : (&pmt_t0_ready) & pmt_go;
+  assign pmt_uop_ready = pmt_uop.uop_funct6 == VCOMPRESS_VTMVTV ? (compress_cnt_d == '0) & pmt_t0_ready[`VLENB-1] & pmt_go
+                                                                : (&pmt_t0_ready) & pmt_go;
 
 // pmt_res
   always_comb begin

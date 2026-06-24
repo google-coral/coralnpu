@@ -37,6 +37,11 @@ module rvv_backend_dispatch
     rs_dp2falu,
     rs_ready_falu2dp,
 `endif
+`ifdef ZVT_ON
+    rs_valid_dp2zvt,
+    rs_dp2zvt,
+    rs_ready_zvt2dp,
+`endif
     rs_valid_dp2lsu,
     rs_dp2lsu,
     rs_ready_lsu2dp,
@@ -85,10 +90,17 @@ module rvv_backend_dispatch
     input  logic          [`NUM_DP_UOP-1:0]       rs_ready_div2dp;
 
 `ifdef ZVE32F_ON
-// Dispatch unit to FMA reservation station
+// Dispatch unit to FALU reservation station
     output logic          [`NUM_DP_UOP-1:0]       rs_valid_dp2falu;
-    output FMA_RS_t       [`NUM_DP_UOP-1:0]       rs_dp2falu;
+    output FALU_RS_t      [`NUM_DP_UOP-1:0]       rs_dp2falu;
     input  logic          [`NUM_DP_UOP-1:0]       rs_ready_falu2dp;
+`endif
+
+`ifdef ZVT_ON
+// Dispatch unit to VME reservation station
+    output logic          [`NUM_DP_UOP-1:0]       rs_valid_dp2zvt;
+    output ZVT_RS_t       [`NUM_DP_UOP-1:0]       rs_dp2zvt;
+    input  logic          [`NUM_DP_UOP-1:0]       rs_ready_zvt2dp;
 `endif
 
 // Dispatch unit to LSU 
@@ -138,6 +150,7 @@ module rvv_backend_dispatch
     UOP_INFO_t          [`NUM_DP_UOP-1:0]   uop_info;
     UOP_OPN_BYTE_TYPE_t [`NUM_DP_UOP-1:0]   uop_operand_byte_type;
 
+    logic [`NUM_DP_UOP-1:0][2:0]                    lmul;
     logic [`NUM_DP_UOP-1:0][`VL_WIDTH-1:0]          vlmax;
     logic [`NUM_DP_UOP-1:0][$clog2(`VL_WIDTH)-1:0]  vlmax_shift;
 
@@ -149,10 +162,11 @@ module rvv_backend_dispatch
     // vlmax = lmul * `VLENB / sew 
     generate
       for (i=0; i<`NUM_DP_UOP; i++) begin : gen_vlmax
-        assign vlmax_shift[i] = ($clog2(`VL_WIDTH))'(uop_uop2dp[i].vector_csr.lmul[1:0]) 
+        assign lmul[i] = uop_uop2dp[i].uop_exe_unit==PMT ? uop_uop2dp[i].vector_csr.lmul_orig : uop_uop2dp[i].vector_csr.lmul;
+        assign vlmax_shift[i] = ($clog2(`VL_WIDTH))'(lmul[i][1:0]) 
                                 + $clog2(`VLENB) 
                                 - ($clog2(`VL_WIDTH))'(uop_uop2dp[i].vector_csr.sew) 
-                                - {{($clog2(`VL_WIDTH)-3){1'b0}},uop_uop2dp[i].vector_csr.lmul[2],2'b0};
+                                - {{($clog2(`VL_WIDTH)-3){1'b0}}, lmul[i][2],2'b0};
         assign vlmax[i] = (`VL_WIDTH)'(1) << vlmax_shift[i];
       end
     endgenerate
@@ -291,8 +305,12 @@ module rvv_backend_dispatch
         .rs_valid_dp2div        (rs_valid_dp2div),
         .rs_ready_div2dp        (rs_ready_div2dp),
       `ifdef ZVE32F_ON
-        .rs_valid_dp2falu        (rs_valid_dp2falu),
-        .rs_ready_falu2dp        (rs_ready_falu2dp),
+        .rs_valid_dp2falu       (rs_valid_dp2falu),
+        .rs_ready_falu2dp       (rs_ready_falu2dp),
+      `endif
+      `ifdef ZVT_ON
+        .rs_valid_dp2zvt        (rs_valid_dp2zvt),
+        .rs_ready_zvt2dp        (rs_ready_zvt2dp),
       `endif
         .rs_valid_dp2lsu        (rs_valid_dp2lsu),
         .rs_ready_lsu2dp        (rs_ready_lsu2dp),
@@ -431,7 +449,7 @@ module rvv_backend_dispatch
           `endif
 
           `ifdef ZVE32F_ON
-          // FMA RS
+          // FALU RS
           `ifdef TB_SUPPORT
             assign rs_dp2falu[i].uop_pc          = uop_uop2dp[i].uop_pc; 
           `endif
@@ -459,6 +477,37 @@ module rvv_backend_dispatch
             assign rs_dp2falu[i].uop_index       = uop_uop2dp[i].uop_index[$clog2(`EMUL_MAX)-1:0];            
           `endif
 
+          `ifdef ZVT_ON
+          // ZVT RS
+          `ifdef TB_SUPPORT
+            assign rs_dp2zvt[i].uop_pc          = uop_uop2dp[i].uop_pc; 
+          `endif
+            assign rs_dp2zvt[i].rob_entry       = rob_address[i]; 
+            assign rs_dp2zvt[i].uop_funct6      = uop_uop2dp[i].uop_funct6;
+            assign rs_dp2zvt[i].uop_funct3      = uop_uop2dp[i].uop_funct3;
+            assign rs_dp2zvt[i].vs2             = uop_uop2dp[i].vs2_index;
+            assign rs_dp2zvt[i].is_lsu          = uop_uop2dp[i].uop_exe_unit==VMELSU;
+            assign rs_dp2zvt[i].is_store        = uop_uop2dp[i].lsu_is_store;
+            assign rs_dp2zvt[i].vstart          = uop_uop2dp[i].vector_csr.vstart;
+            assign rs_dp2zvt[i].altfmt          = uop_uop2dp[i].vector_csr.altfmt;
+            assign rs_dp2zvt[i].mtwiden         = uop_uop2dp[i].vector_csr.mtwiden;
+            assign rs_dp2zvt[i].tm              = uop_uop2dp[i].vector_csr.tm;
+            assign rs_dp2zvt[i].vl              = uop_uop2dp[i].vs_evl[$clog2(`TE):0];
+            assign rs_dp2zvt[i].tk              = uop_uop2dp[i].vector_csr.tk;
+            assign rs_dp2zvt[i].sew             = uop_uop2dp[i].vector_csr.sew;
+            assign rs_dp2zvt[i].eew_mt          = uop_uop2dp[i].vector_csr.sew;
+            assign rs_dp2zvt[i].rndMode         = fpnew_pkg::roundmode_e'(uop_uop2dp[i].vector_csr.frm);
+            assign rs_dp2zvt[i].tss             = {uop_uop2dp[i].rs1_data[30:27],
+                                                   uop_uop2dp[i].rs1_data[24],
+                                                   uop_uop2dp[i].rs1_data[$clog2(`TE)-1:0]};
+            assign rs_dp2zvt[i].vs1_data        = uop_operand[i].vs1;
+            assign rs_dp2zvt[i].vs2_data        = uop_operand[i].vs2;
+            assign rs_dp2zvt[i].dst_index       = uop_uop2dp[i].dst_index;
+            assign rs_dp2zvt[i].first_uop_valid = uop_uop2dp[i].first_uop_valid;
+            assign rs_dp2zvt[i].last_uop_valid  = uop_uop2dp[i].last_uop_valid;
+            assign rs_dp2zvt[i].uop_index       = uop_uop2dp[i].uop_index[$clog2(`EMUL_MAX)-1:0];            
+          `endif
+
           // LSU RS
           `ifdef TB_SUPPORT
             assign rs_dp2lsu[i].uop_pc              = uop_uop2dp[i].uop_pc; 
@@ -478,7 +527,7 @@ module rvv_backend_dispatch
           `endif
             assign mapinfo_dp2lsu[i].valid               = mapinfo_valid_dp2lsu[i];
             assign mapinfo_dp2lsu[i].rob_entry           = rob_address[i];
-            assign mapinfo_dp2lsu[i].lsu_class           = uop_uop2dp[i].uop_funct6.lsu_funct6.lsu_is_store;
+            assign mapinfo_dp2lsu[i].lsu_is_store        = uop_uop2dp[i].lsu_is_store;
             assign mapinfo_dp2lsu[i].vregfile_write_addr = uop_uop2dp[i].dst_index;
 
           // ROB

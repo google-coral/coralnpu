@@ -54,8 +54,8 @@ module rvv_backend_lsu_remap
   generate
     for(i=0;i<`NUM_LSU;i++) begin: RES_VALID
       assign result_valid[i] = mapinfo_valid[i]&lsu_res_valid[i]&mapinfo[i].valid&(!lsu_res[i].trap_valid)&(
-                               (mapinfo[i].lsu_class==IS_LOAD) & lsu_res[i].uop_lsu2rvv.vregfile_write_valid || 
-                               (mapinfo[i].lsu_class==IS_STORE) & lsu_res[i].uop_lsu2rvv.lsu_vstore_last);
+                               (!mapinfo[i].lsu_is_store) & lsu_res[i].uop_lsu2rvv.vregfile_write_valid || 
+                                (mapinfo[i].lsu_is_store) & lsu_res[i].uop_lsu2rvv.lsu_vstore_last);
     end
   endgenerate
 
@@ -67,7 +67,7 @@ module rvv_backend_lsu_remap
       `endif
         assign result[i].rob_entry = mapinfo[i].rob_entry;
         assign result[i].w_data    = lsu_res[i].uop_lsu2rvv.vregfile_write_data;
-        assign result[i].w_valid   = (mapinfo[i].lsu_class==IS_LOAD)&
+        assign result[i].w_valid   = (!mapinfo[i].lsu_is_store)&
                                      lsu_res[i].uop_lsu2rvv.vregfile_write_valid&
                                      (lsu_res[i].uop_lsu2rvv.vregfile_write_addr==mapinfo[i].vregfile_write_addr);
         assign result[i].vsaturate = 'b0;

@@ -2,7 +2,7 @@
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `include "rvv_backend.svh"
 `endif
-`ifndef FMA_DEFINE_SVH
+`ifndef HDL_VERILOG_RVV_INC_FALU_SVH
 `include "rvv_backend_falu.svh"
 `endif
 
@@ -42,7 +42,7 @@ module rvv_backend_falu_unit(
   input   logic         rst_n;
   //rs in
   input   logic         falu_uop_vld;
-  input   FMA_RS_t      falu_uop;
+  input   FALU_RS_t     falu_uop;
   //dec tye
   input   logic [3:0]   falu_type;
   //rdy to rs

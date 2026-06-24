@@ -5,6 +5,8 @@
 `include "rvv_backend_sva.svh"
 `endif
 
+// TODO: tail uops
+
 module rvv_backend_decode_unit_ari
 (
   inst_valid,
@@ -37,6 +39,7 @@ module rvv_backend_decode_unit_ari
   logic   [`REGFILE_INDEX_WIDTH-1:0]  vs2_opcode;
    
   logic   [`XLEN-1:0]                 rs1;    
+  logic                               csr_vill;
   logic   [`VSTART_WIDTH-1:0]         csr_vstart;
   logic   [`VSTART_WIDTH:0]           evstart;
   logic   [`VL_WIDTH-1:0]             csr_vl;
@@ -44,11 +47,22 @@ module rvv_backend_decode_unit_ari
   RVVSEW                              csr_sew;
   RVVLMUL                             csr_lmul;
   RVVLMUL                             reduced_lmul;  
+`ifdef ZVT_ON
+  logic                               csr_altfmt;
+  logic   [1:0]                       csr_mtwiden;
+  logic   [$clog2(`TE):0]             csr_tm;
+  logic   [$clog2(`TE):0]             csr_tn;
+  logic   [2:0]                       csr_tk;
+  TSS_t                               tss;
+`endif  
   EMUL_e                              emul_vd;          
   EMUL_e                              emul_vs2;          
   EMUL_e                              emul_vs1;          
   EMUL_e                              emul_max; 
   EEW_e                               eew_vd;          
+`ifdef ZVT_ON
+  EEW_e                               eew_mt;
+`endif
   EEW_e                               eew_vs2;          
   EEW_e                               eew_vs1;
   EEW_e                               eew_max;          
@@ -67,6 +81,12 @@ module rvv_backend_decode_unit_ari
   logic                               check_vs2_part_overlap_vd_2_1;
   logic                               check_vs1_part_overlap_vd_2_1;
   logic                               check_vs2_part_overlap_vd_4_1;
+`ifdef ZVT_ON
+  logic                               check_mtd_align;
+  logic                               check_tm;
+  logic                               check_tn;
+  logic                               check_tk;
+`endif
   logic                               check_common;
   logic                               check_vd_align;
   logic                               check_vs2_align;
@@ -99,11 +119,22 @@ module rvv_backend_decode_unit_ari
   assign inst_vd        = inst_valid ? inst.bits[4:0] : 'b0;
   assign inst_nr        = inst_valid ? inst_vs1[`NREG_WIDTH-1:0] : 'b0;
   assign rs1            = inst_valid ? inst.rs1 : 'b0;
+  assign csr_vill       = inst_valid ? inst.arch_state.vill : 'b0;
   assign csr_vstart     = inst_valid ? inst.arch_state.vstart : 'b0;
   assign csr_vl         = inst_valid ? inst.arch_state.vl : 'b0;
   assign csr_sew        = inst_valid ? inst.arch_state.sew : SEW8;
   assign csr_lmul       = inst_valid ? inst.arch_state.lmul_orig : LMUL1;
   assign reduced_lmul   = inst_valid ? inst.arch_state.lmul : LMUL1;  
+`ifdef ZVT_ON
+  assign csr_altfmt     = inst_valid ? inst.arch_state.altfmt : 'b0;
+  assign csr_mtwiden    = inst_valid ? inst.arch_state.mtwiden : 'b0;
+  assign csr_tm         = inst_valid ? inst.arch_state.tm : 'b0;
+  assign csr_tn         = csr_vl[$clog2(`TE):0];
+  assign csr_tk         = inst_valid ? inst.arch_state.tk : 'b0;
+  assign tss.tile       = rs1[30:27];
+  assign tss.pattern    = rs1[24];
+  assign tss.index      = rs1[$clog2(`TE)-1:0];
+`endif
 
   always_comb begin
     // initial the data
@@ -493,6 +524,19 @@ module rvv_backend_decode_unit_ari
               end
             endcase
           end
+
+        `ifdef ZVT_ON
+          VT_F_MMTVV: begin
+            case(csr_lmul)
+              LMUL4: begin
+                uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                emul_vs2      = EMUL4;
+                emul_vs1      = EMUL4;
+                emul_max      = EMUL4;
+              end
+            endcase
+          end
+        `endif          
         endcase
       end
       
@@ -1222,7 +1266,7 @@ module rvv_backend_decode_unit_ari
             endcase
           end
 
-          VCOMPRESS: begin
+          VCOMPRESS_VTMVTV: begin
             case(reduced_lmul)
               LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
               LMUL4: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
@@ -1472,6 +1516,37 @@ module rvv_backend_decode_unit_ari
               emul_vd     = EMUL1;
               emul_max    = EMUL1;
             end
+          `ifdef ZVT_ON
+            else if(vs2_opcode==VTMVVT) begin
+              case(csr_lmul)
+                LMUL4: begin
+                  case(csr_sew)
+                    SEW8: begin
+                      emul_vd       = EMUL1;
+                      emul_max      = EMUL1;
+                    end
+                    SEW16: begin
+                      uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                      emul_vd       = EMUL2;
+                      emul_max      = EMUL2;
+                    end
+                    SEW32: begin
+                      uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                      emul_vd       = EMUL4;
+                      emul_max      = EMUL4;
+                    end
+                  endcase
+                end
+              endcase
+            end
+            else if(vs2_opcode==VTZERO) begin
+              case(csr_lmul)
+                LMUL4: begin
+                  emul_max      = EMUL1;
+                end
+              endcase
+            end
+          `endif
           end
 
           VSLIDE1UP,
@@ -1507,6 +1582,31 @@ module rvv_backend_decode_unit_ari
               end
             endcase
           end
+
+        `ifdef ZVT_ON
+          VCOMPRESS_VTMVTV: begin
+            case(csr_lmul)
+              LMUL4: begin
+                case(csr_sew)
+                  SEW8: begin
+                    emul_vs2      = EMUL1;
+                    emul_max      = EMUL1;
+                  end
+                  SEW16: begin
+                    uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                    emul_vs2      = EMUL2;
+                    emul_max      = EMUL2;
+                  end
+                  SEW32: begin
+                    uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                    emul_vs2      = EMUL4;
+                    emul_max      = EMUL4;
+                  end
+                endcase
+              end
+            endcase
+          end
+        `endif              
         endcase
       end
 
@@ -1902,6 +2002,19 @@ module rvv_backend_decode_unit_ari
             endcase           
           end
           `endif
+
+          `ifdef ZVT_ON
+          VT_F_MMTVV: begin
+            case(csr_lmul)
+              LMUL4: begin
+                uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                emul_vs2      = EMUL4;
+                emul_vs1      = EMUL4;
+                emul_max      = EMUL4;
+              end
+            endcase
+          end          
+          `endif
         endcase
       end
 
@@ -2084,10 +2197,13 @@ module rvv_backend_decode_unit_ari
 // get EEW 
   always_comb begin
     // initial
-    eew_vd          = EEW_NONE;
-    eew_vs2         = EEW_NONE;
-    eew_vs1         = EEW_NONE;
-    eew_max         = EEW_NONE;
+  `ifdef ZVT_ON
+    eew_mt  = EEW_NONE;
+  `endif
+    eew_vd  = EEW_NONE;
+    eew_vs2 = EEW_NONE;
+    eew_vs1 = EEW_NONE;
+    eew_max = EEW_NONE;
 
     case(1'b1)
       valid_opi: begin
@@ -2294,6 +2410,31 @@ module rvv_backend_decode_unit_ari
               end
             endcase
           end
+
+        `ifdef ZVT_ON
+          VT_F_MMTVV: begin
+            case(inst_funct3)
+              OPIVV: begin
+                case({csr_sew, csr_mtwiden})
+                  {SEW8, 2'd3}: begin
+                    eew_mt      = EEW32;
+                    eew_vs2     = EEW8;
+                    eew_vs1     = EEW8;
+                    eew_max     = EEW32;
+                  end
+                `ifdef ZVTI16I32_ON
+                  {SEW16, 2'd2}: begin
+                    eew_mt      = EEW32;
+                    eew_vs2     = EEW16;
+                    eew_vs1     = EEW16;
+                    eew_max     = EEW32;
+                  end
+                `endif
+                endcase
+              end
+            endcase 
+          end
+        `endif
         endcase
       end
 
@@ -2513,6 +2654,41 @@ module rvv_backend_decode_unit_ari
                     end
                   endcase
                 end
+              `ifdef ZVT_ON
+                else if(vs2_opcode==VTMVVT) begin
+                  case(csr_sew)
+                    SEW8: begin
+                      eew_mt      = EEW8;
+                      eew_vd      = EEW8;
+                      eew_max     = EEW8;
+                    end
+                    SEW16: begin
+                      eew_mt      = EEW16;
+                      eew_vd      = EEW16;
+                      eew_max     = EEW16;
+                    end
+                    SEW32: begin
+                      eew_mt      = EEW32;
+                      eew_vd      = EEW32;
+                      eew_max     = EEW32;
+                    end
+                  endcase
+                end
+                else if(vs2_opcode==VTZERO) begin
+                  case({csr_sew, csr_mtwiden})
+                  `ifdef ZVTI16I32_ON
+                    {SEW16, 2'd2}: begin
+                      eew_mt      = EEW32;
+                      eew_max     = EEW32;
+                    end
+                  `endif
+                    {SEW8, 2'd3}: begin
+                      eew_mt      = EEW32;
+                      eew_max     = EEW32;
+                    end
+                  endcase
+                end
+              `endif
               end
             endcase
           end
@@ -2574,26 +2750,52 @@ module rvv_backend_decode_unit_ari
             endcase
           end
 
-          VCOMPRESS: begin
-            case(csr_sew)
-              SEW8: begin
-                eew_vd      = EEW8;
-                eew_vs2     = EEW8;
-                eew_vs1     = EEW1;
-                eew_max     = EEW8;
+          VCOMPRESS_VTMVTV: begin
+            case(inst_funct3)
+              OPMVV: begin
+                case(csr_sew)
+                  SEW8: begin
+                    eew_vd      = EEW8;
+                    eew_vs2     = EEW8;
+                    eew_vs1     = EEW1;
+                    eew_max     = EEW8;
+                  end
+                  SEW16: begin
+                    eew_vd      = EEW16;
+                    eew_vs2     = EEW16;
+                    eew_vs1     = EEW1;
+                    eew_max     = EEW16;
+                  end
+                  SEW32: begin
+                    eew_vd      = EEW32;
+                    eew_vs2     = EEW32;
+                    eew_vs1     = EEW1;
+                    eew_max     = EEW32;
+                  end
+                endcase
               end
-              SEW16: begin
-                eew_vd      = EEW16;
-                eew_vs2     = EEW16;
-                eew_vs1     = EEW1;
-                eew_max     = EEW16;
+            `ifdef ZVT_ON
+              // vtmv.t.v
+              OPMVX: begin
+                case(csr_sew)
+                  SEW8: begin
+                    eew_mt      = EEW8;
+                    eew_vs2     = EEW8;
+                    eew_max     = EEW8;
+                  end
+                  SEW16: begin
+                    eew_mt      = EEW16;
+                    eew_vs2     = EEW16;
+                    eew_max     = EEW16;
+                  end
+                  SEW32: begin
+                    eew_mt      = EEW32;
+                    eew_vs2     = EEW32;
+                    eew_max     = EEW32;
+                  end
+                endcase
               end
-              SEW32: begin
-                eew_vd      = EEW32;
-                eew_vs2     = EEW32;
-                eew_vs1     = EEW1;
-                eew_max     = EEW32;
-              end
+            `endif
             endcase
           end
         endcase
@@ -2747,6 +2949,29 @@ module rvv_backend_decode_unit_ari
               end
             endcase
           end
+
+        `ifdef ZVT_ON
+          VT_F_MMTVV: begin
+            case(inst_funct3)
+              OPFVV: begin
+                case({csr_sew, csr_mtwiden, csr_altfmt})
+                  {SEW16, 2'd2, 1'b1}: begin
+                    eew_mt      = EEW32;
+                    eew_vs2     = EEW16;
+                    eew_vs1     = EEW16;
+                    eew_max     = EEW32;
+                  end
+                  {SEW32, 2'd1, 1'b0}: begin
+                    eew_mt      = EEW32;
+                    eew_vs2     = EEW32;
+                    eew_vs1     = EEW32;
+                    eew_max     = EEW32;
+                  end
+                endcase
+              end
+            endcase 
+          end
+        `endif
         endcase
       end
       `endif
@@ -2893,7 +3118,29 @@ module rvv_backend_decode_unit_ari
       end
     endcase
   end
- 
+
+`ifdef ZVT_ON
+  always_comb begin
+    case(eew_mt)
+      EEW16:   check_mtd_align = inst_vd[1]=='b0;
+      EEW32:   check_mtd_align = inst_vd[2:1]=='b0;
+      default: check_mtd_align = 1'b1;
+    endcase
+  end
+
+  assign check_tm        = (|csr_tm) && (csr_tm<=`TE);  // 0<tm<=`TE
+  assign check_tn        = (|csr_tn) && (csr_tn<=`TE);  // 0<tm<=`TE
+
+  always_comb begin
+    case(csr_sew)
+      SEW8 :   check_tk = (|csr_tk) && (csr_tk<=3'd4);  // 0<tk<=4
+      SEW16:   check_tk = (|csr_tk) && (csr_tk<=3'd2);  // 0<tk<=2
+      SEW32:   check_tk = csr_tk==3'd1;
+      default: check_tk = 'b0;
+    endcase
+  end
+`endif
+
   // start to check special requirements for every instructions
   always_comb begin 
     check_special = 'b0;
@@ -2962,6 +3209,12 @@ module rvv_backend_decode_unit_ari
             // destination register group cannot overlap the source register group
             check_special = check_vd_overlap_v0&check_vd_overlap_vs2&check_vd_overlap_vs1;                
           end
+
+         `ifdef ZVT_ON
+          VT_F_MMTVV: begin
+            check_special = inst_vm&check_tm&check_tn&check_tk&check_mtd_align&(csr_vstart=='b0);
+          end
+        `endif
         endcase
       end
       OPIVX: begin
@@ -3192,7 +3445,7 @@ module rvv_backend_decode_unit_ari
             endcase
           end
 
-          VCOMPRESS: begin
+          VCOMPRESS_VTMVTV: begin
             // destination register group cannot overlap the source register group
             check_special = (csr_vstart=='b0)&inst_vm&check_vd_overlap_vs2&check_vd_overlap_vs1;
           end
@@ -3240,13 +3493,25 @@ module rvv_backend_decode_unit_ari
           end
 
           VWRXUNARY0: begin
-            check_special = (vs2_opcode==VMV_S_X)&inst_vm&(inst_vs2=='b0)&(csr_vstart=='b0);
+            case(vs2_opcode)
+              VMV_S_X: check_special = inst_vm&(inst_vs2=='b0)&(csr_vstart=='b0);
+            `ifdef ZVT_ON
+              VTMVVT:  check_special = inst_vm&check_tm&check_tn&(csr_vstart<=(`VSTART_WIDTH)'(tss.index));
+              VTZERO:  check_special = inst_vm&(inst_vs1==5'b00000)&(inst_vd[0]=='b0)&check_mtd_align&check_tm&check_tn;
+            `endif
+            endcase
           end
 
           VSLIDE1UP: begin
             // destination register group cannot overlap the source register group
             check_special = check_vd_overlap_v0&check_vd_overlap_vs2;
           end
+
+        `ifdef ZVT_ON
+          VCOMPRESS_VTMVTV: begin
+            check_special = inst_vm&(inst_vd==5'b00000)&check_tm&check_tn&(csr_vstart<=(`VSTART_WIDTH)'(tss.index));
+          end
+        `endif
         endcase
       end
 
@@ -3328,6 +3593,12 @@ module rvv_backend_decode_unit_ari
           VWRFUNARY0: begin
             check_special = inst_vm&(vs1_opcode==VFMV_F_S);
           end
+
+        `ifdef ZVT_ON
+          VT_F_MMTVV: begin
+            check_special = inst_vm&check_tm&check_tn&check_tk&check_mtd_align;
+          end
+        `endif
         endcase
       end
 
@@ -3389,7 +3660,7 @@ module rvv_backend_decode_unit_ari
   end
 
   //check common requirements for all instructions
-  assign check_common = check_vd_align&check_vs2_align&check_vs1_align&check_sew&check_lmul
+  assign check_common = (!csr_vill)&check_vd_align&check_vs2_align&check_vs1_align&check_sew&check_lmul
                       `ifdef ZVE32F_ON
                         &check_frm
                       `endif
@@ -3482,6 +3753,12 @@ module rvv_backend_decode_unit_ari
         case(inst_funct6)
           VSLIDEUP_RGATHEREI16: if (csr_vstart<(`VSTART_WIDTH)'(inst_imm)) evstart = (`VL_WIDTH)'(inst_imm);
         endcase
+      end
+
+      OPMVX: begin
+      `ifdef ZVT_ON
+        if((inst_funct6==VWRXUNARY0)&&(vs2_opcode==VTZERO)) evstart = 'b0;
+      `endif
       end
     endcase
   end
@@ -3688,6 +3965,9 @@ module rvv_backend_decode_unit_ari
   assign lcmd.eew_vs1            = eew_vs1;
   assign lcmd.eew_vs2            = eew_vs2;
   assign lcmd.eew_vd             = eew_vd;
+`ifdef ZVT_ON
+  assign lcmd.eew_mt             = eew_mt;
+`endif
   assign lcmd.eew_max            = eew_max;
   assign lcmd.emul_vs1           = emul_vs1;
   assign lcmd.emul_vs2           = emul_vs2;

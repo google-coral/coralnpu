@@ -21,6 +21,11 @@ module rvv_backend_retire(
   rt2vxsat_write_valid,
   rt2vxsat_write_data,
   vxsat2rt_write_ready
+`ifdef ZVT_ON
+  ,zvtFpexpVld,
+  zvtFpexp,
+  zvtFpexpRdy
+`endif
 `ifdef ZVE32F_ON
   ,rt2fcsr_write_valid,
   rt2fcsr_write_data,
@@ -61,6 +66,13 @@ module rvv_backend_retire(
     output  logic                                 rt2vxsat_write_valid;
     output  logic   [`VCSR_VXSAT_WIDTH-1:0]       rt2vxsat_write_data;
     input   logic                                 vxsat2rt_write_ready;
+
+`ifdef ZVT_ON
+// ZVT Floating-point exception
+    input   logic                                 zvtFpexpVld;
+    input   RVFEXP_t                              zvtFpexp;
+    output  logic                                 zvtFpexpRdy;
+`endif
 
 `ifdef ZVE32F_ON
 // Floating-point exception
@@ -214,10 +226,26 @@ generate
 `ifdef ZVE32F_ON
   // To FCSR[4:0]
   assign fcsr2rt_ready          = ~w_fpexp_vld | {`NUM_RT_UOP{fcsr2rt_write_ready}};
-  assign rt2fcsr_write_valid    = trap_flag[0] ? 'b0 : |(w_fpexp_vld & rob2rt_write_valid & rt2rob_write_ready);
-  assign rt2fcsr_write_data.nv  = |(fpexp_nv & rob2rt_write_valid & rt2rob_write_ready);
+  `ifdef ZVT_ON
+  assign zvtFpexpRdy            = ~zvtFpexpVld | fcsr2rt_write_ready;
+  `endif
+  assign rt2fcsr_write_valid    = trap_flag[0] ? 'b0 : |(w_fpexp_vld & rob2rt_write_valid & rt2rob_write_ready)
+                                                      `ifdef ZVT_ON
+                                                       || zvtFpexpVld & fcsr2rt_write_ready
+                                                      `endif
+                                                       ;
+
+  assign rt2fcsr_write_data.nv  = |(fpexp_nv & rob2rt_write_valid & rt2rob_write_ready)
+                                  `ifdef ZVT_ON
+                                   || zvtFpexp.nv
+                                  `endif
+                                  ;
   assign rt2fcsr_write_data.dz  = |(fpexp_dz & rob2rt_write_valid & rt2rob_write_ready);
-  assign rt2fcsr_write_data.of  = |(fpexp_of & rob2rt_write_valid & rt2rob_write_ready);
+  assign rt2fcsr_write_data.of  = |(fpexp_of & rob2rt_write_valid & rt2rob_write_ready)
+                                  `ifdef ZVT_ON
+                                   || zvtFpexp.of
+                                  `endif
+                                  ;
   assign rt2fcsr_write_data.uf  = |(fpexp_uf & rob2rt_write_valid & rt2rob_write_ready);
   assign rt2fcsr_write_data.nx  = |(fpexp_nx & rob2rt_write_valid & rt2rob_write_ready);
 `endif

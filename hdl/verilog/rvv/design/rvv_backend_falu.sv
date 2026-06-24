@@ -21,14 +21,14 @@ module rvv_backend_falu(
   // global signal
   input   logic                         clk;
   input   logic                         rst_n;
-  // FMA RS to FMA unit
-  output  logic       [`NUM_FMA-1:0]    pop;
-  input   logic       [`NUM_FMA-1:0]    uop_valid;    
-  input   FMA_RS_t    [`NUM_FMA-1:0]    uop;
-  // submit FMA
-  output  logic       [`NUM_FMA-1:0]    result_valid;
-  output  PU2ROB_t    [`NUM_FMA-1:0]    result;
-  input   logic       [`NUM_FMA-1:0]    result_ready;
+  // FALU RS to FALU unit
+  output  logic       [`NUM_FALU-1:0]   pop;
+  input   logic       [`NUM_FALU-1:0]   uop_valid;    
+  input   FALU_RS_t   [`NUM_FALU-1:0]   uop;
+  // submit FALU
+  output  logic       [`NUM_FALU-1:0]   result_valid;
+  output  PU2ROB_t    [`NUM_FALU-1:0]   result;
+  input   logic       [`NUM_FALU-1:0]   result_ready;
   // trap-flush
   input   logic                         trap_flush_rvv; 
 
@@ -36,22 +36,22 @@ module rvv_backend_falu(
 // internal signals
 //
   //internal decode logic for subtype
-  logic     [`NUM_FMA-1:0]      uop_addmul;
-  logic     [`NUM_FMA-1:0]      uop_cmp;
-  logic     [`NUM_FMA-1:0]      uop_cvt;
-  logic     [`NUM_FMA-1:0]      uop_tbl;
-  logic     [`NUM_FMA-1:0][3:0] uop_type;
-  logic     [`NUM_FMA-1:0][3:0] falu_uop_type;
+  logic     [`NUM_FALU-1:0]       uop_addmul;
+  logic     [`NUM_FALU-1:0]       uop_cmp;
+  logic     [`NUM_FALU-1:0]       uop_cvt;
+  logic     [`NUM_FALU-1:0]       uop_tbl;
+  logic     [`NUM_FALU-1:0][3:0]  uop_type;
+  logic     [`NUM_FALU-1:0][3:0]  falu_uop_type;
 
-  logic     [`NUM_FMA-1:0]      falu_uop_vld;
-  logic     [`NUM_FMA-1:0][3:0] falu_uop_rdy;
-  FMA_RS_t  [`NUM_FMA-1:0]      falu_uop;
+  logic     [`NUM_FALU-1:0]       falu_uop_vld;
+  logic     [`NUM_FALU-1:0][3:0]  falu_uop_rdy;
+  FALU_RS_t [`NUM_FALU-1:0]       falu_uop;
 
-  logic     [`NUM_FMA-1:0]      falu_result_vld;
-  logic     [`NUM_FMA-1:0]      falu_result_rdy;
-  PU2ROB_t  [`NUM_FMA-1:0]      falu_result;
+  logic     [`NUM_FALU-1:0]       falu_result_vld;
+  logic     [`NUM_FALU-1:0]       falu_result_rdy;
+  PU2ROB_t  [`NUM_FALU-1:0]       falu_result;
 
-  genvar                        i;
+  genvar                          i;
 
 //
 // code start
@@ -63,7 +63,7 @@ module rvv_backend_falu(
   assign uop_type[0]    = {uop_tbl[0], uop_cvt[0], uop_cmp[0], uop_addmul[0]};
 
   generate
-    for(i=1;i<`NUM_FMA;i++) begin
+    for(i=1;i<`NUM_FALU;i++) begin
       assign uop_addmul[i]  = uop[i].uop_exe_unit==FMA;
       assign uop_cmp[i]     = uop[i].uop_exe_unit==FNCMP;
       assign uop_cvt[i]     = uop[i].uop_exe_unit==FCVT;
@@ -125,7 +125,7 @@ module rvv_backend_falu(
   assign falu_result_rdy = result_ready;
 
   generate
-    for(i=0;i<`NUM_FMA;i++) begin:uop_unit
+    for(i=0;i<`NUM_FALU;i++) begin:uop_unit
       rvv_backend_falu_unit #() 
       falu_uop_unit(
         //global

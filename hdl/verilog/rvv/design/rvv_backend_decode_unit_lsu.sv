@@ -1,4 +1,3 @@
-
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `include "rvv_backend.svh"
 `endif
@@ -34,18 +33,29 @@ module rvv_backend_decode_unit_lsu
   logic   [`REGFILE_INDEX_WIDTH-1:0]  inst_vd;          // inst original encoding[11:7]
   RVVOpCode                           inst_opcode;      // inst original encoding[6:0]
 
+  logic   [`XLEN-1:0]                 rs1;    
+  logic                               csr_vill;
   logic   [`VSTART_WIDTH-1:0]         csr_vstart;
   logic   [`VL_WIDTH-1:0]             csr_vl;
   logic   [`VL_WIDTH-1:0]             evl;
   RVVSEW                              csr_sew;
   RVVLMUL                             csr_lmul;
   RVVLMUL                             reduced_lmul;  
+`ifdef ZVT_ON
+  logic   [1:0]                       csr_mtwiden;
+  logic   [$clog2(`TE):0]             csr_tm;
+  logic   [$clog2(`TE):0]             csr_tn;
+  TSS_t                               tss;
+`endif  
   EMUL_e                              emul_vd;          
   EMUL_e                              emul_vs2;          
   EMUL_e                              emul_vd_nf; 
   EMUL_e                              emul_max; 
   logic   [`UOP_INDEX_WIDTH-1:0]      uop_index_max;         
   EEW_e                               eew_vd;          
+`ifdef ZVT_ON
+  EEW_e                               eew_mt;
+`endif
   EEW_e                               eew_vs2;          
   EEW_e                               eew_max;         
   logic                               valid_lsu;
@@ -79,6 +89,9 @@ module rvv_backend_decode_unit_lsu
   localparam  SEW_8     = 3'b000;
   localparam  SEW_16    = 3'b101;
   localparam  SEW_32    = 3'b110;
+  localparam  TILESEW8  = 3'b000;
+  localparam  TILESEW16 = 3'b001;
+  localparam  TILESEW32 = 3'b010;
 
 //
 // decode
@@ -90,33 +103,30 @@ module rvv_backend_decode_unit_lsu
   assign inst_umop      = inst_valid ? inst.bits[17:13] : 'b0;
   assign inst_funct3    = inst_valid ? inst.bits[7:5] : 'b0;
   assign inst_vd        = inst_valid ? inst.bits[4:0] : 'b0;
-  assign inst_opcode    = inst_valid ? inst.opcode : RVV;
+  assign inst_opcode    = inst_valid ? inst.opcode : LOAD;
+  assign rs1            = inst_valid ? inst.rs1 : 'b0;
+  assign csr_vill       = inst_valid ? inst.arch_state.vill : 'b0;
   assign csr_vstart     = inst_valid ? inst.arch_state.vstart : 'b0;
   assign csr_vl         = inst_valid ? inst.arch_state.vl : 'b0;
   assign csr_sew        = inst_valid ? inst.arch_state.sew : SEW8;
   assign csr_lmul       = inst_valid ? inst.arch_state.lmul_orig : LMULRESERVED;
   assign reduced_lmul   = inst_valid ? inst.arch_state.lmul : LMULRESERVED;  
-  
+  `ifdef ZVT_ON
+  assign csr_mtwiden    = inst_valid ? inst.arch_state.mtwiden : 'b0;
+  assign csr_tm         = inst_valid ? inst.arch_state.tm : 'b0;
+  assign csr_tn         = csr_vl[$clog2(`TE):0];
+  assign tss.tile       = rs1[30:27];
+  assign tss.pattern    = rs1[24];
+  assign tss.index      = rs1[$clog2(`TE)-1:0];
+`endif
+
 // decode funct6
   // valid signal
+  assign valid_lsu_opcode = inst_opcode==LOAD || inst_opcode==STORE;
+
   assign valid_lsu = valid_lsu_opcode&valid_lsu_mop&inst_valid;
-
-  // identify load or store
+  
   always_comb begin
-    funct6_lsu.lsu_funct6.lsu_is_store = IS_LOAD;
-    valid_lsu_opcode                   = 'b0;
-
-    case(inst_opcode)
-      LOAD: begin
-        funct6_lsu.lsu_funct6.lsu_is_store = IS_LOAD;
-        valid_lsu_opcode                   = 1'b1;
-      end
-      STORE: begin
-        funct6_lsu.lsu_funct6.lsu_is_store = IS_STORE;
-        valid_lsu_opcode                   = 1'b1;
-      end
-    endcase
-
   // lsu_mop distinguishes unit-stride, constant-stride, unordered index, ordered index
   // lsu_umop identifies what unit-stride instruction belong to when lsu_mop=US
     // initial 
@@ -167,6 +177,13 @@ module rvv_backend_decode_unit_lsu
         valid_lsu_mop                    = 1'b1;
         funct6_lsu.lsu_funct6.lsu_is_seg = (inst_nf!=NF1) ? IS_SEGMENT : NONE;
       end
+      `ifdef ZVT_ON
+      TILE_LDST: begin
+        funct6_lsu.lsu_funct6.lsu_mop    = TILELDST;  
+        valid_lsu_mop                    = 1'b1;
+        funct6_lsu.lsu_funct6.lsu_is_seg = NONE;
+      end
+      `endif
     endcase
   end
 
@@ -3038,6 +3055,28 @@ module rvv_backend_decode_unit_lsu
             end
           endcase
         end
+
+      `ifdef ZVT_ON
+        TILELDST: begin
+          case(csr_lmul)
+            LMUL4: begin
+              case(csr_sew)
+                SEW8: begin
+                  emul_max      = EMUL1;
+                end
+                SEW16: begin
+                  uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                  emul_max      = EMUL2;
+                end
+                SEW32: begin
+                  uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                  emul_max      = EMUL4;
+                end
+              endcase
+            end
+          endcase
+        end
+      `endif
       endcase
     end
   end
@@ -3045,6 +3084,9 @@ module rvv_backend_decode_unit_lsu
 // get EEW 
   always_comb begin
     // initial
+  `ifdef ZVT_ON
+    eew_mt  = EEW_NONE;
+  `endif
     eew_vd  = EEW_NONE;
     eew_vs2 = EEW_NONE;
     eew_max = EEW_NONE;  
@@ -3147,6 +3189,30 @@ module rvv_backend_decode_unit_lsu
             end
           endcase
         end
+      `ifdef ZVT_ON
+        TILELDST: begin
+          case({csr_sew, csr_mtwiden})
+            {SEW8, 2'd3},
+            {SEW16, 2'd2},
+            {SEW32, 2'd1}: begin
+              case(inst_funct6[5:3])
+                TILESEW8:  begin
+                  eew_mt  = EEW8;
+                  eew_max = EEW8;
+                end
+                TILESEW16: begin
+                  eew_mt  = EEW16;
+                  eew_max = EEW16;
+                end
+                TILESEW32: begin
+                  eew_mt  = EEW32;
+                  eew_max = EEW32;
+                end
+              endcase
+            end
+          endcase
+        end
+      `endif      
       endcase
     end
   end
@@ -3325,6 +3391,12 @@ module rvv_backend_decode_unit_lsu
           check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vd_overlap_vs2 : 1'b1;
         end        
       end
+
+      `ifdef ZVT_ON
+        TILE_LDST: begin
+          check_special = inst_vm&(csr_vstart<=(`VSTART_WIDTH)'(tss.index));
+        end
+      `endif
     endcase
   end
 
@@ -3500,6 +3572,9 @@ module rvv_backend_decode_unit_lsu
   assign lcmd.eew_vs1            = EEW_NONE;
   assign lcmd.eew_vs2            = eew_vs2;
   assign lcmd.eew_vd             = eew_vd;
+`ifdef ZVT_ON
+  assign lcmd.eew_mt             = eew_mt;
+`endif
   assign lcmd.eew_max            = eew_max;
   assign lcmd.emul_vs1           = EMUL_NONE;
   assign lcmd.emul_vs2           = emul_vs2;
