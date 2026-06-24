@@ -495,7 +495,7 @@ module rvv_backend_dispatch
             assign rs_dp2zvt[i].vl              = uop_uop2dp[i].vs_evl[$clog2(`TE):0];
             assign rs_dp2zvt[i].tk              = uop_uop2dp[i].vector_csr.tk;
             assign rs_dp2zvt[i].sew             = uop_uop2dp[i].vector_csr.sew;
-            assign rs_dp2zvt[i].eew_mt          = uop_uop2dp[i].vector_csr.sew;
+            assign rs_dp2zvt[i].eew_mt          = EEW_e'(uop_uop2dp[i].vector_csr.sew);
             assign rs_dp2zvt[i].rndMode         = fpnew_pkg::roundmode_e'(uop_uop2dp[i].vector_csr.frm);
             assign rs_dp2zvt[i].tss             = {uop_uop2dp[i].rs1_data[30:27],
                                                    uop_uop2dp[i].rs1_data[24],

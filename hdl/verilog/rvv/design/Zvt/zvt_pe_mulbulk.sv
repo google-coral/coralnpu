@@ -60,6 +60,7 @@ module zvt_pe_mulbulk #(
     .down_valid(out_valid),
     .down_ready(out_ready),
     .reg_enable(reg_enable),
+    .valids(),
     .busy(busy)
   );
 

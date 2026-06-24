@@ -82,7 +82,7 @@ typedef struct packed {
 `ifdef ZVT_ON
   logic                         altfmt;
   logic [1:0]                   mtwiden;
-  logic [$clog2(`TE):0]         tm;
+  logic [13:0]                  tm;
   logic [2:0]                   tk;
 `endif
 } RVVConfigState;
@@ -665,7 +665,7 @@ typedef struct packed {
   logic   [`VSTART_WIDTH-1:0]                   vstart;
   logic                                         altfmt;
   logic   [1:0]                                 mtwiden;
-  logic   [$clog2(`TE):0]                       tm;
+  logic   [13:0]                                tm;
   logic   [$clog2(`TE):0]                       vl;      
   logic   [2:0]                                 tk;
   RVVSEW                                        sew;

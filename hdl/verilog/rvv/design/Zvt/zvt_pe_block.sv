@@ -194,6 +194,12 @@ module zvt_pe_block (
     // fifo status
       .almost_full  (mulbulkBufAfull),
       .almost_empty (mulbulkBufAempty),
+      .full         (),
+      .empty        (),
+      .fifo_data    (),
+      .wptr         (),
+      .rptr         (),
+      .entry_count  (),
       .clear        (flush)
   );  
 
@@ -202,6 +208,13 @@ module zvt_pe_block (
   logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][ADDERPIPENUM:1]   adderVld;
   logic                                                     adderRdy;
   logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]                   adderResVld;  
+  generate 
+    for(genvar i=0; i<`TE/2*`COMPRATIO; i++) begin: gen_res_vld_i
+      for(genvar j=0; j<`TE/2; j++) begin: gen_res_vld_j
+        assign adderResVld[i][j] = adderVld[i][j][ADDERPIPENUM];
+      end
+    end
+  endgenerate
   logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][`WORD_WIDTH-1:0]  adderRes;
   logic                                                     adderResRdy;
   fpnew_pkg::status_t [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]     adderStatus;
@@ -313,8 +326,17 @@ module zvt_pe_block (
   end
 
   always_comb begin
+    fpexp = 'b0;
+    for(int i=0; i<`TE/2*`COMPRATIO; i++) begin
+      for(int j=0; j<`TE/2; j++) begin
+        fpexp.of = fpexp.of | adderResVld[i][j] && (adderTag[ADDERPIPENUM].status[i][j].OF || adderStatus[i][j].OF);
+        fpexp.nv = fpexp.nv | adderResVld[i][j] && (adderTag[ADDERPIPENUM].status[i][j].NV || adderStatus[i][j].NV);
+      end
+    end
+  end
+
+  always_comb begin
     fpexpVld    = |fpexp;
-    fpexp       = 'b0;
     adderResRdy = !fpexpVld || fpexpRdy; 
     writeEn     = 'b0; 
     writeAccIdx = 'b0;
@@ -323,19 +345,11 @@ module zvt_pe_block (
 
     for(int i=0; i<`TE/2*`COMPRATIO; i++) begin
       for(int j=0; j<`TE/2; j++) begin
-        // result valid
-        adderResVld[i][j] = adderVld[i][j][ADDERPIPENUM];
-        
-        // write the results into ACC  
         writeAccIdx[(`TE/4)*(i/2)+(j/2)] = {adderTag[ADDERPIPENUM].writeAccIdx[3:2], BLKID[1], j[1]};
         writeSubIdx[(`TE/4)*(i/2)+(j/2)] = ($clog2(`NUM_SUBTILE))'(`TE/8)*BLKID[0]+
                                          (`TE/4)*(`TE/4*`COMPRATIO*adderTag[ADDERPIPENUM].writeAccId*+i/2)+(j/4);
         writeEn[(`TE/4)*(i/2)+(j/2)][{i[0],j[0]}*4 +: 4] = {4{adderResVld[i][j]&&adderResRdy}};
         writeData[(`TE/4)*(i/2)+(j/2)][{i[0],j[0]}*`WORD_WIDTH +: `WORD_WIDTH] = adderRes[i][j];
-        
-        // floating-point exceptions.
-        fpexp.of = fpexp.of | adderResVld[i][j] && (adderTag[ADDERPIPENUM].status[i][j].OF || adderStatus[i][j].OF);
-        fpexp.nv = fpexp.nv | adderResVld[i][j] && (adderTag[ADDERPIPENUM].status[i][j].NV || adderStatus[i][j].NV);
       end
     end
   end

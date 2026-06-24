@@ -138,6 +138,12 @@ module zvt (
     .dataout      (uop_vme2lsu),
     .almost_full  (vmelsuAfull),
     .almost_empty (vmelsuAempty),
+    .full         (),
+    .empty        (),
+    .fifo_data    (),
+    .wptr         (),
+    .rptr         (),
+    .entry_count  (),
     .clear        (flush)
   );
 
@@ -156,6 +162,12 @@ module zvt (
     .dataout      (vmelsures),
     .almost_full  (vmelsuresAfull),
     .almost_empty (vmelsuresAempty),
+    .full         (),
+    .empty        (),
+    .fifo_data    (),
+    .wptr         (),
+    .rptr         (),
+    .entry_count  (),
     .clear        (flush)
   );
 

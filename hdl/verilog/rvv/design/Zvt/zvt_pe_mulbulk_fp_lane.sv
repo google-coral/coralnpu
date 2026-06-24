@@ -28,7 +28,7 @@ module zvt_pe_mulbulk_fp_lane#(
 
   // assert format is supported
   `ifdef ASSERT_ON
-    `rvv_forbid(up_valid && reg_enable[0] && (!FP_FMT_CONFIG[src_fmt] || !FP_FMT_CONFIG[dst_fmt])
+    `rvv_forbid(up_valid && reg_enable[0] && (!FP_FMT_CONFIG[src_fmt] || !FP_FMT_CONFIG[dst_fmt]))
       else $warning("Unsupported source format detected");
     `rvv_forbid(up_valid && reg_enable[0] && dst_fmt != fpnew_pkg::FP32)
       else $warning("Destination format is not FP32");
@@ -299,7 +299,7 @@ module zvt_pe_mulbulk_fp_lane#(
   logic preround_lead_bit;
   logic [SUPER_EXP_BITS:0] preround_exponent;
   logic [SUPER_MAN_BITS-1:0] preround_mantissa;
-  logic preround_round_bit, preroung_sticky_bit, preround_sticky_msb;
+  logic preround_round_bit, preround_sticky_bit, preround_sticky_msb;
   logic final_align_overflow;
   fp_align#(
     .IN_EXP_BITS(32'(PROD_EXP_BITS+2)),

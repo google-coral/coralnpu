@@ -190,13 +190,22 @@
   `define COMPRATIO           4/`TE
   `endif 
 
-  `define PROCESS_DELAY       (1/`COMPRATIO)
+  `ifdef ZVT_MAXCOMPUTING
+  `define PROCESS_DELAY       4
+  `define NUM_PE              (`TE*`TE/4)
+  `else
+  `define PROCESS_DELAY       (`TE/4)
+  `define NUM_PE              (4*`TE)
+  `endif
   `define ZVT_LMUL            (`WORD_WIDTH*`TE/`VLEN)
-  `define NUM_PE              (`COMPRATIO*`TE*`TE)
   // The quantity of subtile for each acc
   `define NUM_SUBTILE         (`TE*`TE/`SUBTILE_SIZE)
   // The quantity of subtile ports for each block
-  `define NUM_BLKPORT         ($ceil(`TE/4*`COMPRATIO)*`TE/4)
+  `ifdef ZVT_MAXCOMPUTING
+  `define NUM_BLKPORT         (((`TE + 15) / 16) * `TE/4)
+  `else
+  `define NUM_BLKPORT         (`TE/4)
+  `endif
 `endif // ZVT_ON
 
 `endif // HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH

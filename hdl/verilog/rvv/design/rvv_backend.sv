@@ -791,6 +791,18 @@ module rvv_backend
     assign rs_ready_zvt2dp  = ~zvt_rs_almost_full;
   `endif
 
+    // LSU RS pop logic
+    logic [`NUM_LSU-1:0] lsu_rs_pop;
+    generate
+        for (i=0; i<`NUM_LSU; i++) begin: gen_lsu_rs_pop
+            if (i==0) begin: gen_first
+                assign lsu_rs_pop[i] = uop_lsu_valid_rvv2lsu[i] & uop_lsu_ready_lsu2rvv[i];
+            end else begin: gen_i
+                assign lsu_rs_pop[i] = lsu_rs_pop[i-1] & uop_lsu_valid_rvv2lsu[i] & uop_lsu_ready_lsu2rvv[i];
+            end
+        end
+    endgenerate
+
     // LSU RS
     multi_fifo #(
         .T            (UOP_RVV2LSU_t),

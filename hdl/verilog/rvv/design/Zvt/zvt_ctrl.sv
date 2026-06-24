@@ -145,7 +145,7 @@ module zvt_ctrl (
   assign pattern   = uop[0].tss.pattern;
   assign index     = uop[0].tss.index;
   assign vstart    = uop[0].vstart;
-  assign tm        = uop[0].tm;
+  assign tm        = uop[0].tm[$clog2(`TE):0];
   assign tn        = uop[0].vl;
   assign uop_index = uop[0].uop_index;
   
