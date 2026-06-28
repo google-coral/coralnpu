@@ -14,9 +14,22 @@
 
 package(default_visibility = ["//visibility:public"])
 
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 
 py_binary(
     name = "scm_info",
     srcs = ["scm_info.py"],
+)
+
+py_test(
+    name = "run_uvm_regression_test",
+    srcs = [
+        "run_uvm_regression.py",
+        "run_uvm_regression_test.py",
+    ],
+    main = "run_uvm_regression_test.py",
+    deps = [
+        requirement("pyelftools"),
+    ],
 )
