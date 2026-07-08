@@ -249,8 +249,8 @@ module RvvFrontEnd#(parameter N = 4,
 
         inst_config_state[i+1].lmul = inst_config_state[i+1].lmul_orig;
 
-        // TODO: filter out illegal lmul for widening ALU ops and non-indexed
-        // LSU ops where eew>sew.
+        // Encoding validation (above) now filters illegal EMUL for
+        // widening ALU ops and non-indexed LSU ops where eew>sew.
         if (REDUCE_LMUL) begin
           // We use vl here, it's guaranteed to be <= vlmax. This operation
           // should either reduce lmul or keep it untouched.
@@ -355,6 +355,661 @@ module RvvFrontEnd#(parameter N = 4,
     end
   end
 
+  // ====================================================================
+  // Encoding validation: reject illegal instructions before they reach
+  // the backend (which would silently discard them, causing a hang).
+  // This replicates the backend's inst_encoding_correct check using only
+  // instruction bits + vtype state, both available here.
+  // ====================================================================
+
+  // LSU width-field encoding (funct3 for load/store EEW)
+  localparam logic [2:0] LSU_EEW_8  = 3'b000;
+  localparam logic [2:0] LSU_EEW_16 = 3'b101;
+  localparam logic [2:0] LSU_EEW_32 = 3'b110;
+
+  // Compute EMUL from LMUL and a signed ratio (log2(EEW/SEW)).
+  // ratio: 0=1x, +1=2x, +2=4x, -1=half, -2=quarter.
+  // Returns EMUL_NONE on overflow (EMUL > 8).
+  function automatic EMUL_e compute_emul(RVVLMUL lmul, logic signed [2:0] ratio);
+    logic signed [3:0] lmul_log2;
+    logic signed [3:0] emul_log2;
+    case (lmul)
+      LMUL1:   lmul_log2 = 0;
+      LMUL2:   lmul_log2 = 1;
+      LMUL4:   lmul_log2 = 2;
+      LMUL8:   lmul_log2 = 3;
+      LMUL1_2: lmul_log2 = -1;
+      LMUL1_4: lmul_log2 = -2;
+      LMUL1_8: lmul_log2 = -3;
+      default: return EMUL_NONE;
+    endcase
+    emul_log2 = lmul_log2 + {{1{ratio[2]}}, ratio};
+    if (emul_log2 > 3) return EMUL_NONE;
+    if (emul_log2 <= 0) return EMUL1;
+    case (emul_log2[1:0])
+      2'd1: return EMUL2;
+      2'd2: return EMUL4;
+      2'd3: return EMUL8;
+      default: return EMUL1;
+    endcase
+  endfunction
+
+  // Check register alignment to EMUL group
+  function automatic logic check_align(logic [4:0] reg_idx, EMUL_e emul);
+    case (emul)
+      EMUL_NONE, EMUL1: return 1'b1;
+      EMUL2: return (reg_idx[0] == 1'b0);
+      EMUL4: return (reg_idx[1:0] == 2'b0);
+      EMUL8: return (reg_idx[2:0] == 3'b0);
+      default: return 1'b0;
+    endcase
+  endfunction
+
+  // Check vd does not overlap v0 when masked (vm=0)
+  function automatic logic check_vd_v0(logic vm, logic [4:0] vd);
+    return vm | (vd != 5'b0);
+  endfunction
+
+  // Check vd does NOT partially overlap a source group (src EMUL > vd EMUL).
+  // vd sits inside the src group at a non-zero offset → illegal.
+  function automatic logic check_no_partial_overlap(
+      logic [4:0] vd, logic [4:0] src, EMUL_e src_emul);
+    case (src_emul)
+      EMUL1: return 1'b1;
+      EMUL2: return !((vd[0] != 1'b0) && (vd[4:1] == src[4:1]));
+      EMUL4: return !((vd[1:0] != 2'b0) && (vd[4:2] == src[4:2]));
+      EMUL8: return !((vd[2:0] != 3'b0) && (vd[4:3] == src[4:3]));
+      default: return 1'b1;
+    endcase
+  endfunction
+
+  // Check full group non-overlap (vd group != src group)
+  function automatic logic check_no_full_overlap(
+      logic [4:0] vd, EMUL_e emul_vd,
+      logic [4:0] src, EMUL_e emul_src);
+    if ((emul_vd == EMUL8) || (emul_src == EMUL8))
+      return (vd[4:3] != src[4:3]);
+    else if ((emul_vd == EMUL4) || (emul_src == EMUL4))
+      return (vd[4:2] != src[4:2]);
+    else if ((emul_vd == EMUL2) || (emul_src == EMUL2))
+      return (vd[4:1] != src[4:1]);
+    else if ((emul_vd == EMUL1) || (emul_src == EMUL1))
+      return (vd != src);
+    else
+      return 1'b0;
+  endfunction
+
+  // Check src does NOT partially overlap vd for widening (vd EMUL > src EMUL).
+  // For 2:1 ratio: src must be at upper half of vd group.
+  function automatic logic check_src_no_partial_vd_2_1(
+      logic [4:0] vd, logic [4:0] src, EMUL_e emul_vd);
+    case (emul_vd)
+      EMUL1: return 1'b1;
+      EMUL2: return !((vd[4:1] == src[4:1]) && (src[0] != 1'b1));
+      EMUL4: return !((vd[4:2] == src[4:2]) && (src[1:0] != 2'b10));
+      EMUL8: return !((vd[4:3] == src[4:3]) && (src[2:0] != 3'b100));
+      default: return 1'b1;
+    endcase
+  endfunction
+
+  // For 4:1 ratio: src must be at 3/4 position of vd group.
+  function automatic logic check_src_no_partial_vd_4_1(
+      logic [4:0] vd, logic [4:0] src, EMUL_e emul_vd);
+    case (emul_vd)
+      EMUL1: return 1'b1;
+      EMUL2: return !((vd[4:1] == src[4:1]) && (src[0] != 1'b1));
+      EMUL4: return !((vd[4:2] == src[4:2]) && (src[1:0] != 2'b11));
+      EMUL8: return !((vd[4:3] == src[4:3]) && (src[2:0] != 3'b110));
+      default: return 1'b1;
+    endcase
+  endfunction
+
+  // Get EEW/SEW ratio as signed value for LSU width field
+  function automatic logic signed [2:0] lsu_eew_ratio(
+      logic [2:0] funct3, RVVSEW sew);
+    logic [1:0] eew_log2;
+    logic [1:0] sew_log2;
+    case (funct3)
+      LSU_EEW_8:  eew_log2 = 2'd0;
+      LSU_EEW_16: eew_log2 = 2'd1;
+      LSU_EEW_32: eew_log2 = 2'd2;
+      default: return 3'sd0; // invalid width, will fail check_sew
+    endcase
+    sew_log2 = sew[1:0];
+    return 3'(signed'({1'b0, eew_log2}) - signed'({1'b0, sew_log2}));
+  endfunction
+
+  // Per-lane encoding validity check
+  logic [N-1:0] encoding_valid;
+  always_comb begin
+    for (int i = 0; i < N; i++) begin
+      // Extract instruction fields from bits[24:0] = inst[31:7]
+      automatic logic [5:0]  funct6  = inst_q[i].bits[24:19];
+      automatic logic        vm      = inst_q[i].bits[18];
+      automatic logic [4:0]  vs2     = inst_q[i].bits[17:13];
+      automatic logic [4:0]  vs1     = inst_q[i].bits[12:8];
+      automatic logic [2:0]  funct3  = inst_q[i].bits[7:5];
+      automatic logic [4:0]  vd      = inst_q[i].bits[4:0];
+      automatic logic [2:0]  nf      = funct6[5:3];  // LSU segment fields
+      automatic logic [2:0]  mop     = funct6[2:0];  // LSU memory op type
+      automatic logic [4:0]  umop    = vs2;           // LSU unit-stride sub-op
+      automatic logic [2:0]  nr      = vs1[2:0];     // vmv<nr>r register count
+      automatic RVVOpCode    opcode  = inst_q[i].opcode;
+      automatic RVVLMUL      lmul    = inst_config_state[i+1].lmul;
+      automatic RVVSEW       sew     = inst_config_state[i+1].sew;
+      automatic logic [`VL_WIDTH-1:0]     vl     = inst_config_state[i+1].vl;
+      automatic logic [`VSTART_WIDTH-1:0] vstart = inst_config_state[i+1].vstart;
+
+      // Computed values
+      automatic EMUL_e emul_vd  = EMUL_NONE;
+      automatic EMUL_e emul_vs2 = EMUL_NONE;
+      automatic EMUL_e emul_vs1 = EMUL_NONE;
+      automatic logic  valid_eew = 1'b1;   // EEW is representable
+      automatic logic  chk_special = 1'b0;
+      automatic logic  chk_common  = 1'b0;
+      automatic logic  is_whole_reg = 1'b0;
+      automatic logic  is_mask_ld   = 1'b0;
+      automatic logic  skip_evl     = 1'b0; // skip evl/vstart checks
+      automatic logic [`VL_WIDTH-1:0] evl = vl;
+
+      if (opcode == RVV) begin
+        // ============================================================
+        // Arithmetic instructions
+        // ============================================================
+        case (funct3)
+          OPIVV, OPIVX, OPIVI: begin
+            case (funct6)
+              // --- Standard 1x/1x/1x ---
+              VADD, VSUB, VRSUB, VMINU, VMIN, VMAXU, VMAX,
+              VAND, VOR, VXOR, VSLL, VSRL, VSRA,
+              VSADDU, VSADD, VSSUBU, VSSUB, VSSRL, VSSRA,
+              VSLIDEDOWN: begin
+                emul_vd  = compute_emul(lmul, 3'sd0);
+                emul_vs2 = emul_vd;
+                if (funct3 == OPIVV) emul_vs1 = emul_vd;
+                chk_special = check_vd_v0(vm, vd);
+              end
+
+              // --- ADC/SBC (carry-in, vm must be 0, vd != v0) ---
+              VADC, VSBC: begin
+                emul_vd  = compute_emul(lmul, 3'sd0);
+                emul_vs2 = emul_vd;
+                if (funct3 == OPIVV) emul_vs1 = emul_vd;
+                chk_special = (vm == 1'b0) && (vd != 5'b0);
+              end
+
+              // --- MADC/MSBC (mask-producing) ---
+              VMADC, VMSBC: begin
+                emul_vd  = EMUL1;
+                emul_vs2 = compute_emul(lmul, 3'sd0);
+                if (funct3 == OPIVV) emul_vs1 = emul_vs2;
+                chk_special = check_no_partial_overlap(vd, vs2, emul_vs2);
+                if (funct3 == OPIVV)
+                  chk_special = chk_special &&
+                      check_no_partial_overlap(vd, vs1, emul_vs1);
+              end
+
+              // --- Compare (mask-producing) ---
+              VMSEQ, VMSNE, VMSLTU, VMSLT, VMSLEU, VMSLE,
+              VMSGTU, VMSGT: begin
+                emul_vd  = EMUL1;
+                emul_vs2 = compute_emul(lmul, 3'sd0);
+                if (funct3 == OPIVV) emul_vs1 = emul_vs2;
+                chk_special = check_no_partial_overlap(vd, vs2, emul_vs2);
+                if (funct3 == OPIVV)
+                  chk_special = chk_special &&
+                      check_no_partial_overlap(vd, vs1, emul_vs1);
+              end
+
+              // --- Narrowing (vd=1x, vs2=2x) ---
+              VNSRL, VNSRA, VNCLIPU, VNCLIP: begin
+                emul_vd  = compute_emul(lmul, 3'sd0);
+                emul_vs2 = compute_emul(lmul, 3'sd1);
+                if (funct3 == OPIVV) emul_vs1 = emul_vd;
+                chk_special = check_vd_v0(vm, vd) &&
+                    check_no_partial_overlap(vd, vs2, emul_vs2);
+              end
+
+              // --- Merge/Move ---
+              VMERGE_VMV: begin
+                emul_vd  = compute_emul(lmul, 3'sd0);
+                emul_vs2 = (vm == 1'b0) ? emul_vd : EMUL_NONE;
+                if (funct3 == OPIVV) emul_vs1 = emul_vd;
+                chk_special = ((vm == 1'b0) && (vd != 5'b0)) ||
+                              ((vm == 1'b1) && (vs2 == 5'b0));
+              end
+
+              // --- SMUL / vmv<nr>r ---
+              VSMUL_VMVNRR: begin
+                if (funct3 == OPIVI && vm == 1'b1) begin
+                  // vmv<nr>r.v: whole-register move
+                  case (nr)
+                    NREG1: emul_vd = EMUL1;
+                    NREG2: emul_vd = EMUL2;
+                    NREG4: emul_vd = EMUL4;
+                    NREG8: emul_vd = EMUL8;
+                    default: emul_vd = EMUL_NONE;
+                  endcase
+                  emul_vs2 = emul_vd;
+                  is_whole_reg = 1'b1;
+                  chk_special = (vs1[4:3] == 2'b0) &&
+                      ((nr == NREG1) || (nr == NREG2) ||
+                       (nr == NREG4) || (nr == NREG8));
+                end else begin
+                  // vsmul
+                  emul_vd  = compute_emul(lmul, 3'sd0);
+                  emul_vs2 = emul_vd;
+                  if (funct3 == OPIVV) emul_vs1 = emul_vd;
+                  chk_special = check_vd_v0(vm, vd);
+                end
+              end
+
+              // --- Widening reductions ---
+              VWREDSUMU, VWREDSUM: begin
+                emul_vd  = EMUL1;
+                emul_vs2 = compute_emul(lmul, 3'sd0);
+                emul_vs1 = EMUL1;
+                chk_special = (vstart == '0);
+              end
+
+              // --- Gather (full non-overlap) ---
+              VRGATHER: begin
+                emul_vd  = compute_emul(lmul, 3'sd0);
+                emul_vs2 = emul_vd;
+                if (funct3 == OPIVV) emul_vs1 = emul_vd;
+                chk_special = check_vd_v0(vm, vd) &&
+                    check_no_full_overlap(vd, emul_vd, vs2, emul_vs2);
+                if (funct3 == OPIVV)
+                  chk_special = chk_special &&
+                      check_no_full_overlap(vd, emul_vd, vs1, emul_vs1);
+              end
+
+              // --- SlideUp / RgatherEI16 ---
+              VSLIDEUP_RGATHEREI16: begin
+                if (funct3 == OPIVV) begin
+                  // vrgatherei16: vs1 EMUL based on 16/SEW ratio
+                  emul_vd  = compute_emul(lmul, 3'sd0);
+                  emul_vs2 = emul_vd;
+                  case (sew)
+                    SEW8:  emul_vs1 = compute_emul(lmul, 3'sd1); // 16/8=2x
+                    SEW16: emul_vs1 = emul_vd;                    // 16/16=1x
+                    SEW32: emul_vs1 = compute_emul(lmul, -3'sd1); // 16/32=0.5x
+                    default: emul_vs1 = EMUL_NONE;
+                  endcase
+                  chk_special = check_vd_v0(vm, vd) &&
+                      check_no_full_overlap(vd, emul_vd, vs2, emul_vs2) &&
+                      check_no_full_overlap(vd, emul_vd, vs1, emul_vs1);
+                end else begin
+                  // vslideup
+                  emul_vd  = compute_emul(lmul, 3'sd0);
+                  emul_vs2 = emul_vd;
+                  chk_special = check_vd_v0(vm, vd) &&
+                      check_no_full_overlap(vd, emul_vd, vs2, emul_vs2);
+                end
+              end
+
+              default: begin
+                // Unrecognized funct6 for OPI* — let backend handle
+                emul_vd = compute_emul(lmul, 3'sd0);
+                chk_special = 1'b1;
+              end
+            endcase
+          end
+
+          OPMVV: begin
+            case (funct6)
+              // --- Widening (2x, 1x, 1x) ---
+              VWADDU, VWADD, VWSUBU, VWSUB,
+              VWMULU, VWMULSU, VWMUL,
+              VWMACCU, VWMACC, VWMACCSU: begin
+                emul_vd  = compute_emul(lmul, 3'sd1);
+                emul_vs2 = compute_emul(lmul, 3'sd0);
+                emul_vs1 = emul_vs2;
+                chk_special = check_vd_v0(vm, vd) &&
+                    check_src_no_partial_vd_2_1(vd, vs2, emul_vd) &&
+                    check_src_no_partial_vd_2_1(vd, vs1, emul_vd);
+              end
+
+              // --- Widening WW (2x, 2x, 1x) ---
+              VWADDU_W, VWADD_W, VWSUBU_W, VWSUB_W: begin
+                emul_vd  = compute_emul(lmul, 3'sd1);
+                emul_vs2 = emul_vd;
+                emul_vs1 = compute_emul(lmul, 3'sd0);
+                chk_special = check_vd_v0(vm, vd) &&
+                    check_src_no_partial_vd_2_1(vd, vs1, emul_vd);
+              end
+
+              // --- Extension ---
+              VXUNARY0: begin
+                case (vs1)
+                  VZEXT_VF2, VSEXT_VF2: begin
+                    emul_vd  = compute_emul(lmul, 3'sd1);
+                    emul_vs2 = compute_emul(lmul, 3'sd0);
+                    chk_special = check_vd_v0(vm, vd) &&
+                        check_src_no_partial_vd_2_1(vd, vs2, emul_vd);
+                  end
+                  VZEXT_VF4, VSEXT_VF4: begin
+                    emul_vd  = compute_emul(lmul, 3'sd2);
+                    emul_vs2 = compute_emul(lmul, 3'sd0);
+                    chk_special = check_vd_v0(vm, vd) &&
+                        check_src_no_partial_vd_4_1(vd, vs2, emul_vd);
+                  end
+                  default: chk_special = 1'b0;
+                endcase
+              end
+
+              // --- Standard OPMVV (1x, 1x, 1x) ---
+              VMUL, VMULH, VMULHU, VMULHSU,
+              VDIVU, VDIV, VREMU, VREM,
+              VMACC, VNMSAC, VMADD, VNMSUB,
+              VAADDU, VAADD, VASUBU, VASUB: begin
+                emul_vd  = compute_emul(lmul, 3'sd0);
+                emul_vs2 = emul_vd;
+                emul_vs1 = emul_vd;
+                chk_special = check_vd_v0(vm, vd);
+              end
+
+              // --- Reduction ---
+              VREDSUM, VREDAND, VREDOR, VREDXOR,
+              VREDMINU, VREDMIN, VREDMAXU, VREDMAX: begin
+                emul_vd  = EMUL1;
+                emul_vs2 = compute_emul(lmul, 3'sd0);
+                emul_vs1 = EMUL1;
+                chk_special = (vstart == '0);
+              end
+
+              // --- Mask logical (EMUL1, EMUL1, EMUL1) ---
+              VMAND, VMNAND, VMANDN,
+              VMXOR, VMOR, VMNOR, VMORN, VMXNOR: begin
+                emul_vd  = EMUL1;
+                emul_vs2 = EMUL1;
+                emul_vs1 = EMUL1;
+                chk_special = vm; // must be unmasked
+              end
+
+              // --- Scalar read / population count ---
+              VWRXUNARY0: begin
+                case (vs1)
+                  VCPOP, VFIRST: begin
+                    emul_vd  = EMUL_NONE;
+                    emul_vs2 = EMUL1;
+                    skip_evl = 1'b1;
+                    chk_special = (vstart == '0);
+                  end
+                  VMV_X_S: begin
+                    emul_vd  = EMUL_NONE;
+                    emul_vs2 = EMUL1;
+                    skip_evl = 1'b1;
+                    chk_special = (vm == 1'b1);
+                  end
+                  default: chk_special = 1'b0;
+                endcase
+              end
+
+              // --- Mask utility ---
+              VMUNARY0: begin
+                case (vs1)
+                  VMSBF, VMSIF, VMSOF: begin
+                    emul_vd  = EMUL1;
+                    emul_vs2 = EMUL1;
+                    chk_special = (vstart == '0) &&
+                        check_vd_v0(vm, vd) &&
+                        check_no_full_overlap(vd, EMUL1, vs2, EMUL1);
+                  end
+                  VIOTA: begin
+                    emul_vd  = compute_emul(lmul, 3'sd0);
+                    emul_vs2 = EMUL1;
+                    chk_special = (vstart == '0) &&
+                        check_vd_v0(vm, vd) &&
+                        check_no_full_overlap(vd, emul_vd, vs2, EMUL1);
+                  end
+                  VID: begin
+                    emul_vd = compute_emul(lmul, 3'sd0);
+                    chk_special = (vs2 == 5'b0) && check_vd_v0(vm, vd);
+                  end
+                  default: chk_special = 1'b0;
+                endcase
+              end
+
+              // --- Compress ---
+              VCOMPRESS: begin
+                emul_vd  = compute_emul(lmul, 3'sd0);
+                emul_vs2 = emul_vd;
+                emul_vs1 = EMUL1;
+                chk_special = (vstart == '0) && vm &&
+                    check_no_full_overlap(vd, emul_vd, vs2, emul_vs2) &&
+                    check_no_full_overlap(vd, emul_vd, vs1, EMUL1);
+              end
+
+              default: begin
+                emul_vd = compute_emul(lmul, 3'sd0);
+                chk_special = 1'b1;
+              end
+            endcase
+          end
+
+          OPMVX: begin
+            case (funct6)
+              // --- Widening (2x, 1x, scalar) ---
+              VWADDU, VWADD, VWSUBU, VWSUB,
+              VWMULU, VWMULSU, VWMUL,
+              VWMACCU, VWMACC, VWMACCSU: begin
+                emul_vd  = compute_emul(lmul, 3'sd1);
+                emul_vs2 = compute_emul(lmul, 3'sd0);
+                chk_special = check_vd_v0(vm, vd) &&
+                    check_src_no_partial_vd_2_1(vd, vs2, emul_vd);
+              end
+
+              VWMACCUS: begin
+                emul_vd  = compute_emul(lmul, 3'sd1);
+                emul_vs2 = compute_emul(lmul, 3'sd0);
+                chk_special = check_vd_v0(vm, vd) &&
+                    check_src_no_partial_vd_2_1(vd, vs2, emul_vd);
+              end
+
+              // --- Widening WW (2x, 2x, scalar) ---
+              VWADDU_W, VWADD_W, VWSUBU_W, VWSUB_W: begin
+                emul_vd  = compute_emul(lmul, 3'sd1);
+                emul_vs2 = emul_vd;
+                chk_special = check_vd_v0(vm, vd);
+              end
+
+              // --- Standard (1x, 1x, scalar) ---
+              VMUL, VMULH, VMULHU, VMULHSU,
+              VDIVU, VDIV, VREMU, VREM,
+              VMACC, VNMSAC, VMADD, VNMSUB,
+              VAADDU, VAADD, VASUBU, VASUB,
+              VSLIDE1DOWN: begin
+                emul_vd  = compute_emul(lmul, 3'sd0);
+                emul_vs2 = emul_vd;
+                chk_special = check_vd_v0(vm, vd);
+              end
+
+              // --- Slide1up (full non-overlap vd/vs2) ---
+              VSLIDE1UP: begin
+                emul_vd  = compute_emul(lmul, 3'sd0);
+                emul_vs2 = emul_vd;
+                chk_special = check_vd_v0(vm, vd) &&
+                    check_no_full_overlap(vd, emul_vd, vs2, emul_vs2);
+              end
+
+              // --- VMV.S.X ---
+              VWRXUNARY0: begin
+                emul_vd = EMUL1;
+                chk_special = (vs2 == 5'b0) && (vm == 1'b1);
+                evl = vl;
+                skip_evl = (vl == '0);
+              end
+
+              default: begin
+                emul_vd = compute_emul(lmul, 3'sd0);
+                chk_special = 1'b1;
+              end
+            endcase
+          end
+
+          default: begin
+            // OPCFG (vsetvl*) is handled by is_setvl; skip here
+            chk_special = 1'b1;
+            emul_vd = EMUL1;
+          end
+        endcase
+
+      end else begin
+        // ============================================================
+        // LSU instructions (opcode == LOAD or STORE)
+        // ============================================================
+        automatic logic signed [2:0] ratio;
+        automatic logic is_load = (opcode == LOAD);
+
+        case (mop)
+          UNIT_STRIDE: begin
+            case (umop)
+              US_REGULAR, US_FAULT_FIRST: begin
+                ratio = lsu_eew_ratio(funct3, sew);
+                emul_vd = compute_emul(lmul, ratio);
+                valid_eew = (funct3 == LSU_EEW_8) ||
+                            (funct3 == LSU_EEW_16) ||
+                            (funct3 == LSU_EEW_32);
+                if (umop == US_FAULT_FIRST)
+                  chk_special = is_load && check_vd_v0(vm, vd);
+                else
+                  chk_special = is_load ? check_vd_v0(vm, vd) : 1'b1;
+              end
+              US_WHOLE_REGISTER: begin
+                case (nf)
+                  3'b000: emul_vd = EMUL1;
+                  3'b001: emul_vd = EMUL2;
+                  3'b011: emul_vd = EMUL4;
+                  3'b111: emul_vd = EMUL8;
+                  default: emul_vd = EMUL_NONE;
+                endcase
+                is_whole_reg = 1'b1;
+                valid_eew = (funct3 == LSU_EEW_8) ||
+                            (funct3 == LSU_EEW_16) ||
+                            (funct3 == LSU_EEW_32);
+                chk_special = vm && (is_load ||
+                    ((!is_load) && (funct3 == LSU_EEW_8)));
+              end
+              US_MASK: begin
+                emul_vd = EMUL1;
+                is_mask_ld = 1'b1;
+                valid_eew = (funct3 == LSU_EEW_8);
+                chk_special = vm && (funct3 == LSU_EEW_8) &&
+                              (nf == 3'b0);
+              end
+              default: chk_special = 1'b0;
+            endcase
+          end
+
+          CONSTANT_STRIDE: begin
+            ratio = lsu_eew_ratio(funct3, sew);
+            emul_vd = compute_emul(lmul, ratio);
+            valid_eew = (funct3 == LSU_EEW_8) ||
+                        (funct3 == LSU_EEW_16) ||
+                        (funct3 == LSU_EEW_32);
+            chk_special = is_load ? check_vd_v0(vm, vd) : 1'b1;
+          end
+
+          UNORDERED_INDEX, ORDERED_INDEX: begin
+            // Data EMUL uses SEW, index EMUL uses funct3
+            emul_vd  = compute_emul(lmul, 3'sd0);  // data at SEW
+            ratio = lsu_eew_ratio(funct3, sew);
+            emul_vs2 = compute_emul(lmul, ratio);   // index at EEW
+            valid_eew = (funct3 == LSU_EEW_8) ||
+                        (funct3 == LSU_EEW_16) ||
+                        (funct3 == LSU_EEW_32);
+
+            if (nf == NF1) begin
+              // Non-segment indexed
+              if (ratio > 0) begin
+                // EEW_index > SEW: check vd not partial in vs2
+                chk_special = is_load ?
+                    (check_vd_v0(vm, vd) &&
+                     check_no_partial_overlap(vd, vs2, emul_vs2)) : 1'b1;
+              end else if (ratio < 0) begin
+                // SEW > EEW_index: check vs2 not partial in vd
+                if (ratio == -3'sd1)
+                  chk_special = is_load ?
+                      (check_vd_v0(vm, vd) &&
+                       check_src_no_partial_vd_2_1(vd, vs2, emul_vd)) : 1'b1;
+                else
+                  chk_special = is_load ?
+                      (check_vd_v0(vm, vd) &&
+                       check_src_no_partial_vd_4_1(vd, vs2, emul_vd)) : 1'b1;
+              end else begin
+                // EEW_index == SEW: same EMUL
+                chk_special = is_load ? check_vd_v0(vm, vd) : 1'b1;
+              end
+            end else begin
+              // Segment indexed: full non-overlap vd/vs2
+              chk_special = is_load ?
+                  (check_vd_v0(vm, vd) &&
+                   check_no_full_overlap(vd, emul_vd, vs2, emul_vs2)) : 1'b1;
+            end
+          end
+
+          default: chk_special = 1'b0;
+        endcase
+
+        // For ALL LSU segments (any mop), scale emul_vd by NF for
+        // alignment/range check. This catches vd + NF*EMUL > 31.
+        if (nf != NF1) begin
+          case (emul_vd)
+            EMUL1: case (nf)
+              NF2: emul_vd = EMUL2;
+              NF3: emul_vd = EMUL4; // approximate: EMUL3->EMUL4
+              NF4: emul_vd = EMUL4;
+              NF5, NF6, NF7, NF8: emul_vd = EMUL8;
+              default: ;
+            endcase
+            EMUL2: case (nf)
+              NF2: emul_vd = EMUL4;
+              NF3, NF4: emul_vd = EMUL8;
+              default: emul_vd = EMUL_NONE;
+            endcase
+            EMUL4: case (nf)
+              NF2: emul_vd = EMUL8;
+              default: emul_vd = EMUL_NONE;
+            endcase
+            EMUL8: emul_vd = EMUL_NONE; // any NF>1 overflows
+            default: ;
+          endcase
+        end
+      end
+
+      // ============================================================
+      // check_common: alignment + valid EMUL + EVL/vstart
+      // ============================================================
+      begin
+        automatic logic align_vd  = check_align(vd, emul_vd);
+        automatic logic align_vs2 = check_align(vs2, emul_vs2);
+        automatic logic align_vs1 = check_align(vs1, emul_vs1);
+        automatic logic valid_emul = (emul_vd != EMUL_NONE) ||
+                                     (emul_vs2 != EMUL_NONE) ||
+                                     (emul_vs1 != EMUL_NONE);
+        automatic logic evl_ok;
+        automatic logic vstart_ok;
+
+        if (is_whole_reg || skip_evl) begin
+          evl_ok = 1'b1;
+          vstart_ok = 1'b1;
+        end else if (is_mask_ld) begin
+          evl_ok = vl != '0;
+          vstart_ok = {1'b0, vstart} < vl;
+        end else begin
+          evl_ok = evl != '0;
+          vstart_ok = {1'b0, vstart} < evl;
+        end
+
+        chk_common = align_vd && align_vs2 && align_vs1 &&
+                     valid_eew && valid_emul && evl_ok && vstart_ok;
+      end
+
+      encoding_valid[i] = chk_special && chk_common;
+    end
+  end
+
   // Propagate outputs
   logic [N-1:0] unaligned_cmd_valid;
   RVVCmd [N-1:0] unaligned_cmd_data;
@@ -363,10 +1018,10 @@ module RvvFrontEnd#(parameter N = 4,
   always_comb begin
     for (int i = 0; i < N; i++) begin
       unaligned_trap_valid[i] = valid_inst_q[i] && !is_setvl[i] &&
-          inst_config_state[i+1].vill;
+          (inst_config_state[i+1].vill || !encoding_valid[i]);
       unaligned_trap_data[i] = inst_q[i];
       unaligned_cmd_valid[i] = valid_inst_q[i] && !is_setvl[i] &&
-          !inst_config_state[i+1].vill;
+          !inst_config_state[i+1].vill && encoding_valid[i];
 
       // Combine instruction + arch state into command
 `ifdef TB_SUPPORT
