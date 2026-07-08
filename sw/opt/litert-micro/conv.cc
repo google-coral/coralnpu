@@ -1322,8 +1322,8 @@ void ConvPerChannel(const ConvParams& params, const OpDataConvCustom& data,
                filter_data_copy.get(), bias_data_copy.get(), output_shape,
                output_data, data.repacked_weights_generic, context);
   } else {
-    MicroPrintf("Fallback kernel: fh=%d fw=%d id=%d od=%d", filter_height,
-                filter_width, input_depth, output_depth);
+    MicroPrintf("Fallback kernel: fh=%d fw=%d id=%d od=%d oh=%d ow=%d", filter_height, filter_width,
+                input_depth, output_depth, output_shape.Dims(1), output_shape.Dims(2));
     tflite::reference_integer_ops::ConvPerChannel(
         params, output_multiplier, output_shift, input_shape, input_data,
         filter_shape, filter_data, bias_shape, bias_data, output_shape,

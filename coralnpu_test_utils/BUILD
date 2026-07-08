@@ -66,6 +66,15 @@ py_library(
 )
 
 py_library(
+    name = "elf_util",
+    srcs = ["elf_util.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("pyelftools"),
+    ],
+)
+
+py_library(
     name = "backdoor",
     srcs = ["backdoor.py"],
     visibility = ["//visibility:public"],
@@ -143,6 +152,19 @@ py_binary(
         ":ftdi_spi_master_lib",
         requirement("numpy"),
         requirement("pyelftools"),
+    ],
+)
+
+py_binary(
+    name = "run_tflite_profile",
+    srcs = ["run_tflite_profile.py"],
+    data = [
+        "//sw/utils/tflite_runner:tflite_runner.elf",
+    ],
+    deps = [
+        ":elf_util",
+        ":ftdi_spi_master_lib",
+        "@bazel_tools//tools/python/runfiles",
     ],
 )
 
