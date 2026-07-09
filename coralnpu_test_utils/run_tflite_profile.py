@@ -20,6 +20,7 @@ import struct
 import logging
 import time
 import re
+import json
 
 # To support 'import coralnpu_hw.coralnpu_test_utils' without Bazel:
 _script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -49,18 +50,105 @@ class TfliteProfiler:
         self,
         runner_elf_path,
         model_path,
-        usb_serial,
+        usb_serial=None,
         ftdi_port=1,
-        csr_base_addr=0x30000
+        csr_base_addr=0x30000,
+        detailed=False,
+        force_run=False,
     ):
         self.runner_elf_path = runner_elf_path
         self.model_path = model_path
-        self.spi_master = FtdiSpiMaster(usb_serial, ftdi_port, csr_base_addr)
+        # Resolve relative path if run via bazel run
+        if not os.path.isabs(self.model_path
+                             ) and "BUILD_WORKSPACE_DIRECTORY" in os.environ:
+            self.model_path = os.path.join(
+                os.environ["BUILD_WORKSPACE_DIRECTORY"], self.model_path
+            )
+        self.usb_serial = usb_serial
+        self.ftdi_port = ftdi_port
+        self.csr_base_addr = csr_base_addr
+        self.detailed = detailed
+        self.force_run = force_run
 
+        self.cached_data = None
         self.entry_point = None
         self.symbols = {}
 
-        self._parse_elf()
+        self.use_cache = self._is_cache_valid(force_run)
+
+        if not self.use_cache:
+            if not usb_serial:
+                raise ValueError(
+                    "Cache is invalid/stale, and --usb-serial is required to"
+                    " run on hardware."
+                )
+            logger.info(
+                "Cache is invalid or --force was set. Preparing hardware"
+                " execution..."
+            )
+            self.spi_master = FtdiSpiMaster(
+                usb_serial, ftdi_port, csr_base_addr
+            )
+            self._parse_elf()
+        else:
+            logger.info(
+                "[Cache] Valid cache found. Skipping hardware execution (use"
+                " --force to rerun)."
+            )
+
+    def _is_cache_valid(self, force_run=False):
+        if force_run:
+            return False
+
+        cache_path = self._get_cache_path()
+        if not os.path.exists(cache_path):
+            return False
+
+        try:
+            with open(cache_path, "r") as f:
+                data = json.load(f)
+
+            # Check model path
+            cached_model = data.get("model_path")
+            if not cached_model:
+                return False
+
+            abs_cached_model = os.path.abspath(cached_model)
+            abs_current_model = os.path.abspath(self.model_path)
+            if abs_cached_model != abs_current_model:
+                return False
+
+            # Check model mtime
+            if not os.path.exists(self.model_path):
+                return False
+            current_model_mtime = os.path.getmtime(self.model_path)
+            if abs(data.get("model_mtime", 0) - current_model_mtime) > 0.1:
+                return False
+
+            # Check runner path and mtime
+            cached_runner = data.get("runner_path")
+            if not cached_runner:
+                return False
+            abs_cached_runner = os.path.abspath(cached_runner)
+            abs_current_runner = os.path.abspath(self.runner_elf_path)
+            if abs_cached_runner != abs_current_runner:
+                return False
+
+            if not os.path.exists(self.runner_elf_path):
+                return False
+            current_runner_mtime = os.path.getmtime(self.runner_elf_path)
+            if abs(data.get("runner_mtime", 0) - current_runner_mtime) > 0.1:
+                return False
+
+            # Check USB serial (if provided)
+            if self.usb_serial and data.get("usb_serial") != self.usb_serial:
+                return False
+
+            self.cached_data = data
+            return True
+        except Exception as e:
+            logger.warning(f"Error validating cache: {e}")
+            return False
 
     def _parse_elf(self):
         """Parses the runner ELF to find symbol addresses."""
@@ -127,48 +215,114 @@ class TfliteProfiler:
         if not matches:
             return
 
-        # Aggregate matches with MACs
-        # Key: (fh, fw, id_val, od)
-        # Value: [frequency, total_macs]
+        # Aggregate matches with MACs and Output Size (if detailed)
         stats = {}
         for fh_s, fw_s, id_s, od_s, oh_s, ow_s in matches:
             fh, fw, id_val, od, oh, ow = map(
                 int, [fh_s, fw_s, id_s, od_s, oh_s, ow_s]
             )
-            key = (fh, fw, id_val, od)
             macs = fh * fw * id_val * od * oh * ow
 
+            if self.detailed:
+                key = (fh, fw, id_val, od, oh, ow)
+            else:
+                key = (fh, fw, id_val, od)
             if key not in stats:
-                stats[key] = [0, 0]
-            stats[key][0] += 1
-            stats[key][1] += macs
+                stats[key] = {'count': 0, 'macs': 0}
+            stats[key]['count'] += 1
+            stats[key]['macs'] += macs
 
         # Sort by Total MACs descending, then by frequency, then by key
         sorted_stats = sorted(
-            stats.items(), key=lambda x: (-x[1][1], -x[1][0], x[0])
+            stats.items(), key=lambda x: (-x[1]['macs'], -x[1]['count'], x[0])
         )
 
-        print("\n--- Fallback Kernels Summary (Sorted by Est. Compute) ---")
+        if self.detailed:
+            columns = [
+                {
+                    "header": "Filter Shape",
+                    "width": 12,
+                    "fmt": lambda k, s: f"{k[0]}x{k[1]}"
+                },
+                {
+                    "header": "Input Depth",
+                    "width": 12,
+                    "fmt": lambda k, s: str(k[2])
+                },
+                {
+                    "header": "Output Depth",
+                    "width": 12,
+                    "fmt": lambda k, s: str(k[3])
+                },
+                {
+                    "header": "Output Size",
+                    "width": 12,
+                    "fmt": lambda k, s: f"{k[4]}x{k[5]}"
+                },
+                {
+                    "header": "Frequency",
+                    "width": 9,
+                    "fmt": lambda k, s: str(s['count'])
+                },
+                {
+                    "header": "Est. MACs (Total)",
+                    "width": 18,
+                    "fmt": lambda k, s: f"{s['macs']:,}"
+                },
+            ]
+        else:
+            columns = [
+                {
+                    "header": "Filter Shape",
+                    "width": 12,
+                    "fmt": lambda k, s: f"{k[0]}x{k[1]}"
+                },
+                {
+                    "header": "Input Depth",
+                    "width": 12,
+                    "fmt": lambda k, s: str(k[2])
+                },
+                {
+                    "header": "Output Depth",
+                    "width": 12,
+                    "fmt": lambda k, s: str(k[3])
+                },
+                {
+                    "header": "Frequency",
+                    "width": 9,
+                    "fmt": lambda k, s: str(s['count'])
+                },
+                {
+                    "header": "Est. MACs (Total)",
+                    "width": 18,
+                    "fmt": lambda k, s: f"{s['macs']:,}"
+                },
+            ]
+
+        header_parts = [f"{col['header']:<{col['width']}}" for col in columns]
+        header_str = " | ".join(header_parts)
+        line_width = len(header_str)
+        separator = "-" * line_width
+
+        title_suffix = " - Detailed" if self.detailed else ""
         print(
-            f"{'Filter Shape':<12} | {'Input Depth':<12} | {'Output Depth':<12} | {'Frequency':<9} | {'Est. MACs (Total)':<18}"
+            f"\n--- Fallback Kernels Summary (Sorted by Est. Compute){title_suffix} ---"
         )
-        print("-" * 75)
-        for (fh, fw, id_val, od), (freq, macs) in sorted_stats:
-            filter_shape = f"{fh}x{fw}"
-            macs_str = f"{macs:,}"
-            print(
-                f"{filter_shape:<12} | {id_val:<12} | {od:<12} | {freq:<9} | {macs_str:<18}"
-            )
-        print("----------------------------------------------------------\n")
+        print(header_str)
+        print(separator)
+
+        for key, stat in sorted_stats:
+            row_parts = [
+                f"{col['fmt'](key, stat):<{col['width']}}" for col in columns
+            ]
+            print(" | ".join(row_parts))
+        print(separator + "\n")
 
     def run_profile(self):
         """Loads the runner and model, executes, and prints cycle count."""
-        # Resolve relative path if run via bazel run
-        if not os.path.isabs(self.model_path
-                             ) and "BUILD_WORKSPACE_DIRECTORY" in os.environ:
-            self.model_path = os.path.join(
-                os.environ["BUILD_WORKSPACE_DIRECTORY"], self.model_path
-            )
+        if self.use_cache:
+            self._replay_profile()
+            return
 
         # Read model file
         if not os.path.exists(self.model_path):
@@ -268,14 +422,61 @@ class TfliteProfiler:
         # 7. Retrieve logs for fallback analysis (on success)
         log_str = self._get_device_logs()
 
+        # Save to cache
+        self._save_to_cache(cycles, elapsed_time, log_str)
+
+        self._print_results(cycles, elapsed_time, log_str)
+
+    def _print_results(self, cycles, elapsed_time, log_str):
         print("\n========================================")
         print(f"Model: {os.path.basename(self.model_path)}")
         print(f"Inference Cycle Count: {cycles}")
-        print(f"Host-measured Wall Time: {elapsed_time:.2f} seconds")
+        if self.detailed:
+            print(f"Host-measured Wall Time: {elapsed_time:.2f} seconds")
         print("========================================\n")
 
         if log_str:
             self._parse_and_print_fallbacks(log_str)
+
+    def _save_to_cache(self, cycles, elapsed_time, log_str):
+        cache_path = self._get_cache_path()
+        try:
+            abs_model_path = os.path.abspath(self.model_path)
+            abs_runner_path = os.path.abspath(self.runner_elf_path)
+            data = {
+                "model_path": abs_model_path,
+                "model_mtime": os.path.getmtime(self.model_path),
+                "runner_path": abs_runner_path,
+                "runner_mtime": os.path.getmtime(self.runner_elf_path),
+                "usb_serial": self.usb_serial,
+                "cycles": cycles,
+                "elapsed_time": elapsed_time,
+                "log_str": log_str,
+            }
+            with open(cache_path, "w") as f:
+                json.dump(data, f, indent=2)
+            logger.info(f"Saved run profile results to cache: {cache_path}")
+        except Exception as e:
+            logger.warning(f"Failed to save results to cache: {e}")
+
+    def _get_cache_path(self):
+        # Use workspace directory if run via bazel, otherwise CWD
+        base_dir = os.environ.get("BUILD_WORKSPACE_DIRECTORY", os.getcwd())
+        model_name = os.path.basename(self.model_path)
+        return os.path.join(base_dir, f"profile_cache_{model_name}.json")
+
+    def _replay_profile(self):
+        if not self.cached_data:
+            raise ValueError("No cached data available to replay.")
+
+        # Override model path from cache for display
+        self.model_path = self.cached_data["model_path"]
+
+        self._print_results(
+            self.cached_data["cycles"],
+            self.cached_data["elapsed_time"],
+            self.cached_data["log_str"],
+        )
 
 
 def main():
@@ -287,14 +488,14 @@ def main():
     )
     parser.add_argument(
         "--usb-serial",
-        required=True,
-        help="USB serial number of the FTDI device."
+        help=
+        "USB serial number of the FTDI device (optional if valid cache exists).",
     )
     parser.add_argument(
         "--ftdi-port",
         type=int,
         default=1,
-        help="Port number of the FTDI device."
+        help="Port number of the FTDI device.",
     )
     parser.add_argument(
         "--csr-base-addr",
@@ -311,6 +512,17 @@ def main():
         "--verbose",
         action="store_true",
         help="Enable verbose logging.",
+    )
+    parser.add_argument(
+        "--detailed",
+        action="store_true",
+        help=
+        "Print detailed fallback information including output sizes and wall time.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force execution on hardware even if cache is valid.",
     )
     args = parser.parse_args()
 
@@ -349,6 +561,8 @@ def main():
             args.usb_serial,
             args.ftdi_port,
             csr_base_addr,
+            detailed=args.detailed,
+            force_run=args.force,
         )
         profiler.run_profile()
     except Exception as e:
