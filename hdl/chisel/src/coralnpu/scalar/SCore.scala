@@ -129,7 +129,7 @@ class SCore(p: Parameters) extends Module {
   // Decode
   // Decode/Dispatch
   dispatch.io.inst <> fetch.io.inst.lanes
-  dispatch.io.halted           := csr.io.halted || csr.io.wfi || csr.io.dm.debug_mode
+  dispatch.io.halted := csr.io.halted || csr.io.wfi || csr.io.dm.debug_mode || csr.io.dm.entering_debug_mode
   dispatch.io.mactive          := false.B
   dispatch.io.lsuActive        := lsu.io.active
   dispatch.io.lsuQueueCapacity := lsu.io.queueCapacity

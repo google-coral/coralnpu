@@ -1,0 +1,15 @@
+diff --git a/cocotb/cocotb_wrapper.py b/cocotb/cocotb_wrapper.py
+index 9b71bc5..d9a7442 100644
+--- a/cocotb/cocotb_wrapper.py
++++ b/cocotb/cocotb_wrapper.py
+@@ -183,6 +183,10 @@
+ 
+     return parser
+ 
+ if __name__ == "__main__":
++    waves_env = os.environ.get("WAVES", "").lower()
++    if waves_env in ["0", "false", "no", "off"]:
++        os.environ.pop("WAVES", None)
++
+     parser = cocotb_argument_parser()
+     args = parser.parse_args()

@@ -237,14 +237,15 @@ class Csr(p: Parameters) extends Module {
     val wfi    = Output(Bool())
     val irq    = Input(Bool())
     val dm     = new Bundle {
-      val debug_req   = Input(Bool())
-      val resume_req  = Input(Bool())
-      val debug_mode  = Output(Bool())
-      val single_step = Output(Bool())
-      val dcsr_step   = Output(Bool())
-      val current_pc  = Input(UInt(p.programCounterBits.W))
-      val next_pc     = Input(UInt(p.programCounterBits.W))
-      val debug_pc    = Valid(UInt(p.fetchAddrBits.W))
+      val debug_req           = Input(Bool())
+      val resume_req          = Input(Bool())
+      val debug_mode          = Output(Bool())
+      val entering_debug_mode = Output(Bool())
+      val single_step         = Output(Bool())
+      val dcsr_step           = Output(Bool())
+      val current_pc          = Input(UInt(p.programCounterBits.W))
+      val next_pc             = Input(UInt(p.programCounterBits.W))
+      val debug_pc            = Valid(UInt(p.fetchAddrBits.W))
     }
     val timer_irq    = Input(Bool())
     val software_irq = Input(Bool())
@@ -319,7 +320,7 @@ class Csr(p: Parameters) extends Module {
 
   val mcycle                    = RegInit(0.U(64.W))
   val minstret                  = RegInit(0.U(64.W))
-  val minstretThisCycle_delayed = RegInit(0.U(64.W))
+  val minstretThisCycle_delayed = Wire(UInt(64.W))
   val minstret_val              = minstret + minstretThisCycle_delayed
 
   // MXLEN, I,M,X extensions
@@ -433,6 +434,18 @@ class Csr(p: Parameters) extends Module {
   // Register state.
   val rs1 = io.rs1.data
 
+  // Helper to compute local write data to avoid global rdata/wdata timing paths
+  private def localWdata(reg_val: UInt): UInt = {
+    val padded = reg_val.pad(p.xlen)
+    MuxLookup(req.bits.op, 0.U(p.xlen.W))(
+      Seq(
+        CsrOp.CSRRW -> rs1,
+        CsrOp.CSRRS -> (padded | rs1),
+        CsrOp.CSRRC -> (padded & ~rs1)
+      )
+    )
+  }
+
   val rdata = MuxUpTo1H(
     0.U(32.W),
     Seq(
@@ -527,17 +540,18 @@ class Csr(p: Parameters) extends Module {
 
   when(req.valid) {
     when(fflagsEn) { fflags := wdata }
-    when(frmEn) { frm := wdata }
+    when(frmEn) { frm := localWdata(frm)(2, 0) }
     when(fcsrEn) {
-      fflags := wdata(4, 0)
-      frm    := wdata(7, 5)
+      val fcsr_w = localWdata(Cat(frm, fflags))
+      fflags := fcsr_w(4, 0)
+      frm    := fcsr_w(7, 5)
     }
     when(mstatusEn) { mstatus_mie := wdata(3); mstatus_mpie := wdata(7) }
     when(mieEn) { mie := wdata & "h888".U }
-    when(mtvecEn) { mtvec := wdata }
+    when(mtvecEn) { mtvec := localWdata(mtvec) }
     // Writes to mstatush are ignored (hardwired zero)
     when(mscratchEn) { mscratch := wdata }
-    when(mepcEn) { mepc := wdata }
+    when(mepcEn) { mepc := localWdata(mepc) }
     when(mcauseEn) { mcause := wdata }
     when(mtvalEn) { mtval := wdata }
     when(mpcEn) { mpc := wdata }
@@ -558,17 +572,6 @@ class Csr(p: Parameters) extends Module {
   val is_csr_write =
     req.valid && !(req.bits.op.isOneOf(CsrOp.CSRRS, CsrOp.CSRRC) && req.bits.rs1 === 0.U)
 
-  // TODO: If using 'wdata' creates a critical timing path, optimize by bypassing
-  // directly from 'rs1' using 'req.bits.op' to pre-calculate the new frm value.
-  val frm_bypass = MuxCase(
-    frm,
-    Seq(
-      (frmEn && is_csr_write) -> wdata(2, 0),
-      // Note: bits [7:5] correspond to the frm field in the fcsr CSR layout.
-      (fcsrEn && is_csr_write) -> wdata(7, 5)
-    )
-  )
-
   if (p.enableRvv) {
     io.rvv.get.vstart_write.valid := req.valid && vstartEn.get
     io.rvv.get.vstart_write.bits  := wdata(log2Ceil(p.rvvVlen) - 1, 0)
@@ -576,7 +579,6 @@ class Csr(p: Parameters) extends Module {
     io.rvv.get.vxrm_write.bits    := wdata(1, 0)
     io.rvv.get.vxsat_write.valid  := req.valid && vxsatEn.get
     io.rvv.get.vxsat_write.bits   := wdata(0)
-    io.rvv.get.frm                := frm_bypass
   }
 
   // mcycle implementation
@@ -594,7 +596,14 @@ class Csr(p: Parameters) extends Module {
   val minstret_tl      = Mux(minstretEn, wdata, minstret(31, 0))
   val minstret_t       = Cat(minstret_th, minstret_tl)
   val minstret_written = is_csr_write && (minstretEn || minstrethEn)
-  minstretThisCycle_delayed := Mux(minstret_written, 0.U, io.counters.nRetired)
+  // Delay write mask by 1 cycle to match the retirement buffer latency
+  // and prevent dropping retired instructions during CSR writes.
+  val minstret_written_delayed = RegNext(minstret_written, false.B)
+  minstretThisCycle_delayed := Mux(
+    minstret_written_delayed,
+    0.U,
+    io.counters.nRetired
+  )
   minstret := Mux(minstret_written, minstret_t, minstret + minstretThisCycle_delayed)
 
   val trigger_enabled = tdata1.isTrigger6 && tdata1.m
@@ -610,7 +619,10 @@ class Csr(p: Parameters) extends Module {
       io.bru.in.mode.valid -> io.bru.in.mode.bits
     )
   )
-  io.dm.debug_mode := (mode === CsrMode.Debug) || entering_debug_mode
+  // debug_mode is registered to break the timing loop to Debug Module.
+  // entering_debug_mode blocks dispatch combinationally inside the core.
+  io.dm.debug_mode          := (mode === CsrMode.Debug)
+  io.dm.entering_debug_mode := entering_debug_mode
   val newCause = MuxCase(
     DebugCause.other,
     Seq(
@@ -701,11 +713,22 @@ class Csr(p: Parameters) extends Module {
 
   // Forwarding.
   io.bru.out.mode  := mode
-  io.bru.out.mepc  := Mux(mepcEn && req.valid, wdata, mepc)
-  io.bru.out.mtvec := Mux(mtvecEn && req.valid, wdata, mtvec)
+  io.bru.out.mepc  := Mux(mepcEn && req.valid, localWdata(mepc), mepc)
+  io.bru.out.mtvec := Mux(mtvecEn && req.valid, localWdata(mtvec), mtvec)
+
+  val frmBypass = MuxCase(
+    frm,
+    Seq(
+      (frmEn && req.valid)  -> localWdata(frm)(2, 0),
+      (fcsrEn && req.valid) -> localWdata(Cat(frm, fflags))(7, 5)
+    )
+  )
 
   if (p.enableFloat) {
-    io.float.get.out.frm := frm_bypass
+    io.float.get.out.frm := frmBypass
+  }
+  if (p.enableRvv) {
+    io.rvv.get.frm := frmBypass
   }
 
   io.csr.out.value(0) := io.csr.in.value(12)

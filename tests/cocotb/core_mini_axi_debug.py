@@ -579,3 +579,75 @@ async def core_mini_axi_debug_scalar_registers(dut):
 
         await core_mini_axi.wait_for_halted()
         assert core_mini_axi.dut.io_fault.value == 0
+
+
+@cocotb.test()
+async def core_mini_axi_debug_trigger_match(dut):
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+
+    r = runfiles.Create()
+    with open(r.Rlocation("coralnpu_hw/tests/cocotb/debug_trigger_test.elf"),
+              "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+        await core_mini_axi.dm_request_halt()
+        await core_mini_axi.execute_from(entry_point)
+        await core_mini_axi.dm_wait_for_halted()
+
+        addr_b = core_mini_axi.lookup_symbol(f, "trigger_target")
+        tdata1_val = 0x68001044
+
+        await core_mini_axi.dm_write_reg(0x7A0, 0)  # Select trigger 0
+        await core_mini_axi.dm_write_reg(
+            0x7A1, tdata1_val
+        )  # Configure trigger 0 (tdata1)
+        await core_mini_axi.dm_write_reg(
+            0x7A2, addr_b
+        )  # Set match address (tdata2)
+
+        await core_mini_axi.dm_request_resume()
+
+        # Wait for trigger halt
+        await core_mini_axi.dm_wait_for_halted()
+
+        # Verify cause is trigger (2)
+        dcsr = await core_mini_axi.dm_read_reg(0x7B0)
+        dcsr_cause = (dcsr >> 6) & 0b111
+        assert dcsr_cause == 2, f"Expected trigger cause (2), got {dcsr_cause}"
+
+        # Verify dpc is AddrB
+        dpc = await core_mini_axi.dm_read_reg(0x7B1)
+        assert dpc == addr_b, f"Expected dpc to be trigger_target ({hex(addr_b)}), got {hex(dpc)}"
+
+        # Verify x1 is 1 (Instruction B not executed yet)
+        x1_val = await core_mini_axi.dm_read_reg(0x1001)
+        assert x1_val == 1, f"Expected x1 to be 1, got {x1_val}"
+
+        # Re-program trigger 0 to match end_target
+        addr_end = core_mini_axi.lookup_symbol(f, "end_target")
+        await core_mini_axi.dm_write_reg(0x7A0, 0)  # Select trigger 0
+        await core_mini_axi.dm_write_reg(
+            0x7A2, addr_end
+        )  # Set match address (tdata2)
+
+        # Resume
+        await core_mini_axi.dm_request_resume()
+
+        # Wait for trigger halt at end_target
+        await core_mini_axi.dm_wait_for_halted()
+
+        # Verify cause is trigger (2)
+        dcsr = await core_mini_axi.dm_read_reg(0x7B0)
+        dcsr_cause = (dcsr >> 6) & 0b111
+        assert dcsr_cause == 2, f"Expected trigger cause (2), got {dcsr_cause}"
+
+        # Verify dpc is AddrEnd
+        dpc = await core_mini_axi.dm_read_reg(0x7B1)
+        assert dpc == addr_end, f"Expected dpc to be end_target ({hex(addr_end)}), got {hex(dpc)}"
+
+        # Verify final x1 is 3 (not 4)
+        x1_val_final = await core_mini_axi.dm_read_reg(0x1001)
+        assert x1_val_final == 3, f"Expected final x1 to be 3, got {x1_val_final} (Duplicate execution detected!)"

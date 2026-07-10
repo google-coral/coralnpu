@@ -153,6 +153,7 @@ def coralnpu_repos2():
             "@coralnpu_hw//third_party/rules_hdl:0014-Remove-deprecated-path-attr-from-bison-filegroup.patch",
             "@coralnpu_hw//third_party/rules_hdl:0015-Use-short_path-for-python-runfiles-resolution.patch",
             "@coralnpu_hw//third_party/rules_hdl:0016-Add-V3AstNodeStmt-and-V3Dfg-gen-clone-cases-to-verilator.patch",
+            "@coralnpu_hw//third_party/rules_hdl:0017-Clean-up-WAVES-env-var-to-avoid-spurious-traces.patch",
         ],
         patch_args = ["-p1"],
     )

@@ -90,6 +90,7 @@ package coralnpu_cosim_checker_pkg;
       if (opcode == 7'b1110011) begin  // SYSTEM opcode
         if (funct3 != 3'b000) begin
           if (rd != 0 && (csr == 12'hB00 || csr == 12'hB80 ||  // mcycle / mcycleh
+              csr == 12'hB02 || csr == 12'hB82 ||  // minstret / minstreth
               csr == 12'hC00 || csr == 12'hC80 ||  // cycle / cycleh
               csr == 12'hC01 || csr == 12'hC81)) begin  // time / timeh
             return 1;

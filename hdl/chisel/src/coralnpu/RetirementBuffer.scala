@@ -552,7 +552,11 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       (0 until bufferSize).map(i => (i.U < deqReady) && instBuffer.io.dataOut(i).isEcall)
     ).asUInt
   )
-  io.nRetired    := deqReady - retiredEcalls
+
+  // Register inputs to break timing path before subtraction
+  val deqReady_reg      = RegNext(deqReady, 0.U)
+  val retiredEcalls_reg = RegNext(retiredEcalls, 0.U)
+  io.nRetired    := deqReady_reg - retiredEcalls_reg
   io.trapPending := RegNext(hasTrap && !trapRetired, false.B)
 
   io.debug.foreach { debug =>

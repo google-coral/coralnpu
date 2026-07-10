@@ -43,6 +43,7 @@ VERILATOR_BUILD_ARGS = [
 # Note: SRAM backdoor compilation arguments (-CFLAGS, -I../hdl/verilog, and sram_backdoor.cc)
 # are dynamically injected in cocotb_test_suite (rules/coco_tb.bzl) for targets
 # whose hdl_toplevel is listed in rules/sram_backdoor.bzl.
+# Note: To enable FSDB wave dumping in VCS RTL simulations, add "+vcs+fsdbon" to VCS_BUILD_ARGS and VCS_TEST_ARGS.
 VCS_BUILD_ARGS = [
     "-timescale=1ns/1ps",
     "-kdb",

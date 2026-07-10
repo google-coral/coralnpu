@@ -220,6 +220,7 @@ template_rule(
 
 # BEGIN_TESTCASES_FOR_core_mini_axi_debug_cocotb
 CORE_MINI_AXI_DEBUG_TESTCASES = [
+    "core_mini_axi_debug_trigger_match",
     "core_mini_axi_debug_gdbserver",
     "core_mini_axi_debug_dmactive",
     "core_mini_axi_debug_probe_impl",
@@ -356,6 +357,7 @@ HIGHMEM_TESTCASES = [
 # END_TESTCASES_FOR_highmem_test
 
 COCOTB_DEBUG_TEST_BINARY_TARGETS = [
+    ":debug_trigger_test.elf",
     ":fptr.elf",
     ":loop.elf",
     ":math.elf",
@@ -566,6 +568,13 @@ coralnpu_v2_binary(
     name = "plic_test",
     srcs = [
         "plic_test.cc",
+    ],
+)
+
+coralnpu_v2_binary(
+    name = "debug_trigger_test",
+    srcs = [
+        "debug_trigger_test.S",
     ],
 )
 
