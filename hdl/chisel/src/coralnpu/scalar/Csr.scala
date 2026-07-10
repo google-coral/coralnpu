@@ -22,7 +22,7 @@ import coralnpu.float.{CsrFloatIO}
 class CsrRvvIO(p: Parameters) extends Bundle {
   // To Csr from RvvCore
   val vstart = Input(UInt(log2Ceil(p.rvvVlen).W))
-  val vl = Input(UInt(log2Ceil(p.rvvVlen).W))
+  val vl = Input(UInt(log2Ceil(p.rvvVlen + 1).W))
   val vtype = Input(UInt(32.W))
   val vxrm = Input(UInt(2.W))
   val vxsat = Input(Bool())
