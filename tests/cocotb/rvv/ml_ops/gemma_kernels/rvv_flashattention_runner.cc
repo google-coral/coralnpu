@@ -17,28 +17,32 @@
 
 #include "sw/utils/utils.h"
 
-// (64 KB)
-constexpr size_t kHeads = 4;
-constexpr size_t kSeqLen = 32;
-constexpr size_t kDim = 32;
-constexpr size_t kTotalElements = kHeads * kSeqLen * kDim;
+// Max sizes for Gemma 3 270M tests: 4 heads * 512 seq_len * 256 dim = 524288
+constexpr size_t kTotalElements = 4 * 512 * 256;
 
-float q_buf[kTotalElements] __attribute__((section(".data"), used, retain))
+float q_buf[kTotalElements] __attribute__((section(".ddr_data"), used, retain))
 __attribute__((aligned(16)));
-float k_buf[kTotalElements] __attribute__((section(".data"), used, retain))
+float k_buf[kTotalElements] __attribute__((section(".ddr_data"), used, retain))
 __attribute__((aligned(16)));
-float v_buf[kTotalElements] __attribute__((section(".data"), used, retain))
+float v_buf[kTotalElements] __attribute__((section(".ddr_data"), used, retain))
 __attribute__((aligned(16)));
-float o_buf[kTotalElements] __attribute__((section(".data"), used, retain))
+float o_buf[kTotalElements] __attribute__((section(".ddr_data"), used, retain))
 __attribute__((aligned(16)));
 
 extern "C" {
+volatile uint32_t active_num_heads    = 4;
+volatile uint32_t active_num_kv_heads = 4;
+volatile uint32_t active_seq_len      = 256;
+volatile uint32_t active_q_seq_len    = 256;
+volatile uint32_t active_kv_seq_len   = 256;
+volatile uint32_t active_dim          = 256;
+
 volatile uint32_t csr_cycle_count = 0;
 }
 
-extern "C" void FlashAttentionRVV(const float* Q, const float* K,
-                                  const float* V, float* O, size_t num_heads,
-                                  size_t s_len, size_t dim);
+extern "C" void FlashAttentionRVV(const float *Q, const float *K, const float *V, float *O,
+                                  size_t q_heads, size_t kv_heads, size_t q_seq_len,
+                                  size_t kv_seq_len, size_t dim);
 
 int main(int argc, char** argv) {
   uint32_t mcontext0_write_value = 1;
@@ -47,7 +51,11 @@ int main(int argc, char** argv) {
   cycle_counter_reset();
   uint64_t start_cycles = mcycle_read();
 
-  FlashAttentionRVV(q_buf, k_buf, v_buf, o_buf, kHeads, kSeqLen, kDim);
+  size_t q_len  = active_q_seq_len != 0 ? active_q_seq_len : active_seq_len;
+  size_t kv_len = active_kv_seq_len != 0 ? active_kv_seq_len : active_seq_len;
+
+  FlashAttentionRVV(q_buf, k_buf, v_buf, o_buf, active_num_heads, active_num_kv_heads, q_len,
+                    kv_len, active_dim);
 
   uint64_t end_cycles = mcycle_read();
   csr_cycle_count = static_cast<uint32_t>(end_cycles - start_cycles);

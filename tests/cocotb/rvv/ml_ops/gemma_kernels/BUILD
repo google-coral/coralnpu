@@ -45,6 +45,7 @@ template_rule(
             "hdrs": ["//sw/utils:utils.h"],
             "itcm_size_kbytes": 1024,
             "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
         },
         "rvv_matmul": {
             "srcs": [
@@ -85,7 +86,8 @@ RVV_RMS_NORM_TESTCASES = [
 ]
 
 RVV_FLASHATTENTION_TESTCASES = [
-    "core_mini_rvv_flashattention_test",
+    "core_mini_rvv_flashattention_prefill_test",
+    "core_mini_rvv_flashattention_decode_test",
 ]
 
 # Filegroup for gemma weights to be packaged into runfiles
