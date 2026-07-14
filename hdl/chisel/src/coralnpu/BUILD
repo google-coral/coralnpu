@@ -455,6 +455,7 @@ chisel_library(
     name = "coralnpu",
     srcs = [
         "AxiSlave.scala",
+        "BankedDtcm.scala",
         "Core.scala",
         "CoreAxi.scala",
         "CoreAxiCSR.scala",
@@ -474,6 +475,7 @@ chisel_library(
         "//hdl/chisel/src/bus",
         "//hdl/chisel/src/common",
         "//hdl/chisel/src/common:instruction_buffer",
+        "//hdl/chisel/src/soc:crossbar_config_lib",
     ],
 )
 
@@ -862,6 +864,16 @@ chisel_cc_library(
     chisel_lib = ":coralnpu",
     emit_class = "coralnpu.EmitDBus2Axi",
     module_name = "DBus2AxiV2",
+)
+
+chisel_cc_library(
+    name = "banked_dtcm_cc_library",
+    chisel_lib = ":coralnpu",
+    emit_class = "coralnpu.BankedDtcmEmitter",
+    gen_flags = [
+        "--lsuDataBits=128",
+    ],
+    module_name = "BankedDtcm",
 )
 
 chisel_cc_library(

@@ -48,8 +48,10 @@ class OpenTitanTileLink_D_User extends Bundle {
 
 class NoUser extends Bundle {}
 
-class TileLink_A_ChannelBase[T <: Data](val p: TLULParameters, val userGen: () => T)
-    extends Bundle {
+class TileLink_A_ChannelBase[T <: Data](
+  val p: TLULParameters,
+  val userGen: () => T = () => (new NoUser).asInstanceOf[T]
+) extends Bundle {
   val opcode  = UInt(3.W)
   val param   = UInt(3.W)
   val size    = UInt(p.z.W)
@@ -74,8 +76,10 @@ class TileLink_A_ChannelBase[T <: Data](val p: TLULParameters, val userGen: () =
   }
 }
 
-class TileLink_D_ChannelBase[T <: Data](val p: TLULParameters, val userGen: () => T)
-    extends Bundle {
+class TileLink_D_ChannelBase[T <: Data](
+  val p: TLULParameters,
+  val userGen: () => T = () => (new NoUser).asInstanceOf[T]
+) extends Bundle {
   val opcode = UInt(3.W)
   val param  = UInt(3.W)
   val size   = UInt(p.z.W)
@@ -104,8 +108,8 @@ class TileLink_D_Channel(p: TLULParameters) extends TileLink_D_ChannelBase(p, ()
 
 class TLULHost2Device[A_USER <: Data, D_USER <: Data](
   val p: TLULParameters,
-  val userAGen: () => A_USER,
-  val userDGen: () => D_USER
+  val userAGen: () => A_USER = () => (new NoUser).asInstanceOf[A_USER],
+  val userDGen: () => D_USER = () => (new NoUser).asInstanceOf[D_USER]
 ) extends Bundle {
   val a = Decoupled(new TileLink_A_ChannelBase(p, userAGen))
   val d = Flipped(Decoupled(new TileLink_D_ChannelBase(p, userDGen)))
@@ -117,8 +121,8 @@ class TLULHost2Device[A_USER <: Data, D_USER <: Data](
 
 class TLULDevice2Host[A_USER <: Data, D_USER <: Data](
   val p: TLULParameters,
-  val userAGen: () => A_USER,
-  val userDGen: () => D_USER
+  val userAGen: () => A_USER = () => (new NoUser).asInstanceOf[A_USER],
+  val userDGen: () => D_USER = () => (new NoUser).asInstanceOf[D_USER]
 ) extends Bundle {
   val a = Flipped(Decoupled(new TileLink_A_ChannelBase(p, userAGen)))
   val d = Decoupled(new TileLink_D_ChannelBase(p, userDGen))

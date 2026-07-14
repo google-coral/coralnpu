@@ -161,9 +161,9 @@ class TileLinkULInterface:
                          "mask", "data"]:
                 getattr(self.dut, f"{prefix}_a_bits_{prop}").value = txn[prop]
             for field, value in txn["user"].items():
-                getattr(
-                    self.dut, f"{prefix}_a_bits_user_{field}"
-                ).value = value
+                port_name = f"{prefix}_a_bits_user_{field}"
+                if hasattr(self.dut, port_name):
+                    getattr(self.dut, port_name).value = value
             await FallingEdge(self.clock)
             timeout_count = 0
             while a_ready.value == 0:
@@ -287,9 +287,9 @@ class TileLinkULInterface:
                          "error"]:
                 getattr(self.dut, f"{prefix}_d_bits_{prop}").value = txn[prop]
             for field, value in txn["user"].items():
-                getattr(
-                    self.dut, f"{prefix}_d_bits_user_{field}"
-                ).value = value
+                port_name = f"{prefix}_d_bits_user_{field}"
+                if hasattr(self.dut, port_name):
+                    getattr(self.dut, port_name).value = value
             await FallingEdge(self.clock)
             timeout_count = 0
             while d_ready.value == 0:

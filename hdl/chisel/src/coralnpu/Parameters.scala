@@ -192,6 +192,23 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen
       idBits = axi2IdBits
     )
   }
+
+  def augmentId(extraBits: Int): Parameters = {
+    val newP = new Parameters(m, hartId, xlen)
+    newP.enableVerification = this.enableVerification
+    newP.rawExposeDebugPorts = this.rawExposeDebugPorts
+    newP.enableRvv = this.enableRvv
+    newP.enableFloat = this.enableFloat
+    newP.enableZfbfmin = this.enableZfbfmin
+    newP.enableVectorBf16 = this.enableVectorBf16
+    newP.enableFetchL0 = this.enableFetchL0
+    newP.fetchDataBits = this.fetchDataBits
+    newP.lsuDataBits = this.lsuDataBits
+    newP.itcmSizeKBytes = this.itcmSizeKBytes
+    newP.dtcmSizeKBytes = this.dtcmSizeKBytes
+    newP.axi2IdBits = this.axi2IdBits + extraBits
+    newP
+  }
 }
 
 import scala.reflect.runtime.{universe => ru}

@@ -35,6 +35,8 @@ chisel_library(
         "DmaEngine.scala",
         "GPIO.scala",
         "Plic.scala",
+        "RawTlulErrorResponder.scala",
+        "RawTlulToSram.scala",
         "SecdedEncoderTestbench.scala",
         "Spi2TLUL.scala",
         "Spi2TLULV2.scala",
@@ -42,11 +44,14 @@ chisel_library(
         "TLUL2Axi.scala",
         "TLULParameters.scala",
         "TileLinkUL.scala",
+        "TlulArbiter.scala",
         "TlulFifoAsync.scala",
         "TlulFifoSync.scala",
         "TlulIdRemapper.scala",
         "TlulIntegrity.scala",
         "TlulIntegrityTestbench.scala",
+        "TlulLocalXbar.scala",
+        "TlulRouter.scala",
         "TlulSocket1N.scala",
         "TlulSocketM1.scala",
         "TlulToSram.scala",
@@ -127,6 +132,13 @@ chisel_cc_library(
     module_name = "TlulToSram",
 )
 
+chisel_cc_library(
+    name = "tlul_local_xbar_cc_library",
+    chisel_lib = ":bus",
+    emit_class = "bus.TlulLocalXbarEmitter",
+    module_name = "TlulLocalXbar",
+)
+
 verilator_cocotb_model(
     name = "tlul_socket_m1_2_128_model",
     cflags = VERILATOR_BUILD_ARGS,
@@ -149,6 +161,14 @@ verilator_cocotb_model(
     hdl_toplevel = "TlulFifoSync",
     trace = True,
     verilog_source = "//hdl/chisel/src/bus:TlulFifoSync.sv",
+)
+
+verilator_cocotb_model(
+    name = "tlul_local_xbar_model",
+    cflags = VERILATOR_BUILD_ARGS,
+    hdl_toplevel = "TlulLocalXbar",
+    trace = True,
+    verilog_source = "//hdl/chisel/src/bus:TlulLocalXbar.sv",
 )
 
 verilator_cocotb_model(

@@ -44,6 +44,7 @@ chisel_library(
         "FifoXe.scala",
         "IDiv.scala",
         "MathUtil.scala",
+        "Router.scala",
         "Slice.scala",
     ],
     visibility = ["//visibility:public"],
@@ -145,6 +146,7 @@ chisel_test(
     name = "common_test",
     srcs = [
         "CoralNPUArbiterTest.scala",
+        "RouterTest.scala",
     ],
     deps = [
         ":common",
