@@ -15,6 +15,8 @@
 #ifndef HW_SIM_CORALNPU_SIMULATOR_H_
 #define HW_SIM_CORALNPU_SIMULATOR_H_
 
+#include <cstdint>
+
 #include "hw_sim/mailbox.h"
 
 class CoralNPUSimulator {
