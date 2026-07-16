@@ -39,6 +39,21 @@ class RunUvmRegressionTest(unittest.TestCase):
             )
         )
 
+    def test_all_bf16_targets_are_denylisted(self):
+        denylist = run_uvm_regression.DENYLIST
+        sample_bf16_targets = [
+            "//tests/cocotb/rvv/ml_ops:rvv_bf16_matmul",
+            "@coralnpu_hw//tests/cocotb/rvv/ml_ops:rvv_bf16_matmul",
+            "//tests/cocotb/rvv/arithmetics:rvv_bf16_mac_vv_m1",
+            "@coralnpu_hw//tests/cocotb/rvv/arithmetics:rvv_bf16_pipeline_mf2",
+            "//tests/cocotb:rvv_bf16_ops_cocotb_test",
+        ]
+        for t in sample_bf16_targets:
+            self.assertTrue(
+                any(fnmatch.fnmatch(t, pattern) for pattern in denylist),
+                f"Expected target '{t}' to be excluded by DENYLIST"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

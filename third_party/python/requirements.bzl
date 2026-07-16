@@ -91,6 +91,16 @@ def install_deps():
     )
 
     http_archive(
+        name = "coralnpu_pip_deps_ml_dtypes",
+        urls = [
+            "https://files.pythonhosted.org/packages/a9/80/19189ea605017473660e43762dc853d2797984b3c7bf30ce656099add30c/ml_dtypes-0.5.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "19b9a53598f21e453ea2fbda8aa783c20faff8e1eeb0d7ab899309a0053f1483",
+        type = "zip",
+        build_file_content = _build_file_content(pypi_name = "ml_dtypes", pypi_version = "0.5.4", deps = ["@coralnpu_pip_deps_numpy//:pkg"]),
+    )
+
+    http_archive(
         name = "coralnpu_pip_deps_pyelftools",
         urls = [
             "https://files.pythonhosted.org/packages/04/7c/867630e6e6293793f838b31034aa1875e1c3bd8c1ec34a0929a2506f350c/pyelftools-0.29-py2.py3-none-any.whl",

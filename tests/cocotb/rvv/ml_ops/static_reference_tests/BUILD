@@ -76,6 +76,7 @@ cocotb_test_suite(
         ],
         "deps": [
             "//coralnpu_test_utils:sim_test_fixture",
+            "//sw/utils:metrics",
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
@@ -112,6 +113,7 @@ cocotb_test_suite(
         ],
         "deps": [
             "//coralnpu_test_utils:sim_test_fixture",
+            "//sw/utils:metrics",
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [

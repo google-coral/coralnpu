@@ -758,6 +758,7 @@ RVV_ML_OPS_TESTCASES = [
     "core_mini_rvv_float_matmul_c_test",
     "core_mini_rvv_float_matmul_asm_test",
     "core_mini_rvv_float_matmul_optimized_c_test",
+    "core_mini_rvv_bf16_matmul_c_test",
 ]
 # END_TESTCASES_FOR_rvv_ml_ops_cocotb_test
 
@@ -802,6 +803,8 @@ cocotb_test_suite(
         "test_module": ["rvv_ml_ops_cocotb_test.py"],
         "deps": [
             "//coralnpu_test_utils:sim_test_fixture",
+            "//sw/utils:metrics",
+            requirement("ml_dtypes"),
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": ["//tests/cocotb/rvv/ml_ops:rvv_mlop_tests"],
@@ -878,6 +881,44 @@ cocotb_test_suite(
     vcs_defines = VCS_DEFINES,
     vcs_test_args = VCS_TEST_ARGS,
     vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
+    verilator_model = ":rvv_core_mini_axi_model",
+)
+
+cocotb_test_suite(
+    name = "rvv_bf16_ops_cocotb_test",
+    simulators = [
+        "verilator",
+    ],
+    testcases = ["rvv_bf16_ops_test"],
+    testcases_vname = "RVV_BF16_OPS_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniAxi",
+        "waves": False,
+        "seed": "42",
+        "test_module": ["rvv_bf16_ops_cocotb_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            requirement("ml_dtypes"),
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        "data": [
+            "//tests/cocotb/rvv/arithmetics:rvv_bf16_{}_{}.elf".format(op, lmul)
+            for op in [
+                "mac_vv",
+                "mac_vf",
+                "pipeline",
+                "strided",
+                "indexed",
+            ]
+            for lmul in [
+                "mf2",
+                "m1",
+                "m2",
+                "m4",
+            ]
+        ],
+        "size": "medium",
+    },
     verilator_model = ":rvv_core_mini_axi_model",
 )
 

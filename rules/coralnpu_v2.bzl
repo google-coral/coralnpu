@@ -411,7 +411,7 @@ def _is_uvm_test_target(rule):
     if not rule.get("linker_script", "") == ":{}.ld".format(rule["name"]):
         return False
     canonical_label = _get_canonical_name(rule["name"])
-    if canonical_label in DENYLIST or canonical_label.startswith("//internal/kernels"):
+    if canonical_label in DENYLIST or canonical_label.startswith("//internal/kernels") or "bf16" in canonical_label:
         return False
     return True
 

@@ -153,10 +153,12 @@ async def run_flashattention_test(
     csr_cycle_count = (await
                        fixture.read_word('csr_cycle_count')).view(np.uint32)[0]
 
+    total_macs = 2 * q_heads * q_seq_len * kv_seq_len * dim
     log_matmul_metrics(
         dut,
         f"core_mini_rvv_flashattention_Q{q_heads}KV{kv_heads}_Sq{q_seq_len}Skv{kv_seq_len}_D{dim}",
-        csr_cycle_count, q_heads, 2 * q_seq_len, dim, kv_seq_len
+        csr_cycle_count,
+        macs=total_macs,
     )
 
     num_bytes = q_heads * q_seq_len * dim * 4

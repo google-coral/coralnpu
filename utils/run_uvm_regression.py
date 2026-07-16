@@ -75,6 +75,7 @@ DENYLIST = [
     "//tests/cocotb/rvv/arithmetics:vfrdiv_vf_test_rtz",
     "//tests/cocotb/rvv/arithmetics:vfrdiv_vf_test_rup",
     # Exclude until MPACT supports the vector bf16 spec.
+    "*bf16*",
     "//tests/cocotb:zvfbf_test",
     # Exclude all ml_ops tests from regression
     "//tests/cocotb/rvv/ml_ops:rvv_float_matmul",
@@ -172,7 +173,6 @@ def get_targets(limit: Optional[int] = None,
     targets = []
     for rule in root.findall('rule'):
         target_name_full = rule.attrib['name']  # //package:target
-
         # Check against DENYLIST
         if any(fnmatch.fnmatch(target_name_full, pattern)
                for pattern in DENYLIST):

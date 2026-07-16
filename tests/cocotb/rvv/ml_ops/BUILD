@@ -34,6 +34,13 @@ template_rule(
             ],
             "hdrs": ["//sw/utils:utils.h"],
         },
+        "rvv_bf16_matmul": {
+            "srcs": [
+                "bf16_matmul_runner.cc",
+                "rvv_bf16_matmul.cc",
+            ],
+            "hdrs": ["//sw/utils:utils.h"],
+        },
         "rvv_matmul_assembly_highmem": {
             "srcs": [
                 "matmul_runner.cc",
@@ -97,6 +104,7 @@ template_rule(
 filegroup(
     name = "rvv_mlop_tests",
     srcs = [
+        ":rvv_bf16_matmul.elf",
         ":rvv_float_matmul.elf",
         ":rvv_float_matmul_assembly.elf",
         ":rvv_float_matmul_optimized.elf",

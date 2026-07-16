@@ -18,6 +18,14 @@ def rvv_widen_arithmetic_test(**kwargs):
         **kwargs
     )
 
+def bfloat16_ops_test(**kwargs):
+    bfloat16_ops_template(
+        source_file = "{name}.cc".format(**kwargs),
+        **kwargs
+    )
+
+bfloat16_arithmetic_test = bfloat16_ops_test
+
 def rvv_arithmetic_template_impl(ctx):
     sign = ctx.attr.sign
     sew = ctx.attr.sew
@@ -171,3 +179,41 @@ rvv_widen_arithmetic_template = rule(
         "source_file": attr.output(mandatory = True),
     },
 )
+
+LMUL_WIDEN_MAP = {
+    "mf4": "mf2",
+    "mf2": "m1",
+    "m1": "m2",
+    "m2": "m4",
+    "m4": "m8",
+}
+
+def bfloat16_ops_template_impl(ctx):
+    lmul = ctx.attr.lmul
+    w_lmul = LMUL_WIDEN_MAP[lmul]
+    math_op = ctx.attr.math_op.upper()
+
+    ctx.actions.expand_template(
+        template = ctx.file._template,
+        output = ctx.outputs.source_file,
+        substitutions = {
+            "{DEFINES}": "#define TEST_{}".format(math_op),
+            "{LMUL}": lmul,
+            "{W_LMUL}": w_lmul,
+        },
+    )
+
+bfloat16_ops_template = rule(
+    implementation = bfloat16_ops_template_impl,
+    attrs = {
+        "lmul": attr.string(mandatory = True),
+        "math_op": attr.string(mandatory = True),
+        "_template": attr.label(
+            default = ":bfloat16_ops_template.cc",
+            allow_single_file = True,
+        ),
+        "source_file": attr.output(mandatory = True),
+    },
+)
+
+bfloat16_arithmetic_template = bfloat16_ops_template

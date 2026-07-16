@@ -14,7 +14,7 @@
 
 load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 load("//rules:utils.bzl", "template_rule")
-load("//tests/cocotb/rvv/arithmetics:rvv_arithmetic.bzl", "rvv_arithmetic_test", "rvv_reduction_test", "rvv_widen_arithmetic_test")
+load("//tests/cocotb/rvv/arithmetics:rvv_arithmetic.bzl", "bfloat16_arithmetic_test", "bfloat16_ops_test", "rvv_arithmetic_test", "rvv_reduction_test", "rvv_widen_arithmetic_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -358,6 +358,44 @@ template_rule(
         "vnsrl_test": {
             "srcs": ["vnsrl_test.cc"],
         },
+    },
+)
+
+BF16_OPS = [
+    "mac_vv",
+    "mac_vf",
+    "pipeline",
+    "strided",
+    "indexed",
+]
+
+BF16_LMULS = [
+    "mf2",
+    "m1",
+    "m2",
+    "m4",
+]
+
+template_rule(
+    bfloat16_ops_test,
+    {
+        "template_bf16_{}_{}".format(op, lmul): {
+            "math_op": op,
+            "lmul": lmul,
+        }
+        for op in BF16_OPS
+        for lmul in BF16_LMULS
+    },
+)
+
+template_rule(
+    coralnpu_v2_binary,
+    {
+        "rvv_bf16_{}_{}".format(op, lmul): {
+            "srcs": ["template_bf16_{}_{}".format(op, lmul)],
+        }
+        for op in BF16_OPS
+        for lmul in BF16_LMULS
     },
 )
 

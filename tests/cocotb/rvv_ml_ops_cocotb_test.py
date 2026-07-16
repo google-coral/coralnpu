@@ -1,3 +1,16 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Test suite for RVV ML operations using Cocotb.
 
 This file contains testbenches to verify matrix multiplication operations
@@ -9,33 +22,17 @@ The tests generate random input data, compute the expected result using NumPy,
 load the corresponding ELF file onto the simulated core, and verify that the
 hardware execution matches the software reference.
 """
-import cocotb
-import numpy as np
-import argparse
+
 import sys
 
 sys.set_int_max_str_digits(100000)
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+import cocotb
+import ml_dtypes
+import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
-
-
-def log_matmul_metrics(
-    dut, test_name: str, cycles: int, lhs_rows: int, rhs_cols: int, inner: int
-):
-    """Calculate and log MAC metrics for a matrix multiplication."""
-    total_macs = lhs_rows * rhs_cols * inner
-    cycles_per_mac = cycles / total_macs
-    banner = (
-        f"\n{'='*60}\n"
-        f" PERFORMANCE METRICS: {test_name}\n"
-        f"{'-'*60}\n"
-        f"  Total Cycles   : {cycles:,}\n"
-        f"  Total MACs     : {total_macs:,}\n"
-        f"  Cycles / MAC   : {cycles_per_mac:.2f}\n"
-        f"{'='*60}"
-    )
-    dut._log.info(banner)
+from coralnpu_test_utils.sim_test_fixture import Fixture
+from sw.utils.metrics import log_matmul_metrics
 
 
 @cocotb.test()
@@ -207,6 +204,73 @@ async def core_mini_rvv_float_matmul_c_test(dut):
 
 
 @cocotb.test()
+async def core_mini_rvv_bf16_matmul_c_test(dut):
+    """Test BFloat16 matmul with RVV C intrinsics (Zvfbfwma)."""
+
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    elf_file = 'rvv_bf16_matmul.elf'
+
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file), [
+            'lhs_input', 'rhs_input', 'result_output', 'lhs_rows', 'rhs_cols',
+            'inner', 'csr_cycle_count'
+        ]
+    )
+
+    shapes = [(16, 16, 48), (8, 32, 64)]
+
+    for LHS_ROWS, RHS_COLS, INNER in shapes:
+        dut._log.info(
+            f"Running BFloat16 MatMul shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}"
+        )
+        await fixture.core_mini_axi.reset()
+        await fixture.write_word('lhs_rows', LHS_ROWS)
+        await fixture.write_word('rhs_cols', RHS_COLS)
+        await fixture.write_word('inner', INNER)
+
+        rng = np.random.default_rng(seed=42)
+
+        lhs_fp32 = rng.uniform(-4.0, 4.0, [LHS_ROWS, INNER]).astype(np.float32)
+        rhs_fp32 = rng.uniform(-4.0, 4.0, [INNER, RHS_COLS]).astype(np.float32)
+
+        lhs_bf16 = lhs_fp32.astype(ml_dtypes.bfloat16)
+        rhs_bf16 = rhs_fp32.astype(ml_dtypes.bfloat16)
+
+        lhs_bf16_u16 = lhs_bf16.view(np.uint16)
+        rhs_bf16_u16 = rhs_bf16.view(np.uint16)
+
+        # Golden reference FP32 result using exact bfloat16 inputs
+        result_golden = np.matmul(
+            lhs_bf16.astype(np.float32), rhs_bf16.astype(np.float32)
+        )
+
+        await fixture.write('lhs_input', lhs_bf16_u16.flatten())
+        await fixture.write('rhs_input', rhs_bf16_u16.transpose().flatten())
+        await fixture.run_to_halt(timeout_cycles=1000000)
+
+        csr_cycle_count = (await fixture.read_word('csr_cycle_count')).view(
+            np.uint32
+        )[0]
+        log_matmul_metrics(
+            dut,
+            f"core_mini_rvv_bf16_matmul_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
+            csr_cycle_count,
+            LHS_ROWS,
+            RHS_COLS,
+            INNER,
+        )
+
+        output_matmul_result = (
+            await fixture.read('result_output', LHS_ROWS * RHS_COLS * 4)
+        ).view(dtype=np.float32).reshape([LHS_ROWS, RHS_COLS])
+
+        np.testing.assert_allclose(
+            output_matmul_result, result_golden, rtol=1e-3, atol=1e-3
+        )
+
+
+@cocotb.test()
 async def core_mini_rvv_float_matmul_asm_test(dut):
     """Test FP32 matmul with RVV assembly."""
 
@@ -343,7 +407,9 @@ async def core_mini_rvv_flashattention_test(dut):
 
     # 1. THE INJECTION: Locate and load the compiled C++ ELF binary
     elf_name = "rvv_flashattention_test.elf"
-    elf_path = r.Rlocation(f"coralnpu_hw/tests/cocotb/rvv/ml_ops/{elf_name}")
+    elf_path = r.Rlocation(
+        f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
+    )
 
     await fixture.load_elf_and_lookup_symbols(
         elf_path, ["q_buf", "k_buf", "v_buf", "o_buf", "csr_cycle_count"]
@@ -376,6 +442,7 @@ async def core_mini_rvv_flashattention_test(dut):
         dut,
         f"core_mini_rvv_flashattention_{seq_len_val}x{d_val}",
         csr_cycle_count,
+        num_heads=1,
         lhs_rows=2 * seq_len_val,
         rhs_cols=d_val,
         inner=seq_len_val

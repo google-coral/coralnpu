@@ -14,11 +14,28 @@
 
 
 def log_matmul_metrics(
-    dut, test_name: str, cycles: int, num_heads: int, lhs_rows: int,
-    rhs_cols: int, inner: int
+    dut,
+    test_name: str,
+    cycles: int,
+    lhs_rows: int = 0,
+    rhs_cols: int = 0,
+    inner: int = 0,
+    *,
+    macs: int | None = None,
+    num_heads: int = 1,
+    batch_size: int = 1,
 ):
-    total_macs = num_heads * lhs_rows * rhs_cols * inner
-    cycles_per_mac = cycles / total_macs if total_macs > 0 else 0
+    """Logs performance metrics for matrix multiplication and GEMM workloads.
+
+    Calculates total MACs as (num_heads * batch_size * lhs_rows * rhs_cols * inner)
+    unless explicitly overridden via `macs=...`.
+    """
+    if macs is not None:
+        total_macs = macs
+    else:
+        total_macs = num_heads * batch_size * lhs_rows * rhs_cols * inner
+
+    cycles_per_mac = cycles / total_macs if total_macs > 0 else 0.0
     banner = (
         f"\n{'='*60}\n PERFORMANCE METRICS: {test_name}\n{'-'*60}\n"
         f"  Total Cycles   : {cycles:,}\n  Total MACs     : {total_macs:,}\n"
@@ -28,7 +45,7 @@ def log_matmul_metrics(
 
 
 def log_vector_metrics(dut, test_name: str, cycles: int, total_elements: int):
-    cycles_per_element = cycles / total_elements if total_elements > 0 else 0
+    cycles_per_element = cycles / total_elements if total_elements > 0 else 0.0
     banner = (
         f"\n{'='*60}\n PERFORMANCE METRICS: {test_name}\n{'-'*60}\n"
         f"  Total Cycles     : {cycles:,}\n  Total Elements   : {total_elements:,}\n"
