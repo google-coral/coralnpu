@@ -49,18 +49,14 @@ class CircularBufferMulti[T <: Data](t: T, n: Int, capacity: Int) extends Module
   val enqPtr = RegInit(0.U(log2Ceil(capacity).W))
   val deqPtr = RegInit(0.U(log2Ceil(capacity).W))
 
-  val expandedInput = Wire(Vec(capacity, Valid(t)))
   for (i <- 0 until capacity) {
-    if (i < n) {
-      expandedInput(i) := MakeValid(i.U < io.enqValid, io.enqData(i))
-    } else {
-      expandedInput(i) := MakeInvalid(t)
-    }
-  }
-
-  val rotatedInput = RotateVectorLeft(expandedInput, enqPtr)
-  for (i <- 0 until capacity) {
-    buffer(i) := Mux(rotatedInput(i).valid, rotatedInput(i).bits, buffer(i))
+    val matches = VecInit((0 until n).map { j =>
+      val slotIdx = if (capacity > 1) (enqPtr + j.U)(log2Ceil(capacity) - 1, 0) else 0.U
+      (j.U < io.enqValid) && (slotIdx === i.U)
+    })
+    val writeEnable = matches.asUInt.orR
+    val writeData   = Mux1H(matches, io.enqData)
+    buffer(i) := Mux(writeEnable, writeData, buffer(i))
   }
 
   var nEnqueued = RegInit(0.U(io.nEnqueued.getWidth.W))
@@ -71,8 +67,8 @@ class CircularBufferMulti[T <: Data](t: T, n: Int, capacity: Int) extends Module
   io.nEnqueued := nEnqueued
   io.nSpace    := capacity.U - nEnqueued
 
-  val outputBufferView = RotateVectorRight(buffer, deqPtr)
   for (i <- 0 until n) {
-    io.dataOut(i) := outputBufferView(i)
+    val readIdx = if (capacity > 1) (deqPtr + i.U)(log2Ceil(capacity) - 1, 0) else 0.U
+    io.dataOut(i) := buffer(readIdx)
   }
 }
