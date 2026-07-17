@@ -36,10 +36,12 @@ def log_matmul_metrics(
         total_macs = num_heads * batch_size * lhs_rows * rhs_cols * inner
 
     cycles_per_mac = cycles / total_macs if total_macs > 0 else 0.0
+    macs_per_cycle = total_macs / cycles if cycles > 0 else 0.0
     banner = (
         f"\n{'='*60}\n PERFORMANCE METRICS: {test_name}\n{'-'*60}\n"
         f"  Total Cycles   : {cycles:,}\n  Total MACs     : {total_macs:,}\n"
-        f"  Cycles / MAC   : {cycles_per_mac:.2f}\n{'='*60}"
+        f"  Cycles / MAC   : {cycles_per_mac:.2f}\n"
+        f"  MACs / Cycle   : {macs_per_cycle:.2f}\n{'='*60}"
     )
     dut._log.info(banner)
 

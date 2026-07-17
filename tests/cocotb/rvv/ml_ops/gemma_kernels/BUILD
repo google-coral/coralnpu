@@ -21,6 +21,7 @@ load(
     "VCS_DEFINES",
     "VCS_TEST_ARGS",
 )
+load("//third_party/python:requirements.bzl", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -51,6 +52,16 @@ template_rule(
             "srcs": [
                 "rvv_matmul_runner.cc",
                 "rvv_matmul.cc",
+            ],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
+        "rvv_bf16_matmul": {
+            "srcs": [
+                "rvv_bf16_matmul_runner.cc",
+                "rvv_bf16_matmul.cc",
             ],
             "hdrs": ["//sw/utils:utils.h"],
             "itcm_size_kbytes": 1024,
@@ -212,19 +223,22 @@ cocotb_test_suite(
     verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
 
-RVV_MATMUL_TILED_2D_TESTCASES = [
-    "core_mini_rvv_matmul_tiled_2d_test",
+RVV_MATMUL_2D_TESTCASES = [
+    "core_mini_rvv_matmul_2d_test",
 ]
 
 cocotb_test_suite(
-    name = "rvv_matmul_tiled_2d_cocotb_test",
+    name = "rvv_matmul_2d_cocotb_test",
     simulators = [
         "verilator",
         "vcs",
     ],
-    testcases = RVV_MATMUL_TILED_2D_TESTCASES,
-    testcases_vname = "RVV_MATMUL_TILED_2D_TESTCASES",
+    testcases = RVV_MATMUL_2D_TESTCASES,
+    testcases_vname = "RVV_MATMUL_2D_TESTCASES",
     tests_kwargs = {
+        "extra_env": [
+            "TESTCASE=core_mini_rvv_matmul_2d_test",
+        ],
         "hdl_toplevel": "RvvCoreMiniHighmemAxi",
         "waves": False,
         "seed": "42",
@@ -244,6 +258,96 @@ cocotb_test_suite(
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [
         ":rvv_matmul.elf",
+        "//tests/cocotb:xprop.cfg",
+        "@coralnpu_hw//hdl/verilog:dpi_files",
+    ],
+    vcs_defines = VCS_DEFINES,
+    vcs_test_args = VCS_TEST_ARGS,
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
+)
+
+RVV_BF16_MATMUL_LHS_1D_TESTCASES = [
+    "core_mini_rvv_bf16_matmul_lhs_1d_test",
+]
+
+cocotb_test_suite(
+    name = "rvv_bf16_matmul_lhs_1d_cocotb_test",
+    simulators = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_BF16_MATMUL_LHS_1D_TESTCASES,
+    testcases_vname = "RVV_BF16_MATMUL_LHS_1D_TESTCASES",
+    tests_kwargs = {
+        "extra_env": [
+            "TESTCASE=core_mini_rvv_bf16_matmul_lhs_1d_test",
+        ],
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
+        "waves": False,
+        "seed": "42",
+        "tags": ["manual"],
+        "test_module": ["cocotb_tests/rvv_bf16_matmul_cocotb_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+            "//sw/utils:metrics",
+            requirement("ml_dtypes"),
+        ],
+        "data": [
+            ":rvv_bf16_matmul.elf",
+            ":weights_files",
+        ],
+        "size": "enormous",
+    },
+    vcs_build_args = VCS_BUILD_ARGS,
+    vcs_data = [
+        ":rvv_bf16_matmul.elf",
+        "//tests/cocotb:xprop.cfg",
+        "@coralnpu_hw//hdl/verilog:dpi_files",
+    ],
+    vcs_defines = VCS_DEFINES,
+    vcs_test_args = VCS_TEST_ARGS,
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
+)
+
+RVV_BF16_MATMUL_2D_TESTCASES = [
+    "core_mini_rvv_bf16_matmul_2d_test",
+]
+
+cocotb_test_suite(
+    name = "rvv_bf16_matmul_2d_cocotb_test",
+    simulators = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_BF16_MATMUL_2D_TESTCASES,
+    testcases_vname = "RVV_BF16_MATMUL_2D_TESTCASES",
+    tests_kwargs = {
+        "extra_env": [
+            "TESTCASE=core_mini_rvv_bf16_matmul_2d_test",
+        ],
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
+        "waves": False,
+        "seed": "42",
+        "tags": ["manual"],
+        "test_module": ["cocotb_tests/rvv_bf16_matmul_cocotb_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+            "//sw/utils:metrics",
+            requirement("ml_dtypes"),
+        ],
+        "data": [
+            ":rvv_bf16_matmul.elf",
+            ":weights_files",
+        ],
+        "size": "enormous",
+    },
+    vcs_build_args = VCS_BUILD_ARGS,
+    vcs_data = [
+        ":rvv_bf16_matmul.elf",
         "//tests/cocotb:xprop.cfg",
         "@coralnpu_hw//hdl/verilog:dpi_files",
     ],
