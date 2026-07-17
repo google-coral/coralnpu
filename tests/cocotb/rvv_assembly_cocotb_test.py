@@ -1156,3 +1156,36 @@ async def vslide1down_test(dut):
         'offset': 0
     } for vl in [32, 31]]
     await vslide_test(dut, cases, expfunc)
+
+
+@cocotb.test()
+async def vgather_test(dut):
+    """Test gather usage accessible from intrinsics."""
+
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vgather.elf'), [
+            'input_value',
+            'input_index',
+            'output_value',
+            'n',
+        ]
+    )
+
+    rng = np.random.default_rng()
+    values = np.array(
+        rng.choice(np.arange(0, 16), size=8, replace=False), dtype=np.uint16
+    )
+    index = np.array([3, 2, 1, 0, 4, 5, 6, 7], dtype=np.uint16)
+    expected_output = np.take_along_axis(values, index)
+
+    await fixture.write('input_value', values)
+    await fixture.write('input_index', index)
+    await fixture.run_to_halt()
+    actual_output = (
+        await fixture.read('output_value', 8 * np.dtype(np.uint16).itemsize)
+    ).view(np.uint16)
+
+    assert (actual_output == expected_output).all(), debug_msg
+    print(actual_output, flush=True)

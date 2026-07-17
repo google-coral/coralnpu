@@ -65,6 +65,9 @@ template_rule(
         "vstart_store": {
             "srcs": ["vstart_store.S"],
         },
+        "vgather": {
+            "srcs": ["vgather.cc"],
+        },
     },
 )
 
@@ -78,6 +81,7 @@ filegroup(
         "vcpop_test.elf",
         "vcsr_test.elf",
         "vfirst_test.elf",
+        "vgather.elf",
         "vill_test.elf",
         "viota_test.elf",
         "vmsbf_test.elf",
