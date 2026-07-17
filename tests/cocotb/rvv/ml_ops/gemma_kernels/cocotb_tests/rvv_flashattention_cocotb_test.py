@@ -22,6 +22,25 @@ from coralnpu_test_utils.sim_test_fixture import Fixture
 from sw.utils.metrics import log_matmul_metrics
 
 
+def golden_flash_attention(q, k, v):
+    """NumPy Golden Reference for FlashAttention."""
+    d = q.shape[-1]
+
+    # Handle both 2D (seq, d) and 3D (heads, seq, d) matrices
+    if q.ndim == 3:
+        scores = np.matmul(q, k.transpose(0, 2, 1)) / np.sqrt(d)
+    else:
+        scores = np.matmul(q, k.T) / np.sqrt(d)
+
+    # Safe Softmax
+    m = np.max(scores, axis=-1, keepdims=True)
+    p = np.exp(scores - m)
+    p /= np.sum(p, axis=-1, keepdims=True)
+
+    # O = P * V
+    return np.matmul(p, v)
+
+
 def calculate_cosine_similarity(
     actual: np.ndarray, expected: np.ndarray
 ) -> float:
@@ -70,12 +89,7 @@ def load_real_attention_data(
             v_golden = np.repeat(v_data, repeats, axis=0)
 
         # Golden Model Math
-        scores = np.matmul(q_data, k_golden.transpose(0, 2,
-                                                      1)) / np.sqrt(d_model)
-        m = np.max(scores, axis=-1, keepdims=True)
-        p = np.exp(scores - m)
-        p /= np.sum(p, axis=-1, keepdims=True)
-        expected_output = np.matmul(p, v_golden)
+        expected_output = golden_flash_attention(q_data, k_golden, v_golden)
 
         return q_data, k_data, v_data, expected_output
     else:
@@ -101,12 +115,7 @@ def load_real_attention_data(
             v_golden = np.repeat(v_data, repeats, axis=0)
 
         # Golden Model Math
-        scores = np.matmul(q_data, k_golden.transpose(0, 2,
-                                                      1)) / np.sqrt(d_model)
-        m = np.max(scores, axis=-1, keepdims=True)
-        p = np.exp(scores - m)
-        p /= np.sum(p, axis=-1, keepdims=True)
-        expected_output = np.matmul(p, v_golden)
+        expected_output = golden_flash_attention(q_data, k_golden, v_golden)
 
         return q_data, k_data, v_data, expected_output
 
