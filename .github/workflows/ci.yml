@@ -1,4 +1,4 @@
-name: CoralNPU Bazel Test & Lint
+name: CoralNPU CI
 on:
   workflow_dispatch:
   pull_request:
