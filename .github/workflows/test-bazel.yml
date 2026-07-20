@@ -1,0 +1,58 @@
+name: CoralNPU Bazel Test
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    tags:
+      - "*"
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          ssh-key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          # Avoid downloading Bazel every time.
+          bazelisk-cache: true
+          # Store build cache per workflow.
+          disk-cache: ${{ github.workflow }}
+          # Share repository cache between workflows.
+          repository-cache: true
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Get runner UID and GID
+        id: id
+        run: |
+          echo "uid=$(id -u)" >> $GITHUB_OUTPUT
+          echo "gid=$(id -g)" >> $GITHUB_OUTPUT
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: utils/coralnpu.dockerfile
+          push: false
+          load: true
+          tags: coralnpu:latest
+          build-args: |
+            _UID=${{ steps.id.outputs.uid }}
+            _GID=${{ steps.id.outputs.gid }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run Bazel test in Docker
+        run: |
+          docker run --rm --init --ipc=host \
+            -v ${{ github.workspace }}:${{ github.workspace }} \
+            -w ${{ github.workspace }} \
+            -v $HOME:/home/runner \
+            -v $HOME:/home/builder \
+            coralnpu:latest \
+            bazel test //...
