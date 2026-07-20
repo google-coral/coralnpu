@@ -549,6 +549,7 @@ VIVADO_HOOKS = [
     "check_pin_assignments.tcl",
     "vivado_pre_opt_hooks.tcl",
     "pblock_u_isp.tcl",
+    "pblock_u_ddr.tcl",
 ]
 
 NEXUS_COMMON_SRCS = CORALNPU_SOC_SRCS_COMMON + [

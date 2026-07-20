@@ -39,6 +39,8 @@ filesets:
       - check_pin_assignments.tcl: { file_type: user, copyto: check_pin_assignments.tcl }
       - vivado_pre_opt_hooks.tcl: { file_type: user, copyto: vivado_pre_opt_hooks.tcl }
       - pblock_u_isp.tcl: { file_type: user, copyto: pblock_u_isp.tcl }
+      - pblock_u_ddr.tcl: { file_type: user, copyto: pblock_u_ddr.tcl }
+
 
 parameters:
   ClockFrequencyMhz:

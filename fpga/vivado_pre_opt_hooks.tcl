@@ -19,3 +19,13 @@ source "${script_dir}/check_pin_assignments.tcl"
 
 # Run ISP Pblock configuration
 source "${script_dir}/pblock_u_isp.tcl"
+
+# Run DDR4 Pblock configuration
+source "${script_dir}/pblock_u_ddr.tcl"
+
+# Remap dense MUX trees in LsuSuperSlot to LUTs
+catch { set_property MUXF_REMAP 1 [get_cells -hierarchical -filter {NAME =~ *score/lsu/slot*}] }
+
+# Replicate high-fanout deqPtr registers in CircularBufferMulti
+catch { set_property MAX_FANOUT 256 [get_cells -hierarchical -filter {NAME =~ *score/lsu/rs/deqPtr_reg*}] }
+

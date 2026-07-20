@@ -55,11 +55,8 @@ if {[llength $macros_to_prune] > 0} {
 }
 
 
-# ==============================================================================
-# 3. DEFINE PHYSICAL LOCATION (2x2 Grid, Bottom-Left Corner)
-# ==============================================================================
-# Resize the Pblock to a 2x2 Clock Region grid starting at X0Y0.
-## This provides ample space for ~32k LUTs without spreading them too thin. ## WAS TOO SMALL
-#resize_pblock [get_pblocks pblock_u_isp] -add {CLOCKREGION_X0Y0:CLOCKREGION_X1Y1}
-# CHANGED TO (6 Blocks): 
-resize_pblock [get_pblocks pblock_u_isp] -add {CLOCKREGION_X0Y0:CLOCKREGION_X2Y1}
+# Re-aligned to physical camera I/O Bank 63 (CLOCKREGION_X4Y3) on the right edge
+resize_pblock [get_pblocks pblock_u_isp] -add {CLOCKREGION_X3Y2:CLOCKREGION_X4Y4}
+set_property IS_SOFT FALSE [get_pblocks pblock_u_isp]
+set_property EXCLUDE_PLACEMENT TRUE [get_pblocks pblock_u_isp]
+

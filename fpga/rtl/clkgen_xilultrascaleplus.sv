@@ -48,7 +48,9 @@ module clkgen_xilultrascaleplus #(
       .O (clk_ibufds_o)
   );
 
-  localparam real CLKOUT0_DIVIDE_F_CALC = 1200.0 / ClockFrequencyMhz;
+  localparam real CLKOUT0_DIVIDE_F_RAW = 1200.0 / ClockFrequencyMhz;
+  // MMCME2_ADV requires fractional dividers to be exact multiples of 0.125
+  localparam real CLKOUT0_DIVIDE_F_CALC = $rtoi(CLKOUT0_DIVIDE_F_RAW * 8.0 + 0.5) / 8.0;
 
   MMCME2_ADV #(
       .BANDWIDTH("OPTIMIZED"),
