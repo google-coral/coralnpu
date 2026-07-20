@@ -1,0 +1,220 @@
+name: CoralNPU CI
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    tags:
+      - "*"
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-docker:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 1
+          ssh-key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - id: id
+        run: |
+          echo "uid=$(id -u)" >> $GITHUB_OUTPUT
+          echo "gid=$(id -g)" >> $GITHUB_OUTPUT
+      - name: Build and Cache Docker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: utils/coralnpu.dockerfile
+          push: false
+          load: false
+          tags: coralnpu:latest
+          build-args: |
+            _UID=${{ steps.id.outputs.uid }}
+            _GID=${{ steps.id.outputs.gid }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  macro-signatures:
+    needs: build-docker
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 1
+          ssh-key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - id: id
+        run: |
+          echo "uid=$(id -u)" >> $GITHUB_OUTPUT
+          echo "gid=$(id -g)" >> $GITHUB_OUTPUT
+      - name: Load Docker image from cache
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: utils/coralnpu.dockerfile
+          push: false
+          load: true
+          tags: coralnpu:latest
+          build-args: |
+            _UID=${{ steps.id.outputs.uid }}
+            _GID=${{ steps.id.outputs.gid }}
+          cache-from: type=gha
+      - name: Check Macro Signatures
+        run: |
+          docker run --rm --init --ipc=host \
+            -v ${{ github.workspace }}:${{ github.workspace }} \
+            -w ${{ github.workspace }} \
+            -v $HOME:/home/runner \
+            -v $HOME:/home/builder \
+            coralnpu:latest \
+            python3 utils/check_macro_signatures.py
+
+  lint:
+    needs: build-docker
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - id: id
+        run: |
+          echo "uid=$(id -u)" >> $GITHUB_OUTPUT
+          echo "gid=$(id -g)" >> $GITHUB_OUTPUT
+      - name: Load Docker image from cache
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: utils/coralnpu.dockerfile
+          push: false
+          load: true
+          tags: coralnpu:latest
+          build-args: |
+            _UID=${{ steps.id.outputs.uid }}
+            _GID=${{ steps.id.outputs.gid }}
+          cache-from: type=gha
+      - name: Run Linters
+        run: |
+          docker run --rm --init --ipc=host \
+            -e GITHUB_ACTIONS="${{ env.GITHUB_ACTIONS }}" \
+            -e GITHUB_EVENT_NAME="${{ github.event_name }}" \
+            -e GITHUB_BASE_REF="${GITHUB_BASE_REF}" \
+            -v ${{ github.workspace }}:${{ github.workspace }} \
+            -w ${{ github.workspace }} \
+            -v $HOME:/home/runner \
+            -v $HOME:/home/builder \
+            coralnpu:latest \
+            utils/run_linters.sh
+
+  bazel-test-exclusive:
+    needs: build-docker
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 1
+          ssh-key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          persist-credentials: false
+      - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - id: id
+        run: |
+          echo "uid=$(id -u)" >> $GITHUB_OUTPUT
+          echo "gid=$(id -g)" >> $GITHUB_OUTPUT
+      - name: Load Docker image from cache
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: utils/coralnpu.dockerfile
+          push: false
+          load: true
+          tags: coralnpu:latest
+          build-args: |
+            _UID=${{ steps.id.outputs.uid }}
+            _GID=${{ steps.id.outputs.gid }}
+          cache-from: type=gha
+      - name: Run Exclusive Bazel Tests
+        run: |
+          docker run --rm --init --ipc=host \
+            -v ${{ github.workspace }}:${{ github.workspace }} \
+            -w ${{ github.workspace }} \
+            -v $HOME:/home/runner \
+            -v $HOME:/home/builder \
+            coralnpu:latest \
+            bazel test \
+              --test_tag_filters=exclusive,-vcs,-synthesis,-power \
+              --verbose_failures \
+              --noshow_progress \
+              --test_summary=detailed \
+              //...
+
+  bazel-test-parallel:
+    needs: build-docker
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 1
+          ssh-key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          persist-credentials: false
+      - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - id: id
+        run: |
+          echo "uid=$(id -u)" >> $GITHUB_OUTPUT
+          echo "gid=$(id -g)" >> $GITHUB_OUTPUT
+      - name: Load Docker image from cache
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: utils/coralnpu.dockerfile
+          push: false
+          load: true
+          tags: coralnpu:latest
+          build-args: |
+            _UID=${{ steps.id.outputs.uid }}
+            _GID=${{ steps.id.outputs.gid }}
+          cache-from: type=gha
+      - name: Run Non-Exclusive Bazel Tests
+        run: |
+          docker run --rm --init --ipc=host \
+            -v ${{ github.workspace }}:${{ github.workspace }} \
+            -w ${{ github.workspace }} \
+            -v $HOME:/home/runner \
+            -v $HOME:/home/builder \
+            coralnpu:latest \
+            bazel test \
+              --test_tag_filters=-exclusive,-vcs,-synthesis,-power \
+              --verbose_failures \
+              --noshow_progress \
+              --test_summary=detailed \
+              //...
