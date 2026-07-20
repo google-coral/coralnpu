@@ -1158,34 +1158,104 @@ async def vslide1down_test(dut):
     await vslide_test(dut, cases, expfunc)
 
 
-@cocotb.test()
-async def vgather_test(dut):
+async def vgather1_test(dut, cases):
     """Test gather usage accessible from intrinsics."""
-
     fixture = await Fixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
-        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vgather.elf'), [
-            'input_value',
-            'input_index',
-            'output_value',
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vgather.elf'),
+        [
+            'rvv_shuffle',
+            'input_value8',
+            'input_index8',
+            'output_value8',
+            'input_value16',
+            'input_index16',
+            'output_value16',
             'n',
-        ]
+        ] + [c['rvv_shuffle'] for c in cases],
     )
-
     rng = np.random.default_rng()
-    values = np.array(
-        rng.choice(np.arange(0, 16), size=8, replace=False), dtype=np.uint16
-    )
-    index = np.array([3, 2, 1, 0, 4, 5, 6, 7], dtype=np.uint16)
-    expected_output = np.take_along_axis(values, index)
+    for c in tqdm.tqdm(cases):
+        rvv_shuffle = c['rvv_shuffle']
+        n = c['n']
+        dtype = c['dtype']
+        values = np.array(rng.choice(np.arange(0, 255), size=n), dtype=dtype)
+        index = np.array(
+            rng.choice(np.arange(0, n), size=n, replace=False), dtype=dtype
+        )
+        expected_output = np.take_along_axis(values, index)
+        if dtype == np.uint8:
+            input_value_buf = 'input_value8'
+            input_index_buf = 'input_index8'
+            output_value_buf = 'output_value8'
+        elif dtype == np.uint16:
+            input_value_buf = 'input_value16'
+            input_index_buf = 'input_index16'
+            output_value_buf = 'output_value16'
+        await fixture.write_ptr('rvv_shuffle', rvv_shuffle)
+        await fixture.write_word('n', n)
+        await fixture.write(input_value_buf, values)
+        await fixture.write(input_index_buf, index)
+        await fixture.run_to_halt()
+        actual_output = (
+            await fixture.read(output_value_buf,
+                               n * np.dtype(dtype).itemsize)
+        ).view(dtype)
+        debug_msg = str({
+            'rvv_shuffle': rvv_shuffle,
+            'n': n,
+            'input_value': values,
+            'input_index': index,
+            'output_value': output_value_buf,
+            'expected': expected_output,
+            'actual': actual_output,
+        })
+        assert (actual_output == expected_output).all(), debug_msg
 
-    await fixture.write('input_value', values)
-    await fixture.write('input_index', index)
-    await fixture.run_to_halt()
-    actual_output = (
-        await fixture.read('output_value', 8 * np.dtype(np.uint16).itemsize)
-    ).view(np.uint16)
 
-    assert (actual_output == expected_output).all(), debug_msg
-    print(actual_output, flush=True)
+@cocotb.test()
+async def vgather_test(dut):
+    """Test gather usage accessible from intrinsics."""
+    cases = [{
+        'rvv_shuffle': 'vgather_d8mf2_i8mf2',
+        'n': n,
+        'dtype': np.uint8,
+    } for n in [2, 4, 8]] + [{
+        'rvv_shuffle': 'vgather_d8m1_i8m1',
+        'n': n,
+        'dtype': np.uint8,
+    } for n in [2, 4, 8]] + [{
+        'rvv_shuffle': 'vgather_d8m2_i8m2',
+        'n': n,
+        'dtype': np.uint8,
+    } for n in [2, 4, 8]] + [{
+        'rvv_shuffle': 'vgather_d8m4_i8m4',
+        'n': n,
+        'dtype': np.uint8,
+    } for n in [2, 4, 8]] + [{
+        'rvv_shuffle': 'vgather_d8m8_i8m8',
+        'n': n,
+        'dtype': np.uint8,
+    } for n in [2, 4, 8]] + [{
+        'rvv_shuffle': 'vgather_d16mf2_i16mf2',
+        'n': n,
+        'dtype': np.uint16,
+    } for n in [2, 4]] + [{
+        'rvv_shuffle': 'vgather_d16m1_i16m1',
+        'n': n,
+        'dtype': np.uint16,
+    } for n in [2, 4, 8]] + [{
+        'rvv_shuffle': 'vgather_d16m2_i16m2',
+        'n': n,
+        'dtype': np.uint16,
+    } for n in [2, 4, 8, 16]] + [{
+        'rvv_shuffle': 'vgather_d16m4_i16m4',
+        'n': n,
+        'dtype': np.uint16,
+    } for n in [2, 4, 8, 16]] + [{
+        'rvv_shuffle': 'vgather_d16m8_i16m8',
+        'n': n,
+        'dtype': np.uint16,
+    } for n in [2, 4, 8, 16]]
+    await vgather1_test(dut, cases)

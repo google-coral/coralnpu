@@ -251,12 +251,12 @@ RVV_ASSEMBLY_TESTCASES = [
     "core_mini_vmsif_test",
     "core_mini_vill_test",
     "core_mini_vl_test",
+    "vgather_test",
     "vsetvl_test",
     "vslideup_test",
     "vslidedown_test",
     "vslide1up_test",
     "vslide1down_test",
-    "vgather_test",
 ]
 # END_TESTCASES_FOR_rvv_assembly_cocotb_test
 

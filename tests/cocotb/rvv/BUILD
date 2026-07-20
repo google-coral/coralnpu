@@ -41,6 +41,9 @@ template_rule(
         "vfirst_test": {
             "srcs": ["vfirst_test.cc"],
         },
+        "vgather": {
+            "srcs": ["vgather.cc"],
+        },
         "vill_test": {
             "srcs": ["vill_test.cc"],
         },
@@ -64,9 +67,6 @@ template_rule(
         },
         "vstart_store": {
             "srcs": ["vstart_store.S"],
-        },
-        "vgather": {
-            "srcs": ["vgather.cc"],
         },
     },
 )
