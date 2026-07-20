@@ -22,6 +22,13 @@ py_binary(
     srcs = ["scm_info.py"],
 )
 
+py_library(
+    name = "run_uvm_regression",
+    srcs = ["run_uvm_regression.py"],
+    imports = ["."],
+    deps = [requirement("pyelftools")],
+)
+
 py_test(
     name = "run_uvm_regression_test",
     srcs = [
@@ -41,4 +48,13 @@ py_test(
         "//rules:coco_tb.bzl",
     ],
     main = "check_macro_signatures.py",
+)
+
+py_binary(
+    name = "uvm_batch_runner",
+    srcs = ["uvm_batch_runner.py"],
+    deps = [
+        ":run_uvm_regression",
+        "@bazel_tools//tools/python/runfiles",
+    ],
 )

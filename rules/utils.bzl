@@ -12,6 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+def _filter_files_by_extension_impl(ctx):
+    files = []
+    for f in ctx.attr.src[DefaultInfo].files.to_list():
+        if f.extension in ctx.attr.extensions:
+            files.append(f)
+
+    if not files and ctx.attr.allow_empty == False:
+        fail("No files with extensions {} found in {}".format(
+            ctx.attr.extensions,
+            ctx.attr.src.label,
+        ))
+
+    return [DefaultInfo(files = depset(files))]
+
+filter_files_by_extension = rule(
+    implementation = _filter_files_by_extension_impl,
+    attrs = {
+        "src": attr.label(
+            mandatory = True,
+            doc = "Target whose DefaultInfo files should be filtered.",
+        ),
+        "extensions": attr.string_list(
+            mandatory = True,
+            doc = "File extensions to keep, without leading dots.",
+        ),
+        "allow_empty": attr.bool(default = False),
+    },
+    doc = "Republishes only files with the requested extensions from another target.",
+)
+
 def template_rule(rule, name_map, **kwargs):
     """ Macro for creating multiple instances of a rule template.
 

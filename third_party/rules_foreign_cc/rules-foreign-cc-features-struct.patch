@@ -1,0 +1,13 @@
+diff --git a/foreign_cc/built_tools/meson_build.bzl b/foreign_cc/built_tools/meson_build.bzl
+index 81db0f5..aa00c46 100644
+--- a/foreign_cc/built_tools/meson_build.bzl
++++ b/foreign_cc/built_tools/meson_build.bzl
+@@ -5,8 +5,6 @@ load("@rules_python//python:features.bzl", "features")
+ 
+ def meson_tool(name, main, data, requirements = [], **kwargs):
+     kwargs.pop("precompile", None)
+-    if not features.uses_builtin_rules:
+-        kwargs["precompile"] = "disabled"
+     py_binary(
+         name = name,
+         srcs = [main],

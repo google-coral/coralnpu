@@ -1,0 +1,232 @@
+diff --git a/BUILD b/BUILD
+index a10a5f5..894e097 100644
+--- a/BUILD
++++ b/BUILD
+@@ -2,3 +2,14 @@
+ # package group that is used to keep track of which projects use CoralNPU Sim.
+ 
+ package_group(name = "coralnpu_sim_users")
++package(default_visibility = ["//visibility:public"])
++exports_files(glob(["**/*"]))
++filegroup(
++    name = "all_srcs",
++    srcs = [
++        "//sim:all_srcs",
++        "//sim/cosim:all_srcs",
++    ] + glob([
++        "**/*",
++    ]),
++)
+diff --git a/sim/BUILD b/sim/BUILD
+index 3f3d775..d09362c 100644
+--- a/sim/BUILD
++++ b/sim/BUILD
+@@ -18,6 +18,15 @@ load("@com_google_mpact-sim//mpact/sim/decoder:mpact_sim_isa.bzl", "mpact_bin_fm
+ # load("@rules_cc//cc:defs.bzl", "cc_library")
+ 
+ package(default_visibility = ["//visibility:public"])
++exports_files(glob(["**/*"]))
++filegroup(
++    name = "all_srcs",
++    srcs = [
++        "//sim/cosim:all_srcs",
++    ]+ glob([
++        "**/*",
++    ]),
++)
+ 
+ cc_library(
+     name = "coralnpu_state",
+diff --git a/sim/coralnpu_base.isa b/sim/coralnpu_base.isa
+index dc3ab6f..314be9b 100644
+--- a/sim/coralnpu_base.isa
++++ b/sim/coralnpu_base.isa
+@@ -336,7 +336,7 @@ slot zfencei {
+ // Privileged instructions.
+ slot privileged {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_priv_instructions.h"
++    #include "riscv/riscv_priv_instructions.h"
+     #include "sim/coralnpu_instructions.h"
+   }
+   default size = 4;
+diff --git a/sim/coralnpu_m3.bin_fmt b/sim/coralnpu_m3.bin_fmt
+index d6ab18e..fde0c39 100644
+--- a/sim/coralnpu_m3.bin_fmt
++++ b/sim/coralnpu_m3.bin_fmt
+@@ -12,7 +12,7 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
+-#include "sim/coralnpu_v2.bin_fmt"
++#include "external/coralnpu-mpact-verilator/sim/coralnpu_v2.bin_fmt"
+ 
+ decoder CoralNPUM3 {
+   namespace coralnpu::sim::encoding_m3;
+diff --git a/sim/coralnpu_m3.isa b/sim/coralnpu_m3.isa
+index 14daab2..e781fe9 100644
+--- a/sim/coralnpu_m3.isa
++++ b/sim/coralnpu_m3.isa
+@@ -13,10 +13,10 @@
+ // limitations under the License.
+ 
+ includes {
+-  #include "external/com_google_mpact-riscv/riscv/riscv_vector_fp_instructions.h"
+-  #include "external/com_google_mpact-riscv/riscv/riscv_vector_fp_unary_instructions.h"
+-  #include "external/com_google_mpact-riscv/riscv/riscv_vector_fp_reduction_instructions.h"
+-  #include "external/com_google_mpact-riscv/riscv/riscv_vector_fp_compare_instructions.h"
++  #include "riscv/riscv_vector_fp_instructions.h"
++  #include "riscv/riscv_vector_fp_unary_instructions.h"
++  #include "riscv/riscv_vector_fp_reduction_instructions.h"
++  #include "riscv/riscv_vector_fp_compare_instructions.h"
+ }
+ 
+ isa CoralNPUM3 {
+@@ -24,7 +24,7 @@ isa CoralNPUM3 {
+   slots { coralnpu_m3; }
+ }
+ 
+-#include "sim/coralnpu_v2.isa"
++#include "external/coralnpu-mpact-verilator/sim/coralnpu_v2.isa"
+ 
+ slot riscv_zve32f {
+   includes {
+diff --git a/sim/coralnpu_v2.isa b/sim/coralnpu_v2.isa
+index 2da2d0c..3fff0d4 100644
+--- a/sim/coralnpu_v2.isa
++++ b/sim/coralnpu_v2.isa
+@@ -28,7 +28,7 @@ isa CoralNPUV2 {
+ // Basic integer ALU instructions, part of the RiscV 32i subset.
+ slot riscv32i {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_i_instructions.h"
++    #include "riscv/riscv_i_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -222,7 +222,7 @@ slot riscv32i {
+ // changed to provide performance hints to a simulated microarchitecture.
+ slot riscv32_hints {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_i_instructions.h"
++    #include "riscv/riscv_i_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -369,7 +369,7 @@ slot riscv32_hints {
+ // Instruction fence.
+ slot zfencei {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_zfencei_instructions.h"
++    #include "riscv/riscv_zfencei_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -383,7 +383,7 @@ slot zfencei {
+ // RiscV32 multiply/divide instructions.
+ slot riscv32m {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_m_instructions.h"
++    #include "riscv/riscv_m_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -428,7 +428,7 @@ slot riscv32m {
+ // RiscV32 CSR manipulation instructions.
+ slot zicsr {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_zicsr_instructions.h"
++    #include "riscv/riscv_zicsr_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -506,7 +506,7 @@ slot zicsr {
+ // RiscV32 F (single precision floating point) instructions.
+ slot riscv32f {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_f_instructions.h"
++    #include "riscv/riscv_f_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -627,7 +627,7 @@ slot riscv32f {
+ // included for CoralNPU V2.
+ slot privileged {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_priv_instructions.h"
++    #include "riscv/riscv_priv_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -646,7 +646,7 @@ slot riscv32_zbb {
+   resources TwoOp = { next_pc, rs1 : rd[..rd]};
+   resources ThreeOp = { next_pc, rs1, rs2 : rd[..rd]};
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_bitmanip_instructions.h"
++    #include "riscv/riscv_bitmanip_instructions.h"
+   }
+ 
+   opcodes {
+@@ -743,12 +743,12 @@ slot riscv32_zbb_imm {
+ 
+ slot riscv_zve32x {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_memory_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_opi_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_opm_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_permute_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_reduction_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_unary_instructions.h"
++    #include "riscv/riscv_vector_memory_instructions.h"
++    #include "riscv/riscv_vector_opi_instructions.h"
++    #include "riscv/riscv_vector_opm_instructions.h"
++    #include "riscv/riscv_vector_permute_instructions.h"
++    #include "riscv/riscv_vector_reduction_instructions.h"
++    #include "riscv/riscv_vector_unary_instructions.h"
+     #include "absl/functional/bind_front.h"
+   }
+   default size = 4;
+diff --git a/sim/cosim/BUILD b/sim/cosim/BUILD
+index 4f460d4..249add0 100644
+--- a/sim/cosim/BUILD
++++ b/sim/cosim/BUILD
+@@ -22,6 +22,13 @@ load("@cc_static_library_external//file:cc_static_libarary.bzl", "cc_static_libr
+ package(
+     default_visibility = ["//visibility:public"],
+ )
++exports_files(glob(["**/*"]))
++filegroup(
++    name = "all_srcs",
++    srcs = glob([
++        "**/*",
++    ]),
++)
+ 
+ cc_library(
+     name = "coralnpu_cosim_lib",
+diff --git a/sim/cosim/coralnpu_cosim_dpi.h b/sim/cosim/coralnpu_cosim_dpi.h
+index ec7a7e2..8eed7c9 100644
+--- a/sim/cosim/coralnpu_cosim_dpi.h
++++ b/sim/cosim/coralnpu_cosim_dpi.h
+@@ -27,7 +27,7 @@
+ #include <cstdint>
+ 
+ #include "sim/coralnpu_architecture.h"
+-#include "external/svdpi_h_file/file/svdpi.h"
++#include "../../../../external/svdpi_h_file/file/svdpi.h"
+ 
+ typedef struct {
+   uint32_t itcm_start_address;  // Start address of the ITCM range.
+diff --git a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
+index a7d5010..feedc5a 100644
+--- a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
++++ b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
+@@ -26,7 +26,7 @@
+ #include "absl/status/status.h"
+ #include "absl/types/span.h"
+ #include "mpact/sim/generic/data_buffer.h"
+-#include "external/svdpi_h_file/file/svdpi.h"
++#include "../../../../external/svdpi_h_file/file/svdpi.h"
+ 
+ using ::coralnpu::sim::Architecture;
+ using ::coralnpu::sim::CoralNPUSimulator;

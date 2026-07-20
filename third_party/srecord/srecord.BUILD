@@ -9,8 +9,6 @@ filegroup(
 
 cmake(
     name = "srecord",
-    lib_source = ":all_srcs",
-    out_binaries = ["srec_cat"],
     cache_entries = {
         "CMAKE_CXX_STANDARD": "17",
     },
@@ -21,5 +19,7 @@ cmake(
         "-G Ninja",
     ],
     install = True,
+    lib_source = ":all_srcs",
+    out_binaries = ["srec_cat"],
     visibility = ["//visibility:public"],
 )

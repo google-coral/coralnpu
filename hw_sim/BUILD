@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 
 cc_library(
     name = "hw_primitives",
@@ -95,6 +95,7 @@ coralnpu_v2_binary(
     srcs = [
         "mailbox_example.cc",
     ],
+    visibility = ["//visibility:public"],
 )
 
 cc_binary(
@@ -133,3 +134,5 @@ genrule(
     cmd = "echo '--- external ---' > $@; ls -R external >> $@ 2>&1 || true; echo '--- current ---' >> $@; ls -R . >> $@ 2>&1 || true",
     visibility = ["//visibility:public"],
 )
+
+collect_coralnpu_elfs()

@@ -28,7 +28,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 # Sourced from `nproc` at workspace-fetch time so we don't oversubscribe
 # small hosts (a hardcoded 8 was blocking 6-core boxes from scheduling
 # more than one action at a time).
-_verilator_make_parallelism = MAKE_JOBS
+verilator_make_parallelism = MAKE_JOBS
 
 VcsSimulationInfo = provider(
     doc = "Contains outputs of a VCS simulation run",
@@ -39,11 +39,11 @@ VcsSimulationInfo = provider(
     },
 )
 
-def _verilator_resource_estimator(_os, input_size):
+def verilator_resource_estimator(os, input_size):
     # Cap the scheduler reservation at 4 so multiple actions can still run
     # in parallel on larger hosts; the `make -j` inside the action is free
     # to use more threads if the scheduler hands them over.
-    return {"cpu": min(_verilator_make_parallelism, 4), "memory": 4096}
+    return {"cpu": min(verilator_make_parallelism, 4), "memory": 4096}
 
 def _verilator_cocotb_model_impl(ctx):
     hdl_toplevel = ctx.attr.hdl_toplevel
@@ -210,7 +210,7 @@ def _verilator_cocotb_model_impl(ctx):
         ar = _abs(ar_executable),
         ld = _abs(ld_executable),
         cxx = _abs(compiler_executable),
-        parallelism = _verilator_make_parallelism,
+        parallelism = verilator_make_parallelism,
     )
 
     script = " && ".join([verilator_cmd.strip(), make_cmd])
@@ -229,7 +229,7 @@ def _verilator_cocotb_model_impl(ctx):
         ),
         command = script,
         mnemonic = "Verilate",
-        resource_set = _verilator_resource_estimator,
+        resource_set = verilator_resource_estimator,
     )
 
     return [

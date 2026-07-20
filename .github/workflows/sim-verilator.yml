@@ -12,7 +12,7 @@ jobs:
   build-verilator:
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
     timeout-minutes: 30
     env:
       CI_BUILD_STAGE_NAME: build
@@ -24,7 +24,9 @@ jobs:
         run: |
           git clone https://github.com/verilator/verilator
       - name: install dependencies
-        run: ${{ github.workspace }}/verilator/ci/ci-install.bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang git autoconf bc bison build-essential help2man curl device-tree-compiler flex libfl-dev fuse3 gawk mold python-is-python3 python3 python3-full python3-pip python3-pyelftools python3-setuptools python3-venv srecord unzip xxd zip openjdk-17-jre z3
       - name:
         run: |
           pushd ${{ github.workspace }}/verilator
@@ -41,8 +43,8 @@ jobs:
   coralnpu-sim-verilator:
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
-    timeout-minutes: 60
+      contents: read
+    timeout-minutes: 120
     needs:
       - build-verilator
     env:
@@ -71,7 +73,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git gcc autoconf bc bison build-essential ccache clang curl device-tree-compiler flex fuse3 gawk git mold python-is-python3 python3 python3-full python3-pip python3-pyelftools python3-setuptools python3-venv srecord unzip xxd zip openjdk-17-jre z3
+          sudo apt-get install -y clang git autoconf bc bison build-essential help2man curl device-tree-compiler flex libfl-dev fuse3 gawk mold python-is-python3 python3 python3-full python3-pip python3-pyelftools python3-setuptools python3-venv srecord unzip xxd zip openjdk-17-jre z3
       - name: Clone UVM-1.2
         run: |
           git clone https://github.com/chipsalliance/uvm-verilator.git -b uvm-1.2 ${{ env.CI_TMPDIR }}/uvm-verilator
@@ -88,8 +90,44 @@ jobs:
           export CORALNPU_MPACT=${{ env.CI_TMPDIR }}/coralnpu-mpact
           bazel build //hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_emit_verilog
           python3 utils/run_uvm_regression.py --simulator=verilator
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: uvm_regression_result.zip
+          name: uvm_regression_results
+          archive: false
           path: |
             ${{ github.workspace }}/uvm_regression_*.zip
+  coralnpu-sim-verilator-bazel:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 120
+    env:
+      CI_BUILD_STAGE_NAME: build
+      CI_RUNS_ON: ubuntu-24.04
+      CI_OS_NAME: linux
+      CI_TMPDIR: /tmp
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          ssh-key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          # Avoid downloading Bazel every time.
+          bazelisk-cache: true
+          # Store build cache per workflow.
+          disk-cache: ${{ github.workflow }}
+          # Share repository cache between workflows.
+          repository-cache: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang git autoconf bc bison build-essential help2man curl device-tree-compiler flex libfl-dev fuse3 gawk mold python-is-python3 python3 python3-full python3-pip python3-pyelftools python3-setuptools python3-venv srecord unzip xxd zip openjdk-17-jre z3 libftdi-dev libftdi1-dev libelf-dev
+      - name: Generate RTL and run simulation
+        run: |
+          bazel test $(bazel query 'filter("verilator_uvm_regression_*", tests(//...))')
+      - uses: actions/upload-artifact@v7
+        with:
+          name: uvm_regression_results
+          path: |
+            ${{ github.workspace }}/bazel-out/k8-fastbuild/testlogs/**/verilator_uvm_regression_*/test.outputs/uvm_regression_batch/

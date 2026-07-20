@@ -25,8 +25,7 @@ configure_make(
     configure_options = [
         "--enable-commitlog",
         "--with-isa=rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zfbfmin_zvfbfa",
-        "--prefix=$(INSTALLDIR)",
-        "CXX=g++",
+        "CXX=clang++",
     ],
     lib_source = ":all_srcs",
     out_binaries = ["spike"],

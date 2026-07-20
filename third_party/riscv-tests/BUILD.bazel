@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@coralnpu_hw//rules:coralnpu_v2.bzl", "collect_coralnpu_riscv_tests")
 load("@coralnpu_hw//rules:utils.bzl", "template_rule")
+load("@coralnpu_hw//third_party/riscv-tests:defs.bzl", "OUT_BINARIES_RV32UF", "OUT_BINARIES_RV32UI", "OUT_BINARIES_RV32UM", "OUT_BINARIES_RV32UZBB")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 
 package(default_visibility = ["//visibility:public"])
@@ -45,36 +47,28 @@ template_rule(
             "args": COMMON_ARGS + [
                 "RISCV_PREFIX_VAR=rv32ui",
             ],
-            "out_binaries": [
-                "rv32ui-p-addi",
-            ],
+            "out_binaries": OUT_BINARIES_RV32UI,
             "postfix_script": POSTFIX_SCRIPT.format(subset = "ui"),
         },
         "riscv_tests_rv32um": {
             "args": COMMON_ARGS + [
                 "RISCV_PREFIX_VAR=rv32um",
             ],
-            "out_binaries": [
-                "rv32um-p-mul",
-            ],
+            "out_binaries": OUT_BINARIES_RV32UM,
             "postfix_script": POSTFIX_SCRIPT.format(subset = "um"),
         },
         "riscv_tests_rv32uzbb": {
             "args": COMMON_ARGS + [
                 "RISCV_PREFIX_VAR=rv32uzbb",
             ],
-            "out_binaries": [
-                "rv32uzbb-p-andn",
-            ],
+            "out_binaries": OUT_BINARIES_RV32UZBB,
             "postfix_script": POSTFIX_SCRIPT.format(subset = "uzbb"),
         },
         "riscv_tests_rv32uf": {
             "args": COMMON_ARGS + [
                 "RISCV_PREFIX_VAR=rv32uf",
             ],
-            "out_binaries": [
-                "rv32uf-p-fadd",
-            ],
+            "out_binaries": OUT_BINARIES_RV32UF,
             "postfix_script": POSTFIX_SCRIPT.format(subset = "uf"),
         },
     },
@@ -135,3 +129,32 @@ filegroup(
     ],
     output_group = "gen_dir",
 )
+
+ALL_BINS = [
+    "{}.elf".format(binary)
+    for binary in (
+        OUT_BINARIES_RV32UI +
+        OUT_BINARIES_RV32UM +
+        OUT_BINARIES_RV32UF +
+        OUT_BINARIES_RV32UZBB
+    )
+]
+
+genrule(
+    name = "all_isa_binaries",
+    srcs = [":all_files"],
+    outs = ALL_BINS,
+    cmd = """
+      for dir in $(SRCS); do
+        for f in $$dir/isa/*; do
+          base=$$(basename $$f)
+          extension="$${base##*.}"
+          if [[ "$${base}" != "dump" ]]; then
+              cp "$${f}" "$(@D)/$${base}.elf"
+          fi
+        done
+      done
+    """,
+)
+
+collect_coralnpu_riscv_tests(binaries = ALL_BINS)

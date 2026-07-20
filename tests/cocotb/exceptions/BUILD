@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -75,3 +75,5 @@ filegroup(
         ":store_fault_1.elf",
     ],
 )
+
+collect_coralnpu_elfs()

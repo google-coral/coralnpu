@@ -39,6 +39,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         gnupg \
         libelf-dev \
         libftdi1-dev \
+        liblz4-dev \
         libmpfr-dev \
         libusb-1.0-0-dev \
         lsb-release \

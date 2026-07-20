@@ -109,7 +109,7 @@ targets:
         verilator_options:
           - '--trace'
           - '--trace-fst'
-          - '-CFLAGS "-DTOPLEVEL_NAME=chip_verilator -std=c++17 -Wall -DVM_TRACE_FMT_FST"'
+          - '-CFLAGS "-DTOPLEVEL_NAME=chip_verilator -Wall -DVM_TRACE_FMT_FST"'
           - '-LDFLAGS "-lelf -lutil"'
           - '-Wall'
           - '-Wno-fatal'

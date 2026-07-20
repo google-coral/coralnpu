@@ -16,7 +16,7 @@ load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@gemma_deps//:requirements.bzl", gemma_requirement = "requirement")
 load("@rules_pkg//:pkg.bzl", "pkg_zip")
 load("//rules:coco_tb.bzl", "cocotb_test_suite", "vcs_test_macro_smoke_test", "verilator_cocotb_model")
-load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 load("//rules:utils.bzl", "template_rule")
 load(
     "//tests/cocotb:build_defs.bzl",
@@ -1032,3 +1032,5 @@ vcs_test_macro_smoke_test(
         "//coralnpu_test_utils:core_mini_axi_sim_interface",
     ],
 )
+
+collect_coralnpu_elfs()

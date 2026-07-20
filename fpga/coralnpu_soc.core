@@ -108,7 +108,7 @@ targets:
         verilator_options:
           - '--trace'
           - '--trace-fst'
-          - '-CFLAGS "-DTOPLEVEL_NAME=coralnpu_soc -std=c++17 -Wall -DVM_TRACE_FMT_FST"'
+          - '-CFLAGS "-DTOPLEVEL_NAME=coralnpu_soc -Wall -DVM_TRACE_FMT_FST"'
           - '-LDFLAGS "-lelf"'
           - '-Wall'
           - '-Wno-fatal'

@@ -1,16 +1,3 @@
-From ac5b44270399e2bccd9d9d5f34c19494e1cfd833 Mon Sep 17 00:00:00 2001
-From: Alex Van Damme <atv@google.com>
-Date: Wed, 5 Feb 2025 13:40:42 -0800
-Subject: [PATCH 1/2] Use systemc in verilator and support verilator in cocotb
-
----
- BUILD                                         |  11 +-
- cocotb/cocotb.bzl                             |  32 ++++-
- cocotb/cocotb_wrapper.py                      |   1 +
- .../verilator/verilator.BUILD.bazel           | 112 +++++++++++++++++-
- verilator/defs.bzl                            |  22 ++--
- 5 files changed, 163 insertions(+), 15 deletions(-)
-
 diff --git a/BUILD b/BUILD
 index bf28dd5..a6fe964 100644
 --- a/BUILD
@@ -131,10 +118,10 @@ index ba37573..03d0dbc 100644
  
  
 diff --git a/dependency_support/verilator/verilator.BUILD.bazel b/dependency_support/verilator/verilator.BUILD.bazel
-index f958490..3c6f975 100644
+index f958490..f7aef7e 100644
 --- a/dependency_support/verilator/verilator.BUILD.bazel
 +++ b/dependency_support/verilator/verilator.BUILD.bazel
-@@ -81,6 +81,45 @@ verilator_build_template(
+@@ -81,6 +81,47 @@ verilator_build_template(
      version = ":version",
  )
  
@@ -151,7 +138,7 @@ index f958490..3c6f975 100644
 +        "@CFG_WITH_LONGTESTS@": "no",
 +        "@CFG_CXXFLAGS_PROFILE@": "-pg",
 +        "@CFG_CXXFLAGS_STD@": "",
-+        "@CFG_CXXFLAGS_STD_NEWEST@": "-std=c++17",
++        "@CFG_CXXFLAGS_STD_NEWEST@": "-std=c++20",
 +        "@CFG_CXXFLAGS_NO_UNUSED@": " ".join([
 +            "-faligned-new",
 +            "-fcf-protection=none",
@@ -166,12 +153,14 @@ index f958490..3c6f975 100644
 +            "-Wno-unused-variable",
 +        ]),
 +        "@CFG_CXXFLAGS_WEXTRA@": "-Wextra -Wfloat-conversion -Wlogical-op",
-+        "@CFG_CXXFLAGS_COROUTINES@": "-fcoroutines",
++        "@CFG_CXXFLAGS_COROUTINES@": "-fcoroutines -std=c++20",
 +        "@CFG_CXXFLAGS_PCH@": "-x c++-header",
 +        "@CFG_CXXFLAGS_PCH_I@": "-include",
 +        "@CFG_GCH_IF_CLANG@": "",
 +        "@CFG_LDFLAGS_VERILATED@": "",
 +        "@CFG_LDLIBS_THREADS@": "-lpthread -latomic -lstdc++ -lm",
++        "@CFG_LDFLAGS_DYNAMIC@": "",
++        "@CFG_LDLIBS_DYNAMIC@": "",
 +    },
 +    template = "include/verilated.mk.in",
 +    version = ":version",
@@ -180,18 +169,18 @@ index f958490..3c6f975 100644
  verilator_astgen(
      name = "verilator_astgen",
      srcs = [
-@@ -287,7 +326,7 @@ cc_library(
+@@ -287,18 +328,15 @@ cc_library(
  )
  
  cc_library(
 -    name = "verilator",
 +    name = "verilator_lib",
      srcs = [
-         "include/gtkwave/fastlz.h",
-         "include/gtkwave/fst_config.h",
-@@ -295,10 +334,12 @@ cc_library(
-         "include/gtkwave/lz4.h",
-         "include/gtkwave/wavealloca.h",
+-        "include/gtkwave/fastlz.h",
+-        "include/gtkwave/fst_config.h",
+-        "include/gtkwave/fstapi.h",
+-        "include/gtkwave/lz4.h",
+-        "include/gtkwave/wavealloca.h",
          "include/verilated_fst_c.cpp",
 +        "include/verilated_fst_sc.cpp",
          "include/verilated_imp.h",
@@ -202,7 +191,7 @@ index f958490..3c6f975 100644
          "include/verilated_vpi.cpp",
          "include/verilated.cpp",
      ],
-@@ -309,14 +350,17 @@ cc_library(
+@@ -309,17 +347,25 @@ cc_library(
          "include/verilated_funcs.h",
          "include/verilated_intrinsics.h",
          "include/verilated_sc.h",
@@ -219,8 +208,17 @@ index f958490..3c6f975 100644
 +        "include/verilated_vcd_sc.h",
          "include/verilated_vpi.h",
          "include/verilated.h",
-         "include/verilatedos.h",
-@@ -327,7 +371,12 @@ cc_library(
+-        "include/verilatedos.h",
++        "include/fstcpp/fstcpp.h",
++        "include/fstcpp/fstcpp_assertion.h",
++        "include/fstcpp/fstcpp_file.h",
++        "include/fstcpp/fstcpp_stream_write_helper.h",
++        "include/fstcpp/fstcpp_variable_info.h",
++        "include/fstcpp/fstcpp_writer.h",
+     ],
+     # TODO: Remove these once upstream fixes these warnings
+     copts = [
+@@ -327,18 +373,24 @@ cc_library(
          "-std=c++17",
          "-ffp-contract=off",
      ],
@@ -233,8 +231,15 @@ index f958490..3c6f975 100644
 +    defines = ["VM_SC"],
      linkopts = [
          "-lpthread",
++        "-llz4",
      ],
-@@ -339,6 +388,7 @@ cc_library(
+     strip_include_prefix = "include/",
+     textual_hdrs = [
+-        "include/gtkwave/fastlz.c",
+-        "include/gtkwave/fstapi.c",
+-        "include/gtkwave/lz4.c",
++        "include/fstcpp/fstcpp_variable_info.cpp",
++        "include/fstcpp/fstcpp_writer.cpp",
      ],
      visibility = ["//visibility:public"],
      deps = [
@@ -242,7 +247,7 @@ index f958490..3c6f975 100644
          "@net_zlib//:zlib",
          ":vltstd",
      ],
-@@ -349,7 +399,7 @@ cc_library(
+@@ -349,7 +401,7 @@ cc_library(
  # output name.
  alias(
      name = "libverilator",
@@ -251,7 +256,7 @@ index f958490..3c6f975 100644
      visibility = ["//visibility:public"],
  )
  
-@@ -376,3 +426,59 @@ cc_binary(
+@@ -376,3 +428,59 @@ cc_binary(
      visibility = ["//visibility:public"],
      deps = [":verilator_libV3"],
  )
@@ -378,6 +383,3 @@ index c3e26d5..fc8af53 100644
          "_cc_toolchain": attr.label(
              doc = "CC compiler.",
              default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
--- 
-2.50.0.rc0.642.g800a2b2222-goog
-

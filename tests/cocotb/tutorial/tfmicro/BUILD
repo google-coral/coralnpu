@@ -14,7 +14,7 @@
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("//rules:coco_tb.bzl", "cocotb_test_suite", "verilator_cocotb_model")
-load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 load("//rules:utils.bzl", "generate_cc_arrays")
 load(
     "//tests/cocotb:build_defs.bzl",
@@ -347,3 +347,5 @@ cocotb_test_suite(
     },
     verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
+
+collect_coralnpu_elfs()

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 load("//rules:utils.bzl", "template_rule")
 
 coralnpu_v2_binary(
@@ -380,3 +380,5 @@ cc_test(
         "//hdl/chisel/src/coralnpu:l1icache_cc_library",
     ],
 )
+
+collect_coralnpu_elfs()

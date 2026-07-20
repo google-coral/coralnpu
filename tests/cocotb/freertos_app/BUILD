@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -27,3 +27,5 @@ coralnpu_v2_binary(
         "@freertos",
     ],
 )
+
+collect_coralnpu_elfs()

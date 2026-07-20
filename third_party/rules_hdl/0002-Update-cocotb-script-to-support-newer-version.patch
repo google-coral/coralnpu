@@ -73,27 +73,18 @@ index 03d0dbc..d6829c6 100644
 -    check_results_file(results_xml)
 diff --git a/dependency_support/verilator/0001-Remove-autodetect-of-VERILATOR_ROOT.patch b/dependency_support/verilator/0001-Remove-autodetect-of-VERILATOR_ROOT.patch
 new file mode 100644
-index 0000000..9022652
+index 0000000..fd219ca
 --- /dev/null
 +++ b/dependency_support/verilator/0001-Remove-autodetect-of-VERILATOR_ROOT.patch
-@@ -0,0 +1,35 @@
-+From a5369fe645344bb80cad339fe0a77233b535e50c Mon Sep 17 00:00:00 2001
-+From: Alex Van Damme <atv@google.com>
-+Date: Mon, 3 Mar 2025 14:59:47 -0800
-+Subject: [PATCH] Remove autodetect of VERILATOR_ROOT
-+
-+---
-+ bin/verilator | 13 -------------
-+ 1 file changed, 13 deletions(-)
-+
+@@ -0,0 +1,25 @@
 +diff --git a/bin/verilator b/bin/verilator
-+index 7e7c2f6b0..b1e88e2d0 100755
++index cb866e243..f73502df9 100755
 +--- a/bin/verilator
 ++++ b/bin/verilator
-+@@ -69,19 +69,6 @@ if (! GetOptions(
++@@ -87,20 +87,6 @@ if (! GetOptions(
 +     pod2usage(-exitstatus => 2, -verbose => 0);
 + }
-+ 
++
 +-# WARNING: $verilator_pkgdatadir_relpath is substituted during Verilator 'make install'
 +-my $verilator_pkgdatadir_relpath = "..";
 +-my $verilator_root = realpath("$RealBin/$verilator_pkgdatadir_relpath");
@@ -107,11 +98,10 @@ index 0000000..9022652
 +-    print "export VERILATOR_ROOT='$verilator_root'\n" if $Debug;
 +-    $ENV{VERILATOR_ROOT} = $verilator_root;
 +-}
-+ 
-+ if ($opt_gdbbt && !gdb_works()) {
-+     warn "-Info: --gdbbt ignored: gdb doesn't seem to be working\n" if $Debug;
-+-- 
-+2.48.1.711.g2feabab25a-goog
++-
++ my $lldb_selected = 0;
++ if (($opt_gdb || $opt_gdbbt) && !gdb_works()) {
++     if (lldb_works()) {
 diff --git a/dependency_support/verilator/verilator.BUILD.bazel b/dependency_support/verilator/verilator.BUILD.bazel
 index 3c6f975..cdb96d7 100644
 --- a/dependency_support/verilator/verilator.BUILD.bazel
@@ -128,22 +118,6 @@ index 3c6f975..cdb96d7 100644
      strip_include_prefix = "include/",
  )
  
-@@ -332,7 +335,6 @@ cc_library(
-         "include/gtkwave/fst_config.h",
-         "include/gtkwave/fstapi.h",
-         "include/gtkwave/lz4.h",
--        "include/gtkwave/wavealloca.h",
-         "include/verilated_fst_c.cpp",
-         "include/verilated_fst_sc.cpp",
-         "include/verilated_imp.h",
-@@ -363,7 +365,6 @@ cc_library(
-         "include/verilated_vcd_sc.h",
-         "include/verilated_vpi.h",
-         "include/verilated.h",
--        "include/verilatedos.h",
-     ],
-     # TODO: Remove these once upstream fixes these warnings
-     copts = [
 @@ -391,6 +392,7 @@ cc_library(
          "@accellera_systemc//:systemc",
          "@net_zlib//:zlib",
@@ -171,11 +145,14 @@ index 376a24f..749c6b6 100644
 -        urls = ["https://github.com/verilator/verilator/archive/refs/tags/v5.022.tar.gz"],
 -        sha256 = "3c2f5338f4b6ce7e2f47a142401acdd18cbf4c5da06092618d6d036c0afef12d",
 -        strip_prefix = "verilator-5.022",
-+        urls = ["https://github.com/verilator/verilator/archive/refs/tags/v5.048.tar.gz"],
-+        sha256 = "02d934b3f972c6d9b792350634d81eadfc9e61f347e3f3bdcaad40960b9fcb53",
-+        strip_prefix = "verilator-5.048",
++        urls = ["https://github.com/verilator/verilator/archive/b97df914ddcbff470c5a37d3c1bd99d9813f4698.tar.gz"],
++        sha256 = "0c39870b81be2d6eb827e2cd2e483de45917d80d550358930408dfc07730c8db",
++        strip_prefix = "verilator-b97df914ddcbff470c5a37d3c1bd99d9813f4698",
 +        patch_args = ["-p1"],
 +        patches = [
-+            Label("@rules_hdl//dependency_support/verilator:0001-Remove-autodetect-of-VERILATOR_ROOT.patch"),
++           Label("@rules_hdl//dependency_support/verilator:0001-Remove-autodetect-of-VERILATOR_ROOT.patch"),
 +        ],
      )
+-- 
+2.39.5
+

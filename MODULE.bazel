@@ -55,10 +55,10 @@ maven.install(
         "org.antlr:antlr4-runtime:4.13.1",
         "net.java.dev.jna:jna:5.14.0",
     ],
+    lock_file = "//third_party:maven_install.json",
     repositories = [
         "https://repo1.maven.org/maven2",
     ],
-    lock_file = "//third_party:maven_install.json",
 )
 use_repo(maven, "coralnpu_maven")
 
@@ -66,19 +66,18 @@ use_repo(maven, "coralnpu_maven")
 coralnpu_deps_ext = use_extension("//rules:extensions.bzl", "coralnpu_deps_ext")
 use_repo(
     coralnpu_deps_ext,
-    "coralnpu_host_cpus",
-    "llvm_firtool",
+    "RVVI",
     "accellera_systemc",
-    "riscv_isa_sim",
+    "chipsalliance_diplomacy",
+    "chipsalliance_rocket_chip",
     "common_cells",
+    "coralnpu_host_cpus",
     "cvfpu",
     "fpu_div_sqrt_mvp",
-    "RVVI",
-    "chipsalliance_rocket_chip",
-    "chipsalliance_diplomacy",
+    "llvm_firtool",
+    "riscv_isa_sim",
 )
 
 # Import verilator from rules_hdl
 rules_hdl_deps = use_extension("@rules_hdl//:extensions.bzl", "rules_hdl_deps")
 use_repo(rules_hdl_deps, "verilator")
-

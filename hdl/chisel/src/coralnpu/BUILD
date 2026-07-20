@@ -21,7 +21,7 @@ load(
     "chisel_test",
 )
 load("@coralnpu_hw//rules:lint.bzl", "vcstatic_lint")
-load("@coralnpu_hw//rules:utils.bzl", "template_rule")
+load("@coralnpu_hw//rules:utils.bzl", "filter_files_by_extension", "template_rule")
 load("@coralnpu_hw//rules:verilog.bzl", "verilog_zip_bundle")
 load("//hdl/chisel/src/coralnpu:flags.bzl", "RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS")
 
@@ -777,6 +777,12 @@ template_rule(
         "-Wno-WIDTHCONCAT",
         "-Ihdl/verilog/rvv/design/FPnew/common_cells/inc",
     ],
+)
+
+filter_files_by_extension(
+    name = "rvv_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
+    src = ":rvv_core_mini_verification_axi_cc_library_emit_verilog",
+    extensions = ["sv"],
 )
 
 filegroup(

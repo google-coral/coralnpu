@@ -17,7 +17,7 @@ load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS", "VERILATOR_THREADS")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@internal_check//:status.bzl", internal_exists = "FOLDER_EXISTS")
 load("@lowrisc_opentitan_gh//rules:fusesoc.bzl", "fusesoc_build")
-load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 load("//rules:coralnpu_v2_sim_test.bzl", "coralnpu_v2_sim_test")
 load("//rules:utils.bzl", "cc_embed_data", "template_rule")
 
@@ -787,3 +787,5 @@ genrule(
     outs = ["ispyocto_unpacked.done"],
     cmd = "mkdir -p ispyocto_unpacked && cp -r $(locations @ispyocto//:ispyocto_rtl_files) ispyocto_unpacked/ && touch $@",
 )
+
+collect_coralnpu_elfs()

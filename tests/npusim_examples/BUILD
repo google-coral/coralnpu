@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
-load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 
 py_binary(
     name = "npusim_run_mobilenet",
@@ -48,3 +48,5 @@ coralnpu_v2_binary(
         "@tflite_micro//tensorflow/lite/micro:system_setup",
     ],
 )
+
+collect_coralnpu_elfs()
