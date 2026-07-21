@@ -453,6 +453,7 @@ async def reduction_m1_vanilla_ops_test(
             await fixture.load_elf_and_lookup_symbols(
                 elf_path,
                 ["in_buf_1", "scalar_input", "out_buf"],
+                optional_symbols=["faulted", "mcause"],
             )
             math_op, dtype = pattern_extract.match(elf_name).groups()
             np_type = STR_TO_NP_TYPE[dtype]
@@ -479,22 +480,11 @@ async def reduction_m1_vanilla_ops_test(
             await fixture.write('in_buf_1', input_1)
             await fixture.write('scalar_input', input_2)
             await fixture.write('out_buf', np.zeros(1, dtype=np_type))
-            try:
-                await fixture.run_to_halt(timeout_cycles=1000000)
-            except AssertionError as e:
-                # If it failed to halt, check if it faulted
-                try:
-                    faulted = (await fixture.read('faulted',
-                                                  4)).view(np.uint32)[0]
-                    mcause = (await fixture.read('mcause',
-                                                 4)).view(np.uint32)[0]
-                    if faulted:
-                        raise RuntimeError(
-                            f"Test faulted with mcause 0x{mcause:x}"
-                        )
-                except Exception:
-                    pass
-                raise e
+            await fixture.run_to_halt(timeout_cycles=1000000)
+            if "faulted" in fixture.symbols:
+                faulted = (await fixture.read('faulted', 4)).view(np.uint32)[0]
+                mcause = (await fixture.read('mcause', 4)).view(np.uint32)[0]
+                assert faulted == 0, f"Test faulted with mcause 0x{mcause:x} for op {math_op}"
 
             actual_output = (await fixture.read("out_buf",
                                                 itemsize)).view(np_type)
@@ -571,12 +561,19 @@ async def reduction_m1_failure_test(
             itemsize = np.dtype(np_type).itemsize
             num_test_values = int(num_bytes / np.dtype(np_type).itemsize)
 
-            min_value = np.iinfo(np_type).min
-            max_value = np.iinfo(np_type).max + 1  # One above.
-            input_1 = np.random.randint(
-                min_value, max_value, num_test_values, dtype=np_type
-            )
-            input_2 = np.random.randint(min_value, max_value, 1, dtype=np_type)
+            if np.issubdtype(np_type, np.integer):
+                min_value = np.iinfo(np_type).min
+                max_value = np.iinfo(np_type).max + 1  # One above.
+                input_1 = np.random.randint(
+                    min_value, max_value, num_test_values, dtype=np_type
+                )
+                input_2 = np.random.randint(
+                    min_value, max_value, 1, dtype=np_type
+                )
+            else:
+                input_1 = np.random.uniform(-10, 10,
+                                            num_test_values).astype(np_type)
+                input_2 = np.random.uniform(-10, 10, 1).astype(np_type)
 
             await fixture.write('in_buf_1', input_1)
             await fixture.write('scalar_input', input_2)
@@ -596,6 +593,16 @@ async def reduction_m1_failure_ops(dut):
         dut=dut,
         dtypes=["int8", "int16", "int32", "uint8", "uint16", "uint32"],
         math_ops=["redsum", "redmin", "redmax"],
+        num_bytes=16
+    )
+
+
+@cocotb.test()
+async def float32_reduction_m1_failure_ops(dut):
+    await reduction_m1_failure_test(
+        dut=dut,
+        dtypes=["float"],
+        math_ops=["fredusum", "fredosum", "fredmin", "fredmax"],
         num_bytes=16
     )
 

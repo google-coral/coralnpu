@@ -80,6 +80,11 @@ object RvvAluOp extends ChiselEnum {
   val VFNCVTBF16  = Value
   val VFWCVTBF16  = Value
   val VFWMACCBF16 = Value
+
+  val VFREDUSUM = Value
+  val VFREDOSUM = Value
+  val VFREDMAX  = Value
+  val VFREDMIN  = Value
 }
 
 // The validity of an RVV instruction can only be fully checked when the

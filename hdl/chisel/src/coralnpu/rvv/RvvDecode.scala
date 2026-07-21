@@ -63,36 +63,46 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
   // These instructions need to trap when vstart is not zero. This includes
   // all reduction instructions.
   def requireZeroVstart(): Bool = {
-    (opcode === RvvCompressedOpcode.RVVALU) && (funct3() === "b010".U) &&
-    // OPMVV
-    MuxLookup(funct6(), false.B)(
-      Seq(
-        "b000000".U    -> true.B, // vredsum
-        "b000001".U    -> true.B, // vredand
-        "b000010".U    -> true.B, // vredor
-        "b000011".U    -> true.B, // vredxor
-        "b000100".U    -> true.B, // vredminu
-        "b000101".U    -> true.B, // vredmin
-        "b000110".U    -> true.B, // vredmaxu
-        "b000111".U    -> true.B, // vredmax
-        "b010000".U    -> MuxLookup(vs1(), false.B)(
-          Seq( // VWXUNARY0
-            "b10000".U -> true.B, // vcpop
-            "b10001".U -> true.B  // vfirst
+    (opcode === RvvCompressedOpcode.RVVALU) && (
+      ((funct3() === "b010".U) &&
+        MuxLookup(funct6(), false.B)(
+          Seq(
+            "b000000".U    -> true.B, // vredsum
+            "b000001".U    -> true.B, // vredand
+            "b000010".U    -> true.B, // vredor
+            "b000011".U    -> true.B, // vredxor
+            "b000100".U    -> true.B, // vredminu
+            "b000101".U    -> true.B, // vredmin
+            "b000110".U    -> true.B, // vredmaxu
+            "b000111".U    -> true.B, // vredmax
+            "b010000".U    -> MuxLookup(vs1(), false.B)(
+              Seq( // VWXUNARY0
+                "b10000".U -> true.B, // vcpop
+                "b10001".U -> true.B  // vfirst
+              )
+            ),
+            "b010100".U -> MuxLookup(vs1(), false.B)(
+              Seq( // VMUNARY0
+                "b00001".U -> true.B, // vmsbf
+                "b00010".U -> true.B, // vmsof
+                "b00011".U -> true.B, // vmsif
+                "b10000".U -> true.B  // viota
+              )
+            ),
+            "b010111".U -> true.B, // vcompress
+            "b110000".U -> true.B, // vwredsumu
+            "b110001".U -> true.B  // vwredsum
           )
-        ),
-        "b010100".U -> MuxLookup(vs1(), false.B)(
-          Seq( // VMUNARY0
-            "b00001".U -> true.B, // vmsbf
-            "b00010".U -> true.B, // vmsof
-            "b00011".U -> true.B, // vmsif
-            "b10000".U -> true.B  // viota
-          )
-        ),
-        "b010111".U -> true.B, // vcompress
-        "b110000".U -> true.B, // vwredsumu
-        "b110001".U -> true.B  // vwredsum
-      )
+        )) ||
+        ((funct3() === "b001".U) &&
+          MuxLookup(funct6(), false.B)(
+            Seq(
+              "b000001".U -> true.B, // vfredusum
+              "b000011".U -> true.B, // vfredosum
+              "b000101".U -> true.B, // vfredmin
+              "b000111".U -> true.B  // vfredmax
+            )
+          ))
     )
   }
 
@@ -458,6 +468,10 @@ class RvvS1DecodeInstructionBase {
     val op = MuxUpTo1H(
       MakeInvalid(RvvAluOp()),
       Seq(
+        (f6vm === "b000001".U)                       -> MakeValid(RvvAluOp.VFREDUSUM),
+        (f6vm === "b000011".U)                       -> MakeValid(RvvAluOp.VFREDOSUM),
+        (f6vm === "b000101".U)                       -> MakeValid(RvvAluOp.VFREDMIN),
+        (f6vm === "b000111".U)                       -> MakeValid(RvvAluOp.VFREDMAX),
         (f6vm === "b010010".U && vs1 === "b01101".U) -> MakeValid(RvvAluOp.VFWCVTBF16),
         (f6vm === "b010010".U && vs1 === "b11101".U) -> MakeValid(RvvAluOp.VFNCVTBF16),
         (f6vm === "b111011".U)                       -> MakeValid(RvvAluOp.VFWMACCBF16)

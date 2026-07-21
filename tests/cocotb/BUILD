@@ -327,6 +327,7 @@ RVV_ARITHMETIC_TESTCASES = [
     "reduction_m1_vanilla_ops",
     "float32_reduction_m1_vanilla_ops",
     "reduction_m1_failure_ops",
+    "float32_reduction_m1_failure_ops",
     "widen_math_ops_test_impl",
     "vnclip_test",
     "vnclip_vxsat_test",

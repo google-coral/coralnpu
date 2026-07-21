@@ -443,7 +443,12 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
       (0xb8003057L, RvvAluOp.VNCLIPU), // vnclipu.wi v0, v0, 0, v0.t
       (0xbc000057L, RvvAluOp.VNCLIP),  // vnclip.wv v0, v0, v0, v0.t
       (0xbc004057L, RvvAluOp.VNCLIP),  // vnclip.wx v0, v0, x0, v0.t
-      (0xbc003057L, RvvAluOp.VNCLIP)   // vnclip.wi v0, v0, 0, v0.t
+      (0xbc003057L, RvvAluOp.VNCLIP),  // vnclip.wi v0, v0, 0, v0.t
+
+      (0x04001057L, RvvAluOp.VFREDUSUM), // vfredusum.vs v0, v0, v0
+      (0x0c001057L, RvvAluOp.VFREDOSUM), // vfredosum.vs v0, v0, v0
+      (0x14001057L, RvvAluOp.VFREDMIN),  // vfredmin.vs v0, v0, v0
+      (0x1c001057L, RvvAluOp.VFREDMAX)   // vfredmax.vs v0, v0, v0
     )
     simulate(new Tester)(test_decode(_, test_cases))
     simulate(new TesterCompressed(p))(test_decode_compressed(_, test_cases))
