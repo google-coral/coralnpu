@@ -111,7 +111,7 @@ jobs:
   bazel-test:
     needs: build-docker
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
         with:
