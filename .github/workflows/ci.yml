@@ -35,6 +35,46 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-workspace:
+    needs: build-docker
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          ssh-key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+      - uses: docker/setup-buildx-action@v3
+      - id: id
+        run: |
+          echo "uid=$(id -u)" >> $GITHUB_OUTPUT
+          echo "gid=$(id -g)" >> $GITHUB_OUTPUT
+      - name: Load Docker image from cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: utils/coralnpu.dockerfile
+          push: false
+          load: true
+          tags: coralnpu:latest
+          build-args: |
+            _UID=${{ steps.id.outputs.uid }}
+            _GID=${{ steps.id.outputs.gid }}
+          cache-from: type=gha
+      - name: Pre-build all workspace targets
+        run: |
+          docker run --rm --init --ipc=host \
+            -v ${{ github.workspace }}:${{ github.workspace }} \
+            -w ${{ github.workspace }} \
+            -v $HOME:/home/runner \
+            -v $HOME:/home/builder \
+            coralnpu:latest \
+            bazel build //...
+
   macro-signatures:
     needs: build-docker
     runs-on: ubuntu-24.04
@@ -109,7 +149,7 @@ jobs:
             utils/run_linters.sh
 
   bazel-test:
-    needs: build-docker
+    needs: [build-docker, build-workspace]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -148,16 +188,16 @@ jobs:
           docker run --rm --init --ipc=host \
             -v ${{ github.workspace }}:${{ github.workspace }} \
             -w ${{ github.workspace }} \
-            -v ${HOME}:/home/runner \
-            -v ${HOME}:/home/builder \
+            -v $HOME:/home/runner \
+            -v $HOME:/home/builder \
             coralnpu:latest \
             bash -c '
               TARGETS=$(bazel query "kind(\".*_test\", //...)" | awk -v s=${{ matrix.shard }} -v t=8 "(NR-1) % t == s")
               echo "=== Running Shard ${{ matrix.shard }} / 8 ==="
-              echo "${TARGETS}"
+              echo "$TARGETS"
               bazel test \
                 --verbose_failures \
                 --noshow_progress \
                 --test_summary=detailed \
-                ${TARGETS}
+                $TARGETS
             '
