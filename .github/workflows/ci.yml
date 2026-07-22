@@ -111,7 +111,12 @@ jobs:
   bazel-test:
     needs: build-docker
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        total_shards: [8]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -139,12 +144,20 @@ jobs:
             _UID=${{ steps.id.outputs.uid }}
             _GID=${{ steps.id.outputs.gid }}
           cache-from: type=gha
-      - name: Run Bazel test in Docker
+      - name: Run Bazel test shard
         run: |
           docker run --rm --init --ipc=host \
+            -e TEST_SHARD_INDEX="${{ matrix.shard }}" \
+            -e TEST_TOTAL_SHARDS="${{ matrix.total_shards }}" \
             -v ${{ github.workspace }}:${{ github.workspace }} \
             -w ${{ github.workspace }} \
             -v $HOME:/home/runner \
             -v $HOME:/home/builder \
             coralnpu:latest \
-            bazel test //...
+            bazel test \
+              --test_env=TEST_SHARD_INDEX="${{ matrix.shard }}" \
+              --test_env=TEST_TOTAL_SHARDS="${{ matrix.total_shards }}" \
+              --verbose_failures \
+              --noshow_progress \
+              --test_summary=detailed \
+              //...
