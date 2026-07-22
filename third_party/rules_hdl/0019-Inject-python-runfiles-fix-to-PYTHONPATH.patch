@@ -1,0 +1,26 @@
+diff --git a/cocotb/cocotb_wrapper.py b/cocotb/cocotb_wrapper.py
+--- a/cocotb/cocotb_wrapper.py
++++ b/cocotb/cocotb_wrapper.py
+@@ -297,5 +297,22 @@ if __name__ == "__main__":
+         os.environ.pop('LD_LIBRARY_PATH', None)
+     else:
+         runner.build(**build_flags)
++
++    # Inject python runfiles fix to PYTHONPATH for all simulator runs.
++    #
++    # CAVEAT: cocotb_tools.runner overrides the child process PYTHONPATH using the
++    # parent's sys.path (self.env["PYTHONPATH"] = os.pathsep.join(sys.path)).
++    # Therefore, modifying os.environ["PYTHONPATH"] alone is insufficient as it
++    # gets overwritten. We must explicitly update sys.path to ensure the directory
++    # is propagated to the simulator VM.
++    main_ws = args.main_workspace or "coralnpu_hw"
++    r = runfiles.Create()
++    if r:
++        runfiles_fix_file = r.Rlocation(f"{main_ws}/third_party/python_runfiles_fix/sitecustomize.py", source_repo="")
++        if runfiles_fix_file:
++            runfiles_fix_dir = os.path.dirname(runfiles_fix_file)
++            sys.path.insert(0, runfiles_fix_dir)
++            os.environ["PYTHONPATH"] = os.pathsep.join([runfiles_fix_dir, os.environ.get("PYTHONPATH", "")])
++
+     results_xml = runner.test(**test_flags)
+     (num_tests, num_failed) = get_results(results_xml)

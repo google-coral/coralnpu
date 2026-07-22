@@ -154,6 +154,12 @@ def coralnpu_repos2():
             "@coralnpu_hw//third_party/rules_hdl:0015-Use-short_path-for-python-runfiles-resolution.patch",
             "@coralnpu_hw//third_party/rules_hdl:0016-Add-V3AstNodeStmt-and-V3Dfg-gen-clone-cases-to-verilator.patch",
             "@coralnpu_hw//third_party/rules_hdl:0017-Clean-up-WAVES-env-var-to-avoid-spurious-traces.patch",
+            "@coralnpu_hw//third_party/rules_hdl:0018-Fix-python-runfiles-resolution-for-manifest-only.patch",
+            # Patch 0019 injects a python runfiles fix (via PYTHONPATH/sitecustomize.py)
+            # to resolve ValueError crashes during manifest-only/unsandboxed runs.
+            # See third_party/python_runfiles_fix/sitecustomize.py for a detailed explanation.
+            # Can be removed when rules_hdl supports manifest-only runs natively.
+            "@coralnpu_hw//third_party/rules_hdl:0019-Inject-python-runfiles-fix-to-PYTHONPATH.patch",
         ],
         patch_args = ["-p1"],
     )

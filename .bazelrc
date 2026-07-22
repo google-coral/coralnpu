@@ -26,7 +26,6 @@ build --host_copt=-O3
 build --javacopt="-nowarn"
 build --host_javacopt="-nowarn"
 
-
 # This lets us generate key/value pairs for the workspace which can be used to
 # generate the version information.
 
@@ -82,7 +81,6 @@ run --host_action_env=LICENSE_SERVER_VCSSIM
 run --action_env=XILINXD_LICENSE_FILE
 run --host_action_env=XILINXD_LICENSE_FILE
 
-
 # Add config to enable VCS targets.
 build:vcs --build_tag_filters="vcs"
 test:vcs --build_tag_filters="vcs"
@@ -111,7 +109,6 @@ build --copt=-DTF_LITE_USE_GLOBAL_MAX
 build --copt=-DTF_LITE_MCU_DEBUG_LOG
 build:opt --copt=-DTF_LITE_STRIP_ERROR_STRINGS
 
-
 # Selecting coralnpu platform with custom toolchain.
 build:coralnpu_v2 --platforms=//platforms:coralnpu_v2
 
@@ -128,6 +125,17 @@ build --features=-supports_start_end_lib
 
 # Only show warnings/errors from our own code
 build --output_filter="^//(?!(third_party)(/|:|$))"
+
+# Configure local execution for EDA tools that need host mounts (autofs, license).
+# WARNING: Do NOT set VcsCompile or VcsSimulationRun to local globally here.
+# Running VCS compilations locally in parallel causes them to conflict on the
+# shared 'csrc/' directory in the execroot. Instead, simulation targets that
+# require PDK/license access should use the 'local = True' attribute on the
+# test rule to limit local execution to the test run phase.
+build --strategy=DesignCompilerSynthesis=local
+build --strategy=DesignCompilerCheckLink=local
+build --strategy=PrimeTimePower=local
+
 
 
 # Import user config, if it exists (gitignored).

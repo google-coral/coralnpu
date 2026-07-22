@@ -307,6 +307,26 @@ def _vcs_cocotb_model_impl(ctx):
 
     inputs = verilog_files + ctx.files._vcs_libs + ctx.files.data + [wrapper]
 
+    # Note: VCS compilation (VcsCompile) requires access to cell libraries on autofs
+    # mounts when building netlist models. On host machines, sandboxed actions
+    # cannot trigger autofs mounts, and NFS mounts inside user namespaces can
+    # trigger EPERM (Operation not permitted) errors even if active.
+    #
+    # However, VcsCompile must NOT be run local globally (e.g., via .bazelrc) because
+    # multiple parallel compilation actions running locally concurrently will conflict
+    # on the shared 'csrc/' directory in the execroot (for example, when running
+    # a wildcard test command like 'bazel test //tests/cocotb/...' in parallel),
+    # leading to linker failures (e.g., 'cannot find _XXXXX_archive_1.so').
+    #
+    # Instead of global .bazelrc strategies, targets requiring PDK/license access
+    # should configure local execution for the simulation phase using the 'local = True'
+    # attribute on the test rules (which runs the simulation locally but keeps
+    # compilation sandboxed and safe from conflicts).
+    #
+    # In CI/unattended execution, mounts are pre-mounted inside the workspace and
+    # are visible to the sandbox, so they can safely run sandboxed. Locally, developers
+    # should ensure mounts are active or configure local execution in their user .bazelrc.
+
     ctx.actions.run_shell(
         outputs = [output_simv, output_daidir, output_vdb],
         inputs = depset(inputs),
@@ -440,7 +460,8 @@ def verilator_cocotb_test(
             requirement("numpy"),
             requirement("pytest"),
         ],
-        data = data,
+        # Include sitecustomize to patch Python runfiles resolution for unsandboxed/manifest-only runs.
+        data = list(data or []) + ["@coralnpu_hw//third_party/python_runfiles_fix:sitecustomize"],
         tags = tags,
     )
 
@@ -578,10 +599,14 @@ fi
 touch "{log}" "{fsdb}"
 if [ ! -f "{status}" ]; then
   echo "Error: Simulation status file was not created (runner crashed during setup)." >&2
+  echo "--- Simulation Log ---" >&2
+  cat "{log}" >&2
   exit 1
 fi
 if [ $exit_code -gt 128 ]; then
   echo "Simulator crashed with exit code $exit_code" >&2
+  echo "--- Simulation Log ---" >&2
+  cat "{log}" >&2
   exit $exit_code
 fi
 exit 0
@@ -602,6 +627,17 @@ exit 0
         env["RANDOM_SEED"] = ctx.attr.seed
 
     # Safely forward executable and arguments to run_shell to avoid shell word-splitting.
+    # Note: VCS simulation runs require access to cell libraries on autofs mounts
+    # when running netlist simulations. On host machines, sandboxed actions
+    # cannot trigger autofs mounts, and NFS mounts inside user namespaces can
+    # trigger EPERM (Operation not permitted) errors.
+    #
+    # To support this, targets that require local execution (like netlist tests)
+    # should set 'local = True' directly on the test target. This ensures the
+    # simulation run action executes locally. We should avoid setting VcsSimulationRun
+    # to local globally in .bazelrc, as that can lead to unexpected local execution
+    # and conflicts for RTL tests which do not need PDK mounts.
+
     ctx.actions.run_shell(
         outputs = [log_file, fsdb_file, status_file],
         inputs = inputs,
@@ -750,7 +786,8 @@ def vcs_simulation_split_test(
         seed = seed[0] if seed else ""
     waves = kwargs.pop("waves", True)
 
-    full_data = list(data) + list(verilog_model_files)
+    # Include sitecustomize to patch Python runfiles resolution for unsandboxed/manifest-only runs.
+    full_data = list(data or []) + list(verilog_model_files or []) + ["@coralnpu_hw//third_party/python_runfiles_fix:sitecustomize"]
     if model:
         full_data.append(model)
 
@@ -885,7 +922,8 @@ def vcs_cocotb_test(
             requirement("numpy"),
             requirement("pytest"),
         ],
-        data = data,
+        # Include sitecustomize to patch Python runfiles resolution for unsandboxed/manifest-only runs.
+        data = list(data or []) + ["@coralnpu_hw//third_party/python_runfiles_fix:sitecustomize"],
         tags = tags,
         testonly = testonly,
         visibility = visibility,

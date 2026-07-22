@@ -1,0 +1,53 @@
+diff --git a/cocotb/cocotb_wrapper.py b/cocotb/cocotb_wrapper.py
+index e7093e7..f93e7ab 100644
+--- a/cocotb/cocotb_wrapper.py
++++ b/cocotb/cocotb_wrapper.py
+@@ -210,9 +210,9 @@ if __name__ == "__main__":
+         model_path = args.model
+         if model_path.startswith("../"):
+             model_path = model_path[3:]
+-            runfiles_path = r.Rlocation(model_path)
++            runfiles_path = r.Rlocation(model_path, source_repo="")
+         else:
+-            runfiles_path = r.Rlocation(f"{main_ws}/{model_path}")
++            runfiles_path = r.Rlocation(f"{main_ws}/{model_path}", source_repo="")
+ 
+         if not runfiles_path or not os.path.exists(runfiles_path):
+             print(f"Error: Could not find VCS model in runfiles: {args.model}", file=sys.stderr)
+@@ -264,11 +264,11 @@ if __name__ == "__main__":
+ 
+         print(f"Using pre-compiled VCS model from {runfiles_path}")
+ 
+-        vcs_lib_dir = r.Rlocation("coralnpu_pip_deps_cocotb/cocotb/libs")
++        vcs_lib_dir = r.Rlocation("coralnpu_pip_deps_cocotb/cocotb/libs", source_repo="")
+         if not vcs_lib_dir:
+-            vcs_lib_dir = r.Rlocation(f"{main_ws}/external/coralnpu_pip_deps_cocotb/cocotb/libs")
++            vcs_lib_dir = r.Rlocation(f"{main_ws}/external/coralnpu_pip_deps_cocotb/cocotb/libs", source_repo="")
+         if not vcs_lib_dir:
+-            vcs_lib_dir = r.Rlocation("external/coralnpu_pip_deps_cocotb/cocotb/libs")
++            vcs_lib_dir = r.Rlocation("external/coralnpu_pip_deps_cocotb/cocotb/libs", source_repo="")
+         if vcs_lib_dir:
+             os.environ['LD_LIBRARY_PATH'] = "{}:{}".format(vcs_lib_dir, os.environ.get("LD_LIBRARY_PATH", ""))
+ 
+@@ -282,16 +282,16 @@ if __name__ == "__main__":
+         model_path = args.model
+         if model_path.startswith("../"):
+             model_path = model_path[3:]
+-            sim_build = os.path.dirname(r.Rlocation(model_path))
++            sim_build = os.path.dirname(r.Rlocation(model_path, source_repo=""))
+         else:
+-            sim_build = os.path.dirname(r.Rlocation(f"{main_ws}/{model_path}"))
++            sim_build = os.path.dirname(r.Rlocation(f"{main_ws}/{model_path}", source_repo=""))
+         test_flags['build_dir'] = sim_build
+ 
+-        verilator_lib_dir = r.Rlocation("coralnpu_pip_deps_cocotb/cocotb/libs")
++        verilator_lib_dir = r.Rlocation("coralnpu_pip_deps_cocotb/cocotb/libs", source_repo="")
+         if not verilator_lib_dir:
+-            verilator_lib_dir = r.Rlocation(f"{main_ws}/external/coralnpu_pip_deps_cocotb/cocotb/libs")
++            verilator_lib_dir = r.Rlocation(f"{main_ws}/external/coralnpu_pip_deps_cocotb/cocotb/libs", source_repo="")
+         if not verilator_lib_dir:
+-            verilator_lib_dir = r.Rlocation("external/coralnpu_pip_deps_cocotb/cocotb/libs")
++            verilator_lib_dir = r.Rlocation("external/coralnpu_pip_deps_cocotb/cocotb/libs", source_repo="")
+         if verilator_lib_dir:
+             test_flags['extra_env']['LD_LIBRARY_PATH'] = "{}:{}".format(verilator_lib_dir, os.environ.get("LD_LIBRARY_PATH", ""))
+         os.environ.pop('LD_LIBRARY_PATH', None)
