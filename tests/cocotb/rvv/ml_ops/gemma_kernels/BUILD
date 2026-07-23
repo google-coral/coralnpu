@@ -68,6 +68,16 @@ template_rule(
             "dtcm_size_kbytes": 1024,
             "enable_vmem": False,
         },
+        "rvv_int8_matmul": {
+            "srcs": [
+                "rvv_int8_matmul_runner.cc",
+                "rvv_int8_matmul.cc",
+            ],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
         "rvv_residual_add": {
             "srcs": [
                 "rvv_residual_add_runner.cc",
@@ -348,6 +358,47 @@ cocotb_test_suite(
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [
         ":rvv_bf16_matmul.elf",
+        "//tests/cocotb:xprop.cfg",
+        "@coralnpu_hw//hdl/verilog:dpi_files",
+    ],
+    vcs_defines = VCS_DEFINES,
+    vcs_test_args = VCS_TEST_ARGS,
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
+)
+
+RVV_INT8_MATMUL_LHS_1D_TESTCASES = [
+    "gemv",
+    "matmul",
+]
+
+cocotb_test_suite(
+    name = "rvv_int8_matmul_test",
+    simulators = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_INT8_MATMUL_LHS_1D_TESTCASES,
+    testcases_vname = "RVV_INT8_MATMUL_LHS_1D_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
+        "waves": False,
+        "seed": "42",
+        "tags": ["manual"],
+        "test_module": ["cocotb_tests/rvv_int8_matmul_cocotb_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+            "//sw/utils:metrics",
+        ],
+        "data": [
+            ":rvv_int8_matmul.elf",
+        ],
+        "size": "enormous",
+    },
+    vcs_build_args = VCS_BUILD_ARGS,
+    vcs_data = [
+        ":rvv_int8_matmul.elf",
         "//tests/cocotb:xprop.cfg",
         "@coralnpu_hw//hdl/verilog:dpi_files",
     ],
