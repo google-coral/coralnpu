@@ -24,267 +24,239 @@ module rvv_backend_arb(
     output  PU2ROB_t  [`NUM_SMPORT-1:0] result;
 
 // ---internal signal definition--------------------------------------
-  `ifdef ZVE32F_ON
-    logic [1:0][1:0]  req_fmamac;
-    logic [1:0][1:0]  grant_fmamac;
-
-    // port 0 
-    assign grant[0]      = req[0];
-    assign req_fmamac[0] = grant[0] ? 'b0 : {req[8],req[4]};
-
-    arb_round_robin #(.REQ_NUM(2))
-    arb_fmamac0 (.grant(grant_fmamac[0]), .req(req_fmamac[0]), .clk(clk), .rst_n(rst_n));
-
-    assign grant[4]        = grant_fmamac[0][0];
-    assign grant[8]        = grant_fmamac[0][1];
-    assign result_valid[0] = grant[0] || grant[4] || grant[8];
-    assign result[0]       = {$bits(PU2ROB_t){grant[0]}}&item[0] |
-                             {$bits(PU2ROB_t){grant_fmamac[0][0]}}&item[4] |
-                             {$bits(PU2ROB_t){grant_fmamac[0][1]}}&item[8] ;
-
-     // port 1
-    assign grant[1]      = req[1];
-    assign req_fmamac[1] = grant[1] ? 'b0 : {req[9],req[5]};
-
-    arb_round_robin #(.REQ_NUM(2))
-    arb_fmamac1 (.grant(grant_fmamac[1]), .req(req_fmamac[1]), .clk(clk), .rst_n(rst_n));
-
-    assign grant[5]        = grant_fmamac[1][0];
-    assign grant[9]        = grant_fmamac[1][1];
-    assign result_valid[1] = grant[1] || grant[5] || grant[9];
-    assign result[1]       = {$bits(PU2ROB_t){grant[1]}}&item[1] |
-                             {$bits(PU2ROB_t){grant_fmamac[1][0]}}&item[5] |
-                             {$bits(PU2ROB_t){grant_fmamac[1][1]}}&item[9] ;
-
-    // port 2 and port 3
+`ifdef ZVE32F_ON
   `ifdef ZVT_ON
-    logic [2:0]       req_alu;
-    logic [2:0]       grant_alu;
+    localparam EVEN_NP_NUM = 4;
   `else
-    logic [1:0]       req_alu;
-    logic [1:0]       grant_alu;
+    localparam EVEN_NP_NUM = 3;
   `endif
-
-    assign grant[6] = req[6];
-    assign grant[7] = req[7];
-    assign req_alu  = !(grant[6]&&grant[7]) ? 
-                                        `ifdef ZVT_ON
-                                          {req[10],req[3:2]}
-                                        `else
-                                          req[3:2] 
-                                        `endif
-                                        : 'b0;
-    
+`else
   `ifdef ZVT_ON
-    arb_round_robin #(.REQ_NUM(3))
+    localparam EVEN_NP_NUM = 3;
   `else
-    arb_round_robin #(.REQ_NUM(2))
+    localparam EVEN_NP_NUM = 2;
   `endif
-    arb_alu (.grant(grant_alu), .req(req_alu), .clk(clk), .rst_n(rst_n));
+`endif
 
-    always_comb begin
-      case(grant[7:6])
-        2'b11: begin
-          result_valid[2] = 1'b1;
-          result[2]       = item[6];
-          result_valid[3] = 1'b1;
-          result[3]       = item[7];
-          grant[2]        = 'b0;
-          grant[3]        = 'b0;
-        `ifdef ZVT_ON
-          grant[10]       = 'b0;
-        `endif
-        end
-        2'b01: begin
-          result_valid[2] = 1'b1;
-          result[2]       = item[6];
-          result_valid[3] = |grant_alu;
-          result[3]       = 
-                           `ifdef ZVT_ON
-                            grant_alu[2] ? item[10] :
-                           `endif
-                            grant_alu[0] ? item[2] : item[3];
-          grant[2]        = grant_alu[0];
-          grant[3]        = grant_alu[1];
-        `ifdef ZVT_ON
-          grant[10]       = grant_alu[2];
-        `endif
-        end
-        2'b10: begin
-          result_valid[2] = |grant_alu;
-          result[2]       = 
-                           `ifdef ZVT_ON
-                            grant_alu[2] ? item[10] :
-                           `endif
-                            grant_alu[0] ? item[2] : item[3];
-          result_valid[3] = 1'b1;
-          result[3]       = item[7];
-          grant[2]        = grant_alu[0];
-          grant[3]        = grant_alu[1];
-        `ifdef ZVT_ON
-          grant[10]       = grant_alu[2];
-        `endif
-        end
-        default: begin
-        `ifdef ZVT_ON
-          result_valid[2] = |grant_alu;
-          result[2]       = grant_alu[0] ? item[2] : grant_alu[1] ? item[3] : item[10];
-          result_valid[3] = |(~grant_alu & req);
-          result[3]       = !grant_alu[0]&req[2] ? item[2] : !grant_alu[2]&req[10] ? item[10] : item[3];
-          grant[2]        = grant_alu[0] || req[2];
-          grant[3]        = grant_alu[1] || (!req[2])&(!req[10])&req[3];
-          grant[10]       = grant_alu[2] || (!req[2])&req[10];
-        `else
-          result_valid[2] = req[2];
-          result[2]       = item[2];
-          result_valid[3] = req[3];
-          result[3]       = item[3];
-          grant[2]        = req[2];
-          grant[3]        = req[3];
-        `endif
-        end
-      endcase
+`ifdef ZVE32F_ON
+  localparam ODD_NP_NUM = 3;
+`else
+  localparam ODD_NP_NUM = 2;
+`endif
+
+// --- Even Slice (Slice 0) ---
+logic [EVEN_NP_NUM-1:0] req_even_np;
+PU2ROB_t [EVEN_NP_NUM-1:0] item_even_np;
+
+assign req_even_np[0] = req[2];
+assign item_even_np[0] = item[2];
+
+assign req_even_np[1] = req[4];
+assign item_even_np[1] = item[4];
+
+`ifdef ZVE32F_ON
+  assign req_even_np[2] = req[8];
+  assign item_even_np[2] = item[8];
+  `ifdef ZVT_ON
+    assign req_even_np[3] = req[10];
+    assign item_even_np[3] = item[10];
+  `endif
+`else
+  `ifdef ZVT_ON
+    assign req_even_np[2] = req[8];
+    assign item_even_np[2] = item[8];
+  `endif
+`endif
+
+
+logic [ODD_NP_NUM-1:0] req_odd_np;
+PU2ROB_t [ODD_NP_NUM-1:0] item_odd_np;
+
+assign req_odd_np[0] = req[3];
+assign item_odd_np[0] = item[3];
+
+assign req_odd_np[1] = req[5];
+assign item_odd_np[1] = item[5];
+
+`ifdef ZVE32F_ON
+  assign req_odd_np[2] = req[9];
+  assign item_odd_np[2] = item[9];
+`endif
+
+logic [EVEN_NP_NUM-1:0] even_np_total_grant;
+
+rvv_backend_arb_slice #(.NP_NUM(EVEN_NP_NUM))
+u_even_slice (
+  .clk(clk),
+  .rst_n(rst_n),
+  .req_hp0(req[0]),
+  .item_hp0(item[0]),
+  .req_hp1(req[6]),
+  .item_hp1(item[6]),
+  .req_np(req_even_np),
+  .item_np(item_even_np),
+  .grant_hp0(grant[0]),
+  .grant_hp1(grant[6]),
+  .grant_np(even_np_total_grant),
+  .result_valid0(result_valid[0]),
+  .result0(result[0]),
+  .result_valid1(result_valid[2]),
+  .result1(result[2])
+);
+
+logic [ODD_NP_NUM-1:0] odd_np_total_grant;
+
+rvv_backend_arb_slice #(.NP_NUM(ODD_NP_NUM))
+u_odd_slice (
+  .clk(clk),
+  .rst_n(rst_n),
+  .req_hp0(req[1]),
+  .item_hp0(item[1]),
+  .req_hp1(req[7]),
+  .item_hp1(item[7]),
+  .req_np(req_odd_np),
+  .item_np(item_odd_np),
+  .grant_hp0(grant[1]),
+  .grant_hp1(grant[7]),
+  .grant_np(odd_np_total_grant),
+  .result_valid0(result_valid[1]),
+  .result0(result[1]),
+  .result_valid1(result_valid[3]),
+  .result1(result[3])
+);
+
+assign grant[2] = even_np_total_grant[0];
+assign grant[4] = even_np_total_grant[1];
+`ifdef ZVE32F_ON
+  assign grant[8] = even_np_total_grant[2];
+  `ifdef ZVT_ON
+    assign grant[10] = even_np_total_grant[3];
+  `endif
+`else
+  `ifdef ZVT_ON
+    assign grant[8] = even_np_total_grant[2];
+  `endif
+`endif
+
+assign grant[3] = odd_np_total_grant[0];
+assign grant[5] = odd_np_total_grant[1];
+`ifdef ZVE32F_ON
+  assign grant[9] = odd_np_total_grant[2];
+`endif
+
+endmodule
+
+
+module rvv_backend_arb_slice #(
+  parameter int NP_NUM = 2
+) (
+  input  logic               clk,
+  input  logic               rst_n,
+  // High priority requests
+  input  logic               req_hp0,
+  input  PU2ROB_t            item_hp0,
+  input  logic               req_hp1,
+  input  PU2ROB_t            item_hp1,
+  // Non-priority requests
+  input  logic [NP_NUM-1:0]  req_np,
+  input  PU2ROB_t [NP_NUM-1:0] item_np,
+  // Slice outputs
+  output logic               grant_hp0,
+  output logic               grant_hp1,
+  output logic [NP_NUM-1:0]  grant_np,
+  // Outputs to ports
+  output logic               result_valid0,
+  output PU2ROB_t            result0,
+  output logic               result_valid1,
+  output PU2ROB_t            result1
+);
+
+  logic port0_avail, port1_avail;
+  assign port0_avail = !req_hp0;
+  assign port1_avail = !req_hp1;
+
+  logic [NP_NUM-1:0] ptr_reg;
+  logic [NP_NUM-1:0] next_ptr;
+
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      ptr_reg <= {{(NP_NUM-1){1'b0}}, 1'b1};
+    end else begin
+      ptr_reg <= next_ptr;
     end
+  end
 
-  `else 
+  // First Grant Search
+  logic [2*NP_NUM-1:0] double_req;
+  logic [2*NP_NUM-1:0] double_ptr;
+  logic [2*NP_NUM-1:0] double_sub;
+  logic [2*NP_NUM-1:0] double_g0;
+  logic [NP_NUM-1:0]   grant0_onehot;
 
-    logic [1:0] req_mac;
-    logic [1:0] grant_mac;
+  assign double_req = {req_np, req_np};
+  assign double_ptr = {{NP_NUM{1'b0}}, ptr_reg};
+  assign double_sub = double_req - double_ptr;
+  assign double_g0  = double_req & ~double_sub;
 
-    // port0 and port1
-    assign grant[0] = req[0];
-    assign grant[1] = req[1];
-    assign req_mac  = grant[0]^grant[1] ? req[5:4] : 'b0;
+  assign grant0_onehot = (port0_avail || port1_avail) ? (double_g0[NP_NUM-1:0] | double_g0[2*NP_NUM-1:NP_NUM]) : '0;
 
-    arb_round_robin #(.REQ_NUM(2))
-    arb_mac (.grant(grant_mac), .req(req_mac), .clk(clk), .rst_n(rst_n));
+  // Second Grant Search
+  logic [NP_NUM-1:0]   req_remain;
+  logic [2*NP_NUM-1:0] double_req_remain;
+  logic [2*NP_NUM-1:0] double_ptr1;
+  logic [2*NP_NUM-1:0] double_sub1;
+  logic [2*NP_NUM-1:0] double_g1;
+  logic [NP_NUM-1:0]   grant1_onehot;
 
-    always_comb begin
-      case(grant[1:0])
-        2'b11: begin
-          result_valid[0] = 1'b1;
-          result[0]       = item[0];
-          result_valid[1] = 1'b1;
-          result[1]       = item[1];
-          grant[4]        = 'b0;
-          grant[5]        = 'b0;
-        end
-        2'b01: begin
-          result_valid[0] = 1'b1;
-          result[0]       = item[0];
-          result_valid[1] = |grant_mac;
-          result[1]       = grant_mac[0] ? item[4] : item[5];
-          grant[4]        = grant_mac[0];
-          grant[5]        = grant_mac[1];
-        end
-        2'b00: begin
-          result_valid[0] = req[4];
-          result[0]       = item[4];
-          result_valid[1] = req[5];
-          result[1]       = item[5];
-          grant[4]        = req[4];
-          grant[5]        = req[5];
-        end
-        default: begin
-          result_valid[0] = 'b0;
-          result[0]       = item[0];
-          result_valid[1] = 'b0;
-          result[1]       = item[0];
-          grant[4]        = 'b0;
-          grant[5]        = 'b0;
-        end      
-      endcase
+  assign req_remain = req_np & ~grant0_onehot;
+  assign double_req_remain = {req_remain, req_remain};
+  assign double_ptr1 = {{NP_NUM{1'b0}}, grant0_onehot};
+  assign double_sub1 = double_req_remain - double_ptr1;
+  assign double_g1  = double_req_remain & ~double_sub1;
+
+  assign grant1_onehot = (port0_avail && port1_avail) ? (double_g1[NP_NUM-1:0] | double_g1[2*NP_NUM-1:NP_NUM]) : '0;
+
+  // Pointer Advancing Logic
+  logic [NP_NUM-1:0] last_grant;
+  assign last_grant = (|grant1_onehot) ? grant1_onehot : (|grant0_onehot) ? grant0_onehot : ptr_reg;
+  assign next_ptr   = (|grant_np) ? {last_grant[NP_NUM-2:0], last_grant[NP_NUM-1]} : ptr_reg;
+
+  assign grant_hp0 = req_hp0;
+  assign grant_hp1 = req_hp1;
+  assign grant_np  = grant0_onehot | grant1_onehot;
+
+  // Port 0 outputs
+  logic np_grant0_vld;
+  assign np_grant0_vld = |grant0_onehot;
+
+  PU2ROB_t np_item0;
+  always_comb begin
+    np_item0 = '0;
+    for (int j = 0; j < NP_NUM; j++) begin
+      if (grant0_onehot[j]) begin
+        np_item0 = item_np[j];
+      end
     end
+  end
 
-    // port2 and port3
-  `ifdef ZVT_ON
-    logic [2:0]       req_alu;
-    logic [2:0]       grant_alu;
-  `else
-    logic [1:0]       req_alu;
-    logic [1:0]       grant_alu;
-  `endif
+  assign result_valid0 = req_hp0 || (port0_avail && np_grant0_vld);
+  assign result0       = req_hp0 ? item_hp0 : np_item0;
 
-    assign grant[6] = req[6];
-    assign grant[7] = req[7];
-    assign req_alu  = !(grant[6]&&grant[7]) ? 
-                                        `ifdef ZVT_ON
-                                          {req[8],req[3:2]}
-                                        `else
-                                          req[3:2] 
-                                        `endif
-                                        : 'b0;
-    
-  `ifdef ZVT_ON
-    arb_round_robin #(.REQ_NUM(3))
-  `else
-    arb_round_robin #(.REQ_NUM(2))
-  `endif
-    arb_alu (.grant(grant_alu), .req(req_alu), .clk(clk), .rst_n(rst_n));
+  // Port 1 outputs
+  logic np_grant1_vld;
+  assign np_grant1_vld = |grant1_onehot;
 
-    always_comb begin
-      case(grant[7:6])
-        2'b11: begin
-          result_valid[2] = 1'b1;
-          result[2]       = item[6];
-          result_valid[3] = 1'b1;
-          result[3]       = item[7];
-          grant[2]        = 'b0;
-          grant[3]        = 'b0;
-        `ifdef ZVT_ON
-          grant[8]        = 'b0;
-        `endif
-        end
-        2'b01: begin
-          result_valid[2] = 1'b1;
-          result[2]       = item[6];
-          result_valid[3] = |grant_alu;
-          result[3]       = 
-                           `ifdef ZVT_ON
-                            grant_alu[2] ? item[8] :
-                           `endif
-                            grant_alu[0] ? item[2] : item[3];
-          grant[2]        = grant_alu[0];
-          grant[3]        = grant_alu[1];
-        `ifdef ZVT_ON
-          grant[8]        = grant_alu[2];
-        `endif
-        end
-        2'b10: begin
-          result_valid[2] = |grant_alu;
-          result[2]       = 
-                           `ifdef ZVT_ON
-                            grant_alu[2] ? item[8] :
-                           `endif
-                            grant_alu[0] ? item[2] : item[3];
-          result_valid[3] = 1'b1;
-          result[3]       = item[7];
-          grant[2]        = grant_alu[0];
-          grant[3]        = grant_alu[1];
-        `ifdef ZVT_ON
-          grant[8]        = grant_alu[2];
-        `endif
-        end
-        default: begin
-        `ifdef ZVT_ON
-          result_valid[2] = |grant_alu;
-          result[2]       = grant_alu[0] ? item[2] : grant_alu[1] ? item[3] : item[8];
-          result_valid[3] = |(~grant_alu & req);
-          result[3]       = !grant_alu[0]&req[2] ? item[2] : !grant_alu[2]&req[8] ? item[8] : item[3];
-          grant[2]        = grant_alu[0] || req[2];
-          grant[3]        = grant_alu[1] || (!req[2])&(!req[8])&req[3];
-          grant[8]        = grant_alu[2] || (!req[2])&req[8];
-        `else
-          result_valid[2] = req[2];
-          result[2]       = item[2];
-          result_valid[3] = req[3];
-          result[3]       = item[3];
-          grant[2]        = req[2];
-          grant[3]        = req[3];
-        `endif
-        end
-      endcase
+  PU2ROB_t np_item1;
+  always_comb begin
+    np_item1 = '0;
+    for (int j = 0; j < NP_NUM; j++) begin
+      if (grant1_onehot[j]) begin
+        np_item1 = item_np[j];
+      end
     end
-  `endif
+  end
+
+  assign result_valid1 = req_hp1 || (port1_avail && (port0_avail ? np_grant1_vld : np_grant0_vld));
+  assign result1       = req_hp1 ? item_hp1 : (port0_avail ? np_item1 : np_item0);
 
 endmodule
