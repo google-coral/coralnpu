@@ -15,6 +15,28 @@
 workspace(name = "coralnpu_hw")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Define bazel_skylib early to prevent older version override from transitive deps
+http_archive(
+    name = "bazel_skylib",
+    sha256 = "3b5b49006181f5f8ff626ef8ddceaa95e9bb8ad294f7b5d7b11ea9f7ddaf8c59",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.9.0/bazel-skylib-1.9.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-skylib/releases/download/1.9.0/bazel-skylib-1.9.0.tar.gz",
+    ],
+)
+
+load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
+
+bazel_skylib_workspace()
+
+# Define rules_license early to align version and prevent transitives from breaking rules_jvm_external
+http_archive(
+    name = "rules_license",
+    sha256 = "26d4021f6898e23b82ef953078389dd49ac2b5618ac564ade4ef87cced147b38",
+    urls = ["https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz"],
+)
+
 load("//rules:host_cpus.bzl", "host_cpus")
 load(
     "//rules:repos.bzl",
@@ -30,36 +52,7 @@ load(
 
 host_cpus(name = "coralnpu_host_cpus")
 
-http_archive(
-    name = "rules_cc",
-    sha256 = "69ceb454b9b29e0aba7da81c72e96ecafd81d2044be883b46398b1c77ca7fff9",
-    strip_prefix = "rules_cc-0.2.9",
-    url = "https://github.com/bazelbuild/rules_cc/releases/download/0.2.9/rules_cc-0.2.9.tar.gz",
-)
-
-load("@rules_cc//cc:repositories.bzl", "rules_cc_dependencies", "rules_cc_toolchains")
-
-rules_cc_dependencies()
-
-register_toolchains(
-    "//toolchain/host_clang:host_clang_toolchain_def",
-)
-
-rules_cc_toolchains()
-
-http_archive(
-    name = "rules_java",
-    sha256 = "9de4e178c2c4f98d32aafe5194c3f2b717ae10405caa11bdcb460ac2a6f61516",
-    urls = ["https://github.com/bazelbuild/rules_java/releases/download/9.6.1/rules_java-9.6.1.tar.gz"],
-)
-
-coralnpu_repos()
-
-load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
-
-rules_proto_dependencies()
-
-# rules_java deps (needs bazel_features)
+# bazel_features is needed early by rules_cc
 http_archive(
     name = "bazel_features",
     sha256 = "07bd2b18764cdee1e0d6ff42c9c0a6111ffcbd0c17f0de38e7f44f1519d1c0cd",
@@ -77,6 +70,41 @@ http_archive(
 load("@bazel_features//:deps.bzl", "bazel_features_deps")
 
 bazel_features_deps()
+
+http_archive(
+    name = "rules_cc",
+    sha256 = "81c10a95a5c22d838276ee90d712635d6042419fdfca5ef88328226b6321e53b",
+    strip_prefix = "rules_cc-0.2.22",
+    url = "https://github.com/bazelbuild/rules_cc/releases/download/0.2.22/rules_cc-0.2.22.tar.gz",
+)
+
+load("@rules_cc//cc:repositories.bzl", "rules_cc_dependencies", "rules_cc_toolchains")
+
+rules_cc_dependencies()
+
+register_toolchains(
+    "//toolchain/host_clang:host_clang_toolchain_def",
+)
+
+rules_cc_toolchains()
+
+load("@rules_cc//cc:extensions.bzl", cc_compatibility_proxy_repo = "compatibility_proxy_repo")
+
+cc_compatibility_proxy_repo()
+
+http_archive(
+    name = "rules_java",
+    sha256 = "9de4e178c2c4f98d32aafe5194c3f2b717ae10405caa11bdcb460ac2a6f61516",
+    urls = ["https://github.com/bazelbuild/rules_java/releases/download/9.6.1/rules_java-9.6.1.tar.gz"],
+)
+
+coralnpu_repos()
+
+load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
+
+rules_proto_dependencies()
+
+# rules_java deps (bazel_features loaded earlier)
 
 load("@rules_java//java:rules_java_deps.bzl", "compatibility_proxy_repo")
 
@@ -274,10 +302,6 @@ pip_parse(
 load("@gemma_deps//:requirements.bzl", gemma_install_deps = "install_deps")
 
 gemma_install_deps()
-
-load("@rules_cc//cc:extensions.bzl", cc_compatibility_proxy_repo = "compatibility_proxy_repo")
-
-cc_compatibility_proxy_repo()
 
 mpact_repos()
 

@@ -23,13 +23,76 @@
 # For more details on why this override exists and how we plan to remove it
 # when transitioning to Bzlmod, see the README.md in this directory.
 
+# Setup bazel repository.
 workspace(name = "coralnpu_sim")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
-# MPACT-RiscV repo
+# Align bazel_skylib version to 1.9.0
+http_archive(
+    name = "bazel_skylib",
+    sha256 = "3b5b49006181f5f8ff626ef8ddceaa95e9bb8ad294f7b5d7b11ea9f7ddaf8c59",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.9.0/bazel-skylib-1.9.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-skylib/releases/download/1.9.0/bazel-skylib-1.9.0.tar.gz",
+    ],
+)
+
+load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
+
+bazel_skylib_workspace()
+
+# Define bazel_features
+http_archive(
+    name = "bazel_features",
+    sha256 = "07bd2b18764cdee1e0d6ff42c9c0a6111ffcbd0c17f0de38e7f44f1519d1c0cd",
+    strip_prefix = "bazel_features-1.32.0",
+    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.32.0/bazel_features-v1.32.0.tar.gz",
+)
+
+load("@bazel_features//:deps.bzl", "bazel_features_deps")
+
+bazel_features_deps()
+
+# Upgraded rules_cc to 0.2.22 which natively handles trailing compiler warnings
+# during linker detection, making the old rules_cc_linker_detection.patch obsolete.
+http_archive(
+    name = "rules_cc",
+    sha256 = "81c10a95a5c22d838276ee90d712635d6042419fdfca5ef88328226b6321e53b",
+    strip_prefix = "rules_cc-0.2.22",
+    url = "https://github.com/bazelbuild/rules_cc/releases/download/0.2.22/rules_cc-0.2.22.tar.gz",
+)
+
+load("@rules_cc//cc:extensions.bzl", cc_compatibility_proxy_repo = "compatibility_proxy_repo")
+
+cc_compatibility_proxy_repo()
+
+http_archive(
+    name = "rules_java",
+    sha256 = "bbe7d94360cc9ed4607ec5fd94995fd1ec41e84257020b6f09e64055281ecb12",
+    urls = ["https://github.com/bazelbuild/rules_java/releases/download/8.14.0/rules_java-8.14.0.tar.gz"],
+)
+
+http_archive(
+    name = "com_google_protobuf",
+    integrity = "sha256-EKDVjzmhqQnpXgDougtbHcZNApl/dBFRlTorNln254w=",
+    strip_prefix = "protobuf-29.0",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v29.0/protobuf-29.0.tar.gz"],
+)
+
+http_archive(
+    name = "rules_license",
+    sha256 = "26d4021f6898e23b82ef953078389dd49ac2b5618ac564ade4ef87cced147b38",
+    urls = ["https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz"],
+)
+
+# MPACT-RiscV repo.
+# Note: Loads exception trap patches from @coralnpu_hw, requiring
+# --override_repository=coralnpu_hw=... when building standalone.
 http_archive(
     name = "com_google_mpact-riscv",
+    patch_args = ["-p1"],
+    patches = ["@coralnpu_hw//third_party/patches:mpact_riscv_vstart_trap.patch"],
     sha256 = "38faef26745f34a82de0daf3b65a207c8d2ecf825f37484a4a27132512583574",
     strip_prefix = "mpact-riscv-cb68bd4a2cb80dea24d9760dc6397b5854ea41bd",
     url = "https://github.com/google/mpact-riscv/archive/cb68bd4a2cb80dea24d9760dc6397b5854ea41bd.tar.gz",

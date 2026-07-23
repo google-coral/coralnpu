@@ -11,9 +11,7 @@ cmake(
     name = "srecord",
     cache_entries = {
         "CMAKE_CXX_STANDARD": "17",
-    },
-    env = {
-        "LDFLAGS": "-lstdc++",
+        "CMAKE_CXX_STANDARD_LIBRARIES": "-lstdc++",
     },
     generate_args = [
         "-G Ninja",

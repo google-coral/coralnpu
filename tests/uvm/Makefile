@@ -142,11 +142,13 @@ ifdef SPIKE_LOG
 SIM_RUN_OPTS += +SPIKE_LOG=$(SPIKE_LOG)
 endif
 
-# Bazel flags
+# Bazel override flags.
+# We must always override coralnpu_hw because the simulator's WORKSPACE template
+# loads patch files from the main @coralnpu_hw workspace.
+BAZEL_OVERRIDE_FLAGS = --override_repository=coralnpu_hw=$(abspath $(CURDIR)/../..)
+
 ifdef CORALNPU_MPACT_RISCV
-    BAZEL_OVERRIDE_FLAG = --override_repository=com_google_mpact-riscv=$(CORALNPU_MPACT_RISCV)
-else
-    BAZEL_OVERRIDE_FLAG =
+    BAZEL_OVERRIDE_FLAGS += --override_repository=com_google_mpact-riscv=$(CORALNPU_MPACT_RISCV)
 endif
 
 MPACT_COMMIT ?= 430a8d1
@@ -170,7 +172,7 @@ dirs:
 # Build the MPACT-Sim library using Bazel with CC=clang
 build_mpact_lib:
 	@echo "--- Building MPACT-Sim Co-sim Library via Bazel ---"
-	cd $(CORALNPU_MPACT) && CC=clang bazel build $(BAZEL_OVERRIDE_FLAG) //sim/cosim:$(MPACT_COSIM_LIB_NAME)
+	cd $(CORALNPU_MPACT) && CC=clang bazel build $(BAZEL_OVERRIDE_FLAGS) $(MPACT_BAZEL_FLAGS) //sim/cosim:$(MPACT_COSIM_LIB_NAME)
 
 # Generate memory and run option files from the ELF file
 # Generate the DUT RTL from Chisel source

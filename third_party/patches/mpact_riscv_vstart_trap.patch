@@ -1,0 +1,29 @@
+diff --git a/riscv/riscv_vector_unary_instructions.cc b/riscv/riscv_vector_unary_instructions.cc
+index 9183614..fb5b989 100644
+--- a/riscv/riscv_vector_unary_instructions.cc
++++ b/riscv/riscv_vector_unary_instructions.cc
+@@ -102,6 +102,10 @@ void Vcpop(Instruction* inst) {
+   auto* rv_state = static_cast<RiscVState*>(inst->state());
+   auto* rv_vector = rv_state->rv_vector();
+   if (rv_vector->vstart()) {
++    // WARNING: This is a localized fix for vstart exceptions on single-scalar result instructions.
++    // Other instructions (e.g. vmv, vmsbf) also require traps on non-zero vstart, but are not patched here.
++    // A cleaner long-term fix would be to modify set_vector_exception() to call Trap() globally.
++    rv_state->Trap(/*is_interrupt=*/false, 0, static_cast<uint64_t>(ExceptionCode::kIllegalInstruction), inst->address(), inst);
+     rv_vector->set_vector_exception();
+     return;
+   }
+@@ -138,8 +142,12 @@ void Vcpop(Instruction* inst) {
+ // register.
+ void Vfirst(Instruction* inst) {
+   auto* rv_state = static_cast<RiscVState*>(inst->state());
+-  auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  auto* rv_vector = rv_state->rv_vector();
+   if (rv_vector->vstart()) {
++    // WARNING: This is a localized fix for vstart exceptions on single-scalar result instructions.
++    // Other instructions (e.g. vmv, vmsbf) also require traps on non-zero vstart, but are not patched here.
++    // A cleaner long-term fix would be to modify set_vector_exception() to call Trap() globally.
++    rv_state->Trap(/*is_interrupt=*/false, 0, static_cast<uint64_t>(ExceptionCode::kIllegalInstruction), inst->address(), inst);
+     rv_vector->set_vector_exception();
+     return;
+   }
