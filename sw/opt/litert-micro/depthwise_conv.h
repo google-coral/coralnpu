@@ -18,13 +18,13 @@
 #include "tensorflow/lite/micro/kernels/depthwise_conv.h"
 
 namespace coralnpu_v2::opt::litert_micro {
-void DepthwiseConvPerChannel(
-    const tflite::DepthwiseParams& params, const int32_t* output_multiplier,
-    const int32_t* output_shift, const tflite::RuntimeShape& in_shape,
-    const int8_t* in_data, const tflite::RuntimeShape& f_shape,
-    const int8_t* f_data, const tflite::RuntimeShape& bias_shape,
-    const int32_t* bias_data, const tflite::RuntimeShape& out_shape,
-    int8_t* out_data, int32_t* accs_buf);
+void DepthwiseConvPerChannel(const tflite::DepthwiseParams &params,
+                             const int32_t *output_multiplier, const int32_t *output_shift,
+                             const tflite::RuntimeShape &in_shape, const int8_t *in_data,
+                             const tflite::RuntimeShape &f_shape, const int8_t *f_data,
+                             const tflite::RuntimeShape &bias_shape, const int32_t *bias_data,
+                             const tflite::RuntimeShape &out_shape, int8_t *out_data,
+                             int32_t *accs_buf);
 
 TFLMRegistration Register_DEPTHWISE_CONV_2D();
 }  // namespace coralnpu_v2::opt::litert_micro

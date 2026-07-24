@@ -19,12 +19,11 @@
 
 namespace coralnpu_v2::opt::litert_micro {
 
-void FullyConnected(
-    const tflite::FullyConnectedParams& params,
-    const tflite::RuntimeShape& input_shape, const int8_t* input_data,
-    const tflite::RuntimeShape& filter_shape, const int8_t* filter_data,
-    const tflite::RuntimeShape& bias_shape, const int32_t* bias_data,
-    const tflite::RuntimeShape& output_shape, int8_t* output_data);
+void FullyConnected(const tflite::FullyConnectedParams &params,
+                    const tflite::RuntimeShape &input_shape, const int8_t *input_data,
+                    const tflite::RuntimeShape &filter_shape, const int8_t *filter_data,
+                    const tflite::RuntimeShape &bias_shape, const int32_t *bias_data,
+                    const tflite::RuntimeShape &output_shape, int8_t *output_data);
 
 TFLMRegistration Register_FULLY_CONNECTED();
 

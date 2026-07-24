@@ -22,9 +22,9 @@ namespace coralnpu_v2::opt::litert_micro {
 
 TFLMRegistration Register_MAX_POOL_2D();
 
-void MaxPool(const tflite::PoolParams& params,
-             const tflite::RuntimeShape& input_shape, const int8_t* input_data,
-             const tflite::RuntimeShape& output_shape, int8_t* output_data);
+void MaxPool(const tflite::PoolParams &params, const tflite::RuntimeShape &input_shape,
+             const int8_t *input_data, const tflite::RuntimeShape &output_shape,
+             int8_t *output_data);
 
 }  // namespace coralnpu_v2::opt::litert_micro
 

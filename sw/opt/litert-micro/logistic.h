@@ -21,13 +21,12 @@
 
 namespace coralnpu_v2::opt::litert_micro {
 
-void LogisticInit(int32_t input_zero_point, int32_t input_range_radius,
-                  int32_t input_multiplier, int32_t input_left_shift);
+void LogisticInit(int32_t input_zero_point, int32_t input_range_radius, int32_t input_multiplier,
+                  int32_t input_left_shift);
 
-void Logistic(int32_t input_zero_point, int32_t input_range_radius,
-              int32_t input_multiplier, int32_t input_left_shift,
-              int32_t input_size, const int8_t* input_data,
-              int8_t* output_data);
+void Logistic(int32_t input_zero_point, int32_t input_range_radius, int32_t input_multiplier,
+              int32_t input_left_shift, int32_t input_size, const int8_t *input_data,
+              int8_t *output_data);
 
 TFLMRegistration Register_LOGISTIC();
 

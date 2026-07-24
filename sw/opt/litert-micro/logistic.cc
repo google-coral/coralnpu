@@ -32,38 +32,36 @@ static int8_t lut[256];
 static bool lut_initialized = false;
 }  // namespace
 
-void LogisticInit(int32_t input_zero_point, int32_t input_range_radius,
-                  int32_t input_multiplier, int32_t input_left_shift) {
+void LogisticInit(int32_t input_zero_point, int32_t input_range_radius, int32_t input_multiplier,
+                  int32_t input_left_shift) {
   for (int i = 0; i < 256; ++i) {
     int8_t input_val = static_cast<int8_t>(i);
-    tflite::reference_integer_ops::Logistic(
-        input_zero_point, input_range_radius, input_multiplier,
-        input_left_shift, 1, &input_val, &lut[i]);
+    tflite::reference_integer_ops::Logistic(input_zero_point, input_range_radius, input_multiplier,
+                                            input_left_shift, 1, &input_val, &lut[i]);
   }
   lut_initialized = true;
 }
 
-void Logistic(int32_t input_zero_point, int32_t input_range_radius,
-              int32_t input_multiplier, int32_t input_left_shift,
-              int32_t input_size, const int8_t* input_data,
-              int8_t* output_data) {
+void Logistic(int32_t input_zero_point, int32_t input_range_radius, int32_t input_multiplier,
+              int32_t input_left_shift, int32_t input_size, const int8_t *input_data,
+              int8_t *output_data) {
   if (!lut_initialized && input_size > 0) {
-    LogisticInit(input_zero_point, input_range_radius, input_multiplier,
-                 input_left_shift);
+    LogisticInit(input_zero_point, input_range_radius, input_multiplier, input_left_shift);
   }
 
-  if (input_size <= 0) return;
+  if (input_size <= 0)
+    return;
 
   // CoralNPU VLEN=128, SEW=8, LMUL=8 -> VLMAX=128.
-  size_t vlmax = __riscv_vsetvlmax_e8m8();
+  size_t vlmax     = __riscv_vsetvlmax_e8m8();
   vint8m8_t lut0_v = __riscv_vle8_v_i8m8(lut, vlmax);
   vint8m8_t lut1_v = __riscv_vle8_v_i8m8(lut + 128, vlmax);
 
-  int i = 0;
+  int i     = 0;
   int n_rem = input_size;
 
   while (n_rem > 0) {
-    size_t vl = __riscv_vsetvl_e8m8(n_rem);
+    size_t vl      = __riscv_vsetvl_e8m8(n_rem);
     vint8m8_t in_v = __riscv_vle8_v_i8m8(&input_data[i], vl);
 
     vuint8m8_t idx_v = __riscv_vreinterpret_v_i8m8_u8m8(in_v);
@@ -77,7 +75,7 @@ void Logistic(int32_t input_zero_point, int32_t input_range_radius,
     // Gather from second half (indices 128-255)
     // Subtract 128 to get relative index [0-127]
     vuint8m8_t idx1_v = __riscv_vsub_vx_u8m8(idx_v, 128, vl);
-    vint8m8_t res1_v = __riscv_vrgather_vv_i8m8(lut1_v, idx1_v, vl);
+    vint8m8_t res1_v  = __riscv_vrgather_vv_i8m8(lut1_v, idx1_v, vl);
 
     // Select result based on high bit of index
     out_v = __riscv_vmerge_vvm_i8m8(out_v, res1_v, mask1, vl);
@@ -90,22 +88,21 @@ void Logistic(int32_t input_zero_point, int32_t input_range_radius,
 }
 
 namespace {
-TfLiteStatus LogisticEval(TfLiteContext* context, TfLiteNode* node) {
-  const TfLiteEvalTensor* input =
+TfLiteStatus LogisticEval(TfLiteContext *context, TfLiteNode *node) {
+  const TfLiteEvalTensor *input =
       tflite::micro::GetEvalInput(context, node, tflite::kLogisticInputTensor);
-  TfLiteEvalTensor* output = tflite::micro::GetEvalOutput(
-      context, node, tflite::kLogisticOutputTensor);
+  TfLiteEvalTensor *output =
+      tflite::micro::GetEvalOutput(context, node, tflite::kLogisticOutputTensor);
 
   TFLITE_DCHECK(node->user_data != nullptr);
-  auto* data = static_cast<tflite::OpDataLogistic*>(node->user_data);
+  auto *data = static_cast<tflite::OpDataLogistic *>(node->user_data);
 
   if (input->type == kTfLiteInt8 && output->type == kTfLiteInt8) {
-    Logistic(
-        data->input_zero_point, data->input_range_radius,
-        data->input_multiplier, data->input_left_shift,
-        static_cast<int32_t>(tflite::micro::GetTensorShape(input).FlatSize()),
-        tflite::micro::GetTensorData<int8_t>(input),
-        tflite::micro::GetTensorData<int8_t>(output));
+    Logistic(data->input_zero_point, data->input_range_radius, data->input_multiplier,
+             data->input_left_shift,
+             static_cast<int32_t>(tflite::micro::GetTensorShape(input).FlatSize()),
+             tflite::micro::GetTensorData<int8_t>(input),
+             tflite::micro::GetTensorData<int8_t>(output));
     return kTfLiteOk;
   }
 
@@ -114,7 +111,7 @@ TfLiteStatus LogisticEval(TfLiteContext* context, TfLiteNode* node) {
 }  // namespace
 
 TFLMRegistration Register_LOGISTIC() {
-  auto registration = tflite::Register_LOGISTIC();
+  auto registration   = tflite::Register_LOGISTIC();
   registration.invoke = LogisticEval;
   return registration;
 }
