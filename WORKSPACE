@@ -178,6 +178,8 @@ py_repositories()
 
 python_register_toolchains(
     name = "python311",
+    # Allow running builds as root, because CI systems do that
+    ignore_root_user_error = True,
     python_version = "3.11.6",
 )
 

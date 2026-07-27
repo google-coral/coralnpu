@@ -548,6 +548,12 @@ def parse_arguments():
         type=str,
         help="Git commit hash to checkout for MPACT RISCV root"
     )
+    parser.add_argument(
+        "--bazel-cache",
+        "--repository-cache",
+        type=str,
+        help="Path to Bazel repository cache directory"
+    )
     return parser.parse_args()
 
 
@@ -1064,6 +1070,12 @@ def run_full_regression(
 
 def main():
     args = parse_arguments()
+    if args.bazel_cache:
+        os.environ["BAZEL_CACHE"] = os.path.abspath(args.bazel_cache)
+        logging.info(
+            f"Using Bazel repository cache: {os.environ['BAZEL_CACHE']}"
+        )
+
     mpact_root, mpact_riscv_root = get_mpact_configs(args)
 
     if args.mpact_commit:

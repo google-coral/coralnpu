@@ -14,9 +14,11 @@
 
 # Makefile for CoralNPU UVM Testbench (Integrates with MPACT-Sim)
 
+# Bazel repository cache flag
+BAZEL_CACHE_ARG = $(if $(BAZEL_CACHE),--repository_cache=$(BAZEL_CACHE),)
+
 # If CORALNPU_MPACT is not set, dynamically resolve it from Bazel's http_archive cache
 ifndef CORALNPU_MPACT
-    BAZEL_CACHE_ARG = $(if $(BAZEL_CACHE),--repository_cache=$(BAZEL_CACHE),)
     _FETCH := $(shell bazel build $(BAZEL_CACHE_ARG) @coralnpu_mpact//:coralnpu_sim_users > /dev/null 2>&1)
     BAZEL_OUTPUT_BASE = $(shell bazel info output_base)
     CORALNPU_MPACT = $(BAZEL_OUTPUT_BASE)/external/coralnpu_mpact
@@ -172,7 +174,7 @@ dirs:
 # Build the MPACT-Sim library using Bazel with CC=clang
 build_mpact_lib:
 	@echo "--- Building MPACT-Sim Co-sim Library via Bazel ---"
-	cd $(CORALNPU_MPACT) && CC=clang bazel build $(BAZEL_OVERRIDE_FLAGS) $(MPACT_BAZEL_FLAGS) //sim/cosim:$(MPACT_COSIM_LIB_NAME)
+	cd $(CORALNPU_MPACT) && CC=clang bazel build $(BAZEL_CACHE_ARG) $(BAZEL_OVERRIDE_FLAGS) $(MPACT_BAZEL_FLAGS) //sim/cosim:$(MPACT_COSIM_LIB_NAME)
 
 # Generate memory and run option files from the ELF file
 # Generate the DUT RTL from Chisel source
