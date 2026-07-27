@@ -456,10 +456,12 @@ chisel_library(
     srcs = [
         "AxiSlave.scala",
         "BankedDtcm.scala",
+        "BankedItcm.scala",
         "Core.scala",
         "CoreAxi.scala",
         "CoreAxiCSR.scala",
         "CoreTlul.scala",
+        "CoreTlulCSR.scala",
         "Fabric.scala",
         "SRAM.scala",
         "TCM.scala",
@@ -874,6 +876,16 @@ chisel_cc_library(
         "--lsuDataBits=128",
     ],
     module_name = "BankedDtcm",
+)
+
+chisel_cc_library(
+    name = "banked_itcm_cc_library",
+    chisel_lib = ":coralnpu",
+    emit_class = "coralnpu.BankedItcmEmitter",
+    gen_flags = [
+        "--lsuDataBits=128",
+    ],
+    module_name = "BankedItcm",
 )
 
 chisel_cc_library(

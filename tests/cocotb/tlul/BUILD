@@ -714,3 +714,29 @@ cocotb_test_suite(
     },
     verilator_model = ":banked_dtcm_model",
 )
+
+# BEGIN_TESTCASES_FOR_axi_addr_gen_cocotb_test
+AXI_ADDR_GEN_TESTCASES = [
+    "test_randomized_address_generator",
+]
+# END_TESTCASES_FOR_axi_addr_gen_cocotb_test
+
+cocotb_test_suite(
+    name = "axi_addr_gen_cocotb_test",
+    simulators = [
+        "verilator",
+    ],
+    testcases = AXI_ADDR_GEN_TESTCASES,
+    testcases_vname = "AXI_ADDR_GEN_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "AxiAddressGenerator",
+        "test_module": ["axi_addr_gen_cocotb_test.py"],
+        "default_testcase_size": "small",
+        "size": "medium",
+        "deps": [
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        "waves": True,
+    },
+    verilator_model = "//hdl/chisel/src/bus:axi_addr_gen_model",
+)

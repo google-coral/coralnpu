@@ -18,21 +18,24 @@ import chisel3._
 import chisel3.simulator.scalatest.ChiselSim
 import org.scalatest.freespec.AnyFreeSpec
 
-class CoreAxiCSRSpec extends AnyFreeSpec with ChiselSim {
+class CoreTlulAxiCSRSpec extends AnyFreeSpec with ChiselSim {
   var p = new Parameters
+  // The original fabric-based design used relative (offset) addresses.
+  // Since we removed the fabric and migrated to TL-UL, we must now use absolute addresses.
+  p.m = MemoryRegions.default
 
   "Initialization" in {
-    simulate(new CoreAxiCSR(p)) { dut =>
+    simulate(new CoreTlulAxiCSR(p)) { dut =>
       dut.io.axi.read.addr.ready.expect(1)
       dut.io.axi.read.data.valid.expect(0)
-      dut.io.axi.write.addr.ready.expect(1)
-      dut.io.axi.write.data.ready.expect(1)
+      dut.io.axi.write.addr.ready.expect(0)
+      dut.io.axi.write.data.ready.expect(0)
       dut.io.axi.write.resp.valid.expect(0)
     }
   }
 
   "Read" in {
-    simulate(new CoreAxiCSR(p)) { dut =>
+    simulate(new CoreTlulAxiCSR(p)) { dut =>
       dut.io.internal.poke(false.B)
       dut.io.halted.poke(false.B)
       dut.io.fault.poke(false.B)
@@ -40,7 +43,7 @@ class CoreAxiCSRSpec extends AnyFreeSpec with ChiselSim {
 
       // Send read request
       dut.io.axi.read.addr.valid.poke(true.B)
-      dut.io.axi.read.addr.bits.addr.poke(0x100.U)
+      dut.io.axi.read.addr.bits.addr.poke(0x30100.U)
       dut.io.axi.read.addr.ready.expect(1)
       dut.clock.step()
       dut.io.axi.read.addr.valid.poke(false.B)
@@ -63,10 +66,13 @@ class CoreAxiCSRSpec extends AnyFreeSpec with ChiselSim {
   }
 
   "Write" in {
-    simulate(new CoreAxiCSR(p)) { dut =>
+    simulate(new CoreTlulAxiCSR(p)) { dut =>
       dut.io.internal.poke(false.B)
       dut.io.halted.poke(false.B)
       dut.io.fault.poke(false.B)
+
+      // Step once to allow bootAddrCapture to transition to false before we can write to pcStart.
+      dut.clock.step()
 
       // Check initial values.
       dut.io.cg.expect(1)
@@ -75,14 +81,16 @@ class CoreAxiCSRSpec extends AnyFreeSpec with ChiselSim {
 
       // Configure write address and write data
       dut.io.axi.write.addr.valid.poke(true.B)
-      dut.io.axi.write.addr.bits.addr.poke(0x4)
+      dut.io.axi.write.addr.bits.addr.poke(0x30004.U)
       dut.io.axi.write.addr.bits.len.poke(0.U)
       dut.io.axi.write.addr.bits.size.poke(2.U)
-      dut.io.axi.write.addr.ready.expect(1)
       dut.io.axi.write.data.bits.data.poke((BigInt(0x20000000) << 32).U)
       dut.io.axi.write.data.bits.strb.poke(0xff00.U)
       dut.io.axi.write.data.bits.last.poke(true.B)
       dut.io.axi.write.data.valid.poke(true.B)
+
+      // Expect readies after both valid signals are poked
+      dut.io.axi.write.addr.ready.expect(1)
       dut.io.axi.write.data.ready.expect(1)
       dut.clock.step()
       dut.io.axi.write.addr.valid.poke(false.B)
@@ -112,7 +120,7 @@ class CoreAxiCSRSpec extends AnyFreeSpec with ChiselSim {
 
       // Check write result via AXI, as well
       dut.io.axi.read.addr.valid.poke(true.B)
-      dut.io.axi.read.addr.bits.addr.poke(0x4)
+      dut.io.axi.read.addr.bits.addr.poke(0x30004.U)
       dut.io.axi.read.addr.bits.size.poke(2.U)
       dut.io.axi.read.addr.bits.len.poke(0.U)
       while (dut.io.axi.read.addr.ready.peek().litValue != 1) {
@@ -138,10 +146,13 @@ class CoreAxiCSRSpec extends AnyFreeSpec with ChiselSim {
   }
 
   "WriteInvalid" in {
-    simulate(new CoreAxiCSR(p)) { dut =>
+    simulate(new CoreTlulAxiCSR(p)) { dut =>
       dut.io.internal.poke(false.B)
       dut.io.halted.poke(false.B)
       dut.io.fault.poke(false.B)
+
+      // Step once to allow bootAddrCapture to transition to false before we can write to pcStart.
+      dut.clock.step()
 
       // Check initial values.
       dut.io.cg.expect(1)
@@ -150,14 +161,16 @@ class CoreAxiCSRSpec extends AnyFreeSpec with ChiselSim {
 
       // Configure write address and write data
       dut.io.axi.write.addr.valid.poke(true.B)
-      dut.io.axi.write.addr.bits.addr.poke(0x104)
+      dut.io.axi.write.addr.bits.addr.poke(0x30104.U)
       dut.io.axi.write.addr.bits.len.poke(0.U)
       dut.io.axi.write.addr.bits.size.poke(2.U)
-      dut.io.axi.write.addr.ready.expect(1)
       dut.io.axi.write.data.bits.data.poke((BigInt(0x20000000) << 32).U)
       dut.io.axi.write.data.bits.strb.poke(0xff00.U)
       dut.io.axi.write.data.bits.last.poke(true.B)
       dut.io.axi.write.data.valid.poke(true.B)
+
+      // Expect readies after both valid signals are poked
+      dut.io.axi.write.addr.ready.expect(1)
       dut.io.axi.write.data.ready.expect(1)
       dut.clock.step()
       dut.io.axi.write.addr.valid.poke(false.B)

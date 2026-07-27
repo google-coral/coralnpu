@@ -31,6 +31,9 @@ chisel_library(
     srcs = [
         "Axi.scala",
         "Axi2TLUL.scala",
+        "AxiAddressGenerator.scala",
+        "AxiRead2TLUL.scala",
+        "AxiWrite2TLUL.scala",
         "Clint.scala",
         "DmaEngine.scala",
         "GPIO.scala",
@@ -81,6 +84,27 @@ chisel_cc_library(
     chisel_lib = ":bus",
     emit_class = "bus.EmitAxi2TLUL",
     module_name = "Axi2TLUL",
+)
+
+chisel_cc_library(
+    name = "axi_read2tlul_cc_library",
+    chisel_lib = ":bus",
+    emit_class = "bus.EmitAxiRead2TLUL",
+    module_name = "AxiRead2TLUL",
+)
+
+chisel_cc_library(
+    name = "axi_write2tlul_cc_library",
+    chisel_lib = ":bus",
+    emit_class = "bus.EmitAxiWrite2TLUL",
+    module_name = "AxiWrite2TLUL",
+)
+
+chisel_cc_library(
+    name = "axi_addr_gen_cc_library",
+    chisel_lib = ":bus",
+    emit_class = "bus.EmitAxiAddressGenerator",
+    module_name = "AxiAddressGenerator",
 )
 
 chisel_cc_library(
@@ -177,6 +201,14 @@ verilator_cocotb_model(
     hdl_toplevel = "Axi2TLUL",
     trace = True,
     verilog_source = "//hdl/chisel/src/bus:Axi2TLUL.sv",
+)
+
+verilator_cocotb_model(
+    name = "axi_addr_gen_model",
+    cflags = VERILATOR_BUILD_ARGS,
+    hdl_toplevel = "AxiAddressGenerator",
+    trace = True,
+    verilog_source = "//hdl/chisel/src/bus:AxiAddressGenerator.sv",
 )
 
 verilator_cocotb_model(
