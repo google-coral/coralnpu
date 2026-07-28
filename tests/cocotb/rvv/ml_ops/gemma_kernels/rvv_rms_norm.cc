@@ -12,46 +12,50 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <riscv_vector.h>
-
 #include <cmath>
-#include <cstdint>
 
-// Implements the RMS Normalization layer for Gemma.
-// Mathematically equivalent to: x * rsqrt(mean(x^2) + eps) * (1.0 + weight)
-// Reference PyTorch implementation:
-// https://github.com/google/gemma_pytorch/blob/main/gemma/model.py#L179
-extern "C" void RmsNormF(size_t seq_len, size_t hidden_size, float epsilon,
-                         const float* input, const float* weight,
-                         float* output) {
-  size_t vlmax = __riscv_vsetvlmax_e32m4();
+#include "rvv_common_vec.h"
+
+// =================================================================
+// Generic RMS Normalization Implementation
+//
+// NOTE: CoralNPU / RVV lacks native non-widening BF16 arithmetic instructions
+// for elementwise transcendental and normalization operations.
+// Therefore, BF16 tensors are widened to FP32 during vector load (vfwcvtbf16_f_f_v_f32m8),
+// computed in FP32 vector registers, and narrowed back to BF16 on vector store
+// (vfncvtbf16_f_f_w_bf16m4).
+// =================================================================
+template <typename T>
+inline void rvv_rms_norm_impl(size_t seq_len, size_t hidden_size, float epsilon,
+                              const T *__restrict__ input, const T *__restrict__ weight,
+                              T *__restrict__ output) {
   vfloat32m1_t vzero_m1 =
       __riscv_vfmv_v_f_f32m1(0.0f, __riscv_vsetvlmax_e32m1());
+  size_t vlmax_f32 = __riscv_vsetvlmax_e32m8();
 
   for (size_t s = 0; s < seq_len; ++s) {
-    const float* token_in = input + (s * hidden_size);
-    float* token_out = output + (s * hidden_size);
+    const T *token_in = input + (s * hidden_size);
+    T *token_out      = output + (s * hidden_size);
 
     // -------------------------------------------------------------
-    // PASS 1: Calculate Sum of Squares (Reduction)
+    // PASS 1: Calculate Sum of Squares (Reduction in FP32)
     // -------------------------------------------------------------
-    vfloat32m4_t vacc = __riscv_vfmv_v_f_f32m4(0.0f, vlmax);
+    vfloat32m8_t vacc = __riscv_vfmv_v_f_f32m8(0.0f, vlmax_f32);
 
     size_t k = hidden_size;
-    const float* x_ptr = token_in;
+    const T *x_ptr = token_in;
 
-    while (k) {
-      size_t vl = __riscv_vsetvl_e32m4(k);
-
-      vfloat32m4_t vx = __riscv_vle32_v_f32m4(x_ptr, vl);
+    while (k > 0) {
+      size_t vl       = __riscv_vsetvl_e32m8(k);
+      vfloat32m8_t vx = rvv_load_vec(x_ptr, vl);
+      vacc            = __riscv_vfmacc_vv_f32m8(vacc, vx, vx, vl);
       x_ptr += vl;
-
-      vacc = __riscv_vfmacc_vv_f32m4_tu(vacc, vx, vx, vl);
       k -= vl;
     }
-    vfloat32m1_t vred = __riscv_vfredusum_vs_f32m4_f32m1(vacc, vzero_m1, vlmax);
+
+    vfloat32m1_t vred = __riscv_vfredusum_vs_f32m8_f32m1(vacc, vzero_m1, vlmax_f32);
     float sum_squares = __riscv_vfmv_f_s_f32m1_f32(vred);
-    float rms = sum_squares / hidden_size;
+    float rms         = sum_squares / static_cast<float>(hidden_size);
     float sqrt_val = std::sqrt(rms + epsilon);
     float inv_rms = 1.0f / sqrt_val;
 
@@ -60,25 +64,41 @@ extern "C" void RmsNormF(size_t seq_len, size_t hidden_size, float epsilon,
     // -------------------------------------------------------------
     k = hidden_size;
     x_ptr = token_in;
-    const float* w_ptr = weight;
-    float* out_ptr = token_out;
+    const T *w_ptr = weight;
+    T *out_ptr     = token_out;
 
-    while (k) {
-      size_t vl = __riscv_vsetvl_e32m4(k);
+    while (k > 0) {
+      size_t vl = __riscv_vsetvl_e32m8(k);
 
-      vfloat32m4_t vx = __riscv_vle32_v_f32m4(x_ptr, vl);
+      vfloat32m8_t vx = rvv_load_vec(x_ptr, vl);
+      vfloat32m8_t vw = rvv_load_vec(w_ptr, vl);
+
+      vfloat32m8_t vx_norm = __riscv_vfmul_vf_f32m8(vx, inv_rms, vl);
+      vfloat32m8_t vy      = __riscv_vfmacc_vv_f32m8(vx_norm, vx_norm, vw, vl);
+
+      rvv_store_vec(out_ptr, vy, vl);
+
       x_ptr += vl;
-
-      vfloat32m4_t vw = __riscv_vle32_v_f32m4(w_ptr, vl);
       w_ptr += vl;
-
-      vfloat32m4_t vx_norm = __riscv_vfmul_vf_f32m4(vx, inv_rms, vl);
-      vfloat32m4_t vy = __riscv_vfmacc_vv_f32m4(vx_norm, vx_norm, vw, vl);
-
-      __riscv_vse32_v_f32m4(out_ptr, vy, vl);
       out_ptr += vl;
-
       k -= vl;
     }
   }
+}
+
+// =================================================================
+// C Entry Points
+// =================================================================
+extern "C" {
+
+void RmsNormF(size_t seq_len, size_t hidden_size, float epsilon, const float *__restrict__ input,
+              const float *__restrict__ weight, float *__restrict__ output) {
+  rvv_rms_norm_impl<float>(seq_len, hidden_size, epsilon, input, weight, output);
+}
+
+void RmsNormBf16(size_t seq_len, size_t hidden_size, float epsilon,
+                 const __bf16 *__restrict__ input, const __bf16 *__restrict__ weight,
+                 __bf16 *__restrict__ output) {
+  rvv_rms_norm_impl<__bf16>(seq_len, hidden_size, epsilon, input, weight, output);
+}
 }

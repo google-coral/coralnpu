@@ -12,32 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
 #include "sw/utils/utils.h"
 
 extern "C" {
-void rvv_residual_add_f32(const float* A, const float* B, float* Y,
-                          size_t total_elements);
+void rvv_tanh_gelu_mul_bf16(const __bf16 *gate, const __bf16 *up, __bf16 *output,
+                            size_t total_elements);
 
-#define MAX_ELEMENTS (256 * 640)
+#define MAX_ELEMENTS (16 * 1024)
 
-float A[MAX_ELEMENTS] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
-float B[MAX_ELEMENTS] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
-float Y[MAX_ELEMENTS] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
+__bf16 Gate[MAX_ELEMENTS] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
+__bf16 Up[MAX_ELEMENTS] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
+__bf16 Output[MAX_ELEMENTS] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
 
 uint32_t active_elements __attribute__((section(".data"), used, retain));
 uint32_t cycle_count __attribute__((section(".data"), used, retain));
 }
 
 int main() {
-  uint32_t start_cycles = mcycle_read();
+  uint32_t elements = active_elements;
+  if (elements > MAX_ELEMENTS) {
+    elements = MAX_ELEMENTS;
+  }
 
-  rvv_residual_add_f32(A, B, Y, active_elements);
+  uint64_t start = mcycle_read();
+  rvv_tanh_gelu_mul_bf16(Gate, Up, Output, elements);
+  uint64_t end = mcycle_read();
 
-  uint32_t end_cycles = mcycle_read();
-  cycle_count = end_cycles - start_cycles;
-
+  cycle_count = (uint32_t)(end - start);
   return 0;
 }

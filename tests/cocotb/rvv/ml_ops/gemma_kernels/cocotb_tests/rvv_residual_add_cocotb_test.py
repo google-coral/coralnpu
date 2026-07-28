@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Test suite for RVV Gemma Kernels using Cocotb."""
+"""Unified Test suite for FP32 & BFloat16 RVV Gemma Residual Addition Kernels using Cocotb."""
 
 import os
 import cocotb
@@ -24,9 +24,9 @@ from sw.utils.metrics import log_vector_metrics
 
 @cocotb.test()
 async def core_mini_rvv_residual_add_test(dut):
+    """FP32 Residual Add Test."""
     r = runfiles.Create()
 
-    # We need highmem because Gemma 3 270M prefill shape (256x640) takes ~1.9MB across 3 tensors
     fixture = await Fixture.Create(
         dut,
         highmem=True,
@@ -39,12 +39,6 @@ async def core_mini_rvv_residual_add_test(dut):
         f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
     )
 
-    if not elf_path or not os.path.exists(elf_path):
-        dut._log.info(
-            f"Skipping test because ELF not found in sandbox: {elf_name}"
-        )
-        return
-
     dut._log.info(f"Loading ELF: {elf_path}")
     await fixture.load_elf_and_lookup_symbols(
         elf_path, ["A", "B", "Y", "active_elements", "cycle_count"]
@@ -53,14 +47,19 @@ async def core_mini_rvv_residual_add_test(dut):
     await fixture.core_mini_axi.reset()
 
     test_shapes = [
-        (1, 640),  # Decode Phase
-        (256, 640),  # Prefill Phase
+        (11, 640),
+        (1, 640),
+        (5, 643),
+        (1, 2048),
+        (2, 2048),
     ]
 
     rng = np.random.default_rng(seed=42)
 
     for token_count, hidden_size in test_shapes:
-        dut._log.info(f"\nRunning shape: [{token_count}, {hidden_size}]")
+        dut._log.info(
+            f"\nRunning FP32 Residual Add shape: [{token_count}, {hidden_size}]"
+        )
         total_elements = token_count * hidden_size
 
         A_data = rng.uniform(-1.0, 1.0,
@@ -75,7 +74,6 @@ async def core_mini_rvv_residual_add_test(dut):
         )
         await fixture.write('A', A_data.flatten())
         await fixture.write('B', B_data.flatten())
-
         await fixture.write('Y', np.zeros_like(expected_output).flatten())
 
         sim_cycles = await fixture.run_to_halt(timeout_cycles=20000000)
@@ -93,6 +91,86 @@ async def core_mini_rvv_residual_add_test(dut):
         )
 
         log_vector_metrics(
-            dut, f"Residual Add Shape: [{token_count}, {hidden_size}]",
+            dut, f"FP32 Residual Add Shape: [{token_count}, {hidden_size}]",
+            npu_cycles, total_elements
+        )
+
+
+@cocotb.test()
+async def core_mini_rvv_bf16_residual_add_test(dut):
+    """BFloat16 Residual Add Test using ml_dtypes."""
+    import ml_dtypes
+
+    r = runfiles.Create()
+    fixture = await Fixture.Create(
+        dut,
+        highmem=True,
+        ext_mem_base_addr=0x80000000,
+        ext_mem_size=32 * 1024 * 1024
+    )
+
+    elf_name = "rvv_bf16_residual_add.elf"
+    elf_path = r.Rlocation(
+        f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
+    )
+
+    dut._log.info(f"Loading ELF: {elf_path}")
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path, ["A", "B", "Y", "active_elements", "cycle_count"]
+    )
+
+    await fixture.core_mini_axi.reset()
+
+    test_shapes = [
+        (11, 640),
+        (1, 640),
+        (5, 643),
+        (1, 2048),
+        (2, 2048),
+    ]
+
+    rng = np.random.default_rng(seed=42)
+
+    for seq_len, hidden_size in test_shapes:
+        total_elements = seq_len * hidden_size
+        dut._log.info(
+            f"\nRunning BF16 Residual Add shape: {seq_len}x{hidden_size} ({total_elements} elements)"
+        )
+
+        a_fp32 = rng.uniform(-5.0, 5.0, total_elements).astype(np.float32)
+        b_fp32 = rng.uniform(-5.0, 5.0, total_elements).astype(np.float32)
+
+        a_bf16 = a_fp32.astype(ml_dtypes.bfloat16)
+        b_bf16 = b_fp32.astype(ml_dtypes.bfloat16)
+
+        expected_fp32 = a_bf16.astype(np.float32) + b_bf16.astype(np.float32)
+
+        a_u16 = a_bf16.view(np.uint16)
+        b_u16 = b_bf16.view(np.uint16)
+
+        await fixture.write(
+            'active_elements', np.array([total_elements], dtype=np.uint32)
+        )
+
+        await fixture.write('A', a_u16)
+        await fixture.write('B', b_u16)
+        await fixture.write('Y', np.zeros(total_elements, dtype=np.uint16))
+
+        await fixture.run_to_halt(timeout_cycles=10000000)
+
+        npu_cycles = int((await fixture.read('cycle_count',
+                                             4)).view(dtype=np.uint32)[0])
+
+        output_bytes = total_elements * 2
+        actual_u16 = (await fixture.read('Y',
+                                         output_bytes)).view(dtype=np.uint16)
+        actual_fp32 = actual_u16.view(ml_dtypes.bfloat16).astype(np.float32)
+
+        np.testing.assert_allclose(
+            actual_fp32, expected_fp32, rtol=1e-2, atol=1e-2
+        )
+
+        log_vector_metrics(
+            dut, f"BF16 Residual Add Shape: {seq_len}x{hidden_size}",
             npu_cycles, total_elements
         )

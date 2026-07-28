@@ -31,31 +31,27 @@ void rvv_gemv_1d_bf16(const __bf16 *__restrict__ A, const __bf16 *__restrict__ B
 
 extern "C" {
 // Inputs in ExtMem (.ddr_data)
-uint16_t lhs_input[MAX_M * MAX_K] __attribute__((section(".ddr_data")))
-__attribute__((aligned(16)));
+__bf16 lhs_input[MAX_M * MAX_K] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
 
-uint16_t rhs_input[MAX_K * MAX_N] __attribute__((section(".ddr_data")))
-__attribute__((aligned(16)));
+__bf16 rhs_input[MAX_K * MAX_N] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
 
-uint16_t result_output[MAX_M * MAX_N] __attribute__((section(".ddr_data")))
-__attribute__((aligned(16)));
+__bf16 result_output[MAX_M * MAX_N]
+    __attribute__((section(".ddr_data"), used, retain, aligned(16)));
 
-volatile uint32_t active_m __attribute__((section(".data")));
-volatile uint32_t active_k __attribute__((section(".data")));
-volatile uint32_t active_n __attribute__((section(".data")));
+uint32_t active_m __attribute__((section(".data"), used, retain));
+uint32_t active_k __attribute__((section(".data"), used, retain));
+uint32_t active_n __attribute__((section(".data"), used, retain));
 
-volatile uint32_t cycle_count __attribute__((section(".data")));
+uint32_t cycle_count __attribute__((section(".data"), used, retain));
 }
 
 int main() {
   uint32_t start_cycles = mcycle_read();
 
   if (active_m == 1) {
-    rvv_gemv_1d_bf16((const __bf16 *)lhs_input, (const __bf16 *)rhs_input, (__bf16 *)result_output,
-                     active_k, active_n);
+    rvv_gemv_1d_bf16(lhs_input, rhs_input, result_output, active_k, active_n);
   } else {
-    rvv_tiled_matmul_2d_bf16((const __bf16 *)lhs_input, (const __bf16 *)rhs_input,
-                             (__bf16 *)result_output, active_m, active_k, active_n);
+    rvv_tiled_matmul_2d_bf16(lhs_input, rhs_input, result_output, active_m, active_k, active_n);
   }
 
   uint32_t end_cycles = mcycle_read();

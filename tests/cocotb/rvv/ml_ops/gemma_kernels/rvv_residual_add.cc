@@ -12,40 +12,60 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <riscv_vector.h>
-#include <stddef.h>
-#include <stdint.h>
+#include "rvv_common_vec.h"
 
-extern "C" {
-void rvv_residual_add_f32(const float* A, const float* B, float* Y,
-                          size_t total_elements) {
-  size_t i = 0;
+// NOTE: CoralNPU / RVV lacks native non-widening BF16 arithmetic instructions
+// for elementwise transcendental and normalization operations.
+// Therefore, BF16 tensors are widened to FP32 during vector load (vfwcvtbf16_f_f_v_f32m8),
+// computed in FP32 vector registers, and narrowed back to BF16 on vector store
+// (vfncvtbf16_f_f_w_bf16m4).
 
-  while (total_elements - i >= 2) {
-    size_t vl = __riscv_vsetvl_e32m4((total_elements - i) / 2);
+template <typename T>
+inline void rvv_residual_add_impl(const T *__restrict__ A, const T *__restrict__ B,
+                                  T *__restrict__ Y, size_t total_elements) {
+  size_t i      = 0;
+  size_t vl_max = __riscv_vsetvlmax_e32m8();
 
-    vfloat32m4_t va1 = __riscv_vle32_v_f32m4(&A[i], vl);
-    vfloat32m4_t vb1 = __riscv_vle32_v_f32m4(&B[i], vl);
+  // Fast path: Process 2x VLMAX chunks with unrolled pipelined loads
+  while (total_elements - i >= 2 * vl_max) {
+    vfloat32m8_t va1 = rvv_load_vec(&A[i], vl_max);
+    vfloat32m8_t vb1 = rvv_load_vec(&B[i], vl_max);
 
-    vfloat32m4_t va2 = __riscv_vle32_v_f32m4(&A[i + vl], vl);
-    vfloat32m4_t vb2 = __riscv_vle32_v_f32m4(&B[i + vl], vl);
+    vfloat32m8_t va2 = rvv_load_vec(&A[i + vl_max], vl_max);
+    vfloat32m8_t vb2 = rvv_load_vec(&B[i + vl_max], vl_max);
 
-    vfloat32m4_t vy1 = __riscv_vfadd_vv_f32m4(va1, vb1, vl);
-    vfloat32m4_t vy2 = __riscv_vfadd_vv_f32m4(va2, vb2, vl);
+    vfloat32m8_t vy1 = __riscv_vfadd_vv_f32m8(va1, vb1, vl_max);
+    vfloat32m8_t vy2 = __riscv_vfadd_vv_f32m8(va2, vb2, vl_max);
 
-    __riscv_vse32_v_f32m4(&Y[i], vy1, vl);
-    __riscv_vse32_v_f32m4(&Y[i + vl], vy2, vl);
+    rvv_store_vec(&Y[i], vy1, vl_max);
+    rvv_store_vec(&Y[i + vl_max], vy2, vl_max);
 
-    i += 2 * vl;
+    i += 2 * vl_max;
   }
 
+  // Tail loop for remaining elements
   while (i < total_elements) {
     size_t vl = __riscv_vsetvl_e32m8(total_elements - i);
-    vfloat32m8_t va = __riscv_vle32_v_f32m8(&A[i], vl);
-    vfloat32m8_t vb = __riscv_vle32_v_f32m8(&B[i], vl);
+    vfloat32m8_t va = rvv_load_vec(&A[i], vl);
+    vfloat32m8_t vb = rvv_load_vec(&B[i], vl);
+
     vfloat32m8_t vy = __riscv_vfadd_vv_f32m8(va, vb, vl);
-    __riscv_vse32_v_f32m8(&Y[i], vy, vl);
+
+    rvv_store_vec(&Y[i], vy, vl);
+
     i += vl;
   }
+}
+
+extern "C" {
+
+void rvv_residual_add_f32(const float *__restrict__ A, const float *__restrict__ B,
+                          float *__restrict__ Y, size_t total_elements) {
+  rvv_residual_add_impl<float>(A, B, Y, total_elements);
+}
+
+void rvv_residual_add_bf16(const __bf16 *__restrict__ A, const __bf16 *__restrict__ B,
+                           __bf16 *__restrict__ Y, size_t total_elements) {
+  rvv_residual_add_impl<__bf16>(A, B, Y, total_elements);
 }
 }

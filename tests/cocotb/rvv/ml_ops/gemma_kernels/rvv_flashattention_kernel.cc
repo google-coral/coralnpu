@@ -1,4 +1,3 @@
-
 // Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,98 +11,275 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include <math.h>
+
 #include <riscv_vector.h>
-#include <stddef.h>
-#include <stdint.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+
+#include "rvv_common_vec.h"
+
+// -----------------------------------------------------------------------------
+// Zero-Spill Vectorized exp(x) approximation for float32 (m8)
+// Uses scalar _vf / _vx operands and exact Taylor-Horner polynomial evaluation
+// -----------------------------------------------------------------------------
 inline vfloat32m8_t rvv_exp_f32m8(vfloat32m8_t x, size_t vl) {
-  vfloat32m8_t v_log2e = __riscv_vfmv_v_f_f32m8(1.44269504f, vl);
-  vfloat32m8_t v_ln2 = __riscv_vfmv_v_f_f32m8(0.69314718f, vl);
-  vfloat32m8_t v_one = __riscv_vfmv_v_f_f32m8(1.0f, vl);
-  vfloat32m8_t v_min   = __riscv_vfmv_v_f_f32m8(-88.0f, vl);
-  x = __riscv_vfmax_vv_f32m8(x, v_min, vl);
-  vfloat32m8_t y = __riscv_vfmul_vv_f32m8(x, v_log2e, vl);
-  vint32m8_t i_int = __riscv_vfcvt_x_f_v_i32m8(y, vl);
+  x                    = __riscv_vfmax_vf_f32m8(x, -88.0f, vl);
+  vfloat32m8_t y       = __riscv_vfmul_vf_f32m8(x, 1.4426950408889634f, vl);
+  vint32m8_t i_int     = __riscv_vfcvt_x_f_v_i32m8(y, vl);
   vfloat32m8_t i_float = __riscv_vfcvt_f_x_v_f32m8(i_int, vl);
-  vfloat32m8_t i_ln2 = __riscv_vfmul_vv_f32m8(i_float, v_ln2, vl);
+  vfloat32m8_t i_ln2   = __riscv_vfmul_vf_f32m8(i_float, 0.6931471805599453f, vl);
   vfloat32m8_t f       = __riscv_vfsub_vv_f32m8(x, i_ln2, vl);
-  vfloat32m8_t p;
-  vfloat32m8_t c2 = __riscv_vfmv_v_f_f32m8(0.5f, vl);
-  vfloat32m8_t c3 = __riscv_vfmv_v_f_f32m8(0.16666667f, vl);
-  p = __riscv_vfmacc_vv_f32m8(c2, f, c3, vl);
-  p = __riscv_vfmacc_vv_f32m8(v_one, f, p, vl);
+
+  vfloat32m8_t v_one   = __riscv_vfmv_v_f_f32m8(1.0f, vl);
+  vfloat32m8_t p       = __riscv_vfmul_vf_f32m8(f, 0.16666667f, vl);
+  p                    = __riscv_vfadd_vf_f32m8(p, 0.5f, vl);
   p                    = __riscv_vfmacc_vv_f32m8(v_one, f, p, vl);
-  vint32m8_t bias = __riscv_vmv_v_x_i32m8(127, vl);
-  vint32m8_t exp_bits = __riscv_vadd_vv_i32m8(i_int, bias, vl);
-  exp_bits = __riscv_vsll_vx_i32m8(exp_bits, 23, vl);
+  p                    = __riscv_vfmacc_vv_f32m8(v_one, f, p, vl);
+
+  vint32m8_t exp_bits  = __riscv_vadd_vx_i32m8(i_int, 127, vl);
+  exp_bits             = __riscv_vsll_vx_i32m8(exp_bits, 23, vl);
   vfloat32m8_t v_scale = __riscv_vreinterpret_v_i32m8_f32m8(exp_bits);
   return __riscv_vfmul_vv_f32m8(p, v_scale, vl);
 }
-extern "C" void FlashAttentionRVV(const float *Q, const float *K, const float *V, float *O,
-                                  size_t q_heads, size_t kv_heads, size_t q_seq_len,
-                                  size_t kv_seq_len, size_t dim) {
-  float scale = 1.0f / sqrtf((float)dim);
-  size_t vlmax_m1 = __riscv_vsetvlmax_e32m1();
-  size_t vl = __riscv_vsetvl_e32m8(dim);
-  auto v_zero = __riscv_vfmv_v_f_f32m1(0.0f, vlmax_m1);
-  size_t q_head_stride  = q_seq_len * dim;
-  size_t kv_head_stride = kv_seq_len * dim;
-  // Outer loop iterating over distinct query heads
-  for (size_t h = 0; h < q_heads; h++) {
-    const float *Q_head = Q + (h * q_head_stride);
-    size_t kv_h         = (kv_heads > 0) ? (h % kv_heads) : 0;
-    const float *K_head = K + (kv_h * kv_head_stride);
-    const float *V_head = V + (kv_h * kv_head_stride);
-    float *O_head       = O + (h * q_head_stride);
-    for (size_t q_idx = 0; q_idx < q_seq_len; q_idx++) {
+
+// NOTE: CoralNPU / RVV lacks native non-widening BF16 arithmetic instructions
+// for elementwise transcendental and normalization operations.
+// Therefore, BF16 tensors are widened to FP32 during vector load (vfwcvtbf16_f_f_v_f32m8),
+// computed in FP32 vector registers, and narrowed back to BF16 on vector store
+// (vfncvtbf16_f_f_w_bf16m4).
+
+template <typename T>
+inline void FlashAttentionRVV_impl(size_t Q_heads, size_t KV_heads, size_t Q_len, size_t KV_len,
+                                   size_t Dim, const T *__restrict__ Q, const T *__restrict__ K,
+                                   const T *__restrict__ V, T *__restrict__ Output) {
+  float scale           = 1.0f / std::sqrt(static_cast<float>(Dim));
+  vfloat32m1_t vzero_m1 = __riscv_vfmv_v_f_f32m1(0.0f, __riscv_vsetvlmax_e32m1());
+
+  for (size_t qh = 0; qh < Q_heads; ++qh) {
+    size_t kv_h     = (KV_heads > 0) ? (qh % KV_heads) : 0;
+    const T *k_base = K + kv_h * KV_len * Dim;
+    const T *v_base = V + kv_h * KV_len * Dim;
+
+    for (size_t qi = 0; qi < Q_len; ++qi) {
       float S_buf[1024];
-      const float *q_row = Q_head + (q_idx * dim);
-      auto q_vec         = __riscv_vle32_v_f32m8(q_row, vl);
-      // Rapid Dot Products (Unrolled Loop)
-      size_t kv_idx = 0;
-      for (; kv_idx + 1 < kv_seq_len; kv_idx += 2) {
-        auto k_vec0 = __riscv_vle32_v_f32m8(K_head + (kv_idx * dim), vl);
-        auto k_vec1 = __riscv_vle32_v_f32m8(K_head + ((kv_idx + 1) * dim), vl);
-        auto vacc0 = __riscv_vfmul_vv_f32m8(q_vec, k_vec0, vl);
-        auto vacc1  = __riscv_vfmul_vv_f32m8(q_vec, k_vec1, vl);
-        float S0 = __riscv_vfmv_f_s_f32m1_f32(
-            __riscv_vfredusum_vs_f32m8_f32m1(vacc0, v_zero, vl));
-        float S1 = __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m8_f32m1(vacc1, v_zero, vl));
-        S_buf[kv_idx] = S0 * scale;
-        S_buf[kv_idx + 1] = S1 * scale;
+      const T *q_row = Q + (qh * Q_len + qi) * Dim;
+      T *out_row     = Output + (qh * Q_len + qi) * Dim;
+
+      if (Dim <= __riscv_vsetvlmax_e32m8()) {
+        // ---------------------------------------------------------------------
+        // FAST REGISTER-PINNED PATH: Dim <= VLMAX
+        // ---------------------------------------------------------------------
+        size_t vl = __riscv_vsetvl_e32m8(Dim);
+
+        // Pre-scale Query vector ONCE (0 multiplies inside the KV loop!)
+        auto q_vec = rvv_load_vec(q_row, vl);
+        q_vec      = __riscv_vfmul_vf_f32m8(q_vec, scale, vl);
+
+        // 1. 2x Unrolled Dot Products (k_vec0 in v8..v15, k_vec1 in v16..v23)
+        size_t kj = 0;
+        for (; kj + 1 < KV_len; kj += 2) {
+          const T *k_row0 = k_base + kj * Dim;
+          const T *k_row1 = k_base + (kj + 1) * Dim;
+          auto vk0        = rvv_load_vec(k_row0, vl);
+          auto vk1        = rvv_load_vec(k_row1, vl);
+          auto vacc0      = __riscv_vfmul_vv_f32m8(q_vec, vk0, vl);
+          auto vacc1      = __riscv_vfmul_vv_f32m8(q_vec, vk1, vl);
+          float S0 =
+              __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m8_f32m1(vacc0, vzero_m1, vl));
+          float S1 =
+              __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m8_f32m1(vacc1, vzero_m1, vl));
+          S_buf[kj]     = S0;
+          S_buf[kj + 1] = S1;
+        }
+        for (; kj < KV_len; kj++) {
+          const T *k_row = k_base + kj * Dim;
+          auto vk        = rvv_load_vec(k_row, vl);
+          auto vacc      = __riscv_vfmul_vv_f32m8(q_vec, vk, vl);
+          float S =
+              __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m8_f32m1(vacc, vzero_m1, vl));
+          S_buf[kj] = S;
+        }
+
+        // 2. Vectorized Softmax over S_buf
+        vfloat32m1_t v_max = __riscv_vfmv_v_f_f32m1(-INFINITY, __riscv_vsetvlmax_e32m1());
+        for (size_t k = 0; k < KV_len;) {
+          size_t vl_s      = __riscv_vsetvl_e32m8(KV_len - k);
+          vfloat32m8_t v_S = __riscv_vle32_v_f32m8(S_buf + k, vl_s);
+          v_max            = __riscv_vfredmax_vs_f32m8_f32m1(v_S, v_max, vl_s);
+          k += vl_s;
+        }
+        float max_score = __riscv_vfmv_f_s_f32m1_f32(v_max);
+
+        vfloat32m1_t v_sum = __riscv_vfmv_v_f_f32m1(0.0f, __riscv_vsetvlmax_e32m1());
+        for (size_t k = 0; k < KV_len;) {
+          size_t vl_s      = __riscv_vsetvl_e32m8(KV_len - k);
+          vfloat32m8_t v_S = __riscv_vle32_v_f32m8(S_buf + k, vl_s);
+          v_S              = __riscv_vfsub_vf_f32m8(v_S, max_score, vl_s);
+          vfloat32m8_t v_P = rvv_exp_f32m8(v_S, vl_s);
+          __riscv_vse32_v_f32m8(S_buf + k, v_P, vl_s);
+          v_sum = __riscv_vfredusum_vs_f32m8_f32m1(v_P, v_sum, vl_s);
+          k += vl_s;
+        }
+        float sum_exp = __riscv_vfmv_f_s_f32m1_f32(v_sum);
+
+        float inv_sum = 1.0f / sum_exp;
+        for (size_t k = 0; k < KV_len;) {
+          size_t vl_s      = __riscv_vsetvl_e32m8(KV_len - k);
+          vfloat32m8_t v_P = __riscv_vle32_v_f32m8(S_buf + k, vl_s);
+          v_P              = __riscv_vfmul_vf_f32m8(v_P, inv_sum, vl_s);
+          __riscv_vse32_v_f32m8(S_buf + k, v_P, vl_s);
+          k += vl_s;
+        }
+
+        // 3. 2x Unrolled Pinned Accumulation: vo in v0..v7 across entire KV loop
+        auto v_o = __riscv_vfmv_v_f_f32m8(0.0f, vl);
+        kj       = 0;
+        for (; kj + 1 < KV_len; kj += 2) {
+          float p0        = S_buf[kj];
+          float p1        = S_buf[kj + 1];
+          const T *v_row0 = v_base + kj * Dim;
+          const T *v_row1 = v_base + (kj + 1) * Dim;
+          auto vv0        = rvv_load_vec(v_row0, vl);
+          auto vv1        = rvv_load_vec(v_row1, vl);
+          if (p0 != 0.0f)
+            v_o = __riscv_vfmacc_vf_f32m8(v_o, p0, vv0, vl);
+          if (p1 != 0.0f)
+            v_o = __riscv_vfmacc_vf_f32m8(v_o, p1, vv1, vl);
+        }
+        for (; kj < KV_len; kj++) {
+          float p_val = S_buf[kj];
+          if (p_val == 0.0f)
+            continue;
+          const T *v_row = v_base + kj * Dim;
+          auto vv        = rvv_load_vec(v_row, vl);
+          v_o            = __riscv_vfmacc_vf_f32m8(v_o, p_val, vv, vl);
+        }
+        // Single write to SRAM per row (0 intermediate SRAM loads/stores)
+        rvv_store_vec(out_row, v_o, vl);
+
+      } else {
+        // ---------------------------------------------------------------------
+        // UNIVERSAL STRIP-MINED PATH: Dim > VLMAX
+        // ---------------------------------------------------------------------
+        size_t kj = 0;
+        for (; kj + 1 < KV_len; kj += 2) {
+          const T *k_row0 = k_base + kj * Dim;
+          const T *k_row1 = k_base + (kj + 1) * Dim;
+          float dot0      = 0.0f;
+          float dot1      = 0.0f;
+          size_t d        = 0;
+          while (d < Dim) {
+            size_t vl  = __riscv_vsetvl_e32m8(Dim - d);
+            auto vq    = rvv_load_vec(q_row + d, vl);
+            auto vk0   = rvv_load_vec(k_row0 + d, vl);
+            auto vk1   = rvv_load_vec(k_row1 + d, vl);
+            auto vacc0 = __riscv_vfmul_vv_f32m8(vq, vk0, vl);
+            auto vacc1 = __riscv_vfmul_vv_f32m8(vq, vk1, vl);
+            dot0 +=
+                __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m8_f32m1(vacc0, vzero_m1, vl));
+            dot1 +=
+                __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m8_f32m1(vacc1, vzero_m1, vl));
+            d += vl;
+          }
+          S_buf[kj]     = dot0 * scale;
+          S_buf[kj + 1] = dot1 * scale;
+        }
+        for (; kj < KV_len; kj++) {
+          const T *k_row = k_base + kj * Dim;
+          float dot      = 0.0f;
+          size_t d       = 0;
+          while (d < Dim) {
+            size_t vl = __riscv_vsetvl_e32m8(Dim - d);
+            auto vq   = rvv_load_vec(q_row + d, vl);
+            auto vk   = rvv_load_vec(k_row + d, vl);
+            auto vacc = __riscv_vfmul_vv_f32m8(vq, vk, vl);
+            dot += __riscv_vfmv_f_s_f32m1_f32(__riscv_vfredusum_vs_f32m8_f32m1(vacc, vzero_m1, vl));
+            d += vl;
+          }
+          S_buf[kj] = dot * scale;
+        }
+
+        // 3-Pass Vectorized Softmax over S_buf
+        vfloat32m1_t v_max = __riscv_vfmv_v_f_f32m1(-INFINITY, __riscv_vsetvlmax_e32m1());
+        for (size_t k = 0; k < KV_len;) {
+          size_t vl_s      = __riscv_vsetvl_e32m8(KV_len - k);
+          vfloat32m8_t v_S = __riscv_vle32_v_f32m8(S_buf + k, vl_s);
+          v_max            = __riscv_vfredmax_vs_f32m8_f32m1(v_S, v_max, vl_s);
+          k += vl_s;
+        }
+        float max_score = __riscv_vfmv_f_s_f32m1_f32(v_max);
+
+        vfloat32m1_t v_sum = __riscv_vfmv_v_f_f32m1(0.0f, __riscv_vsetvlmax_e32m1());
+        for (size_t k = 0; k < KV_len;) {
+          size_t vl_s      = __riscv_vsetvl_e32m8(KV_len - k);
+          vfloat32m8_t v_S = __riscv_vle32_v_f32m8(S_buf + k, vl_s);
+          v_S              = __riscv_vfsub_vf_f32m8(v_S, max_score, vl_s);
+          vfloat32m8_t v_P = rvv_exp_f32m8(v_S, vl_s);
+          __riscv_vse32_v_f32m8(S_buf + k, v_P, vl_s);
+          v_sum = __riscv_vfredusum_vs_f32m8_f32m1(v_P, v_sum, vl_s);
+          k += vl_s;
+        }
+        float sum_exp = __riscv_vfmv_f_s_f32m1_f32(v_sum);
+
+        float inv_sum = 1.0f / sum_exp;
+        for (size_t k = 0; k < KV_len;) {
+          size_t vl_s      = __riscv_vsetvl_e32m8(KV_len - k);
+          vfloat32m8_t v_P = __riscv_vle32_v_f32m8(S_buf + k, vl_s);
+          v_P              = __riscv_vfmul_vf_f32m8(v_P, inv_sum, vl_s);
+          __riscv_vse32_v_f32m8(S_buf + k, v_P, vl_s);
+          k += vl_s;
+        }
+
+        // Loop-Interchanged 2x Unrolled Pinned Accumulator (0 intermediate SRAM stores)
+        for (size_t d_start = 0; d_start < Dim;) {
+          size_t vl       = __riscv_vsetvl_e32m8(Dim - d_start);
+          vfloat32m8_t vo = __riscv_vfmv_v_f_f32m8(0.0f, vl);
+
+          kj = 0;
+          for (; kj + 1 < KV_len; kj += 2) {
+            float p0        = S_buf[kj];
+            float p1        = S_buf[kj + 1];
+            const T *v_row0 = v_base + kj * Dim;
+            const T *v_row1 = v_base + (kj + 1) * Dim;
+            auto vv0        = rvv_load_vec(v_row0 + d_start, vl);
+            auto vv1        = rvv_load_vec(v_row1 + d_start, vl);
+            if (p0 != 0.0f)
+              vo = __riscv_vfmacc_vf_f32m8(vo, p0, vv0, vl);
+            if (p1 != 0.0f)
+              vo = __riscv_vfmacc_vf_f32m8(vo, p1, vv1, vl);
+          }
+          for (; kj < KV_len; kj++) {
+            float p_val = S_buf[kj];
+            if (p_val == 0.0f)
+              continue;
+            const T *v_row = v_base + kj * Dim;
+            auto vv        = rvv_load_vec(v_row + d_start, vl);
+            vo             = __riscv_vfmacc_vf_f32m8(vo, p_val, vv, vl);
+          }
+          rvv_store_vec(out_row + d_start, vo, vl);
+          d_start += vl;
+        }
       }
-      // Tail cleanup for odd lengths
-      for (; kv_idx < kv_seq_len; kv_idx++) {
-        auto k_vec = __riscv_vle32_v_f32m8(K_head + (kv_idx * dim), vl);
-        auto vacc = __riscv_vfmul_vv_f32m8(q_vec, k_vec, vl);
-        float S = __riscv_vfmv_f_s_f32m1_f32(
-            __riscv_vfredusum_vs_f32m8_f32m1(vacc, v_zero, vl));
-        S_buf[kv_idx] = S * scale;
-      }
-      // Vectorized Softmax
-      size_t vl_seq           = __riscv_vsetvl_e32m8(kv_seq_len);
-      vfloat32m8_t v_S        = __riscv_vle32_v_f32m8(S_buf, vl_seq);
-      vfloat32m1_t v_m_scalar = __riscv_vfredmax_vs_f32m8_f32m1(
-          v_S, __riscv_vfmv_v_f_f32m1(-INFINITY, vlmax_m1), vl_seq);
-      float m = __riscv_vfmv_f_s_f32m1_f32(v_m_scalar);
-      v_S                     = __riscv_vfsub_vf_f32m8(v_S, m, vl_seq);
-      vfloat32m8_t v_P        = rvv_exp_f32m8(v_S, vl_seq);
-      vfloat32m1_t v_d_scalar = __riscv_vfredusum_vs_f32m8_f32m1(
-          v_P, __riscv_vfmv_v_f_f32m1(0.0f, vlmax_m1), vl_seq);
-      float d_tally = __riscv_vfmv_f_s_f32m1_f32(v_d_scalar);
-      v_P = __riscv_vfdiv_vf_f32m8(v_P, d_tally, vl_seq);
-      __riscv_vse32_v_f32m8(S_buf, v_P, vl_seq);
-      // Register Accumulation
-      auto v_o = __riscv_vfmv_v_f_f32m8(0.0f, vl);
-      for (size_t kv_idx = 0; kv_idx < kv_seq_len; kv_idx++) {
-        float P_val = S_buf[kv_idx];
-        if (P_val == 0.0f)
-          continue;
-        auto v_v = __riscv_vle32_v_f32m8(V_head + (kv_idx * dim), vl);
-        v_o = __riscv_vfmacc_vf_f32m8(v_o, P_val, v_v, vl);
-      }
-      // Single final write to SRAM per row
-      __riscv_vse32_v_f32m8(O_head + (q_idx * dim), v_o, vl);
     }
   }
+}
+
+// =================================================================
+// C Entry Points
+// =================================================================
+extern "C" {
+
+void FlashAttentionRVV(size_t Q_heads, size_t KV_heads, size_t Q_len, size_t KV_len, size_t Dim,
+                       const float *Q, const float *K, const float *V, float *Output) {
+  FlashAttentionRVV_impl<float>(Q_heads, KV_heads, Q_len, KV_len, Dim, Q, K, V, Output);
+}
+
+void FlashAttentionRVV_Bf16(size_t Q_heads, size_t KV_heads, size_t Q_len, size_t KV_len,
+                            size_t Dim, const __bf16 *Q, const __bf16 *K, const __bf16 *V,
+                            __bf16 *Output) {
+  FlashAttentionRVV_impl<__bf16>(Q_heads, KV_heads, Q_len, KV_len, Dim, Q, K, V, Output);
+}
 }

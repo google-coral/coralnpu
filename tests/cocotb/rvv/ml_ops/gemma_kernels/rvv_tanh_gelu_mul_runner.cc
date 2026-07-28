@@ -21,15 +21,12 @@ extern "C" void rvv_tanh_gelu_mul_f32(const float* gate, const float* up,
 
 #define MAX_ELEMENTS (256 * 2048)
 
-float Gate[MAX_ELEMENTS] __attribute__((section(".ddr_data")))
-__attribute__((aligned(32)));
-float Up[MAX_ELEMENTS] __attribute__((section(".ddr_data")))
-__attribute__((aligned(32)));
-float Output[MAX_ELEMENTS] __attribute__((section(".ddr_data")))
-__attribute__((aligned(32)));
+float Gate[MAX_ELEMENTS] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
+float Up[MAX_ELEMENTS] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
+float Output[MAX_ELEMENTS] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
 
-volatile uint32_t active_elements = 1;
-volatile uint32_t cycle_count = 0;
+uint32_t active_elements __attribute__((section(".data"), used, retain)) = 1;
+uint32_t cycle_count __attribute__((section(".data"), used, retain))     = 0;
 
 int main() {
   uint32_t elements = active_elements;

@@ -159,14 +159,13 @@ async def run_flashattention_test(
 
     await fixture.run_to_halt(timeout_cycles=40000000)
 
-    csr_cycle_count = (await
-                       fixture.read_word('csr_cycle_count')).view(np.uint32)[0]
+    cycle_count = (await fixture.read_word('cycle_count')).view(np.uint32)[0]
 
     total_macs = 2 * q_heads * q_seq_len * kv_seq_len * dim
     log_matmul_metrics(
         dut,
         f"core_mini_rvv_flashattention_Q{q_heads}KV{kv_heads}_Sq{q_seq_len}Skv{kv_seq_len}_D{dim}",
-        csr_cycle_count,
+        cycle_count,
         macs=total_macs,
     )
 
@@ -200,15 +199,9 @@ async def core_mini_rvv_flashattention_prefill_test(dut):
         f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
     )
 
-    if not elf_path or not os.path.exists(elf_path):
-        dut._log.info(
-            f"Skipping test because ELF not found in sandbox: {elf_name}"
-        )
-        return
-
     await fixture.load_elf_and_lookup_symbols(
         elf_path, [
-            "q_buf", "k_buf", "v_buf", "o_buf", "csr_cycle_count",
+            "q_buf", "k_buf", "v_buf", "o_buf", "cycle_count",
             "active_num_heads", "active_num_kv_heads", "active_q_seq_len",
             "active_kv_seq_len", "active_dim"
         ]
@@ -277,15 +270,9 @@ async def core_mini_rvv_flashattention_decode_test(dut):
         f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
     )
 
-    if not elf_path or not os.path.exists(elf_path):
-        dut._log.info(
-            f"Skipping test because ELF not found in sandbox: {elf_name}"
-        )
-        return
-
     await fixture.load_elf_and_lookup_symbols(
         elf_path, [
-            "q_buf", "k_buf", "v_buf", "o_buf", "csr_cycle_count",
+            "q_buf", "k_buf", "v_buf", "o_buf", "cycle_count",
             "active_num_heads", "active_num_kv_heads", "active_q_seq_len",
             "active_kv_seq_len", "active_dim"
         ]
@@ -335,3 +322,185 @@ async def core_mini_rvv_flashattention_decode_test(dut):
         kv_seq_len=32,
         dim=32
     )
+    await run_flashattention_test(
+        fixture,
+        dut,
+        r,
+        elf_path,
+        q_heads=4,
+        kv_heads=1,
+        q_seq_len=1,
+        kv_seq_len=32,
+        dim=640
+    )
+    await run_flashattention_test(
+        fixture,
+        dut,
+        r,
+        elf_path,
+        q_heads=4,
+        kv_heads=1,
+        q_seq_len=1,
+        kv_seq_len=256,
+        dim=640
+    )
+
+
+def golden_flash_attention_bf16(
+    q_bf16, k_bf16, v_bf16, q_heads, kv_heads, q_seq_len, kv_seq_len, dim
+):
+    # Cast to FP32 for reference calculation
+    q = q_bf16.astype(np.float32).reshape(q_heads, q_seq_len, dim)
+    k = k_bf16.astype(np.float32).reshape(kv_heads, kv_seq_len, dim)
+    v = v_bf16.astype(np.float32).reshape(kv_heads, kv_seq_len, dim)
+
+    output = np.zeros((q_heads, q_seq_len, dim), dtype=np.float32)
+    scale = 1.0 / np.sqrt(dim)
+
+    for h in range(q_heads):
+        kv_h = h % kv_heads if kv_heads > 0 else 0
+        q_h = q[h]  # [q_seq_len, dim]
+        k_h = k[kv_h]  # [kv_seq_len, dim]
+        v_h = v[kv_h]  # [kv_seq_len, dim]
+
+        # S = Q * K^T * scale
+        scores = np.matmul(q_h, k_h.T) * scale  # [q_seq_len, kv_seq_len]
+        scores_max = np.max(scores, axis=-1, keepdims=True)
+        exp_scores = np.exp(scores - scores_max)
+        probs = exp_scores / np.sum(exp_scores, axis=-1, keepdims=True)
+
+        output[h] = np.matmul(probs, v_h)
+
+    return output.flatten()
+
+
+@cocotb.test()
+async def core_mini_rvv_bf16_flashattention_test(dut):
+    """BFloat16 FlashAttention MQA Test using ml_dtypes."""
+    import ml_dtypes
+
+    r = runfiles.Create()
+    fixture = await Fixture.Create(
+        dut,
+        highmem=True,
+        ext_mem_base_addr=0x80000000,
+        ext_mem_size=32 * 1024 * 1024
+    )
+
+    elf_name = "rvv_bf16_flashattention.elf"
+    elf_path = r.Rlocation(
+        f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
+    )
+
+    dut._log.info(f"Loading ELF: {elf_path}")
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path, [
+            "q_buf", "k_buf", "v_buf", "o_buf", "active_num_heads",
+            "active_num_kv_heads", "active_q_seq_len", "active_kv_seq_len",
+            "active_dim", "cycle_count"
+        ]
+    )
+
+    await fixture.core_mini_axi.reset()
+
+    # Test configs for Gemma 3 (Prefill and Decode)
+    test_configs = [
+        {
+            "name": "Decode Fast Path (Dim <= 32)",
+            "q_heads": 4,
+            "kv_heads": 1,
+            "q_seq": 1,
+            "kv_seq": 32,
+            "dim": 32
+        },
+        {
+            "name": "Decode Phase",
+            "q_heads": 4,
+            "kv_heads": 1,
+            "q_seq": 1,
+            "kv_seq": 64,
+            "dim": 256
+        },
+        {
+            "name": "Decode Step 32",
+            "q_heads": 4,
+            "kv_heads": 1,
+            "q_seq": 1,
+            "kv_seq": 256,
+            "dim": 256
+        },
+        {
+            "name": "Prefill Phase",
+            "q_heads": 4,
+            "kv_heads": 1,
+            "q_seq": 11,
+            "kv_seq": 11,
+            "dim": 256
+        },
+    ]
+
+    rng = np.random.default_rng(seed=42)
+
+    for cfg in test_configs:
+        q_heads, kv_heads = cfg["q_heads"], cfg["kv_heads"]
+        q_seq, kv_seq, dim = cfg["q_seq"], cfg["kv_seq"], cfg["dim"]
+
+        dut._log.info(
+            f"\nRunning BF16 FlashAttention ({cfg['name']}): Q_heads={q_heads}, KV_heads={kv_heads}, Q_len={q_seq}, KV_len={kv_seq}, Dim={dim}"
+        )
+
+        q_size = q_heads * q_seq * dim
+        kv_size = kv_heads * kv_seq * dim
+        o_size = q_heads * q_seq * dim
+
+        q_fp32 = rng.uniform(-1.0, 1.0, q_size).astype(np.float32)
+        k_fp32 = rng.uniform(-1.0, 1.0, kv_size).astype(np.float32)
+        v_fp32 = rng.uniform(-1.0, 1.0, kv_size).astype(np.float32)
+
+        q_bf16 = q_fp32.astype(ml_dtypes.bfloat16)
+        k_bf16 = k_fp32.astype(ml_dtypes.bfloat16)
+        v_bf16 = v_fp32.astype(ml_dtypes.bfloat16)
+
+        expected_fp32 = golden_flash_attention_bf16(
+            q_bf16, k_bf16, v_bf16, q_heads, kv_heads, q_seq, kv_seq, dim
+        )
+
+        await fixture.write(
+            'active_num_heads', np.array([q_heads], dtype=np.uint32)
+        )
+        await fixture.write(
+            'active_num_kv_heads', np.array([kv_heads], dtype=np.uint32)
+        )
+        await fixture.write(
+            'active_q_seq_len', np.array([q_seq], dtype=np.uint32)
+        )
+        await fixture.write(
+            'active_kv_seq_len', np.array([kv_seq], dtype=np.uint32)
+        )
+        await fixture.write('active_dim', np.array([dim], dtype=np.uint32))
+
+        await fixture.write('q_buf', q_bf16.view(np.uint16))
+        await fixture.write('k_buf', k_bf16.view(np.uint16))
+        await fixture.write('v_buf', v_bf16.view(np.uint16))
+        await fixture.write('o_buf', np.zeros(o_size, dtype=np.uint16))
+
+        await fixture.run_to_halt(timeout_cycles=20000000)
+
+        npu_cycles = int((await fixture.read('cycle_count',
+                                             4)).view(dtype=np.uint32)[0])
+
+        actual_u16 = (await fixture.read('o_buf',
+                                         o_size * 2)).view(dtype=np.uint16)
+        actual_fp32 = actual_u16.view(ml_dtypes.bfloat16).astype(np.float32)
+
+        np.testing.assert_allclose(
+            actual_fp32, expected_fp32, rtol=1e-2, atol=1e-2
+        )
+
+        total_macs = q_heads * q_seq * kv_seq * dim * 2
+        log_matmul_metrics(
+            dut,
+            f"BF16 FlashAttention ({cfg['name']})",
+            npu_cycles,
+            macs=total_macs
+        )

@@ -31,20 +31,17 @@ void rvv_gemv_1d_f32(const float* __restrict__ A, const float* __restrict__ B,
 
 extern "C" {
 // Inputs in DTCM (.data)
-float lhs_input[MAX_M * MAX_K] __attribute__((section(".data")))
-__attribute__((aligned(16)));
+float lhs_input[MAX_M * MAX_K] __attribute__((section(".data"), used, retain, aligned(16)));
 
 // Weights and output in DDR (.ddr_data) because size exceeds DTCM (1MB)
-float rhs_input[MAX_K * MAX_N] __attribute__((section(".ddr_data")))
-__attribute__((aligned(16)));
-float result_output[MAX_M * MAX_N] __attribute__((section(".ddr_data")))
-__attribute__((aligned(16)));
+float rhs_input[MAX_K * MAX_N] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
+float result_output[MAX_M * MAX_N] __attribute__((section(".ddr_data"), used, retain, aligned(16)));
 
-volatile uint32_t active_m __attribute__((section(".data")));
-volatile uint32_t active_k __attribute__((section(".data")));
-volatile uint32_t active_n __attribute__((section(".data")));
+uint32_t active_m __attribute__((section(".data"), used, retain));
+uint32_t active_k __attribute__((section(".data"), used, retain));
+uint32_t active_n __attribute__((section(".data"), used, retain));
 
-volatile uint32_t cycle_count __attribute__((section(".data")));
+uint32_t cycle_count __attribute__((section(".data"), used, retain));
 }
 
 int main() {
