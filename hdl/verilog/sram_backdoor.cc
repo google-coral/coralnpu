@@ -14,6 +14,8 @@
 
 #include "sram_backdoor.h"
 
+#include <elf.h>
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -73,37 +75,6 @@ void *RegisterSram(uint64_t global_addr, size_t size_bytes,
   return sram;
 }
 
-// Simple ELF parsing structures
-struct Elf32_Ehdr {
-  unsigned char e_ident[16];
-  uint16_t e_type;
-  uint16_t e_machine;
-  uint32_t e_version;
-  uint32_t e_entry;
-  uint32_t e_phoff;
-  uint32_t e_shoff;
-  uint32_t e_flags;
-  uint16_t e_ehsize;
-  uint16_t e_phentsize;
-  uint16_t e_phnum;
-  uint16_t e_shentsize;
-  uint16_t e_shnum;
-  uint16_t e_shstrndx;
-};
-
-struct Elf32_Phdr {
-  uint32_t p_type;
-  uint32_t p_offset;
-  uint32_t p_vaddr;
-  uint32_t p_paddr;
-  uint32_t p_filesz;
-  uint32_t p_memsz;
-  uint32_t p_flags;
-  uint32_t p_align;
-};
-
-#define PT_LOAD 1
-
 } // namespace
 
 bool SramBackdoorLoad(uint64_t global_addr, const uint8_t *data, size_t len) {
@@ -115,6 +86,47 @@ bool SramBackdoorLoad(uint64_t global_addr, const uint8_t *data, size_t len) {
     }
   }
   return load_ok;
+}
+
+template <typename Ehdr, typename Phdr>
+bool LoadElfSegmentsTyped(FILE *f, const char *filename) {
+  Ehdr ehdr;
+  if (std::fread(&ehdr, sizeof(ehdr), 1, f) != 1) {
+    std::fprintf(stderr, "[SRAM Backdoor] Failed to read ELF header: %s\n", filename);
+    return false;
+  }
+
+  if (std::fseek(f, ehdr.e_phoff, SEEK_SET) != 0) {
+    std::fprintf(stderr, "[SRAM Backdoor] Failed to seek to program headers: %s\n", filename);
+    return false;
+  }
+
+  std::vector<Phdr> phdrs(ehdr.e_phnum);
+  if (std::fread(phdrs.data(), sizeof(Phdr), ehdr.e_phnum, f) != ehdr.e_phnum) {
+    std::fprintf(stderr, "[SRAM Backdoor] Failed to read program headers: %s\n", filename);
+    return false;
+  }
+
+  for (const auto &phdr : phdrs) {
+    if (phdr.p_type != PT_LOAD || phdr.p_filesz == 0) {
+      continue;
+    }
+
+    std::vector<uint8_t> buffer(phdr.p_filesz);
+    if (std::fseek(f, phdr.p_offset, SEEK_SET) != 0) {
+      std::fprintf(stderr, "[SRAM Backdoor] Failed to seek to segment data: %s\n", filename);
+      return false;
+    }
+
+    if (std::fread(buffer.data(), 1, phdr.p_filesz, f) != phdr.p_filesz) {
+      std::fprintf(stderr, "[SRAM Backdoor] Failed to read segment data: %s\n", filename);
+      return false;
+    }
+
+    SramBackdoorLoad(phdr.p_paddr, buffer.data(), buffer.size());
+  }
+
+  return true;
 }
 
 } // namespace coralnpu
@@ -143,7 +155,7 @@ void sram_write(void *handle, uint32_t addr, const svBitVecVal *data,
     uint8_t *dest = sram->data.data() + offset;
     const uint8_t *src = reinterpret_cast<const uint8_t *>(data);
     for (size_t i = 0; i < sram->width_bytes; ++i) {
-      if ((wmask >> i) & 1) {
+      if (i < 32 && ((wmask >> i) & 1)) {
         dest[i] = src[i];
       }
     }
@@ -172,49 +184,40 @@ bool sram_backdoor_load_c(uint64_t global_addr, const uint8_t *data,
 void sram_load_elf(const char *filename) {
   FILE *f = std::fopen(filename, "rb");
   if (!f) {
-    std::fprintf(stderr, "[SRAM Backdoor] Failed to open ELF file: %s\n",
-                 filename);
+    std::fprintf(stderr, "[SRAM Backdoor] Failed to open ELF file: %s\n", filename);
     return;
   }
 
-  Elf32_Ehdr ehdr;
-  if (std::fread(&ehdr, sizeof(ehdr), 1, f) != 1) {
-    std::fprintf(stderr, "[SRAM Backdoor] Failed to read ELF header: %s\n",
-                 filename);
+  unsigned char e_ident[EI_NIDENT];
+  if (std::fread(e_ident, 1, EI_NIDENT, f) != EI_NIDENT) {
+    std::fprintf(stderr, "[SRAM Backdoor] Failed to read ELF magic: %s\n", filename);
     std::fclose(f);
     return;
   }
 
-  // Check ELF magic
-  if (std::memcmp(ehdr.e_ident, "\x7f\x45\x4c\x46", 4) != 0) {
+  if (std::memcmp(e_ident, ELFMAG, SELFMAG) != 0) {
     std::fprintf(stderr, "[SRAM Backdoor] Invalid ELF magic: %s\n", filename);
     std::fclose(f);
     return;
   }
 
-  std::fseek(f, ehdr.e_phoff, SEEK_SET);
-  std::vector<Elf32_Phdr> phdrs(ehdr.e_phnum);
-  if (std::fread(phdrs.data(), sizeof(Elf32_Phdr), ehdr.e_phnum, f) !=
-      ehdr.e_phnum) {
-    std::fprintf(stderr, "[SRAM Backdoor] Failed to read program headers: %s\n",
-                 filename);
+  const unsigned char elf_class = e_ident[EI_CLASS];
+  if (elf_class != ELFCLASS32 && elf_class != ELFCLASS64) {
+    std::fprintf(stderr, "[SRAM Backdoor] Unsupported ELF class %u: %s\n", elf_class, filename);
     std::fclose(f);
     return;
   }
 
-  for (const auto &phdr : phdrs) {
-    if (phdr.p_type == PT_LOAD && phdr.p_filesz > 0) {
-      std::vector<uint8_t> buffer(phdr.p_filesz);
-      std::fseek(f, phdr.p_offset, SEEK_SET);
-      if (std::fread(buffer.data(), 1, phdr.p_filesz, f) != phdr.p_filesz) {
-        std::fprintf(stderr,
-                     "[SRAM Backdoor] Failed to read segment data: %s\n",
-                     filename);
-        continue;
-      }
+  if (std::fseek(f, 0, SEEK_SET) != 0) {
+    std::fprintf(stderr, "[SRAM Backdoor] Failed to rewind ELF file: %s\n", filename);
+    std::fclose(f);
+    return;
+  }
 
-      SramBackdoorLoad(phdr.p_paddr, buffer.data(), buffer.size());
-    }
+  if (elf_class == ELFCLASS64) {
+    LoadElfSegmentsTyped<Elf64_Ehdr, Elf64_Phdr>(f, filename);
+  } else {
+    LoadElfSegmentsTyped<Elf32_Ehdr, Elf32_Phdr>(f, filename);
   }
 
   std::fclose(f);

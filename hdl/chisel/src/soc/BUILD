@@ -101,6 +101,19 @@ chisel_cc_library(
     module_name = "CoralNPUChiselSubsystem",
 )
 
+chisel_cc_library(
+    name = "coralnpu_chisel_subsystem_64_cc_library",
+    chisel_lib = ":coralnpu_chisel_subsystem_lib",
+    emit_class = "coralnpu.soc.CoralNPUChiselSubsystemEmitter",
+    gen_flags = [
+        "--xlen",
+        "64",
+        "--moduleName",
+        "CoralNPUChiselSubsystem64",
+    ],
+    module_name = "CoralNPUChiselSubsystem64",
+)
+
 verilator_cocotb_model(
     name = "coralnpu_chisel_subsystem_model",
     cflags = VERILATOR_BUILD_ARGS,
@@ -126,6 +139,31 @@ verilator_cocotb_model(
     hdl_toplevel = "CoralNPUChiselSubsystemTestHarness",
     trace = True,
     verilog_source = ":coralnpu_chisel_subsystem_testharness_cc_library_emit_verilog",
+    deps = [
+        "//hdl/verilog:sram_backdoor",
+    ],
+)
+
+chisel_cc_library(
+    name = "coralnpu_chisel_subsystem_64_testharness_cc_library",
+    chisel_lib = ":coralnpu_chisel_subsystem_lib",
+    emit_class = "coralnpu.soc.CoralNPUChiselSubsystemEmitter",
+    gen_flags = [
+        "--enableTestHarness",
+        "--xlen",
+        "64",
+        "--moduleName",
+        "CoralNPUChiselSubsystem64",
+    ],
+    module_name = "CoralNPUChiselSubsystem64TestHarness",
+)
+
+verilator_cocotb_model(
+    name = "coralnpu_chisel_subsystem_64_testharness_model",
+    cflags = VERILATOR_BUILD_ARGS,
+    hdl_toplevel = "CoralNPUChiselSubsystem64TestHarness",
+    trace = True,
+    verilog_source = ":coralnpu_chisel_subsystem_64_testharness_cc_library_emit_verilog",
     deps = [
         "//hdl/verilog:sram_backdoor",
     ],
@@ -180,6 +218,52 @@ verilator_cocotb_model(
     hdl_toplevel = "CoralNPUChiselSubsystemHighmemTestHarness",
     trace = True,
     verilog_source = ":coralnpu_chisel_subsystem_highmem_testharness_cc_library_emit_verilog",
+    deps = [
+        "//hdl/verilog:sram_backdoor",
+    ],
+)
+
+chisel_cc_library(
+    name = "coralnpu_chisel_subsystem_highmem_64_cc_library",
+    chisel_lib = ":coralnpu_chisel_subsystem_lib",
+    emit_class = "coralnpu.soc.CoralNPUChiselSubsystemEmitter",
+    gen_flags = [
+        "--itcmSizeKBytes",
+        "1024",
+        "--dtcmSizeKBytes",
+        "1024",
+        "--xlen",
+        "64",
+        "--moduleName",
+        "CoralNPUChiselSubsystemHighmem64",
+    ],
+    module_name = "CoralNPUChiselSubsystemHighmem64",
+)
+
+chisel_cc_library(
+    name = "coralnpu_chisel_subsystem_highmem_64_testharness_cc_library",
+    chisel_lib = ":coralnpu_chisel_subsystem_lib",
+    emit_class = "coralnpu.soc.CoralNPUChiselSubsystemEmitter",
+    gen_flags = [
+        "--enableTestHarness",
+        "--itcmSizeKBytes",
+        "1024",
+        "--dtcmSizeKBytes",
+        "1024",
+        "--xlen",
+        "64",
+        "--moduleName",
+        "CoralNPUChiselSubsystemHighmem64",
+    ],
+    module_name = "CoralNPUChiselSubsystemHighmem64TestHarness",
+)
+
+verilator_cocotb_model(
+    name = "coralnpu_chisel_subsystem_highmem_64_testharness_model",
+    cflags = VERILATOR_BUILD_ARGS,
+    hdl_toplevel = "CoralNPUChiselSubsystemHighmem64TestHarness",
+    trace = True,
+    verilog_source = ":coralnpu_chisel_subsystem_highmem_64_testharness_cc_library_emit_verilog",
     deps = [
         "//hdl/verilog:sram_backdoor",
     ],

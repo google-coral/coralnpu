@@ -17,10 +17,11 @@ module chip_nexus #(
     parameter int ClockFrequencyMhz = 50,
     parameter int IspClockFrequencyMhz = 10,
     parameter int SpimClockFrequencyMhz = 100,
-    parameter int BootAddr = 0,
     parameter int EnableAutoboot = 0,
     parameter int ItcmSizeKBytes = 8,
-    parameter int DtcmSizeKBytes = 32
+    parameter int DtcmSizeKBytes = 32,
+    parameter int AddrWidth = 32,
+    parameter logic [AddrWidth-1:0] BootAddr = 0
 ) (
     input clk_p_i,
     input clk_n_i,
@@ -188,7 +189,7 @@ module chip_nexus #(
   logic [8:0] cal_post_status;
   logic c0_ddr4_s_axi_ctrl_awvalid;
   logic c0_ddr4_s_axi_ctrl_awready;
-  logic [31:0] c0_ddr4_s_axi_ctrl_awaddr;
+  logic [AddrWidth-1:0] c0_ddr4_s_axi_ctrl_awaddr;
   logic c0_ddr4_s_axi_ctrl_wvalid;
   logic c0_ddr4_s_axi_ctrl_wready;
   logic [31:0] c0_ddr4_s_axi_ctrl_wdata;
@@ -197,7 +198,7 @@ module chip_nexus #(
   logic [1:0] c0_ddr4_s_axi_ctrl_bresp;
   logic c0_ddr4_s_axi_ctrl_arvalid;
   logic c0_ddr4_s_axi_ctrl_arready;
-  logic [31:0] c0_ddr4_s_axi_ctrl_araddr;
+  logic [AddrWidth-1:0] c0_ddr4_s_axi_ctrl_araddr;
   logic c0_ddr4_s_axi_ctrl_rvalid;
   logic c0_ddr4_s_axi_ctrl_rready;
   logic [31:0] c0_ddr4_s_axi_ctrl_rdata;
@@ -206,6 +207,8 @@ module chip_nexus #(
   logic c0_ddr4_aresetn;
   logic [0:0] c0_ddr4_s_axi_awid;
   logic [33:0] c0_ddr4_s_axi_awaddr;
+  logic [AddrWidth-1:0] soc_ddr_mem_axi_aw_bits_addr;
+  logic [AddrWidth-1:0] soc_ddr_mem_axi_ar_bits_addr;
   logic [7:0] c0_ddr4_s_axi_awlen;
   logic [2:0] c0_ddr4_s_axi_awsize;
   logic [1:0] c0_ddr4_s_axi_awburst;
@@ -288,7 +291,7 @@ module chip_nexus #(
       .cal_post_status(cal_post_status),
       .c0_ddr4_s_axi_ctrl_awvalid(c0_ddr4_s_axi_ctrl_awvalid),
       .c0_ddr4_s_axi_ctrl_awready(c0_ddr4_s_axi_ctrl_awready),
-      .c0_ddr4_s_axi_ctrl_awaddr(c0_ddr4_s_axi_ctrl_awaddr),
+      .c0_ddr4_s_axi_ctrl_awaddr(c0_ddr4_s_axi_ctrl_awaddr[31:0]),
       .c0_ddr4_s_axi_ctrl_wvalid(c0_ddr4_s_axi_ctrl_wvalid),
       .c0_ddr4_s_axi_ctrl_wready(c0_ddr4_s_axi_ctrl_wready),
       .c0_ddr4_s_axi_ctrl_wdata(c0_ddr4_s_axi_ctrl_wdata),
@@ -297,7 +300,7 @@ module chip_nexus #(
       .c0_ddr4_s_axi_ctrl_bresp(c0_ddr4_s_axi_ctrl_bresp),
       .c0_ddr4_s_axi_ctrl_arvalid(c0_ddr4_s_axi_ctrl_arvalid),
       .c0_ddr4_s_axi_ctrl_arready(c0_ddr4_s_axi_ctrl_arready),
-      .c0_ddr4_s_axi_ctrl_araddr(c0_ddr4_s_axi_ctrl_araddr),
+      .c0_ddr4_s_axi_ctrl_araddr(c0_ddr4_s_axi_ctrl_araddr[31:0]),
       .c0_ddr4_s_axi_ctrl_rvalid(c0_ddr4_s_axi_ctrl_rvalid),
       .c0_ddr4_s_axi_ctrl_rready(c0_ddr4_s_axi_ctrl_rready),
       .c0_ddr4_s_axi_ctrl_rdata(c0_ddr4_s_axi_ctrl_rdata),
@@ -393,7 +396,8 @@ module chip_nexus #(
       .SpimClockFrequencyMhz(SpimClockFrequencyMhz),
       .EnableAutoboot(EnableAutoboot),
       .ItcmSizeKBytes(ItcmSizeKBytes),
-      .DtcmSizeKBytes(DtcmSizeKBytes)
+      .DtcmSizeKBytes(DtcmSizeKBytes),
+      .AddrWidth(AddrWidth)
   ) i_coralnpu_soc (
       .clk_i(clk),
       .clk_isp_i(clk_isp),
@@ -461,7 +465,7 @@ module chip_nexus #(
       .io_ddr_ctrl_axi_r_bits_resp(c0_ddr4_s_axi_ctrl_rresp),
       .io_ddr_mem_axi_aw_valid(c0_ddr4_s_axi_awvalid),
       .io_ddr_mem_axi_aw_ready(c0_ddr4_s_axi_awready),
-      .io_ddr_mem_axi_aw_bits_addr(c0_ddr4_s_axi_awaddr[31:0]),
+      .io_ddr_mem_axi_aw_bits_addr(soc_ddr_mem_axi_aw_bits_addr),
       .io_ddr_mem_axi_aw_bits_prot(c0_ddr4_s_axi_awprot),
       .io_ddr_mem_axi_aw_bits_id(c0_ddr4_s_axi_awid),
       .io_ddr_mem_axi_aw_bits_len(c0_ddr4_s_axi_awlen),
@@ -481,7 +485,7 @@ module chip_nexus #(
       .io_ddr_mem_axi_b_bits_resp(c0_ddr4_s_axi_bresp),
       .io_ddr_mem_axi_ar_valid(c0_ddr4_s_axi_arvalid),
       .io_ddr_mem_axi_ar_ready(c0_ddr4_s_axi_arready),
-      .io_ddr_mem_axi_ar_bits_addr(c0_ddr4_s_axi_araddr[31:0]),
+      .io_ddr_mem_axi_ar_bits_addr(soc_ddr_mem_axi_ar_bits_addr),
       .io_ddr_mem_axi_ar_bits_prot(c0_ddr4_s_axi_arprot),
       .io_ddr_mem_axi_ar_bits_id(c0_ddr4_s_axi_arid),
       .io_ddr_mem_axi_ar_bits_len(c0_ddr4_s_axi_arlen),
@@ -506,5 +510,8 @@ module chip_nexus #(
       .io_dm_rsp_bits_data(dm_rsp.data),
       .io_dm_rsp_bits_op(dm_rsp.resp)
   );
+
+  assign c0_ddr4_s_axi_awaddr = 34'(soc_ddr_mem_axi_aw_bits_addr);
+  assign c0_ddr4_s_axi_araddr = 34'(soc_ddr_mem_axi_ar_bits_addr);
 
 endmodule

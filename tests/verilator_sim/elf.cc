@@ -14,78 +14,123 @@
 
 #include "tests/verilator_sim/elf.h"
 
-#include <cstring>
 #include <elf.h>
 
-uint32_t LoadElf(uint8_t* data, CopyFn copy_fn) {
-  const Elf32_Ehdr* elf_header = reinterpret_cast<Elf32_Ehdr*>(data);
+#include <cstdint>
+#include <cstring>
+#include <string_view>
+
+namespace {
+
+template <typename Ehdr, typename Phdr>
+uint64_t LoadElfTyped(const uint8_t *data, CopyFn copy_fn) {
+  const Ehdr *elf_header = reinterpret_cast<const Ehdr *>(data);
   for (int i = 0; i < elf_header->e_phnum; ++i) {
-    const Elf32_Phdr* program_header = reinterpret_cast<Elf32_Phdr*>(
-        data + elf_header->e_phoff + sizeof(Elf32_Phdr) * i);
-    if (program_header->p_type != PT_LOAD) {
+    const Phdr *program_header =
+        reinterpret_cast<const Phdr *>(data + elf_header->e_phoff + sizeof(Phdr) * i);
+    if (program_header->p_type != PT_LOAD || program_header->p_filesz == 0) {
       continue;
     }
-    if (program_header->p_filesz == 0) {
-      continue;
-    }
-    copy_fn(reinterpret_cast<void*>(program_header->p_paddr),
-            reinterpret_cast<void*>(data + program_header->p_offset),
+    copy_fn(reinterpret_cast<void *>(static_cast<uintptr_t>(program_header->p_paddr)),
+            reinterpret_cast<const void *>(data + program_header->p_offset),
             program_header->p_filesz);
   }
   return elf_header->e_entry;
 }
 
-bool LookupSymbol(const uint8_t* data, const std::string& symbol_name, uint32_t* symbol_addr) {
-  if (symbol_addr == nullptr)
-    return false;
-  const Elf32_Ehdr* elf_header = reinterpret_cast<const Elf32_Ehdr*>(data);
+std::string_view SafeGetString(const char *table, size_t table_size, size_t offset) {
+  if (table == nullptr || offset >= table_size) {
+    return std::string_view();
+  }
+  size_t max_len = table_size - offset;
+  size_t len     = strnlen(table + offset, max_len);
+  return std::string_view(table + offset, len);
+}
 
-  // Locate .shstrtab
-  if (elf_header->e_shstrndx == SHN_UNDEF)
+template <typename Ehdr, typename Shdr, typename Sym>
+bool LookupSymbolTyped(const uint8_t *data, const std::string &symbol_name, uint64_t *symbol_addr) {
+  const Ehdr *elf_header = reinterpret_cast<const Ehdr *>(data);
+  if (elf_header->e_shstrndx == SHN_UNDEF || elf_header->e_shstrndx >= elf_header->e_shnum)
     return false;
-  const Elf32_Half section_string_table_idx = elf_header->e_shstrndx;
-  const Elf32_Shdr* section_string_table_header = reinterpret_cast<const Elf32_Shdr*>(
-    data + elf_header->e_shoff + sizeof(Elf32_Shdr) * section_string_table_idx);
-  const char* section_string_table =
-    reinterpret_cast<const char*>(data + section_string_table_header->sh_offset);
+  const auto section_string_table_idx     = elf_header->e_shstrndx;
+  const Shdr *section_string_table_header = reinterpret_cast<const Shdr *>(
+      data + elf_header->e_shoff + sizeof(Shdr) * section_string_table_idx);
+  const char *section_string_table =
+      reinterpret_cast<const char *>(data + section_string_table_header->sh_offset);
+  size_t shstrtab_size = section_string_table_header->sh_size;
 
-  // Locate .strtab and .symtab
-  const Elf32_Sym* symbol_table = nullptr;
-  uint32_t symbol_count;
-  const char* string_table = nullptr;
+  const Sym *symbol_table  = nullptr;
+  uint32_t symbol_count    = 0;
+  const char *string_table = nullptr;
+  size_t strtab_size       = 0;
+
   for (int i = 0; i < elf_header->e_shnum; ++i) {
-    const Elf32_Shdr* section_header = reinterpret_cast<const Elf32_Shdr*>(
-      data + elf_header->e_shoff + sizeof(Elf32_Shdr) * i);
+    const Shdr *section_header =
+        reinterpret_cast<const Shdr *>(data + elf_header->e_shoff + sizeof(Shdr) * i);
     if (section_header->sh_type == SHT_SYMTAB) {
-      const char* symtab_name = (section_string_table + section_header->sh_name);
-      const char* expected_symtab_name = ".symtab";
-      if (strncmp(symtab_name, expected_symtab_name, strlen(expected_symtab_name)) == 0) {
-        symbol_count = section_header->sh_size / sizeof(Elf32_Sym);
-        symbol_table = reinterpret_cast<const Elf32_Sym*>(
-          data + section_header->sh_offset);
+      std::string_view symtab_name =
+          SafeGetString(section_string_table, shstrtab_size, section_header->sh_name);
+      if (symtab_name == ".symtab") {
+        symbol_count = section_header->sh_size / sizeof(Sym);
+        symbol_table = reinterpret_cast<const Sym *>(data + section_header->sh_offset);
       }
     }
     if (section_header->sh_type == SHT_STRTAB) {
-      const char* strtab_name = (section_string_table + section_header->sh_name);
-      const char* expected_strtab_name = ".strtab";
-      if (strncmp(strtab_name, expected_strtab_name, strlen(expected_strtab_name)) == 0) {
-        string_table = reinterpret_cast<const char*>(data + section_header->sh_offset);
+      std::string_view strtab_name =
+          SafeGetString(section_string_table, shstrtab_size, section_header->sh_name);
+      if (strtab_name == ".strtab") {
+        string_table = reinterpret_cast<const char *>(data + section_header->sh_offset);
+        strtab_size  = section_header->sh_size;
       }
     }
   }
   if (string_table == nullptr || symbol_table == nullptr)
     return false;
 
-  // Find our symbol!
   for (uint32_t i = 0; i < symbol_count; ++i) {
-    const Elf32_Sym* symbol = symbol_table + i;
+    const Sym *symbol = symbol_table + i;
     if (symbol->st_name != 0) {
-      const char* found_symbol_name = string_table + symbol->st_name;
-      if (strcmp(found_symbol_name, symbol_name.c_str()) == 0) {
+      std::string_view found_symbol_name =
+          SafeGetString(string_table, strtab_size, symbol->st_name);
+      if (found_symbol_name == symbol_name) {
         *symbol_addr = symbol->st_value;
         return true;
       }
     }
+  }
+  return false;
+}
+
+}  // namespace
+
+uint64_t LoadElf(const uint8_t *data, CopyFn copy_fn) {
+  if (data == nullptr) {
+    return 0;
+  }
+  if (std::memcmp(data, ELFMAG, SELFMAG) != 0) {
+    return 0;
+  }
+  unsigned char elf_class = data[EI_CLASS];
+  if (elf_class == ELFCLASS64) {
+    return LoadElfTyped<Elf64_Ehdr, Elf64_Phdr>(data, copy_fn);
+  } else if (elf_class == ELFCLASS32) {
+    return LoadElfTyped<Elf32_Ehdr, Elf32_Phdr>(data, copy_fn);
+  }
+  return 0;
+}
+
+bool LookupSymbol(const uint8_t *data, const std::string &symbol_name, uint64_t *symbol_addr) {
+  if (symbol_addr == nullptr || data == nullptr) {
+    return false;
+  }
+  if (std::memcmp(data, ELFMAG, SELFMAG) != 0) {
+    return false;
+  }
+  unsigned char elf_class = data[EI_CLASS];
+  if (elf_class == ELFCLASS64) {
+    return LookupSymbolTyped<Elf64_Ehdr, Elf64_Shdr, Elf64_Sym>(data, symbol_name, symbol_addr);
+  } else if (elf_class == ELFCLASS32) {
+    return LookupSymbolTyped<Elf32_Ehdr, Elf32_Shdr, Elf32_Sym>(data, symbol_name, symbol_addr);
   }
   return false;
 }

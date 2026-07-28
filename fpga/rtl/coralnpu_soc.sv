@@ -19,7 +19,8 @@ module coralnpu_soc #(
     parameter int SpimClockFrequencyMhz = 100,
     parameter int EnableAutoboot = 0,
     parameter int ItcmSizeKBytes = 8,
-    parameter int DtcmSizeKBytes = 32
+    parameter int DtcmSizeKBytes = 32,
+    parameter int AddrWidth = 32
 ) (
 
     input clk_i,
@@ -34,7 +35,7 @@ module coralnpu_soc #(
     output logic spim_mosi_o,
     input spim_miso_i,
     input spim_clk_i,
-    input [31:0] boot_addr_i,  // PC reset value (0x0 for ITCM, 0x10000000 for ROM)
+    input [AddrWidth-1:0] boot_addr_i,  // PC reset value (0x0 for ITCM, 0x10000000 for ROM)
     output logic spim_flash_sclk_o,
     output logic spim_flash_csb_o,
     output logic spim_flash_mosi_o,
@@ -72,7 +73,7 @@ module coralnpu_soc #(
     input ddr_rst,
     output io_ddr_ctrl_axi_aw_valid,
     input io_ddr_ctrl_axi_aw_ready,
-    output [31:0] io_ddr_ctrl_axi_aw_bits_addr,
+    output [AddrWidth-1:0] io_ddr_ctrl_axi_aw_bits_addr,
     output [2:0] io_ddr_ctrl_axi_aw_bits_prot,
     output [5:0] io_ddr_ctrl_axi_aw_bits_id,
     output [7:0] io_ddr_ctrl_axi_aw_bits_len,
@@ -93,7 +94,7 @@ module coralnpu_soc #(
     input [1:0] io_ddr_ctrl_axi_b_bits_resp,
     output io_ddr_ctrl_axi_ar_valid,
     input io_ddr_ctrl_axi_ar_ready,
-    output [31:0] io_ddr_ctrl_axi_ar_bits_addr,
+    output [AddrWidth-1:0] io_ddr_ctrl_axi_ar_bits_addr,
     output [2:0] io_ddr_ctrl_axi_ar_bits_prot,
     output [5:0] io_ddr_ctrl_axi_ar_bits_id,
     output [7:0] io_ddr_ctrl_axi_ar_bits_len,
@@ -111,7 +112,7 @@ module coralnpu_soc #(
     input io_ddr_ctrl_axi_r_bits_last,
     output io_ddr_mem_axi_aw_valid,
     input io_ddr_mem_axi_aw_ready,
-    output [31:0] io_ddr_mem_axi_aw_bits_addr,
+    output [AddrWidth-1:0] io_ddr_mem_axi_aw_bits_addr,
     output [2:0] io_ddr_mem_axi_aw_bits_prot,
     output [0:0] io_ddr_mem_axi_aw_bits_id,
     output [7:0] io_ddr_mem_axi_aw_bits_len,
@@ -132,7 +133,7 @@ module coralnpu_soc #(
     input [1:0] io_ddr_mem_axi_b_bits_resp,
     output io_ddr_mem_axi_ar_valid,
     input io_ddr_mem_axi_ar_ready,
-    output [31:0] io_ddr_mem_axi_ar_bits_addr,
+    output [AddrWidth-1:0] io_ddr_mem_axi_ar_bits_addr,
     output [2:0] io_ddr_mem_axi_ar_bits_prot,
     output [0:0] io_ddr_mem_axi_ar_bits_id,
     output [7:0] io_ddr_mem_axi_ar_bits_len,

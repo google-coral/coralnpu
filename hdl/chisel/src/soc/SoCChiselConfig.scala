@@ -117,13 +117,14 @@ case class ChiselModuleConfig(
 object SoCChiselConfig {
   def apply(
     itcmSize: MemorySize = MemorySize.fromKBytes(Parameters.itcmSizeKBytesDefault),
-    dtcmSize: MemorySize = MemorySize.fromKBytes(Parameters.dtcmSizeKBytesDefault)
+    dtcmSize: MemorySize = MemorySize.fromKBytes(Parameters.dtcmSizeKBytesDefault),
+    xlen: Int = 32
   ): SoCChiselConfig = {
-    new SoCChiselConfig(itcmSize, dtcmSize)
+    new SoCChiselConfig(itcmSize, dtcmSize, xlen)
   }
 }
 
-class SoCChiselConfig(itcmSize: MemorySize, dtcmSize: MemorySize) {
+class SoCChiselConfig(itcmSize: MemorySize, dtcmSize: MemorySize, val xlen: Int = 32) {
   // --- Memory Map ---
   val memoryRegions = {
     val defaultItcmSize = MemorySize.fromKBytes(Parameters.itcmSizeKBytesDefault)
@@ -158,7 +159,7 @@ class SoCChiselConfig(itcmSize: MemorySize, dtcmSize: MemorySize) {
         ExternalPort("fault", Bool, Out, "io.fault"),
         ExternalPort("wfi", Bool, Out, "io.wfi"),
         ExternalPort("te", Bool, In, "io.te"),
-        ExternalPort("boot_addr", Logic(32), In, "io.boot_addr"),
+        ExternalPort("boot_addr", Logic(xlen), In, "io.boot_addr"),
         ExternalPort("dm_req_valid", Bool, In, "io.dm.req.valid"),
         ExternalPort("dm_req_ready", Bool, Out, "io.dm.req.ready"),
         ExternalPort("dm_req_bits_address", Logic(32), In, "io.dm.req.bits.address"),

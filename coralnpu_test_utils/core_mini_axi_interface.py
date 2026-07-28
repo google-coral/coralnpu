@@ -674,25 +674,43 @@ class CoreMiniAxiInterface:
         assert (cmderr == 0)
 
     async def dm_read_reg(self, addr, expected_op=DmRspOp.SUCCESS):
-        command = ((DmCmdType.ACCESS_REGISTER << 24)
-                   & 0xFF) | (((2 << 20) | (1 << 17) | (addr)) & 0xFFFFFF)
+        xlen = int(os.environ.get("TEST_XLEN", "32"))
+        # Custom registers KISA (0xFC0) and KSCM (0xFC4..0xFD4) are 32-bit; other RV64 registers are 64-bit.
+        is_custom_32bit = addr in (0xFC0, 0xFC4, 0xFC8, 0xFCC, 0xFD0, 0xFD4)
+        aarsize = 2 if (xlen == 32 or is_custom_32bit) else 3
+        command = (((DmCmdType.ACCESS_REGISTER & 0xFF) << 24) |
+                   ((aarsize & 0x7) << 20) | (1 << 17) | (addr & 0xFFFF))
         rsp = await self.dm_write(DmAddress.COMMAND, command)
         assert rsp["op"] == expected_op
         if rsp["op"] != DmRspOp.SUCCESS:
             return 0
 
-        data = await self.dm_read(DmAddress.DATA0)
+        data0 = await self.dm_read(DmAddress.DATA0)
+        if aarsize == 3:
+            data1 = await self.dm_read(DmAddress.DATA1)
+            data = (data1 << 32) | data0
+        else:
+            data = data0
         status = await self.dm_read(DmAddress.ABSTRACTCS)
         cmderr = (status >> 8) & 0b111
         assert (cmderr == 0)
         return data
 
     async def dm_write_reg(self, addr, data):
-        rsp = await self.dm_write(DmAddress.DATA0, data)
+        xlen = int(os.environ.get("TEST_XLEN", "32"))
+        # Custom registers KISA (0xFC0) and KSCM (0xFC4..0xFD4) are 32-bit; other RV64 registers are 64-bit.
+        is_custom_32bit = addr in (0xFC0, 0xFC4, 0xFC8, 0xFCC, 0xFD0, 0xFD4)
+        aarsize = 2 if (xlen == 32 or is_custom_32bit) else 3
+        rsp = await self.dm_write(DmAddress.DATA0, data & 0xFFFFFFFF)
         assert rsp["op"] == DmRspOp.SUCCESS
-        command = ((DmCmdType.ACCESS_REGISTER << 24)
-                   & 0xFF) | (((2 << 20) | (1 << 17) |
-                               (1 << 16) | addr) & 0xFFFFFF)
+        if aarsize == 3:
+            rsp = await self.dm_write(
+                DmAddress.DATA1, (data >> 32) & 0xFFFFFFFF
+            )
+            assert rsp["op"] == DmRspOp.SUCCESS
+        command = (((DmCmdType.ACCESS_REGISTER & 0xFF) << 24) |
+                   ((aarsize & 0x7) << 20) | (1 << 17) | (1 << 16) |
+                   (addr & 0xFFFF))
         rsp = await self.dm_write(DmAddress.COMMAND, command)
         assert rsp["op"] == DmRspOp.SUCCESS
         status = await self.dm_read(DmAddress.ABSTRACTCS)

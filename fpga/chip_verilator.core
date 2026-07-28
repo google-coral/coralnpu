@@ -82,6 +82,11 @@ parameters:
     description: "DTCM size in KBytes"
     default: 32
     paramtype: vlogparam
+  AddrWidth:
+    datatype: int
+    description: "Address width in bits"
+    default: 32
+    paramtype: vlogparam
 
 targets:
   default: &default_target
@@ -103,6 +108,7 @@ targets:
       - EnableAutoboot
       - ItcmSizeKBytes
       - DtcmSizeKBytes
+      - AddrWidth
     tools:
       verilator:
         mode: cc

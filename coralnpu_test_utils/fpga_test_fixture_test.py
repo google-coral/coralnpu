@@ -15,7 +15,8 @@
 """Unit tests for FpgaTestFixture."""
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+
 import numpy as np
 
 from coralnpu_test_utils.fpga_test_fixture import FpgaTestFixture
@@ -167,6 +168,23 @@ class FpgaTestFixtureTest(unittest.TestCase):
         self.fixture.symbols["cycle_count"] = 0x1000
         self.mock_spi.read_word.return_value = 12345
         self.assertEqual(self.fixture.get_cycle_count(), 12345)
+
+    def test_resolve_path_xlen(self):
+        with (
+                patch.dict("os.environ", {"TEST_XLEN": "64"}),
+                patch("os.path.exists") as mock_exists,
+        ):
+            mock_exists.side_effect = lambda p: p == "/path/to/binary_64.elf"
+            resolved = FpgaTestFixture.resolve_path("/path/to/binary.elf")
+            self.assertEqual(resolved, "/path/to/binary_64.elf")
+
+        with (
+                patch.dict("os.environ", {"TEST_XLEN": "32"}),
+                patch("os.path.exists") as mock_exists,
+        ):
+            mock_exists.side_effect = lambda p: p == "/path/to/binary.elf"
+            resolved = FpgaTestFixture.resolve_path("/path/to/binary.elf")
+            self.assertEqual(resolved, "/path/to/binary.elf")
 
 
 if __name__ == "__main__":

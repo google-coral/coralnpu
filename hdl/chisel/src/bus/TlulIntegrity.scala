@@ -131,7 +131,7 @@ object RequestIntegrityGen {
 }
 
 class RequestIntegrityGen(p: TLULParameters) extends Module {
-  override val desiredName = s"RequestIntegrityGen_${p.w}"
+  override val desiredName = s"RequestIntegrityGen_${p.w}_${p.a}"
   val io                   = IO(new Bundle {
     val a_i = Input(new OpenTitanTileLink.A_Channel(p))
     val a_o = Output(new OpenTitanTileLink.A_Channel(p))
@@ -144,15 +144,25 @@ class RequestIntegrityGen(p: TLULParameters) extends Module {
   // Passthrough for most fields.
   io.a_o := io.a_i
 
-  // Recreate the tl_h2d_cmd_intg_t struct for command integrity.
-  val cmd_w    = 57
-  val cmd_data = Wire(UInt(cmd_w.W))
-  cmd_data := Cat(
-    io.a_i.user.instr_type,
-    io.a_i.address,
-    io.a_i.opcode,
-    io.a_i.mask
-  )
+  val raw_payload_w  = io.a_i.user.instr_type.getWidth + p.a + 3 + (if (p.w > 16) 16 else p.w)
+  val cmd_w          = if (raw_payload_w > 57) 128 else 57
+  val cmd_data       = Wire(UInt(cmd_w.W))
+  val mask_to_encode = io.a_i.mask(if (p.w > 16) 15 else p.w - 1, 0)
+  if (cmd_w > 57) {
+    cmd_data := Cat(
+      io.a_i.user.instr_type,
+      io.a_i.address,
+      io.a_i.opcode,
+      mask_to_encode
+    )
+  } else {
+    cmd_data := Cat(
+      io.a_i.user.instr_type,
+      io.a_i.address(31, 0),
+      io.a_i.opcode,
+      mask_to_encode
+    )
+  }
 
   val cmd_encoder = Module(new SecdedEncoder(cmd_w))
   cmd_encoder.io.data_i := cmd_data
@@ -167,21 +177,31 @@ class RequestIntegrityGen(p: TLULParameters) extends Module {
 /** Checks TileLink integrity fields for the A-channel (Request).
   */
 class RequestIntegrityCheck(p: TLULParameters) extends Module {
-  override val desiredName = s"RequestIntegrityCheck_${p.w}"
+  override val desiredName = s"RequestIntegrityCheck_${p.w}_${p.a}"
   val io                   = IO(new Bundle {
     val a_i   = Input(new OpenTitanTileLink.A_Channel(p))
     val fault = Output(Bool())
   })
 
-  // Recreate the tl_h2d_cmd_intg_t struct for command integrity.
-  val cmd_w    = 57
-  val cmd_data = Wire(UInt(cmd_w.W))
-  cmd_data := Cat(
-    io.a_i.user.instr_type,
-    io.a_i.address,
-    io.a_i.opcode,
-    io.a_i.mask
-  )
+  val raw_payload_w  = io.a_i.user.instr_type.getWidth + p.a + 3 + (if (p.w > 16) 16 else p.w)
+  val cmd_w          = if (raw_payload_w > 57) 128 else 57
+  val cmd_data       = Wire(UInt(cmd_w.W))
+  val mask_to_encode = io.a_i.mask(if (p.w > 16) 15 else p.w - 1, 0)
+  if (cmd_w > 57) {
+    cmd_data := Cat(
+      io.a_i.user.instr_type,
+      io.a_i.address,
+      io.a_i.opcode,
+      mask_to_encode
+    )
+  } else {
+    cmd_data := Cat(
+      io.a_i.user.instr_type,
+      io.a_i.address(31, 0),
+      io.a_i.opcode,
+      mask_to_encode
+    )
+  }
 
   val cmd_encoder = Module(new SecdedEncoder(cmd_w))
   cmd_encoder.io.data_i := cmd_data

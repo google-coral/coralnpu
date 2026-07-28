@@ -131,7 +131,10 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   val write_stream = Wire(Decoupled(new TileLink_A_ChannelBase(tlul_p, userAGen)))
   write_stream.valid := w_valid || (w_unroll_busy && write_data_q.valid)
 
-  val is_full = w_data.strb.asBools.reduce(_ && _)
+  val byte_offset   = if (p.w > 1) w_current_addr(log2Ceil(p.w) - 1, 0) else 0.U
+  val expected_strb = (((1.U << (1.U << w_current_size)) - 1.U) << byte_offset)(p.w - 1, 0)
+  val is_full       =
+    (w_data.strb === expected_strb) && ((w_current_addr & ((1.U << w_current_size) - 1.U)) === 0.U)
   write_stream.bits.opcode := Mux(
     is_full,
     TLULOpcodesA.PutFullData.asUInt,

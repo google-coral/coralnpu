@@ -83,6 +83,11 @@ parameters:
     description: "DTCM size in KBytes"
     default: 32
     paramtype: vlogparam
+  AddrWidth:
+    datatype: int
+    description: "Address width in bits"
+    default: 32
+    paramtype: vlogparam
   USE_GENERIC:
     datatype: bool
     description: "Use generic primitives"
@@ -128,6 +133,7 @@ targets:
       - EnableAutoboot
       - ItcmSizeKBytes
       - DtcmSizeKBytes
+      - AddrWidth
       - USE_GENERIC=true
       - FPGA_XILINX=true
       - TB_SUPPORT=true

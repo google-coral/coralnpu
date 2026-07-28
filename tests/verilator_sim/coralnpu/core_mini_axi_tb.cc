@@ -324,57 +324,50 @@ absl::Status CoreMiniAxi_tb::LoadElfAsync(const std::string& file_name) {
   CHECK(file_data != MAP_FAILED);
   close(fd);
 
-  uint32_t elf_magic = 0x464c457f;
   uint8_t* data8 = reinterpret_cast<uint8_t*>(file_data);
-  if (memcmp(file_data, &elf_magic, sizeof(elf_magic)) == 0) {
+  if (std::memcmp(file_data, ELFMAG, SELFMAG) == 0) {
     std::vector<DataTransfer> elf_transfers;
-    const Elf32_Ehdr* elf_header = reinterpret_cast<Elf32_Ehdr*>(file_data);
-    auto entry_point = elf_header->e_entry;
-    // Reserve space for write+read+expect for each section, and one additional
-    // for the entry point CSR.
-    elf_transfers.reserve(3 * elf_header->e_phnum + 1);
-    ::LoadElf(data8,
-              [this, &elf_transfers](void* dest, const void* src, size_t count) {
-                uint64_t addr = reinterpret_cast<uint64_t>(dest);
-                uint32_t itcm_size = KP_itcmSizeKBytes * 1024;
-                uint32_t dtcm_size = KP_dtcmSizeKBytes * 1024;
-                uint32_t dtcm_base = (KP_itcmSizeKBytes == 8 && KP_dtcmSizeKBytes == 32) ? 0x10000 : 0x100000;
-                bool in_tcm = (addr < itcm_size) || (addr >= dtcm_base && addr < dtcm_base + dtcm_size);
+    uint64_t entry_point = ::LoadElf(data8, [this, &elf_transfers](void *dest, const void *src,
+                                                                   size_t count) {
+      uint64_t addr      = reinterpret_cast<uint64_t>(dest);
+      uint32_t itcm_size = KP_itcmSizeKBytes * 1024;
+      uint32_t dtcm_size = KP_dtcmSizeKBytes * 1024;
+      uint32_t dtcm_base = (KP_itcmSizeKBytes == 8 && KP_dtcmSizeKBytes == 32) ? 0x10000 : 0x100000;
+      bool in_tcm = (addr < itcm_size) || (addr >= dtcm_base && addr < dtcm_base + dtcm_size);
 
-                bool use_backdoor = this->backdoor_load_;
-                if (use_backdoor && in_tcm) {
-                  this->BackdoorLoad(addr, reinterpret_cast<const uint8_t*>(src), count);
-                } else {
-                  elf_transfers.push_back(utils::Write(
-                      reinterpret_cast<uint64_t>(dest),
-                      reinterpret_cast<uint8_t*>(const_cast<void*>(src)), count));
-                  elf_transfers.push_back(
-                      utils::Read(reinterpret_cast<uint64_t>(dest), count));
-                  elf_transfers.push_back(utils::Expect(
-                      reinterpret_cast<uint8_t*>(const_cast<void*>(src)), count));
-                }
-                return dest;
-              });
+      bool use_backdoor = this->backdoor_load_;
+      if (use_backdoor && in_tcm) {
+        this->BackdoorLoad(addr, reinterpret_cast<const uint8_t *>(src), count);
+      } else {
+        elf_transfers.push_back(utils::Write(reinterpret_cast<uint64_t>(dest),
+                                             reinterpret_cast<uint8_t *>(const_cast<void *>(src)),
+                                             count));
+        elf_transfers.push_back(utils::Read(reinterpret_cast<uint64_t>(dest), count));
+        elf_transfers.push_back(
+            utils::Expect(reinterpret_cast<uint8_t *>(const_cast<void *>(src)), count));
+      }
+      return dest;
+    });
     elf_transfers.push_back(utils::Write(
       csr_addr_ + 0x4, reinterpret_cast<uint8_t*>(&entry_point), sizeof(entry_point)
     ));
     transfer_queue_.push(
         std::make_unique<TrafficDesc>(utils::merge(elf_transfers)));
-    uint32_t tohost;
+    uint64_t tohost;
     if (::LookupSymbol(data8, "tohost", &tohost)) {
       // NB: This alignment requirement is to simplify the watchpoint implementation.
-      CHECK((tohost & 0xFFFFFFF0L) == tohost);
+      CHECK((tohost & 0xFULL) == 0);
       tohost_addr_ = tohost;
     }
-    uint32_t tohost_ready;
+    uint64_t tohost_ready;
     if (::LookupSymbol(data8, "tohost_ready", &tohost_ready)) {
       tohost_ready_addr_ = tohost_ready;
     }
-    uint32_t fromhost;
+    uint64_t fromhost;
     if (::LookupSymbol(data8, "fromhost", &fromhost)) {
       fromhost_addr_ = fromhost;
     }
-    uint32_t fromhost_ready;
+    uint64_t fromhost_ready;
     if (::LookupSymbol(data8, "fromhost_ready", &fromhost_ready)) {
       fromhost_ready_addr_ = fromhost_ready;
     }
@@ -831,7 +824,7 @@ void CoreMiniAxi_tb::tohost_reader_thread() {
 void CoreMiniAxi_tb::posedge() {
   const bool core_io_dbus_valid = debug_io_.dbus_valid;
   const bool core_io_dbus_write = debug_io_.dbus_bits_write;
-  const uint32_t core_io_dbus_addr = debug_io_.dbus_bits_addr.read().get_word(0);
+  const uint64_t core_io_dbus_addr = debug_io_.dbus_bits_addr.read().to_uint64();
 
   // If we have tohost_ready, trigger only when it's written with 1.
   if (tohost_ready_addr_.has_value() && core_io_dbus_valid && core_io_dbus_write && (core_io_dbus_addr == tohost_ready_addr_.value())) {

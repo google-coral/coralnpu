@@ -14,9 +14,12 @@
 # limitations under the License.
 """Unified FPGA Test Orchestrator for CoralNPU hardware."""
 
+from __future__ import annotations
+
 import os
-from typing import Dict, List, Optional, Tuple, Union
+
 import numpy as np
+from bazel_tools.tools.python.runfiles import runfiles
 from elftools.elf.elffile import ELFFile
 
 from coralnpu_test_utils.ftdi_spi_master import FtdiSpiMaster
@@ -25,12 +28,14 @@ from coralnpu_test_utils.ftdi_spi_master import FtdiSpiMaster
 class FpgaTestFixture:
     """Unified Test Fixture for CoralNPU FPGA Hardware (mirrors sim_test_fixture.Fixture)."""
 
+    _runfiles = None
+
     def __init__(
         self,
         usb_serial: str,
         highmem: bool = False,
         ftdi_port: int = 1,
-        csr_base_addr: Optional[int] = None,
+        csr_base_addr: int | None = None,
         auto_recovery: bool = True,
     ):
         self.usb_serial = usb_serial
@@ -44,9 +49,56 @@ class FpgaTestFixture:
             ftdi_port=ftdi_port,
             csr_base_addr=self.csr_base_addr,
         )
-        self.entry_point: Optional[int] = None
-        self.symbols: Dict[str, int] = {}
-        self.symbol_sizes: Dict[str, int] = {}
+        self.entry_point: int | None = None
+        self.symbols: dict[str, int] = {}
+        self.symbol_sizes: dict[str, int] = {}
+
+    @classmethod
+    def get_runfiles(cls):
+        if cls._runfiles is None:
+            try:
+                cls._runfiles = runfiles.Create()
+            except Exception:  # noqa: BLE001
+                cls._runfiles = None
+        return cls._runfiles
+
+    @classmethod
+    def resolve_path(cls, path: str | os.PathLike) -> str:
+        """Resolves a file or runfile path, supporting 64-bit alternative binaries when TEST_XLEN=64."""
+        if not path:
+            return path  # type: ignore[return-value]
+        path_str = os.fspath(path)
+        xlen = os.environ.get("TEST_XLEN", "32")
+
+        r = cls.get_runfiles()
+
+        def _try_resolve(p: str) -> str | None:
+            if os.path.exists(p):
+                return p
+            if r:
+                loc = r.Rlocation(p)
+                if loc and os.path.exists(loc):
+                    return loc
+            return None
+
+        if xlen == "64":
+            for ext in (".elf", ".bin", ".vmem"):
+                if path_str.endswith(ext
+                                     ) and not path_str.endswith(f"_64{ext}"):
+                    path_64 = path_str[:-len(ext)] + f"_64{ext}"
+                    resolved_64 = _try_resolve(path_64)
+                    if resolved_64:
+                        return resolved_64
+
+        resolved = _try_resolve(path_str)
+        if resolved:
+            return resolved
+
+        if r:
+            loc = r.Rlocation(path_str)
+            if loc:
+                return loc
+        return path_str
 
     @classmethod
     def create(
@@ -93,21 +145,22 @@ class FpgaTestFixture:
 
     def load_elf_and_lookup_symbols(
         self,
-        elf_file: str,
-        symbols: Optional[List[str]] = None,
+        elf_file: str | os.PathLike,
+        symbols: list[str] | None = None,
         optional: bool = False,
-        optional_symbols: Optional[List[str]] = None,
+        optional_symbols: list[str] | None = None,
         verify: bool = False,
         verify_memory: bool = False,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Loads ELF binary onto FPGA hardware and resolves requested symbol table entries."""
-        if not os.path.exists(elf_file):
+        resolved_elf = self.resolve_path(elf_file)
+        if not os.path.exists(resolved_elf):
             raise FileNotFoundError(f"Could not find ELF file: {elf_file}")
 
         self.symbols.clear()
         self.symbol_sizes.clear()
 
-        with open(elf_file, "rb") as f:
+        with open(resolved_elf, "rb") as f:
             elf = ELFFile(f)
             self.entry_point = elf.header["e_entry"]
             symtab = elf.get_section_by_name(".symtab")
@@ -133,7 +186,7 @@ class FpgaTestFixture:
                 if s in all_syms:
                     self.symbols[s], self.symbol_sizes[s] = all_syms[s]
 
-        self.spi_master.load_elf(elf_file, start_core=False, verify=verify)
+        self.spi_master.load_elf(resolved_elf, start_core=False, verify=verify)
 
         if verify_memory:
             for s, addr in self.symbols.items():

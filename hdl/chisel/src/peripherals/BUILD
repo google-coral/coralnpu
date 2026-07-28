@@ -27,8 +27,12 @@ chisel_library(
 
 chisel_test(
     name = "peripheral_tests",
+    size = "medium",
     srcs = [
         "PeripheralInterfaceTest.scala",
+    ],
+    args = [
+        "-P",
     ],
     deps = [
         ":peripheral",

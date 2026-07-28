@@ -274,10 +274,10 @@ struct CoreMiniAxi_tb : Sysc_tb {
 #endif
   std::unique_ptr<VERILATOR_MODEL> core_;
 
-  std::optional<uint32_t> tohost_addr_;
-  std::optional<uint32_t> tohost_ready_addr_;
-  std::optional<uint32_t> fromhost_addr_;
-  std::optional<uint32_t> fromhost_ready_addr_;
+  std::optional<uint64_t> tohost_addr_;
+  std::optional<uint64_t> tohost_ready_addr_;
+  std::optional<uint64_t> fromhost_addr_;
+  std::optional<uint64_t> fromhost_ready_addr_;
   std::map<uint64_t, int> fd_map_;
 
   sc_event tohost_read_event_;

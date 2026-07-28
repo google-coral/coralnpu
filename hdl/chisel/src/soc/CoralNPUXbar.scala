@@ -103,11 +103,14 @@ class CoralNPUXbar(
   // The top-level reset is active-low, so we invert it for the active-high
   // modules instantiated within this block.
   // Define common parameters for the unified internal bus.
-  val commonParams = new bus.TLULParameters(
-    dataBits = 128,
-    addrBits = 32,
-    idBits = 8
-  )
+  val commonParams = {
+    val max_xlen = hostParams.map(_.a).max
+    new bus.TLULParameters(
+      dataBits = 128,
+      addrBits = max_xlen,
+      idBits = 8
+    )
+  }
   val commonWidth = 128
 
   // --- 2. Programmatic Instantiation and Interface Standardization ---

@@ -104,6 +104,7 @@ py_library(
         requirement("cocotb"),
         requirement("numpy"),
         ":core_mini_axi_sim_interface",
+        "@bazel_tools//tools/python/runfiles",
     ],
 )
 
@@ -153,6 +154,7 @@ py_library(
         ":ftdi_spi_master_lib",
         requirement("numpy"),
         requirement("pyelftools"),
+        "@bazel_tools//tools/python/runfiles",
     ],
 )
 

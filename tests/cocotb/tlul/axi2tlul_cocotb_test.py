@@ -151,10 +151,17 @@ async def test_write_request(dut):
     test_size = size_power
     num_bytes = 2**size_power
 
-    test_addr = random.randint(0, (2**addr_width) - 1)
+    test_addr = (
+        random.randint(0, (2**addr_width // num_bytes) - 1) * num_bytes
+    )
     test_source = random.randint(0, (2**source_width) - 1)
     test_data = random.randint(0, (2**(data_width_bytes * 8)) - 1)
-    test_strb = (1 << num_bytes) - 1
+    offset = test_addr % data_width_bytes
+    full_mask = ((1 << num_bytes) - 1) << offset
+    test_strb = (
+        full_mask if random.choice([True, False]) else
+        (random.randint(1, (1 << num_bytes) - 1) << offset)
+    )
 
     await axi_send_write(
         dut,
@@ -168,7 +175,6 @@ async def test_write_request(dut):
 
     await RisingEdge(dut.clock)
     assert dut.io_tl_a_valid.value, "TL A_VALID should be high"
-    full_mask = (1 << data_width_bytes) - 1
     expected_opcode = (
         TLUL_OpcodeA.PutFullData
         if test_strb == full_mask else TLUL_OpcodeA.PutPartialData

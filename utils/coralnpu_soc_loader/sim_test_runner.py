@@ -50,6 +50,7 @@ class SimTestRunner:
         sim_timeout,
         trace_file=None,
         highmem=False,
+        rv64=False,
         itcm_size_kbytes=8,
         dtcm_size_kbytes=32,
         loader_mode="backdoor",
@@ -58,6 +59,7 @@ class SimTestRunner:
         self.sim_timeout = sim_timeout
         self.trace_file = trace_file
         self.highmem = highmem
+        self.rv64 = rv64
         self.itcm_size_kbytes = itcm_size_kbytes
         self.dtcm_size_kbytes = dtcm_size_kbytes
         self.loader_mode = loader_mode
@@ -135,10 +137,12 @@ class SimTestRunner:
     def run(self):
         r = runfiles.Create()
 
-        sim_bin_name = "Vchip_verilator_highmem" if self.highmem else "Vchip_verilator"
+        suffix = ("_highmem"
+                  if self.highmem else "") + ("_rv64" if self.rv64 else "")
+        sim_bin_name = f"Vchip_verilator{suffix}"
         sim_bin_path = r.Rlocation("coralnpu_hw/fpga/" + sim_bin_name)
         if not sim_bin_path or not os.path.exists(sim_bin_path):
-            build_target = "build_chip_verilator_highmem" if self.highmem else "build_chip_verilator"
+            build_target = f"build_chip_verilator{suffix}"
             long_path = f"coralnpu_hw/fpga/{build_target}/com.google.coralnpu_fpga_chip_verilator_0.1/sim-verilator/Vchip_verilator"
             sim_bin_path = r.Rlocation(long_path)
             if not sim_bin_path or not os.path.exists(sim_bin_path):
@@ -391,6 +395,11 @@ def main():
         help="Use highmem simulator configuration."
     )
     parser.add_argument(
+        "--rv64",
+        action="store_true",
+        help="Use RV64 simulator configuration."
+    )
+    parser.add_argument(
         "--itcm_size_kbytes", type=int, default=8, help="ITCM size in KBytes."
     )
     parser.add_argument(
@@ -416,6 +425,7 @@ def main():
         args.sim_timeout,
         args.trace,
         args.highmem,
+        args.rv64,
         args.itcm_size_kbytes,
         args.dtcm_size_kbytes,
         args.loader,
