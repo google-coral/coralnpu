@@ -69,6 +69,7 @@ object FpNewRoundingMode extends ChiselEnum {
 
 object GenerateCoreShimSource {
   def apply(p: Parameters): String = {
+    val width           = p.xlen
     var moduleInterface = """
         |module FloatCoreWrapper(
         |  input logic clk_i,
@@ -80,7 +81,7 @@ object GenerateCoreShimSource {
     for (i <- 0 until FpNewConfig.NUM_OPERANDS) {
       moduleInterface += "  input logic [WIDTH-1:0] operands_i_GENI,\n"
         .replaceAll("GENI", i.toString)
-        .replaceAll("WIDTH", FpNewConfig.WIDTH.toString)
+        .replaceAll("WIDTH", width.toString)
     }
     moduleInterface += "  input logic[OP_BITS-1:0] op_i,\n".replaceAll(
       "OP_BITS",
@@ -90,12 +91,13 @@ object GenerateCoreShimSource {
     moduleInterface += "  input logic[2:0] rnd_mode_i,\n"
     moduleInterface += "  input logic[2:0] src_fmt_i,\n"
     moduleInterface += "  input logic[2:0] dst_fmt_i,\n"
+    moduleInterface += "  input logic[1:0] int_fmt_i,\n"
     moduleInterface += "  input logic flush_i,\n"
     moduleInterface += "  output logic out_valid_o,\n"
     moduleInterface += "  input logic out_ready_i,\n"
     moduleInterface += "  output logic[WIDTH-1:0] result_o,\n".replaceAll(
       "WIDTH",
-      FpNewConfig.WIDTH.toString
+      width.toString
     )
     for (i <- 0 until 5) {
       moduleInterface += "  output logic status_o_GENI,\n".replaceAll("GENI", i.toString)
@@ -106,7 +108,7 @@ object GenerateCoreShimSource {
 
     var coreInstantiation = "  logic [NUM_OPERANDS-1:0][WIDTH-1:0] operands_i;\n"
       .replaceAll("NUM_OPERANDS", FpNewConfig.NUM_OPERANDS.toString)
-      .replaceAll("WIDTH", FpNewConfig.WIDTH.toString)
+      .replaceAll("WIDTH", width.toString)
 
     for (i <- 0 until FpNewConfig.NUM_OPERANDS) {
       coreInstantiation += "  assign operands_i[GENI] = operands_i_GENI;\n".replaceAll(
@@ -146,7 +148,7 @@ object GenerateCoreShimSource {
         |    .op_mod_i(op_mod_i),
         |    .src_fmt_i(fpnew_pkg::fp_format_e'(src_fmt_i)),
         |    .dst_fmt_i(fpnew_pkg::fp_format_e'(dst_fmt_i)),
-        |    .int_fmt_i(fpnew_pkg::INT32),
+        |    .int_fmt_i(fpnew_pkg::int_format_e'(int_fmt_i)),
         |    .vectorial_op_i(1'b0),
         |    .tag_i(1'b0),
         |    .simd_mask_i(1'b0),
@@ -167,14 +169,17 @@ object GenerateCoreShimSource {
         if (p.floatPulpDivsqrt != 0 || p.enableZfbfmin) "fpnew_pkg::PULP" else "fpnew_pkg::TH32"
       )
       .replaceAll(
-        "FEATURES",
-        if (p.enableZfbfmin) """fpnew_pkg::fpu_features_t'{
-        |  Width:         32,
+        "FEATURES", {
+          val fpFmtMask  = if (p.enableZfbfmin) "5'b10001" else "5'b10000"
+          val intFmtMask = if (p.xlen == 64) "4'b0011" else "4'b0010"
+          s"""fpnew_pkg::fpu_features_t'{
+        |  Width:         ${width},
         |  EnableVectors: 1'b0,
         |  EnableNanBox:  1'b1,
-        |  FpFmtMask:     5'b10001,
-        |  IntFmtMask:    4'b0010
-        |}""" else "fpnew_pkg::RV32F"
+        |  FpFmtMask:     ${fpFmtMask},
+        |  IntFmtMask:    ${intFmtMask}
+        |}"""
+        }
       )
       .stripMargin
 
@@ -186,22 +191,24 @@ class FloatCoreWrapper(p: Parameters)
     extends BlackBox
     with HasBlackBoxInline
     with HasBlackBoxResource {
-  val io = IO(new Bundle {
+  val width = if (p.xlen == 64) 64 else 32
+  val io    = IO(new Bundle {
     val clk_i      = Input(Clock())
     val rst_ni     = Input(AsyncReset())
     val in_valid_i = Input(Bool())
     val in_ready_o = Output(Bool())
-    val operands_i = Input(Vec(FpNewConfig.NUM_OPERANDS, UInt(FpNewConfig.WIDTH.W)))
+    val operands_i = Input(Vec(FpNewConfig.NUM_OPERANDS, UInt(width.W)))
     val op_i       = Input(UInt(FpNewConfig.OP_BITS.W))
     val op_mod_i   = Input(Bool())
     val rnd_mode_i = Input(UInt(3.W))
     val src_fmt_i  = Input(UInt(3.W))
     val dst_fmt_i  = Input(UInt(3.W))
+    val int_fmt_i  = Input(UInt(2.W))
     val flush_i    = Input(Bool())
 
     val out_valid_o   = Output(Bool())
     val out_ready_i   = Input(Bool())
-    val result_o      = Output(UInt(FpNewConfig.WIDTH.W))
+    val result_o      = Output(UInt(width.W))
     val status_o      = Output(Vec(5, Bool())) // fflags
     val busy_o        = Output(Bool())
     val early_valid_o = Output(Bool())
@@ -346,6 +353,16 @@ class FloatCore(p: Parameters) extends Module {
       read_port_2_valid
     )
   )
+  val width = if (p.xlen == 64) 64 else 32
+
+  def NanBox(val32: UInt, width: Int): UInt = {
+    if (width > 32) {
+      Cat(Fill(width - 32, 1.U), val32)
+    } else {
+      val32
+    }
+  }
+
   for (i <- 0 until FpNewConfig.NUM_OPERANDS) {
     io.read_ports(i).valid := read_ports_valid(i) && inst.valid
     if (i == 0) {
@@ -353,10 +370,10 @@ class FloatCore(p: Parameters) extends Module {
         Mux(
           (inst.bits.opcode === FloatOpcode.OPFP) && (opfp_operation === FpNewOperation.I2F),
           io.rs1.data,
-          io.read_ports(0).data.asWord
+          NanBox(io.read_ports(0).data.asWord, width)
         )
     } else {
-      floatCoreWrapper.io.operands_i(i) := io.read_ports(i).data.asWord
+      floatCoreWrapper.io.operands_i(i) := NanBox(io.read_ports(i).data.asWord, width)
     }
   }
 
@@ -382,6 +399,8 @@ class FloatCore(p: Parameters) extends Module {
   floatCoreWrapper.io.op_mod_i  := op_mod_i
   floatCoreWrapper.io.src_fmt_i := inst.bits.src_fmt.asUInt
   floatCoreWrapper.io.dst_fmt_i := inst.bits.dst_fmt.asUInt
+  // Maps rs2(1) == 0 -> 2'b10 (INT32 = 2) and rs2(1) == 1 -> 2'b11 (INT64 = 3) for fpnew
+  floatCoreWrapper.io.int_fmt_i := Cat(1.U(1.W), inst.bits.rs2(1))
   val (inst_rm, inst_rm_valid) = FpNewRoundingMode.safe(inst.bits.rm)
   val (csr_rm, csr_rm_valid)   = FpNewRoundingMode.safe(io.csr.out.frm)
   val rnd_mode                 = MuxCase(
@@ -415,7 +434,7 @@ class FloatCore(p: Parameters) extends Module {
     .valid := ((floatCoreWrapper.io.out_valid_o && inst.fire && !inst.bits.scalar_rd) || fmv_to_fpr) && !storefp
   io.write_ports(0).addr := inst.bits.rd
   io.write_ports(0).data := Fp32.fromWord(
-    Mux(fmv_to_fpr, fmv_fpr_data, floatCoreWrapper.io.result_o)
+    Mux(fmv_to_fpr, fmv_fpr_data, floatCoreWrapper.io.result_o(31, 0))
   )
 
   io.write_ports(1).valid := io.lsu_rd.valid
@@ -430,14 +449,23 @@ class FloatCore(p: Parameters) extends Module {
   scalar_rd_pre_pipe.bits.addr := inst.bits.rd
   val fmv_gpr_data = Mux(
     is_fmt_bf16,
-    Cat(Fill(16, io.read_ports(0).data.asWord(15)), io.read_ports(0).data.asWord(15, 0)),
-    io.read_ports(0).data.asWord
+    SignExtend(io.read_ports(0).data.asWord(15, 0), p.xlen),
+    SignExtend(io.read_ports(0).data.asWord, p.xlen)
   )
-  scalar_rd_pre_pipe.bits.data := Mux(
+  val is_32b_int_conv =
+    inst.bits.opcode === FloatOpcode.OPFP &&
+      opfp_operation === FpNewOperation.F2I &&
+      inst.bits.rs2(1) === 0.U
+  val write_data = Mux(
     fmv_to_gpr,
     fmv_gpr_data,
-    floatCoreWrapper.io.result_o
+    Mux(
+      is_32b_int_conv,
+      SignExtend(floatCoreWrapper.io.result_o(31, 0), p.xlen),
+      floatCoreWrapper.io.result_o
+    )
   )
+  scalar_rd_pre_pipe.bits.data := write_data
 
   val scalar_rd_pipe = Queue(scalar_rd_pre_pipe, 2, false)
   io.scalar_rd <> scalar_rd_pipe

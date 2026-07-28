@@ -437,3 +437,159 @@ class AluSpec extends AnyFreeSpec with ChiselSim {
     simulate(new Alu(p))(testBinaryOp(_, 13.U, AluOp.ROR, test_cases))
   }
 }
+
+class Alu64Spec extends AnyFreeSpec with ChiselSim {
+  val p = new Parameters(xlen = 64)
+
+  private def testBinaryOp(
+    dut: Alu,
+    addr: UInt,
+    op: AluOp.Type,
+    cases: Seq[(Long, Long, Long)]
+  ) = {
+    dut.io.req.valid.poke(true)
+    dut.io.req.bits.addr.poke(addr)
+    dut.io.req.bits.op.poke(op)
+    val good = cases.map { case (rs1, rs2, exp_rd) =>
+      dut.io.rs1.valid.poke(true)
+      dut.io.rs1.data.poke(rs1)
+      dut.io.rs2.valid.poke(true)
+      dut.io.rs2.data.poke(rs2)
+      dut.clock.step()
+      val mask = (BigInt(1) << p.xlen) - 1
+      (dut.io.rd.valid.peek().litValue == 1) &&
+      ((dut.io.rd.bits.data.peek().litValue & mask) == (BigInt(exp_rd) & mask)) &&
+      (dut.io.rd.bits.addr.peek().litValue == addr.litValue)
+    }
+    if (!ProcessTestResults(good, printfn = info(_))) fail()
+  }
+
+  private def test_unary_op(
+    dut: Alu,
+    addr: UInt,
+    op: AluOp.Type,
+    cases: Seq[(Long, BigInt)]
+  ) = {
+    val mask = (BigInt(1) << p.xlen) - 1
+    val good = cases.map { case (rs1, exp_rd) =>
+      dut.io.req.valid.poke(true)
+      dut.io.req.bits.addr.poke(addr)
+      dut.io.req.bits.op.poke(op)
+      dut.io.rs1.valid.poke(true)
+      dut.io.rs1.data.poke(rs1)
+      dut.clock.step()
+      val good1 = {
+        (dut.io.rd.valid.peek().litValue == 1) &&
+        ((dut.io.rd.bits.data.peek().litValue & mask) == (exp_rd & mask))
+      }
+      dut.io.req.valid.poke(true)
+      dut.clock.step()
+      val good2 = {
+        (dut.io.rd.valid.peek().litValue == 1) && (dut.io.rd.bits.addr
+          .peek()
+          .litValue == addr.litValue)
+      }
+      good1 & good2
+    }
+    if (!ProcessTestResults(good, printfn = info(_))) fail()
+  }
+
+  "ADDW" in {
+    val inputs = Seq(
+      (
+        0x000000007fffffffL,
+        0x0000000000000001L,
+        0xffffffff80000000L
+      ), // 32-bit overflow sign extended to 64
+      (0x0000000000000005L, 0x0000000000000003L, 0x0000000000000008L),
+      (0xffffffff80000000L, 0xffffffffffffffffL, 0x000000007fffffffL)
+    )
+    simulate(new Alu(p))(testBinaryOp(_, 13.U, AluOp.ADDW, inputs))
+  }
+
+  "SUBW" in {
+    val inputs = Seq(
+      (
+        0x0000000080000000L,
+        0x0000000000000001L,
+        0x000000007fffffffL
+      ), // 32-bit subtraction sign extended
+      (0x0000000000000005L, 0x0000000000000003L, 0x0000000000000002L)
+    )
+    simulate(new Alu(p))(testBinaryOp(_, 13.U, AluOp.SUBW, inputs))
+  }
+
+  "SLLW" in {
+    val inputs = Seq(
+      (0x0000000000000001L, 31L, 0xffffffff80000000L),
+      (0x0000000000000003L, 2L, 0x000000000000000cL)
+    )
+    simulate(new Alu(p))(testBinaryOp(_, 13.U, AluOp.SLLW, inputs))
+  }
+
+  "SRLW" in {
+    val inputs = Seq(
+      (0xffffffff80000000L, 1L, 0x0000000040000000L),
+      (0x0000000000000010L, 2L, 0x0000000000000004L)
+    )
+    simulate(new Alu(p))(testBinaryOp(_, 13.U, AluOp.SRLW, inputs))
+  }
+
+  "SRAW" in {
+    val inputs = Seq(
+      (0xffffffff80000000L, 1L, 0xffffffffc0000000L),
+      (0x0000000000000010L, 2L, 0x0000000000000004L)
+    )
+    simulate(new Alu(p))(testBinaryOp(_, 13.U, AluOp.SRAW, inputs))
+  }
+
+  "CLZW" in {
+    val base_cases = Seq(
+      (0L, 32L),
+      (1L, 31L),
+      (3L, 30L),
+      (0x80000000L, 0L)
+    )
+    val test_cases = base_cases.map { case (rs1, exp) => (rs1, BigInt(exp)) }
+    simulate(new Alu(p))(test_unary_op(_, 13.U, AluOp.CLZW, test_cases))
+  }
+
+  "CTZW" in {
+    val base_cases = Seq(
+      (0L, 32L),
+      (1L, 0L),
+      (8L, 3L),
+      (0x80000000L, 31L)
+    )
+    val test_cases = base_cases.map { case (rs1, exp) => (rs1, BigInt(exp)) }
+    simulate(new Alu(p))(test_unary_op(_, 13.U, AluOp.CTZW, test_cases))
+  }
+
+  "CPOPW" in {
+    val base_cases = Seq(
+      (0L, 0L),
+      (1L, 1L),
+      (3L, 2L),
+      (0xffffffff80000000L, 1L),
+      (0x00000000ffffffffL, 32L)
+    )
+    val test_cases = base_cases.map { case (rs1, exp) => (rs1, BigInt(exp)) }
+    simulate(new Alu(p))(test_unary_op(_, 13.U, AluOp.CPOPW, test_cases))
+  }
+
+  "ROLW" in {
+    val inputs = Seq(
+      (0x0000000080000000L, 1L, 0x0000000000000001L),
+      (0x0000000040000000L, 1L, 0xffffffff80000000L)
+    )
+    simulate(new Alu(p))(testBinaryOp(_, 13.U, AluOp.ROLW, inputs))
+  }
+
+  "RORW" in {
+    val inputs = Seq(
+      (0x0000000000000001L, 1L, 0xffffffff80000000L),
+      (0xffffffff80000000L, 1L, 0x0000000040000000L)
+    )
+    simulate(new Alu(p))(testBinaryOp(_, 13.U, AluOp.RORW, inputs))
+  }
+}

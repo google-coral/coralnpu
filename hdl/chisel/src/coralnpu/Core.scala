@@ -101,6 +101,8 @@ object EmitCore extends App {
   for (arg <- args) {
     if (arg.startsWith("--enableFetchL0")) {
       p.enableFetchL0 = arg.split("=")(1).toBoolean
+    } else if (arg.startsWith("--xlen")) {
+      p.xlen = arg.split("=")(1).toInt
     } else if (arg.startsWith("--moduleName")) {
       moduleName = arg.split("=")(1)
     } else if (arg.startsWith("--fetchDataBits")) {

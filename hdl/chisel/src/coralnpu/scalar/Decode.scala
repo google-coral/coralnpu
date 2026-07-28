@@ -30,12 +30,12 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   val inst = UInt(32.W)
 
   // Immediates
-  val imm12  = UInt(32.W)
-  val imm20  = UInt(32.W)
-  val immjal = UInt(32.W)
-  val immbr  = UInt(32.W)
-  val immcsr = UInt(32.W)
-  val immst  = UInt(32.W)
+  val imm12  = UInt(p.xlen.W)
+  val imm20  = UInt(p.xlen.W)
+  val immjal = UInt(p.xlen.W)
+  val immbr  = UInt(p.xlen.W)
+  val immcsr = UInt(p.xlen.W)
+  val immst  = UInt(p.xlen.W)
 
   // RV32I
   val lui   = Bool()
@@ -59,6 +59,9 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   val sb    = Bool()
   val sh    = Bool()
   val sw    = Bool()
+  val ld    = Bool()
+  val sd    = Bool()
+  val lwu   = Bool()
   val fence = Bool()
   val addi  = Bool()
   val slti  = Bool()
@@ -80,15 +83,31 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   val srl   = Bool()
   val sra   = Bool()
 
+  // RV64I
+  val addiw = Bool()
+  val slliw = Bool()
+  val srliw = Bool()
+  val sraiw = Bool()
+  val addw  = Bool()
+  val subw  = Bool()
+  val sllw  = Bool()
+  val srlw  = Bool()
+  val sraw  = Bool()
+
   // RV32M
   val mul    = Bool()
   val mulh   = Bool()
   val mulhsu = Bool()
   val mulhu  = Bool()
+  val mulw   = Bool()
   val div    = Bool()
   val divu   = Bool()
   val rem    = Bool()
   val remu   = Bool()
+  val divw   = Bool()
+  val divuw  = Bool()
+  val remw   = Bool()
+  val remuw  = Bool()
 
   // ZBB
   val andn  = Bool()
@@ -110,6 +129,14 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   val zexth = Bool()
   val rori  = Bool()
 
+  // ZBB (64-bit Word operations)
+  val clzw  = Bool()
+  val ctzw  = Bool()
+  val cpopw = Bool()
+  val rolw  = Bool()
+  val rorw  = Bool()
+  val roriw = Bool()
+
   // Core controls.
   val ebreak = Bool()
   val ecall  = Bool()
@@ -128,20 +155,24 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   val float = Option.when(p.enableFloat)(Valid(new FloatInstruction(p)))
 
   def isAluImm(): Bool = {
-    addi || slti || sltiu || xori || ori || andi || slli || srli || srai || rori
+    addi || slti || sltiu || xori || ori || andi || slli || srli || srai || rori ||
+    addiw || slliw || srliw || sraiw || roriw
   }
   def isAluReg(): Bool = {
-    add || sub || slt || sltu || xor || or || and || xnor || orn || andn || sll || srl || sra
+    add || sub || slt || sltu || xor || or || and || xnor || orn || andn || sll || srl || sra ||
+    addw || subw || sllw || srlw || sraw
   }
-  def isAlu1Bit(): Bool     = { clz || ctz || cpop || sextb || sexth || zexth || orcb || rev8 }
-  def isAlu2Bit(): Bool     = { min || minu || max || maxu || rol || ror }
+  def isAlu1Bit(): Bool = {
+    clz || ctz || cpop || sextb || sexth || zexth || orcb || rev8 || clzw || ctzw || cpopw
+  }
+  def isAlu2Bit(): Bool     = { min || minu || max || maxu || rol || ror || rolw || rorw }
   def isAlu(): Bool         = { isAluImm() || isAluReg() || isAlu1Bit() || isAlu2Bit() }
   def isCsr(): Bool         = { csrrw || csrrs || csrrc }
   def isCsrImm()            = { isCsr() && inst(14) }
   def isCsrReg()            = { isCsr() && !inst(14) }
   def isCondBr(): Bool      = { beq || bne || blt || bge || bltu || bgeu }
-  def isScalarLoad(): Bool  = { lb || lh || lw || lbu || lhu }
-  def isScalarStore(): Bool = { sb || sh || sw }
+  def isScalarLoad(): Bool  = { lb || lh || lw || lbu || lhu || ld || lwu }
+  def isScalarStore(): Bool = { sb || sh || sw || sd }
   def isFloat(): Bool       = { float.map(f => f.valid).getOrElse(false.B) }
   def isFloatLoad(): Bool   = {
     float.map(f => f.valid && f.bits.opcode === FloatOpcode.LOADFP).getOrElse(false.B)
@@ -157,8 +188,8 @@ class DecodedInstruction(p: Parameters) extends Bundle {
                                           false.B
                                         })
   }
-  def isMul(): Bool   = { mul || mulh || mulhsu || mulhu }
-  def isDvu(): Bool   = { div || divu || rem || remu }
+  def isMul(): Bool   = { mul || mulh || mulhsu || mulhu || mulw }
+  def isDvu(): Bool   = { div || divu || rem || remu || divw || divuw || remw || remuw }
   def isFency(): Bool = { fencei || ebreak || wfi || mpause || flushat || flushall }
 
   // Instructions that should dispatch out of slot 0, with no other instructions
@@ -592,7 +623,19 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
         d.orcb  -> MakeValid(true.B, AluOp.ORCB),
         d.rev8  -> MakeValid(true.B, AluOp.REV8),
         d.zexth -> MakeValid(true.B, AluOp.ZEXTH),
-        d.rori  -> MakeValid(true.B, AluOp.ROR)
+        d.rori  -> MakeValid(true.B, AluOp.ROR),
+        // ZBB (64-bit Word operations)
+        d.clzw              -> MakeValid(true.B, AluOp.CLZW),
+        d.ctzw              -> MakeValid(true.B, AluOp.CTZW),
+        d.cpopw             -> MakeValid(true.B, AluOp.CPOPW),
+        d.rolw              -> MakeValid(true.B, AluOp.ROLW),
+        (d.rorw || d.roriw) -> MakeValid(true.B, AluOp.RORW),
+        // RV64I
+        (d.addiw || d.addw) -> MakeValid(true.B, AluOp.ADDW),
+        d.subw              -> MakeValid(true.B, AluOp.SUBW),
+        (d.slliw || d.sllw) -> MakeValid(true.B, AluOp.SLLW),
+        (d.srliw || d.srlw) -> MakeValid(true.B, AluOp.SRLW),
+        (d.sraiw || d.sraw) -> MakeValid(true.B, AluOp.SRAW)
       ),
       AluOp
     )
@@ -651,7 +694,8 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
         d.mul    -> MakeValid(true.B, MluOp.MUL),
         d.mulh   -> MakeValid(true.B, MluOp.MULH),
         d.mulhsu -> MakeValid(true.B, MluOp.MULHSU),
-        d.mulhu  -> MakeValid(true.B, MluOp.MULHU)
+        d.mulhu  -> MakeValid(true.B, MluOp.MULHU),
+        d.mulw   -> MakeValid(true.B, MluOp.MULW)
       ),
       MluOp
     )
@@ -664,10 +708,14 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     val dvu = SafeMuxUpTo1H(
       MakeValid(false.B, DvuOp.DIV),
       Seq(
-        d.div  -> MakeValid(true.B, DvuOp.DIV),
-        d.divu -> MakeValid(true.B, DvuOp.DIVU),
-        d.rem  -> MakeValid(true.B, DvuOp.REM),
-        d.remu -> MakeValid(true.B, DvuOp.REMU)
+        d.div   -> MakeValid(true.B, DvuOp.DIV),
+        d.divu  -> MakeValid(true.B, DvuOp.DIVU),
+        d.rem   -> MakeValid(true.B, DvuOp.REM),
+        d.remu  -> MakeValid(true.B, DvuOp.REMU),
+        d.divw  -> MakeValid(true.B, DvuOp.DIVW),
+        d.divuw -> MakeValid(true.B, DvuOp.DIVUW),
+        d.remw  -> MakeValid(true.B, DvuOp.REMW),
+        d.remuw -> MakeValid(true.B, DvuOp.REMUW)
       ),
       DvuOp
     )
@@ -685,9 +733,12 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
         d.lw       -> MakeValid(true.B, LsuOp.LW),
         d.lbu      -> MakeValid(true.B, LsuOp.LBU),
         d.lhu      -> MakeValid(true.B, LsuOp.LHU),
+        d.lwu      -> MakeValid(true.B, LsuOp.LWU),
+        d.ld       -> MakeValid(true.B, LsuOp.LD),
         d.sb       -> MakeValid(true.B, LsuOp.SB),
         d.sh       -> MakeValid(true.B, LsuOp.SH),
         d.sw       -> MakeValid(true.B, LsuOp.SW),
+        d.sd       -> MakeValid(true.B, LsuOp.SD),
         d.wfi      -> MakeValid(true.B, LsuOp.FENCEI),
         d.fencei   -> MakeValid(true.B, LsuOp.FENCEI),
         d.flushat  -> MakeValid(true.B, LsuOp.FLUSHAT),
@@ -918,7 +969,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     io.busRead(i).immed := Mux(
       d.rvv.map(_.valid).getOrElse(false.B),
       0.U,
-      Cat(d.imm12(31, 5), Mux(storeSelect, d.immst(4, 0), d.imm12(4, 0)))
+      Cat(d.imm12(p.xlen - 1, 5), Mux(storeSelect, d.immst(4, 0), d.imm12(4, 0)))
     )
   }
 }
@@ -936,12 +987,13 @@ object DecodeInstruction {
     d.inst := op
 
     // Immediates
-    d.imm12  := Cat(Fill(20, op(31)), op(31, 20))
-    d.imm20  := Cat(op(31, 12), 0.U(12.W))
-    d.immjal := Cat(Fill(12, op(31)), op(19, 12), op(20), op(30, 21), 0.U(1.W))
-    d.immbr  := Cat(Fill(20, op(31)), op(7), op(30, 25), op(11, 8), 0.U(1.W))
-    d.immcsr := op(19, 15)
-    d.immst  := Cat(Fill(20, op(31)), op(31, 25), op(11, 7))
+    d.imm12 := Cat(Fill(p.xlen - 12, op(31)), op(31, 20))
+    d.imm20 := (if (p.xlen > 32) Cat(Fill(p.xlen - 32, op(31)), op(31, 12), 0.U(12.W))
+                else Cat(op(31, 12), 0.U(12.W)))
+    d.immjal := Cat(Fill(p.xlen - 20, op(31)), op(19, 12), op(20), op(30, 21), 0.U(1.W))
+    d.immbr  := Cat(Fill(p.xlen - 12, op(31)), op(7), op(30, 25), op(11, 8), 0.U(1.W))
+    d.immcsr := Cat(0.U((p.xlen - 5).W), op(19, 15))
+    d.immst  := Cat(Fill(p.xlen - 12, op(31)), op(31, 25), op(11, 7))
 
     // RV32I
     d.lui   := op === BitPat("b????????????????????_?????_0110111")
@@ -965,6 +1017,12 @@ object DecodeInstruction {
     d.sb    := op === BitPat("b????????????_?????_000_?????_0100011")
     d.sh    := op === BitPat("b????????????_?????_001_?????_0100011")
     d.sw    := op === BitPat("b????????????_?????_010_?????_0100011")
+    d.ld    := (if (p.xlen == 64) op === BitPat("b????????????_?????_011_?????_0000011")
+             else false.B)
+    d.sd := (if (p.xlen == 64) op === BitPat("b????????????_?????_011_?????_0100011")
+             else false.B)
+    d.lwu := (if (p.xlen == 64) op === BitPat("b????????????_?????_110_?????_0000011")
+              else false.B)
     d.fence := op === BitPat("b0000_????_????_00000_000_00000_0001111")
     d.addi  := op === BitPat("b????????????_?????_000_?????_0010011")
     d.slti  := op === BitPat("b????????????_?????_010_?????_0010011")
@@ -972,19 +1030,52 @@ object DecodeInstruction {
     d.xori  := op === BitPat("b????????????_?????_100_?????_0010011")
     d.ori   := op === BitPat("b????????????_?????_110_?????_0010011")
     d.andi  := op === BitPat("b????????????_?????_111_?????_0010011")
-    d.slli  := op === BitPat("b0000000_?????_?????_001_?????_0010011")
-    d.srli  := op === BitPat("b0000000_?????_?????_101_?????_0010011")
-    d.srai  := op === BitPat("b0100000_?????_?????_101_?????_0010011")
-    d.add   := op === BitPat("b0000000_?????_?????_000_?????_0110011")
-    d.sub   := op === BitPat("b0100000_?????_?????_000_?????_0110011")
-    d.slt   := op === BitPat("b0000000_?????_?????_010_?????_0110011")
-    d.sltu  := op === BitPat("b0000000_?????_?????_011_?????_0110011")
-    d.xor   := op === BitPat("b0000000_?????_?????_100_?????_0110011")
-    d.or    := op === BitPat("b0000000_?????_?????_110_?????_0110011")
-    d.and   := op === BitPat("b0000000_?????_?????_111_?????_0110011")
-    d.sll   := op === BitPat("b0000000_?????_?????_001_?????_0110011")
-    d.srl   := op === BitPat("b0000000_?????_?????_101_?????_0110011")
-    d.sra   := op === BitPat("b0100000_?????_?????_101_?????_0110011")
+    d.slli  := op === (if (p.xlen == 32) BitPat("b0000000_?????_?????_001_?????_0010011")
+                      else BitPat("b000000?_?????_?????_001_?????_0010011"))
+    d.srli := op === (if (p.xlen == 32) BitPat("b0000000_?????_?????_101_?????_0010011")
+                      else BitPat("b000000?_?????_?????_101_?????_0010011"))
+    d.srai := op === (if (p.xlen == 32) BitPat("b0100000_?????_?????_101_?????_0010011")
+                      else BitPat("b010000?_?????_?????_101_?????_0010011"))
+    d.add  := op === BitPat("b0000000_?????_?????_000_?????_0110011")
+    d.sub  := op === BitPat("b0100000_?????_?????_000_?????_0110011")
+    d.slt  := op === BitPat("b0000000_?????_?????_010_?????_0110011")
+    d.sltu := op === BitPat("b0000000_?????_?????_011_?????_0110011")
+    d.xor  := op === BitPat("b0000000_?????_?????_100_?????_0110011")
+    d.or   := op === BitPat("b0000000_?????_?????_110_?????_0110011")
+    d.and  := op === BitPat("b0000000_?????_?????_111_?????_0110011")
+    d.sll  := op === BitPat("b0000000_?????_?????_001_?????_0110011")
+    d.srl  := op === BitPat("b0000000_?????_?????_101_?????_0110011")
+    d.sra  := op === BitPat("b0100000_?????_?????_101_?????_0110011")
+
+    // RV64I
+    d.addiw := (if (p.xlen == 64) op === BitPat("b????????????_?????_000_?????_0011011")
+                else false.B)
+    d.slliw := (if (p.xlen == 64) op === BitPat("b0000000_?????_?????_001_?????_0011011")
+                else false.B)
+    d.srliw := (if (p.xlen == 64) op === BitPat("b0000000_?????_?????_101_?????_0011011")
+                else false.B)
+    d.sraiw := (if (p.xlen == 64) op === BitPat("b0100000_?????_?????_101_?????_0011011")
+                else false.B)
+    d.addw := (if (p.xlen == 64) op === BitPat("b0000000_?????_?????_000_?????_0111011")
+               else false.B)
+    d.subw := (if (p.xlen == 64) op === BitPat("b0100000_?????_?????_000_?????_0111011")
+               else false.B)
+    d.sllw := (if (p.xlen == 64) op === BitPat("b0000000_?????_?????_001_?????_0111011")
+               else false.B)
+    d.srlw := (if (p.xlen == 64) op === BitPat("b0000000_?????_?????_101_?????_0111011")
+               else false.B)
+    d.sraw := (if (p.xlen == 64) op === BitPat("b0100000_?????_?????_101_?????_0111011")
+               else false.B)
+    d.mulw := (if (p.xlen == 64) op === BitPat("b0000001_?????_?????_000_?????_0111011")
+               else false.B)
+    d.divw := (if (p.xlen == 64) op === BitPat("b0000001_?????_?????_100_?????_0111011")
+               else false.B)
+    d.divuw := (if (p.xlen == 64) op === BitPat("b0000001_?????_?????_101_?????_0111011")
+                else false.B)
+    d.remw := (if (p.xlen == 64) op === BitPat("b0000001_?????_?????_110_?????_0111011")
+               else false.B)
+    d.remuw := (if (p.xlen == 64) op === BitPat("b0000001_?????_?????_111_?????_0111011")
+                else false.B)
 
     // RV32M
     d.mul    := op === BitPat("b0000_001_?????_?????_000_?????_0110011")
@@ -1012,9 +1103,26 @@ object DecodeInstruction {
     d.rol   := op === BitPat("b0110000_?????_?????_001_?????_0110011")
     d.ror   := op === BitPat("b0110000_?????_?????_101_?????_0110011")
     d.orcb  := op === BitPat("b0010100_00111_?????_101_?????_0010011")
-    d.rev8  := op === BitPat("b0110100_11000_?????_101_?????_0010011")
-    d.zexth := op === BitPat("b0000100_00000_?????_100_?????_0110011")
-    d.rori  := op === BitPat("b0110000_?????_?????_101_?????_0010011")
+    d.rev8  := op === (if (p.xlen == 32) BitPat("b0110100_11000_?????_101_?????_0010011")
+                      else BitPat("b0110101_11000_?????_101_?????_0010011"))
+    d.zexth := op === (if (p.xlen == 32) BitPat("b0000100_00000_?????_100_?????_0110011")
+                       else BitPat("b0000100_00000_?????_100_?????_0111011"))
+    d.rori := op === (if (p.xlen == 32) BitPat("b0110000_?????_?????_101_?????_0010011")
+                      else BitPat("b011000?_?????_?????_101_?????_0010011"))
+
+    // ZBB (64-bit Word operations)
+    d.clzw := (if (p.xlen == 64) op === BitPat("b0110000_00000_?????_001_?????_0011011")
+               else false.B)
+    d.ctzw := (if (p.xlen == 64) op === BitPat("b0110000_00001_?????_001_?????_0011011")
+               else false.B)
+    d.cpopw := (if (p.xlen == 64) op === BitPat("b0110000_00010_?????_001_?????_0011011")
+                else false.B)
+    d.rolw := (if (p.xlen == 64) op === BitPat("b0110000_?????_?????_001_?????_0111011")
+               else false.B)
+    d.rorw := (if (p.xlen == 64) op === BitPat("b0110000_?????_?????_101_?????_0111011")
+               else false.B)
+    d.roriw := (if (p.xlen == 64) op === BitPat("b0110000_?????_?????_101_?????_0011011")
+                else false.B)
 
     // [extensions] Core controls.
     d.ebreak := op === BitPat("b000000000001_00000_000_00000_11100_11")
@@ -1040,10 +1148,14 @@ object DecodeInstruction {
       d.csrrs := false.B
       d.csrrc := false.B
 
-      d.div  := false.B
-      d.divu := false.B
-      d.rem  := false.B
-      d.remu := false.B
+      d.div   := false.B
+      d.divu  := false.B
+      d.rem   := false.B
+      d.remu  := false.B
+      d.divw  := false.B
+      d.divuw := false.B
+      d.remw  := false.B
+      d.remuw := false.B
 
       d.ebreak := false.B
       d.ecall  := false.B
@@ -1088,6 +1200,9 @@ object DecodeInstruction {
       d.sb,
       d.sh,
       d.sw,
+      d.ld,
+      d.sd,
+      d.lwu,
       d.fence,
       d.addi,
       d.slti,
@@ -1111,14 +1226,28 @@ object DecodeInstruction {
       d.sll,
       d.srl,
       d.sra,
+      d.addiw,
+      d.slliw,
+      d.srliw,
+      d.sraiw,
+      d.addw,
+      d.subw,
+      d.sllw,
+      d.srlw,
+      d.sraw,
       d.mul,
       d.mulh,
       d.mulhsu,
       d.mulhu,
+      d.mulw,
       d.div,
       d.divu,
       d.rem,
       d.remu,
+      d.divw,
+      d.divuw,
+      d.remw,
+      d.remuw,
       d.clz,
       d.ctz,
       d.cpop,
@@ -1134,6 +1263,12 @@ object DecodeInstruction {
       d.orcb,
       d.rev8,
       d.rori,
+      d.clzw,
+      d.ctzw,
+      d.cpopw,
+      d.rolw,
+      d.rorw,
+      d.roriw,
       d.ebreak,
       d.ecall,
       d.wfi,

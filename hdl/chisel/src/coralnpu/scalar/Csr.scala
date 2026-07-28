@@ -23,7 +23,7 @@ class CsrRvvIO(p: Parameters) extends Bundle {
   // To Csr from RvvCore
   val vstart = Input(UInt(log2Ceil(p.rvvVlen).W))
   val vl     = Input(UInt(log2Ceil(p.rvvVlen).W))
-  val vtype  = Input(UInt(32.W))
+  val vtype  = Input(UInt(p.xlen.W))
   val vxrm   = Input(UInt(2.W))
   val vxsat  = Input(Bool())
   // VME (Zvt). Tied to 0 when enableVme=false.
@@ -448,13 +448,13 @@ class Csr(p: Parameters) extends Module {
   }
 
   val rdata = MuxUpTo1H(
-    0.U(32.W),
+    0.U(p.xlen.W),
     Seq(
-      fflagsEn  -> Cat(0.U(27.W), fflags),
-      frmEn     -> Cat(0.U(29.W), frm),
-      fcsrEn    -> Cat(0.U(24.W), fcsr),
+      fflagsEn  -> Cat(0.U((p.xlen - 5).W), fflags),
+      frmEn     -> Cat(0.U((p.xlen - 3).W), frm),
+      fcsrEn    -> Cat(0.U((p.xlen - 8).W), fcsr),
       mstatusEn -> Cat(
-        0.U(17.W),
+        0.U((p.xlen - 15).W),
         fs,
         3.U(2.W),
         vs,
@@ -466,9 +466,16 @@ class Csr(p: Parameters) extends Module {
       ),
       misaEn -> misa,
       mieEn  -> mie,
-      mipEn  -> Cat(0.U(20.W), io.irq, 0.U(3.W), io.timer_irq, 0.U(3.W), io.software_irq, 0.U(3.W)),
+      mipEn  -> Cat(
+        0.U((p.xlen - 12).W),
+        io.irq,
+        0.U(3.W),
+        io.timer_irq,
+        0.U(3.W),
+        io.software_irq,
+        0.U(3.W)
+      ),
       mtvecEn     -> mtvec,
-      mstatushEn  -> 0.U(32.W),
       mscratchEn  -> mscratch,
       mepcEn      -> mepc,
       mcauseEn    -> mcause,
@@ -483,13 +490,11 @@ class Csr(p: Parameters) extends Module {
       mcontext7En -> mcontext7,
       mpcEn       -> mpc,
       mspEn       -> msp,
-      mcycleEn    -> mcycle(31, 0),
-      mcyclehEn   -> mcycle(63, 32),
-      minstretEn  -> minstret_val(31, 0),
-      minstrethEn -> minstret_val(63, 32),
+      mcycleEn    -> (if (p.xlen == 32) mcycle(31, 0) else mcycle),
+      minstretEn  -> (if (p.xlen == 32) minstret_val(31, 0) else minstret_val),
       mvendoridEn -> mvendorid,
-      marchidEn   -> Cat(0.U(31.W), marchid),
-      mimpidEn    -> Cat(0.U(31.W), mimpid),
+      marchidEn   -> Cat(0.U((p.xlen - 1).W), marchid),
+      mimpidEn    -> Cat(0.U((p.xlen - 1).W), mimpid),
       mhartidEn   -> mhartid,
       kisaEn      -> kisa,
       kscm0En     -> kscm(31, 0),
@@ -497,7 +502,13 @@ class Csr(p: Parameters) extends Module {
       kscm2En     -> kscm(95, 64),
       kscm3En     -> kscm(127, 96),
       kscm4En     -> kscm(159, 128)
-    ) ++
+    ) ++ (if (p.xlen == 32)
+            Seq(
+              mcyclehEn   -> mcycle(63, 32),
+              minstrethEn -> minstret_val(63, 32),
+              mstatushEn  -> 0.U(32.W)
+            )
+          else Seq()) ++
       Option
         .when(p.enableRvv) {
           Seq(
@@ -584,29 +595,42 @@ class Csr(p: Parameters) extends Module {
   }
 
   // mcycle implementation
-  // If one of the enable signals for
-  // the register are true, overwrite the enabled half
-  // of the register.
-  // Increment the value of mcycle by 1.
-  val mcycle_th      = Mux(mcyclehEn, wdata, mcycle(63, 32))
-  val mcycle_tl      = Mux(mcycleEn, wdata, mcycle(31, 0))
-  val mcycle_t       = Cat(mcycle_th, mcycle_tl)
-  val mcycle_written = is_csr_write && (mcycleEn || mcyclehEn)
-  mcycle := Mux(mcycle_written, mcycle_t, mcycle + 1.U)
+  if (p.xlen == 32) {
+    val mcycle_th      = Mux(mcyclehEn, wdata, mcycle(63, 32))
+    val mcycle_tl      = Mux(mcycleEn, wdata, mcycle(31, 0))
+    val mcycle_t       = Cat(mcycle_th, mcycle_tl)
+    val mcycle_written = is_csr_write && (mcycleEn || mcyclehEn)
+    mcycle := Mux(mcycle_written, mcycle_t, mcycle + 1.U)
+  } else {
+    val mcycle_written = is_csr_write && mcycleEn
+    mcycle := Mux(mcycle_written, wdata, mcycle + 1.U)
+  }
 
-  val minstret_th      = Mux(minstrethEn, wdata, minstret(63, 32))
-  val minstret_tl      = Mux(minstretEn, wdata, minstret(31, 0))
-  val minstret_t       = Cat(minstret_th, minstret_tl)
-  val minstret_written = is_csr_write && (minstretEn || minstrethEn)
-  // Delay write mask by 1 cycle to match the retirement buffer latency
-  // and prevent dropping retired instructions during CSR writes.
-  val minstret_written_delayed = RegNext(minstret_written, false.B)
-  minstretThisCycle_delayed := Mux(
-    minstret_written_delayed,
-    0.U,
-    io.counters.nRetired
-  )
-  minstret := Mux(minstret_written, minstret_t, minstret + minstretThisCycle_delayed)
+  // minstret implementation
+  if (p.xlen == 32) {
+    val minstret_th      = Mux(minstrethEn, wdata, minstret(63, 32))
+    val minstret_tl      = Mux(minstretEn, wdata, minstret(31, 0))
+    val minstret_t       = Cat(minstret_th, minstret_tl)
+    val minstret_written = is_csr_write && (minstretEn || minstrethEn)
+    // Delay write mask by 1 cycle to match the retirement buffer latency
+    // and prevent dropping retired instructions during CSR writes.
+    val minstret_written_delayed = RegNext(minstret_written, false.B)
+    minstretThisCycle_delayed := Mux(
+      minstret_written_delayed,
+      0.U,
+      io.counters.nRetired
+    )
+    minstret := Mux(minstret_written, minstret_t, minstret + minstretThisCycle_delayed)
+  } else {
+    val minstret_written         = is_csr_write && minstretEn
+    val minstret_written_delayed = RegNext(minstret_written, false.B)
+    minstretThisCycle_delayed := Mux(
+      minstret_written_delayed,
+      0.U,
+      io.counters.nRetired
+    )
+    minstret := Mux(minstret_written, wdata, minstret + minstretThisCycle_delayed)
+  }
 
   val trigger_enabled = tdata1.isTrigger6 && tdata1.m
   val trigger_match   = trigger_enabled && io.dm.current_pc === tdata2
@@ -666,7 +690,7 @@ class Csr(p: Parameters) extends Module {
   io.dm.single_step := trigger_enabled
 
   // High bit of mcause is set for an external interrupt.
-  val interrupt = mcause(31)
+  val interrupt = mcause(p.xlen - 1)
 
   when(io.bru.in.mcause.valid) {
     mcause := io.bru.in.mcause.bits
@@ -701,13 +725,14 @@ class Csr(p: Parameters) extends Module {
   val in_debug          = mode === CsrMode.Debug
   val interrupt_pending = (mtip_pending || meip_pending || msip_pending) && mstatus_mie && !in_debug
 
-  io.bru.out.interrupt       := interrupt_pending
+  io.bru.out.interrupt := interrupt_pending
+  val interrupt_bit = BigInt(1) << (p.xlen - 1)
   io.bru.out.interrupt_cause := MuxCase(
-    0.U,
+    0.U(p.xlen.W),
     Seq(
-      meip_pending -> "x8000000B".U(32.W),
-      msip_pending -> "x80000003".U(32.W),
-      mtip_pending -> "x80000007".U(32.W)
+      meip_pending -> (interrupt_bit | 11).U(p.xlen.W),
+      msip_pending -> (interrupt_bit | 3).U(p.xlen.W),
+      mtip_pending -> (interrupt_bit | 7).U(p.xlen.W)
     )
   )
 

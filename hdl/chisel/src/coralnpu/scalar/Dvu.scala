@@ -16,6 +16,7 @@ package coralnpu
 
 import chisel3._
 import chisel3.util._
+import common._
 import _root_.circt.stage.ChiselStage
 
 object Dvu {
@@ -25,10 +26,14 @@ object Dvu {
 }
 
 object DvuOp extends ChiselEnum {
-  val DIV  = Value
-  val DIVU = Value
-  val REM  = Value
-  val REMU = Value
+  val DIV   = Value
+  val DIVU  = Value
+  val REM   = Value
+  val REMU  = Value
+  val DIVW  = Value
+  val DIVUW = Value
+  val REMW  = Value
+  val REMUW = Value
 }
 
 class DvuCmd(p: Parameters) extends Bundle {
@@ -71,13 +76,16 @@ class Dvu(p: Parameters) extends Module {
   val active  = RegInit(false.B)
   val compute = RegInit(false.B)
 
-  val addr1    = RegInit(0.U(log2Ceil(p.scalarRegCount).W))
-  val signed1  = RegInit(false.B)
-  val divide1  = RegInit(false.B)
+  val addr1   = RegInit(0.U(log2Ceil(p.scalarRegCount).W))
+  val signed1 = RegInit(false.B)
+  val divide1 = RegInit(false.B)
+  val isWord1 = RegInit(false.B)
+
   val addr2    = RegInit(0.U(log2Ceil(p.scalarRegCount).W))
   val signed2d = RegInit(false.B)
   val signed2r = RegInit(false.B)
   val divide2  = RegInit(false.B)
+  val isWord2  = RegInit(false.B)
 
   val count = RegInit(0.U(log2Ceil(p.xlen + 1).W))
 
@@ -85,7 +93,39 @@ class Dvu(p: Parameters) extends Module {
   val remain = RegInit(0.U(p.xlen.W))
   val denom  = RegInit(0.U(p.xlen.W))
 
-  val divByZero = io.rs2.data === 0.U
+  // For RV64 word operations (DIVW, REMW, DIVUW, REMUW), 32-bit operands must be correctly extended
+  // to 64 bits before division: signed word operations (DIVW, REMW -> signed1 == true) sign-extend
+  // the lower 32 bits, while unsigned word operations (DIVUW, REMUW -> signed1 == false) zero-extend
+  // them so that unsigned 64-bit division computes the exact 32-bit unsigned quotient/remainder.
+  val op1 = if (p.xlen == 64) {
+    Mux(
+      isWord1,
+      Mux(
+        signed1,
+        SignExtend(io.rs1.data(31, 0), p.xlen),
+        io.rs1.data(31, 0)
+      ),
+      io.rs1.data
+    )
+  } else {
+    io.rs1.data
+  }
+
+  val op2 = if (p.xlen == 64) {
+    Mux(
+      isWord1,
+      Mux(
+        signed1,
+        SignExtend(io.rs2.data(31, 0), p.xlen),
+        io.rs2.data(31, 0)
+      ),
+      io.rs2.data
+    )
+  } else {
+    io.rs2.data
+  }
+
+  val divByZero = op2 === 0.U
 
   io.req.ready := !active && !compute && !count(log2Ceil(p.xlen))
 
@@ -106,22 +146,36 @@ class Dvu(p: Parameters) extends Module {
   compute := active
 
   addr1   := Mux(io.req.fire, io.req.bits.addr, addr1)
-  signed1 := Mux(io.req.fire, io.req.bits.op.isOneOf(DvuOp.DIV, DvuOp.REM), signed1)
-  divide1 := Mux(io.req.fire, io.req.bits.op.isOneOf(DvuOp.DIV, DvuOp.DIVU), divide1)
+  signed1 := Mux(
+    io.req.fire,
+    io.req.bits.op.isOneOf(DvuOp.DIV, DvuOp.REM, DvuOp.DIVW, DvuOp.REMW),
+    signed1
+  )
+  divide1 := Mux(
+    io.req.fire,
+    io.req.bits.op.isOneOf(DvuOp.DIV, DvuOp.DIVU, DvuOp.DIVW, DvuOp.DIVUW),
+    divide1
+  )
+  isWord1 := Mux(
+    io.req.fire,
+    io.req.bits.op.isOneOf(DvuOp.DIVW, DvuOp.DIVUW, DvuOp.REMW, DvuOp.REMUW),
+    isWord1
+  )
 
   when(active && !compute) {
     addr2    := addr1
-    signed2d := signed1 && (io.rs1.data(p.xlen - 1) =/= io.rs2.data(p.xlen - 1)) && !divByZero
-    signed2r := signed1 && io.rs1.data(p.xlen - 1)
+    signed2d := signed1 && (op1(p.xlen - 1) =/= op2(p.xlen - 1)) && !divByZero
+    signed2r := signed1 && op1(p.xlen - 1)
     divide2  := divide1
+    isWord2  := isWord1
 
-    val inp = Mux(signed1 && io.rs1.data(p.xlen - 1), ~io.rs1.data + 1.U, io.rs1.data)
+    val inp = Mux(signed1 && op1(p.xlen - 1), ~op1 + 1.U, op1)
 
     // The divBy0 uses full latency to simplify logic.
     // Count the leading zeroes, which is one less than the priority encoding.
-    val clz = Mux(io.rs2.data === 0.U, 0.U, Clz1(inp))
+    val clz = Mux(divByZero, 0.U, Clz1(inp))
 
-    denom  := Mux(signed1 && io.rs2.data(p.xlen - 1), ~io.rs2.data + 1.U, io.rs2.data)
+    denom  := Mux(signed1 && op2(p.xlen - 1), ~op2 + 1.U, op2)
     divide := inp << clz
     remain := 0.U
     count  := clz
@@ -137,9 +191,16 @@ class Dvu(p: Parameters) extends Module {
   val div = Mux(signed2d, ~divide + 1.U, divide)
   val rem = Mux(signed2r, ~remain + 1.U, remain)
 
+  val res       = Mux(divide2, div, rem)
+  val final_res = if (p.xlen == 64) {
+    Mux(isWord2, SignExtend(res(31, 0), p.xlen), res)
+  } else {
+    res
+  }
+
   io.rd.valid     := count(log2Ceil(p.xlen))
   io.rd.bits.addr := addr2
-  io.rd.bits.data := Mux(divide2, div, rem)
+  io.rd.bits.data := final_res
 }
 
 object EmitDvu extends App {

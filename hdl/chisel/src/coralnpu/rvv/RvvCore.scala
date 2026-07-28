@@ -25,8 +25,14 @@ object RvvCore {
 }
 
 object GenerateCoreShimSource {
-  def apply(instructionLanes: Integer, vlen: Integer, enableVme: Boolean = false): String = {
-    var moduleInterface = """module RvvCoreWrapper(
+  def apply(p: Parameters): String = {
+    val instructionLanes = p.instructionLanes
+    val vlen             = p.rvvVlen
+    val xlen             = p.xlen
+    val xlenMinus1       = xlen - 1
+
+    var moduleInterface = (if (xlen == 64) "`define XLEN_64 1\n" else "") +
+      """module RvvCoreWrapper(
         |    input clk,
         |    input rstn,
         |    input logic [VSTART_LEN:0] vstart,
@@ -38,17 +44,21 @@ object GenerateCoreShimSource {
     // Add instruction interface inputs
     for (i <- 0 until instructionLanes) {
       moduleInterface += """    input inst_GENI_valid,
-            |    input [31:0] inst_GENI_bits_pc,
+            |    input [XLEN_MINUS_1:0] inst_GENI_bits_pc,
             |    input [1:0] inst_GENI_bits_opcode,
             |    input [24:0] inst_GENI_bits_bits,
-            |""".stripMargin.replaceAll("GENI", i.toString)
+            |""".stripMargin
+        .replaceAll("GENI", i.toString)
+        .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
     }
 
     // Add regfile read interface inputs
     for (i <- 0 until 2 * instructionLanes) {
       moduleInterface += """    input rs_GENI_valid,
-            |    input [31:0] rs_GENI_data,
-            |""".stripMargin.replaceAll("GENI", i.toString)
+            |    input [XLEN_MINUS_1:0] rs_GENI_data,
+            |""".stripMargin
+        .replaceAll("GENI", i.toString)
+        .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
     }
 
     // Add float regfile read interface inputs
@@ -66,19 +76,21 @@ object GenerateCoreShimSource {
     for (i <- 0 until instructionLanes) {
       moduleInterface += """    output rd_GENI_valid,
             |    output [4:0] rd_GENI_bits_addr,
-            |    output [31:0] rd_GENI_bits_data,
-            |""".stripMargin.replaceAll("GENI", i.toString)
+            |    output [XLEN_MINUS_1:0] rd_GENI_bits_data,
+            |""".stripMargin
+        .replaceAll("GENI", i.toString)
+        .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
     }
 
     moduleInterface += """    output async_rd_valid,
         |    output [4:0] async_rd_bits_addr,
-        |    output [31:0] async_rd_bits_data,
+        |    output [XLEN_MINUS_1:0] async_rd_bits_data,
         |    input async_rd_ready,
         |    output async_frd_valid,
         |    output [4:0] async_frd_bits_addr,
-        |    output [31:0] async_frd_bits_data,
+        |    output [XLEN_MINUS_1:0] async_frd_bits_data,
         |    input async_frd_ready,
-        |""".stripMargin
+        |""".stripMargin.replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
 
     // RVV to LSU
     for (i <- 0 until 2) {
@@ -149,7 +161,7 @@ object GenerateCoreShimSource {
             |    output rd_rob2rt_o_GENI_vector_csr_lmul_orig,
             |    output rd_rob2rt_o_GENI_vector_csr_vill,
             |""".stripMargin.replaceAll("GENI", i.toString)
-      if (enableVme) {
+      if (p.enableVme) {
         moduleInterface += """    output [31:0] rd_rob2rt_o_GENI_vector_csr_mtype,
             |    output [1:0]  rd_rob2rt_o_GENI_vector_csr_mtwiden,
             |    output [13:0] rd_rob2rt_o_GENI_vector_csr_tm,
@@ -165,9 +177,12 @@ object GenerateCoreShimSource {
     // Add trap interface outputs
     moduleInterface += """
         |    output trap_valid,
-        |    output [31:0] trap_bits_pc,
+        |    output [XLEN_MINUS_1:0] trap_bits_pc,
         |    output [1:0] trap_bits_opcode,
-        |    output [24:0] trap_bits_bits,""".stripMargin
+        |    output [24:0] trap_bits_bits,""".stripMargin.replaceAll(
+      "XLEN_MINUS_1",
+      xlenMinus1.toString
+    )
 
     // Add vxsat and fflags backend update outputs
     moduleInterface += """
@@ -195,12 +210,12 @@ object GenerateCoreShimSource {
       instructionLanes.toString
     )
     for (i <- 0 until instructionLanes) {
-      coreInstantiation += "  assign inst_data[GENI].pc = inst_GENI_bits_pc;\n".replaceAll(
-        "GENI",
-        i.toString
-      )
+      coreInstantiation += s"  assign inst_data[$i].pc = inst_${i}_bits_pc;\n"
       coreInstantiation += "  assign inst_data[GENI].opcode = RVVOpCode'(inst_GENI_bits_opcode);\n"
-        .replaceAll("GENI", i.toString)
+        .replaceAll(
+          "GENI",
+          i.toString
+        )
       coreInstantiation += "  assign inst_data[GENI].bits = inst_GENI_bits_bits;\n".replaceAll(
         "GENI",
         i.toString
@@ -224,10 +239,12 @@ object GenerateCoreShimSource {
         i.toString
       )
     }
-    coreInstantiation += "  logic [2*GENN-1:0][31:0] reg_read_data;\n".replaceAll(
-      "GENN",
-      instructionLanes.toString
-    )
+    coreInstantiation += "  logic [2*GENN-1:0][XLEN_MINUS_1:0] reg_read_data;\n"
+      .replaceAll(
+        "GENN",
+        instructionLanes.toString
+      )
+      .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
     for (i <- 0 until 2 * instructionLanes) {
       coreInstantiation += "  assign reg_read_data[GENI] = rs_GENI_data;\n".replaceAll(
         "GENI",
@@ -236,15 +253,18 @@ object GenerateCoreShimSource {
     }
 
     // Float regfile read
-    coreInstantiation += "  logic [GENN-1:0][31:0] freg_read_data;\n".replaceAll(
-      "GENN",
-      instructionLanes.toString
-    )
-    for (i <- 0 until instructionLanes) {
-      coreInstantiation += "  assign freg_read_data[GENI] = frs_GENI;\n".replaceAll(
-        "GENI",
-        i.toString
+    coreInstantiation += "  logic [GENN-1:0][XLEN_MINUS_1:0] freg_read_data;\n"
+      .replaceAll(
+        "GENN",
+        instructionLanes.toString
       )
+      .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
+    for (i <- 0 until instructionLanes) {
+      if (xlen > 32) {
+        coreInstantiation += s"  assign freg_read_data[$i] = { {${xlen - 32}{1'b1}}, frs_$i };\n"
+      } else {
+        coreInstantiation += s"  assign freg_read_data[$i] = frs_$i;\n"
+      }
     }
 
     // RVV2LSU
@@ -292,8 +312,10 @@ object GenerateCoreShimSource {
     // Scalar regfile write temp output
     coreInstantiation += """  logic [GENN-1:0] reg_write_valid;
         |  logic [GENN-1:0][4:0] reg_write_addr;
-        |  logic [GENN-1:0][31:0] reg_write_data;
-        |""".stripMargin.replaceAll("GENN", instructionLanes.toString)
+        |  logic [GENN-1:0][XLEN_MINUS_1:0] reg_write_data;
+        |""".stripMargin
+      .replaceAll("GENN", instructionLanes.toString)
+      .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
 
     // VCSR temp output
     coreInstantiation += """  RVVConfigState vector_csr;
@@ -309,7 +331,10 @@ object GenerateCoreShimSource {
     coreInstantiation += "  logic [3:0] rd_valid_rob2rt_o;\n"
     coreInstantiation += "  RVVInstruction trap_data;\n"
 
-    coreInstantiation += """  RvvCore#(.N (GENN)) core(
+    coreInstantiation += """  RvvCore#(
+        |      .N (GENN),
+        |      .RegDataT(logic [XLEN_MINUS_1:0])
+        |  ) core(
         |      .clk(clk),
         |      .rstn(rstn),
         |      .vstart(vstart),
@@ -363,7 +388,9 @@ object GenerateCoreShimSource {
         |      .wr_vxsat_o(wr_vxsat_o),
         |      .wr_fflags_valid_o(wr_fflags_valid_o),
         |      .wr_fflags_o(wr_fflags_o)
-        |""".stripMargin.replaceAll("GENN", instructionLanes.toString)
+        |""".stripMargin
+      .replaceAll("GENN", instructionLanes.toString)
+      .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
     coreInstantiation += "  );\n"
 
     for (i <- 0 until instructionLanes) {
@@ -392,7 +419,7 @@ object GenerateCoreShimSource {
       |  assign rd_rob2rt_o_GENI_last_uop_valid = 1'b0;
       |`endif
       |""".stripMargin.replaceAll("GENI", i.toString)
-      if (enableVme) {
+      if (p.enableVme) {
         // Rob2Rt does not carry the VME mtype state; tie off to 0.
         coreInstantiation +=
           ("  assign rd_rob2rt_o_GENI_vector_csr_mtype   = 32'd0;\n" +
@@ -401,8 +428,8 @@ object GenerateCoreShimSource {
             "  assign rd_rob2rt_o_GENI_vector_csr_tk     = 2'd0;\n").replaceAll("GENI", i.toString)
       }
     }
-    coreInstantiation += """  assign trap_bits_pc = trap_data.pc;
-      |  assign trap_bits_opcode = trap_data.opcode;
+    coreInstantiation += "  assign trap_bits_pc = trap_data.pc;\n"
+    coreInstantiation += """  assign trap_bits_opcode = trap_data.opcode;
       |  assign trap_bits_bits = trap_data.bits;
       |""".stripMargin
     for (i <- 0 until instructionLanes) {
@@ -705,7 +732,8 @@ class RvvCoreWrapper(p: Parameters)
     addResource("hdl/verilog/rvv/design/Zvt/zvt_pe_mulbulk_fp_lane.sv")
     addResource("hdl/verilog/rvv/design/Zvt/zvt_pe_mulbulk_int_lane.sv")
   }
-  setInline("RvvCoreWrapper.sv", GenerateCoreShimSource(p.instructionLanes, p.rvvVlen, p.enableVme))
+  setInline("rvv_config.svh", if (p.xlen == 64) "`define XLEN_64 1\n" else "")
+  setInline("RvvCoreWrapper.sv", GenerateCoreShimSource(p))
 }
 
 // Shim class for RVVCore, which translates the SV RVVCore interfaces with the

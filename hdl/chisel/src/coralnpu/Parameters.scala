@@ -68,9 +68,11 @@ object Parameters {
   }
 }
 
-class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen: Int = 32) {
+class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen: Int = 32) {
+  require(xlen == 32 || xlen == 64, s"Invalid xlen: $xlen. Only 32 or 64 are supported.")
+
   // Machine.
-  val programCounterBits = xlen
+  def programCounterBits = xlen
   val instructionBits    = 32
   val instructionLanes   = 4
 
@@ -135,7 +137,7 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen
   val fetchCacheBytes = 1024
 
   // Scalar Core Fetch bus.
-  val fetchAddrBits        = programCounterBits // do not change
+  def fetchAddrBits        = programCounterBits // do not change
   var fetchDataBits        = 256                // do not change
   def fetchInstrSlots: Int = {
     assert(fetchDataBits   % 32 == 0)
@@ -145,7 +147,7 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen
   }
 
   // Scalar Core Load Store Unit bus.
-  val lsuAddrBits         = programCounterBits // do not change
+  def lsuAddrBits         = programCounterBits // do not change
   var lsuDataBits         = 256
   def lsuDataBytes: Int   = { lsuDataBits / 8 }
   val lsuDelayPipelineLen = 1
@@ -163,19 +165,19 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen
   val l1islots          = 256
   val l1iassoc          = 4
   val axi0IdBits        = 4 // (1x banks, 4 bits unused)
-  val axi0AddrBits      = 32
+  def axi0AddrBits      = xlen
   def axi0DataBits: Int = { fetchDataBits }
 
   // [Internal] L1DCache interface.
   val l1dslots          = 256 // (x2 banks)
   val l1dassoc          = 4
   val axi1IdBits        = 4   // (x2 banks, 3 bits unused)
-  val axi1AddrBits      = 32
+  def axi1AddrBits      = xlen
   def axi1DataBits: Int = { lsuDataBits }
 
   // [Internal] TCM[Vector,Scalar] interface.
   var axi2IdBits         = 6
-  val axi2AddrBits       = 32
+  def axi2AddrBits       = xlen
   def axi2DataBits: Int  = { lsuDataBits } // vectorBits
   def axi2DataBytes: Int = { axi2DataBits / 8 }
 
@@ -242,12 +244,21 @@ object EmitParametersHeader {
         builder = builder.append(s"#define KP_${x.name} ${value}\n")
       }
     }
-    // TODO(atv): See if we can improve the reflection above to execute
-    // the methods for our dynamic parameters.
-    builder = builder.append(s"#define KP_dbusSize ${p.dbusSize}\n")
-    builder = builder.append(s"#define KP_useRetirementBuffer ${p.useRetirementBuffer}\n")
-    builder = builder.append(s"#define KP_retirementBufferIdxWidth ${p.retirementBufferIdxWidth}\n")
-    builder = builder.append(s"#define KP_exposeDebugPorts ${p.shouldExposeDebugPorts}\n")
+    val dynamicDefines = Seq(
+      ("programCounterBits", p.programCounterBits),
+      ("fetchAddrBits", p.fetchAddrBits),
+      ("lsuAddrBits", p.lsuAddrBits),
+      ("axi0AddrBits", p.axi0AddrBits),
+      ("axi1AddrBits", p.axi1AddrBits),
+      ("axi2AddrBits", p.axi2AddrBits),
+      ("dbusSize", p.dbusSize),
+      ("useRetirementBuffer", p.useRetirementBuffer),
+      ("retirementBufferIdxWidth", p.retirementBufferIdxWidth),
+      ("exposeDebugPorts", p.shouldExposeDebugPorts)
+    )
+    dynamicDefines.foreach { case (name, value) =>
+      builder = builder.append(s"#define KP_${name} ${value}\n")
+    }
     builder = builder.append("#endif\n")
     builder.result()
   }

@@ -32,6 +32,7 @@ object MluOp extends ChiselEnum {
   val MULH    = Value
   val MULHSU  = Value
   val MULHU   = Value
+  val MULW    = Value
   val Entries = Value
 }
 
@@ -106,9 +107,13 @@ class Mlu(p: Parameters) extends Module {
 
   // To be guarded by stage3Input.valid
   val mul = Mux(
-    op3in === MluOp.MUL,
-    prod3in(p.xlen - 1, 0),         // MUL
-    prod3in(2 * p.xlen - 1, p.xlen) // MULH, MULHSU, MULHU
+    op3in === MluOp.MULW,
+    SignExtend(prod3in(31, 0), p.xlen),
+    Mux(
+      op3in === MluOp.MUL,
+      prod3in(p.xlen - 1, 0),         // MUL
+      prod3in(2 * p.xlen - 1, p.xlen) // MULH, MULHSU, MULHU
+    )
   )
 
   // Stage 3 output result

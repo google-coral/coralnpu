@@ -209,7 +209,9 @@ class DebugModule(p: Parameters) extends Module {
     16.W
   ) && (req.bits.regno < (0x1000 + p.scalarRegCount + p.floatRegCount).U(16.W)))
   val regnoInvalid = !regnoIsCsr && !regnoIsScalar && !regnoIsFloat
-  val sizeInvalid  = (req.bits.aarsize =/= 2.U(3.W))
+  val sizeInvalid  =
+    if (p.xlen == 64) (req.bits.aarsize =/= 3.U(3.W) && req.bits.aarsize =/= 2.U(3.W))
+    else (req.bits.aarsize =/= 2.U(3.W))
 
   val itcm = p.m
     .filter(_.memType == MemoryRegionType.IMEM)
@@ -254,7 +256,10 @@ class DebugModule(p: Parameters) extends Module {
   io.csr.bits.index := req.bits.regno
   io.csr.bits.op    := Mux(req.bits.write, CsrOp.CSRRW, CsrOp.CSRRC)
   io.csr.bits.rs1   := 0.U
-  io.csr_rs1        := MuxOR(req.bits.write, data0)
+  io.csr_rs1        := MuxOR(
+    req.bits.write,
+    if (p.xlen == 64) Mux(req.bits.aarsize === 3.U(3.W), Cat(data1, data0), data0) else data0
+  )
 
   val abstractcs_wvalid = (req.fire && req.bits.isAddrAbstractcs && req.bits.isWrite)
   // TODO(atv): Enum for cmderr
@@ -288,8 +293,14 @@ class DebugModule(p: Parameters) extends Module {
     0
   ) && abstractCmdValid && (req.bits.cmdtype === AccessRegisterCommand.Cmdtype) && regnoIsScalar && req.bits.write
   io.scalar_rd.bits.addr := scalarRegno
-  io.scalar_rd.bits.data := data0
-  io.scalar_rs.idx       := MuxOR(
+  io.scalar_rd.bits.data := (if (p.xlen == 64)
+                               Mux(
+                                 req.bits.aarsize === 3.U(3.W),
+                                 Cat(data1, data0),
+                                 SignExtend(data0, p.xlen)
+                               )
+                             else data0)
+  io.scalar_rs.idx := MuxOR(
     io.halted(
       0
     ) && abstractCmdValid && (req.bits.cmdtype === AccessRegisterCommand.Cmdtype) && regnoIsScalar && !req.bits.write,
@@ -360,6 +371,26 @@ class DebugModule(p: Parameters) extends Module {
     data1,
     Seq(
       (req.valid && req.bits.isAddrData1 && req.bits.isWrite) -> req.bits.data,
+      (abstractCmdComplete && cmdtypeIsAccessRegister && io.halted(
+        0
+      ) && req.valid && !req.bits.write && regnoIsCsr && io.csr_rd.valid) -> (if (p.xlen == 64)
+                                                                                Mux(
+                                                                                  req.bits.aarsize === 3
+                                                                                    .U(3.W),
+                                                                                  io.csr_rd
+                                                                                    .bits(63, 32),
+                                                                                  0.U(32.W)
+                                                                                )
+                                                                              else 0.U(32.W)),
+      (abstractCmdComplete && cmdtypeIsAccessRegister && io.halted(
+        0
+      ) && req.valid && !req.bits.write && regnoIsScalar) -> (if (p.xlen == 64)
+                                                                Mux(
+                                                                  req.bits.aarsize === 3.U(3.W),
+                                                                  io.scalar_rs.data(63, 32),
+                                                                  0.U(32.W)
+                                                                )
+                                                              else 0.U(32.W)),
       (req.valid && (req.bits.aampostincrement === 1.U) && abstractCmdComplete && cmdtypeIsAccessMemory && io
         .halted(0)) -> (data1 + (1.U << req.bits.aamsize))
     )

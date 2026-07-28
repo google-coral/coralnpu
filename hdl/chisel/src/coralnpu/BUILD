@@ -261,6 +261,19 @@ chisel_test(
 )
 
 chisel_test(
+    name = "coralnpu_dvu_tests",
+    size = "large",
+    srcs = [
+        "scalar/DvuTest.scala",
+    ],
+    deps = [
+        ":coralnpu_base",
+        ":coralnpu_scalar",
+        "//hdl/chisel/src/common:testing",
+    ],
+)
+
+chisel_test(
     name = "coralnpu_fetch_reorder_buffer_tests",
     size = "large",
     srcs = [

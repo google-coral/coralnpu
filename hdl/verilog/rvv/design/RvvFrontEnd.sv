@@ -23,7 +23,9 @@
 // queue.
 module RvvFrontEnd#(parameter N = 4,
                     parameter CAPACITYBITS=$clog2(2*N + 1),
-                    parameter REDUCE_LMUL = 1)
+                    parameter REDUCE_LMUL = 1,
+                    type RegDataT = logic [31:0],
+                    type RegAddrT = logic [4:0])
 (
   input clk,
   input rstn,
@@ -40,15 +42,15 @@ module RvvFrontEnd#(parameter N = 4,
 
   // Register file input
   input logic [(2*N)-1:0] reg_read_valid_i,
-  input logic [(2*N)-1:0][31:0] reg_read_data_i,
+  input RegDataT [(2*N)-1:0] reg_read_data_i,
 
   // Floating point register file input (scalar rs1 for OPFVF instructions).
-  input logic [N-1:0][31:0] freg_read_data_i,
+  input RegDataT [N-1:0] freg_read_data_i,
 
   // Scalar Regfile writeback for configuration functions.
   output logic [N-1:0] reg_write_valid_o,
-  output logic [N-1:0][4:0] reg_write_addr_o,
-  output logic [N-1:0][31:0] reg_write_data_o,
+  output RegAddrT [N-1:0] reg_write_addr_o,
+  output RegDataT [N-1:0] reg_write_data_o,
 
   // Command output.
   output logic [N-1:0] cmd_valid_o,
@@ -136,8 +138,8 @@ module RvvFrontEnd#(parameter N = 4,
 
   // Update configuration architectural state
   RVVConfigState inst_config_state [N:0];
-  logic [31:0] avl [N-1:0];
-  logic [31:0] vlmax [N-1:0];
+  RegDataT avl [N-1:0];
+  RegDataT vlmax [N-1:0];
   logic is_setvl [N-1:0];
   logic [`VL_WIDTH-1:0] vl_minus_one [N-1:0];
 `ifdef ZVT_ON

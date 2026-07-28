@@ -57,3 +57,39 @@ class MluSpec extends AnyFreeSpec with ChiselSim {
     }
   }
 }
+
+class Mlu64Spec extends AnyFreeSpec with ChiselSim {
+  val p = new Parameters(xlen = 64)
+
+  "Multiply Word (MULW)" in {
+    simulate(new Mlu(p)) { dut =>
+      dut.io.req(0).bits.addr.poke(15)
+      dut.io.req(0).bits.op.poke(MluOp.MULW)
+      dut.io.req(0).valid.poke(true.B)
+      dut.io.req(1).valid.poke(false.B)
+      dut.io.req(2).valid.poke(false.B)
+      dut.io.req(3).valid.poke(false.B)
+
+      dut.io.rs1(0).valid.poke(true.B)
+      dut.io.rs1(0).data.poke(0x000000007fffffffL)
+      dut.io.rs2(0).valid.poke(true.B)
+      dut.io.rs2(0).data.poke(2L)
+
+      dut.clock.step()
+      dut.io.req(0).valid.poke(false.B)
+      dut.io.rd.ready.poke(true.B)
+
+      dut.clock.step()
+      dut.io.rd.valid.expect(1)
+      dut.io.rd.bits.addr.expect(15)
+      dut.io.rd.bits.data
+        .expect(
+          BigInt("fffffffffffffffe", 16)
+        ) // (0x7fffffff * 2) = 0xfffffffe, sign extended to 64 bits
+
+      dut.clock.step()
+      dut.io.rd.valid.expect(0)
+      dut.io.rd.ready.poke(false.B)
+    }
+  }
+}

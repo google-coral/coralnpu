@@ -77,6 +77,9 @@ object LsuOp extends ChiselEnum {
   val SB       = Value
   val SH       = Value
   val SW       = Value
+  val LD       = Value
+  val SD       = Value
+  val LWU      = Value
   val FENCEI   = Value
   val FLUSHAT  = Value
   val FLUSHALL = Value
@@ -125,12 +128,13 @@ object LsuOp extends ChiselEnum {
   }
 
   def isScalarLoad(op: LsuOp.Type): Bool = {
-    op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.LH, LsuOp.LHU, LsuOp.LW)
+    op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.LH, LsuOp.LHU, LsuOp.LW, LsuOp.LD, LsuOp.LWU)
   }
 
   def opSize(op: LsuOp.Type, address: UInt, p: Parameters): (UInt, UInt) = {
-    val halfAligned = (address(0) === 0.U)
-    val wordAligned = (address(1, 0) === 0.U)
+    val halfAligned  = (address(0) === 0.U)
+    val wordAligned  = (address(1, 0) === 0.U)
+    val dwordAligned = (address(2, 0) === 0.U)
 
     val size = MuxUpTo1H(
       16.U,
@@ -139,21 +143,25 @@ object LsuOp extends ChiselEnum {
         op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH, LsuOp.FLOAT_H) -> Mux(halfAligned, 2.U, 16.U),
         op.isOneOf(LsuOp.LW, LsuOp.SW, LsuOp.FLOAT)              ->
           Mux(wordAligned, 4.U, 16.U),
-        LsuOp.isVector(op) -> 16.U
+        op.isOneOf(LsuOp.LD, LsuOp.SD) -> Mux(dwordAligned, 8.U, 16.U),
+        LsuOp.isVector(op)             -> 16.U
       )
     )
 
-    val halfAlignedAddress = address(p.lsuAddrBits - 1, 1) << 1.U
-    val wordAlignedAddress = address(p.lsuAddrBits - 1, 2) << 2.U
-    val lineAlignedAddress = address(p.lsuAddrBits - 1, 4) << 4.U
-    val alignedAddress     = MuxUpTo1H(
+    val halfAlignedAddress  = address(p.lsuAddrBits - 1, 1) << 1.U
+    val wordAlignedAddress  = address(p.lsuAddrBits - 1, 2) << 2.U
+    val dwordAlignedAddress = address(p.lsuAddrBits - 1, 3) << 3.U
+    val lineAlignedAddress  = address(p.lsuAddrBits - 1, 4) << 4.U
+    val alignedAddress      = MuxUpTo1H(
       lineAlignedAddress,
       Seq(
         op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.SB)                                 -> address,
         (op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH, LsuOp.FLOAT_H) && halfAligned) ->
           halfAlignedAddress,
-        (op.isOneOf(LsuOp.LW, LsuOp.SW, LsuOp.FLOAT) && wordAligned) ->
-          wordAlignedAddress
+        (op.isOneOf(LsuOp.LW, LsuOp.SW, LsuOp.FLOAT, LsuOp.LWU) && wordAligned) ->
+          wordAlignedAddress,
+        (op.isOneOf(LsuOp.LD, LsuOp.SD) && dwordAligned) ->
+          dwordAlignedAddress
       )
     )
 
@@ -715,21 +723,23 @@ class LsuSlot(p: Parameters, bytesPerSlot: Int) extends Bundle {
   }
 
   def scalarLoadResult(): UInt = {
-    val word = Cat(data(3), data(2), data(1), data(0))
-    val half = Cat(data(1), data(0))
-    val byte = data(0)
-    // Sign extends the result of a load operation when necessary.
-    val halfSigned = Wire(SInt(32.W))
+    val dword      = Cat((0 until 8).reverse.map(data(_)))
+    val word       = Cat((0 until 4).reverse.map(data(_)))
+    val half       = Cat((0 until 2).reverse.map(data(_)))
+    val halfSigned = Wire(SInt(p.xlen.W))
     halfSigned := half.asSInt
-    val byteSigned = Wire(SInt(32.W))
+    val byte       = data(0)
+    val byteSigned = Wire(SInt(p.xlen.W))
     byteSigned := byte.asSInt
-    MuxLookup(op, 0.U)(
+
+    MuxLookup(op, 0.U(p.xlen.W))(
       Seq(
         LsuOp.LB      -> byteSigned.asUInt,
         LsuOp.LBU     -> byte,
         LsuOp.LH      -> halfSigned.asUInt,
         LsuOp.LHU     -> half,
         LsuOp.LW      -> word,
+        LsuOp.LD      -> dword(p.xlen - 1, 0),
         LsuOp.FLOAT   -> word,
         LsuOp.FLOAT_H -> Cat("hFFFF".U(16.W), half)
       )
@@ -840,9 +850,10 @@ object LsuSlot {
     val active = MuxUpTo1H(
       0.U(bytesPerSlot.W),
       Seq(
-        uop.op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.SB)   -> "b1".U(bytesPerSlot.W),
-        uop.op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH)   -> "b11".U(bytesPerSlot.W),
-        uop.op.isOneOf(LsuOp.LW, LsuOp.SW, LsuOp.FLOAT) -> "b1111".U(bytesPerSlot.W),
+        uop.op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.SB)              -> "b1".U(bytesPerSlot.W),
+        uop.op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH)              -> "b11".U(bytesPerSlot.W),
+        uop.op.isOneOf(LsuOp.LW, LsuOp.LWU, LsuOp.SW, LsuOp.FLOAT) -> "b1111".U(bytesPerSlot.W),
+        uop.op.isOneOf(LsuOp.LD, LsuOp.SD)                         -> "b11111111".U(bytesPerSlot.W),
         // Vector
         LsuOp.isVector(uop.op) -> 0.U(bytesPerSlot.W)
       )
@@ -893,11 +904,10 @@ object LsuSlot {
       uop.data
     )
 
-    result.data(0) := uop.data(7, 0)
-    result.data(1) := uop.data(15, 8)
-    result.data(2) := uop.data(23, 16)
-    result.data(3) := uop.data(31, 24)
-    for (i <- 4 until bytesPerSlot) {
+    for (i <- 0 until (p.xlen / 8)) {
+      result.data(i) := uop.data(i * 8 + 7, i * 8)
+    }
+    for (i <- (p.xlen / 8) until bytesPerSlot) {
       result.data(i) := 0.U
     }
 
@@ -1035,7 +1045,7 @@ class LsuV2(p: Parameters) extends Lsu(p) {
   val nextSlot = LsuSlot.fromLsuUOp(opQueue.io.dataOut(0), p, 16)
 
   // Tracks if a read has been fired last cycle.
-  val readFired = RegInit(MakeInvalid(new LsuRead(32 - nextSlot.elemBits)))
+  val readFired = RegInit(MakeInvalid(new LsuRead(p.lsuAddrBits - log2Ceil(p.lsuDataBytes))))
   val slot      = RegInit(LsuSlot.inactive(p, 16))
 
   val readData = MuxLookup(readFired.bits.bus, 0.U)(
@@ -1067,8 +1077,13 @@ class LsuV2(p: Parameters) extends Lsu(p) {
   // Compute next target transaction
   val targetAddress =
     loadUpdatedSlot.targetAddress(MakeValid(readFired.valid, readFired.bits.lineAddr))
-  val targetLine     = MakeValid(targetAddress.valid, targetAddress.bits(31, nextSlot.elemBits))
-  val targetLineAddr = targetLine.bits << 4
+  // Note: Using log2Ceil(p.lsuDataBytes) assumes the cache line size matches lsuDataBytes.
+  // If cache line size and LSU data bus width ever diverge, a separate parameter will be needed.
+  val targetLine = MakeValid(
+    targetAddress.valid,
+    targetAddress.bits(p.lsuAddrBits - 1, log2Ceil(p.lsuDataBytes))
+  )
+  val targetLineAddr = targetLine.bits << log2Ceil(p.lsuDataBytes)
   val itcm           = p.m
     .filter(_.memType == MemoryRegionType.IMEM)
     .map(_.contains(targetLineAddr))
@@ -1200,7 +1215,7 @@ class LsuV2(p: Parameters) extends Lsu(p) {
   // Write back on error. io.fault.valid will mask
   io.rd.valid := ((faultReg.valid && LsuOp.isScalarLoad(faultReg.bits.op)) || slot
     .shouldWriteback()) &&
-    currentOp.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.LH, LsuOp.LHU, LsuOp.LW)
+    currentOp.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.LH, LsuOp.LHU, LsuOp.LW, LsuOp.LD, LsuOp.LWU)
 
   io.rd.bits.data := slot.scalarLoadResult()
   io.rd.bits.addr := Mux(faultReg.valid, faultReg.bits.rd, slot.rd)
@@ -2836,7 +2851,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         // Before applying indices, we're basically doing a stride 0 op.
         val indexedOffsets = MuxLookup(
           Cat(nfields, uop.sew.getOrElse(0.U)),
-          VecInit.fill(nCells)(WireInit(UInt(32.W), DontCare))
+          VecInit.fill(nCells)(WireInit(UInt(p.lsuAddrBits.W), DontCare))
         )(
           Seq(
             // e8

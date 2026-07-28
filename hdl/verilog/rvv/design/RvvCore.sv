@@ -108,7 +108,7 @@ module RvvCore #(parameter N = 4,
   logic [N-1:0] frontend_cmd_valid;
   RVVCmd [N-1:0] frontend_cmd_data;
   logic [$clog2(2*N + 1)-1:0] queue_capacity_internal;
-  RvvFrontEnd#(.N(N)) frontend(
+  RvvFrontEnd#(.N(N), .RegDataT(RegDataT), .RegAddrT(RegAddrT)) frontend(
       .clk(clk),
       .rstn(rstn),
       .vstart_i(vstart),

@@ -291,3 +291,7 @@ object MakeIrrevocable {
     IrrevocableChecker(out)
   }
 }
+
+object SignExtend {
+  def apply(x: UInt, length: Int): UInt = x.asSInt.pad(length).asUInt
+}

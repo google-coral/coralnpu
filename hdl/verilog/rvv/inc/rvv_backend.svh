@@ -117,7 +117,7 @@ typedef struct packed {
 `endif
   RVVOpCode             opcode;
   logic [24:0]          bits;
-  logic [31:0]          rs1;
+  logic [`XLEN-1:0]     rs1;
   RVVConfigState        arch_state;
 } RVVCmd;
 

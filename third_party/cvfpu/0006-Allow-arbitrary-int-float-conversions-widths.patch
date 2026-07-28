@@ -1,0 +1,51 @@
+diff --git a/src/fpnew_cast_multi.sv b/src/fpnew_cast_multi.sv
+index d3dc850..568388b 100644
+--- a/src/fpnew_cast_multi.sv
++++ b/src/fpnew_cast_multi.sv
+@@ -78,7 +78,7 @@ module fpnew_cast_multi #(
+   localparam int unsigned SUPER_BIAS     = 2**(SUPER_EXP_BITS - 1) - 1;
+ 
+   // The internal mantissa includes normal bit or an entire integer
+-  localparam int unsigned INT_MAN_WIDTH = fpnew_pkg::maximum(SUPER_MAN_BITS + 1, MAX_INT_WIDTH);
++  localparam int unsigned INT_MAN_WIDTH = (SUPER_MAN_BITS + 1 > MAX_INT_WIDTH) ? (SUPER_MAN_BITS + 1) : MAX_INT_WIDTH;
+   // If needed, there will be a LZC for renormalization
+   localparam int unsigned LZC_RESULT_WIDTH = $clog2(INT_MAN_WIDTH);
+   // The internal exponent must be able to represent the smallest denormal input value as signed
+diff --git a/src/fpnew_opgroup_multifmt_slice.sv b/src/fpnew_opgroup_multifmt_slice.sv
+index f54bcb0..f499fdc 100644
+--- a/src/fpnew_opgroup_multifmt_slice.sv
++++ b/src/fpnew_opgroup_multifmt_slice.sv
+@@ -182,7 +182,9 @@ FP8. Please use the PULP DivSqrt unit when in need of div/sqrt operations on FP8
+     // Lane parameters from Opgroup
+     localparam fpnew_pkg::fmt_logic_t LANE_FORMATS = (OpGroup == fpnew_pkg::CONV)
+                                                      ? CONV_FORMATS : ACTIVE_FORMATS;
+-    localparam int unsigned LANE_WIDTH = (OpGroup == fpnew_pkg::CONV) ? CONV_WIDTH : MAX_WIDTH;
++    localparam int unsigned LANE_WIDTH = (OpGroup == fpnew_pkg::CONV)
++                                         ? ((CONV_WIDTH > MAX_INT_WIDTH) ? CONV_WIDTH : MAX_INT_WIDTH)
++                                         : MAX_WIDTH;
+ 
+     logic [LANE_WIDTH-1:0] local_result; // lane-local results
+ 
+@@ -461,7 +463,7 @@ FP8. Please use the PULP DivSqrt unit when in need of div/sqrt operations on FP8
+       for (genvar ifmt = 0; ifmt < NUM_INT_FORMATS; ifmt++) begin : pack_int_result
+         // Set up some constants
+         localparam int unsigned INT_WIDTH = fpnew_pkg::int_width(fpnew_pkg::int_format_e'(ifmt));
+-        if (ACTIVE_INT_FORMATS[ifmt]) begin
++        if (CONV_INT_FORMATS[ifmt] && ((LANE+1)*INT_WIDTH <= Width)) begin
+           assign ifmt_slice_result[ifmt][(LANE+1)*INT_WIDTH-1:LANE*INT_WIDTH] =
+             local_result[INT_WIDTH-1:0];
+         end else if ((LANE+1)*INT_WIDTH <= Width) begin
+diff --git a/src/fpnew_pkg.sv b/src/fpnew_pkg.sv
+index f133535..2139d7a 100644
+--- a/src/fpnew_pkg.sv
++++ b/src/fpnew_pkg.sv
+@@ -488,8 +488,7 @@ package fpnew_pkg;
+     for (int unsigned ifmt = 0; ifmt < NUM_INT_FORMATS; ifmt++)
+       for (int unsigned fmt = 0; fmt < NUM_FP_FORMATS; fmt++)
+         // Mask active int formats with the width of the float formats
+-        res[ifmt] |= icfg[ifmt] && lanefmts[fmt] &&
+-                     (fp_width(fp_format_e'(fmt)) == int_width(int_format_e'(ifmt)));
++        res[ifmt] |= icfg[ifmt] && lanefmts[fmt];
+     return res;
+   endfunction
+ 

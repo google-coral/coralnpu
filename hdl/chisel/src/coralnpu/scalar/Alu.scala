@@ -40,6 +40,12 @@ object AluOp extends ChiselEnum {
   val SRL  = Value
   val SRA  = Value
   val LUI  = Value
+  // RV64I (Word operations)
+  val ADDW = Value
+  val SUBW = Value
+  val SLLW = Value
+  val SRLW = Value
+  val SRAW = Value
   // ZBB
   val ANDN  = Value
   val ORN   = Value
@@ -58,6 +64,12 @@ object AluOp extends ChiselEnum {
   val ORCB  = Value
   val REV8  = Value
   val ZEXTH = Value
+  // ZBB (64-bit Word operations)
+  val CLZW  = Value
+  val CTZW  = Value
+  val CPOPW = Value
+  val ROLW  = Value
+  val RORW  = Value
 }
 
 class AluCmd(p: Parameters) extends Bundle {
@@ -90,9 +102,10 @@ class Alu(p: Parameters) extends Module {
     op   := io.req.bits.op
   }
 
-  val rs1   = io.rs1.data
-  val rs2   = io.rs2.data
-  val shamt = rs2(log2Ceil(p.xlen) - 1, 0)
+  val rs1    = io.rs1.data
+  val rs2    = io.rs2.data
+  val shamt  = rs2(log2Ceil(p.xlen) - 1, 0)
+  val shamt5 = rs2(4, 0)
 
   io.rd.valid     := valid
   io.rd.bits.addr := addr
@@ -101,12 +114,6 @@ class Alu(p: Parameters) extends Module {
   val r2IsGreaterU = rs1 < rs2
 
   val rsWidth = p.xlen
-
-  def SignExtend(x: UInt, length: Int): UInt = {
-    val ext = Wire(SInt(length.W))
-    ext := x.asSInt
-    ext.asUInt
-  }
 
   def Orcb(x: UInt, length: Int): UInt = {
     val orcb = Wire(UInt(length.W))
@@ -129,6 +136,12 @@ class Alu(p: Parameters) extends Module {
       AluOp.SRL  -> ((rs1 >> shamt)(p.xlen - 1, 0)),
       AluOp.SRA  -> (((rs1.asSInt >> shamt).asUInt)(p.xlen - 1, 0)),
       AluOp.LUI  -> rs2,
+      // RV64I (Word operations)
+      AluOp.ADDW -> SignExtend((rs1 + rs2)(31, 0), p.xlen),
+      AluOp.SUBW -> SignExtend((rs1 - rs2)(31, 0), p.xlen),
+      AluOp.SLLW -> SignExtend((rs1(31, 0) << shamt5)(31, 0), p.xlen),
+      AluOp.SRLW -> SignExtend((rs1(31, 0) >> shamt5)(31, 0), p.xlen),
+      AluOp.SRAW -> SignExtend(((rs1(31, 0).asSInt >> shamt5).asUInt)(31, 0), p.xlen),
       // ZBB
       AluOp.ANDN  -> (rs1 & ~rs2),
       AluOp.ORN   -> (rs1 | ~rs2),
@@ -146,7 +159,13 @@ class Alu(p: Parameters) extends Module {
       AluOp.ROR   -> rs1.rotateRight(shamt),
       AluOp.ORCB  -> Orcb(rs1, rsWidth),
       AluOp.REV8  -> Cat(UIntToVec(rs1, 8)),
-      AluOp.ZEXTH -> rs1(15, 0)
+      AluOp.ZEXTH -> rs1(15, 0),
+      // ZBB (64-bit Word operations)
+      AluOp.CLZW  -> SignExtend(Clz(rs1(31, 0)).pad(32), p.xlen),
+      AluOp.CTZW  -> SignExtend(Ctz(rs1(31, 0)).pad(32), p.xlen),
+      AluOp.CPOPW -> SignExtend(PopCount(rs1(31, 0)).pad(32), p.xlen),
+      AluOp.ROLW  -> SignExtend(rs1(31, 0).rotateLeft(shamt5), p.xlen),
+      AluOp.RORW  -> SignExtend(rs1(31, 0).rotateRight(shamt5), p.xlen)
     )
   )
 
@@ -155,6 +174,9 @@ class Alu(p: Parameters) extends Module {
     AluOp.CLZ,
     AluOp.CTZ,
     AluOp.CPOP,
+    AluOp.CLZW,
+    AluOp.CTZW,
+    AluOp.CPOPW,
     AluOp.ZEXTH,
     AluOp.SEXTH,
     AluOp.SEXTB,

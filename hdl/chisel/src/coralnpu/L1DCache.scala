@@ -386,8 +386,7 @@ class L1DCacheBank(p: Parameters) extends Module {
   val replaceSlotB = Wire(Vec(slots, Bool()))
   val replaceSlot  = replaceSlotB.asUInt
 
-  // OR mux lookup of associative entries.
-  def camaddrRead(i: Int, value: UInt = 0.U(32.W)): UInt = {
+  def camaddrRead(i: Int, value: UInt = 0.U(p.lsuAddrBits.W)): UInt = {
     if (i < slots) {
       camaddrRead(i + assoc, value | MuxOR(matchSet(i), camaddr(i)))
     } else {

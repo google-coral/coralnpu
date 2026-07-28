@@ -102,8 +102,13 @@
 
 `define ROB_DEPTH_WIDTH         $clog2(`ROB_DEPTH)
 `define NUM_RT_UOP              4
-`define PC_WIDTH                32
+`ifdef XLEN_64
+`define XLEN                    64
+`define PC_WIDTH                64
+`else
 `define XLEN                    32
+`define PC_WIDTH                32
+`endif
 `define FLEN                    32
 `define BYTE_WIDTH              8
 `define HWORD_WIDTH             16
