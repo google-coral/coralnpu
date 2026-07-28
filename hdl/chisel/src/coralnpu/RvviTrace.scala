@@ -21,7 +21,7 @@ object GenerateRvviTraceSource {
   def apply(p: Parameters): String = {
     var moduleInterface = "module RvviTraceBlackBox(\n"
     moduleInterface += "  input logic clk_i,\n"
-    for (i <- 0 until p.retirementBufferSize) {
+    for (i <- 0 until p.retirementLanes) {
       moduleInterface +=
         "  input logic valid_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
@@ -46,11 +46,11 @@ object GenerateRvviTraceSource {
         "  input logic [4095:0] v_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
         "  input logic [31:0] v_wb_i_GENI,\n".replaceAll("GENI", i.toString)
-      for (j <- 0 until p.retirementBufferSize) {
+      for (j <- 0 until p.retirementLanes) {
         moduleInterface +=
           "  input logic [GENSZ:0] csr_i_GENIDX,\n"
-            .replaceAll("GENIDX", (i * p.retirementBufferSize + j).toString)
-            .replaceAll("GENSZ", (((4096 / p.retirementBufferSize) * 32) - 1).toString)
+            .replaceAll("GENIDX", (i * p.retirementLanes + j).toString)
+            .replaceAll("GENSZ", (((4096 / p.retirementLanes) * 32) - 1).toString)
       }
       moduleInterface +=
         "  input logic [4095:0] csr_wb_i_GENI,\n".replaceAll("GENI", i.toString)
@@ -66,12 +66,12 @@ object GenerateRvviTraceSource {
         |    .FLEN(32),
         |    .VLEN(128),
         |    .NHART(1),
-        |    .RETIRE(GEN_retirementBufferSize)
+        |    .RETIRE(GEN_retirementLanes)
         |  ) rvvi();
-        |""".replaceAll("GEN_retirementBufferSize", p.retirementBufferSize.toString).stripMargin
+        |""".replaceAll("GEN_retirementLanes", p.retirementLanes.toString).stripMargin
 
     coreInstantiation += "  assign rvvi.clk = clk_i;\n"
-    for (i <- 0 until p.retirementBufferSize) {
+    for (i <- 0 until p.retirementLanes) {
       coreInstantiation += "  assign rvvi.valid[0][GENI] = valid_i_GENI;\n".replaceAll(
         "GENI",
         i.toString
@@ -120,12 +120,12 @@ object GenerateRvviTraceSource {
         "GENI",
         i.toString
       )
-      for (j <- 0 until p.retirementBufferSize) {
+      for (j <- 0 until p.retirementLanes) {
         coreInstantiation += "  assign rvvi.csr[0][GENi][MSB:LSB] = csr_i_GENIDX;\n"
           .replaceAll("GENi", i.toString)
-          .replaceAll("GENIDX", (i * p.retirementBufferSize + j).toString)
-          .replaceAll("MSB", ((j + 1) * (4096 / p.retirementBufferSize) - 1).toString)
-          .replaceAll("LSB", ((j * (4096 / p.retirementBufferSize)).toString))
+          .replaceAll("GENIDX", (i * p.retirementLanes + j).toString)
+          .replaceAll("MSB", ((j + 1) * (4096 / p.retirementLanes) - 1).toString)
+          .replaceAll("LSB", ((j * (4096 / p.retirementLanes)).toString))
       }
       coreInstantiation += "  assign rvvi.csr_wb[0][GENI] = csr_wb_i_GENI;\n".replaceAll(
         "GENI",
@@ -154,25 +154,25 @@ class RvviTraceBlackBox(p: Parameters)
     with HasBlackBoxResource {
   val io = IO(new Bundle {
     val clk_i        = Input(Clock())
-    val valid_i      = Input(Vec(p.retirementBufferSize, Bool()))
-    val order_i      = Input(Vec(p.retirementBufferSize, UInt(64.W)))
-    val insn_i       = Input(Vec(p.retirementBufferSize, UInt(32.W)))
-    val trap_i       = Input(Vec(p.retirementBufferSize, Bool()))
-    val debug_mode_i = Input(Vec(p.retirementBufferSize, Bool()))
-    val pc_rdata_i   = Input(Vec(p.retirementBufferSize, UInt(32.W)))
-    val x_wdata_i    = Input(Vec(p.retirementBufferSize, UInt((32 * 32).W)))
-    val x_wb_i       = Input(Vec(p.retirementBufferSize, UInt(32.W)))
-    val f_wdata_i    = Input(Vec(p.retirementBufferSize, UInt((32 * 32).W)))
-    val f_wb_i       = Input(Vec(p.retirementBufferSize, UInt(32.W)))
-    val v_wdata_i    = Input(Vec(p.retirementBufferSize, UInt((32 * 128).W)))
-    val v_wb_i       = Input(Vec(p.retirementBufferSize, UInt(32.W)))
+    val valid_i      = Input(Vec(p.retirementLanes, Bool()))
+    val order_i      = Input(Vec(p.retirementLanes, UInt(64.W)))
+    val insn_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
+    val trap_i       = Input(Vec(p.retirementLanes, Bool()))
+    val debug_mode_i = Input(Vec(p.retirementLanes, Bool()))
+    val pc_rdata_i   = Input(Vec(p.retirementLanes, UInt(32.W)))
+    val x_wdata_i    = Input(Vec(p.retirementLanes, UInt((32 * 32).W)))
+    val x_wb_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
+    val f_wdata_i    = Input(Vec(p.retirementLanes, UInt((32 * 32).W)))
+    val f_wb_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
+    val v_wdata_i    = Input(Vec(p.retirementLanes, UInt((32 * 128).W)))
+    val v_wb_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
     val csr_i        = Input(
       Vec(
-        p.retirementBufferSize * p.retirementBufferSize,
-        UInt(((4096 / p.retirementBufferSize) * 32).W)
+        p.retirementLanes * p.retirementLanes,
+        UInt(((4096 / p.retirementLanes) * 32).W)
       )
     )
-    val csr_wb_i = Input(Vec(p.retirementBufferSize, UInt(4096.W)))
+    val csr_wb_i = Input(Vec(p.retirementLanes, UInt(4096.W)))
   })
   addResource("external/RVVI/source/host/rvvi/rvviTrace.sv")
   setInline("RvviTraceBlackBox.sv", GenerateRvviTraceSource(p))
@@ -183,36 +183,36 @@ class RvviTrace(p: Parameters) extends Module {
     val rb  = Input(new RetirementBufferDebugIO(p))
     val csr = Input(new CsrTraceIO(p))
   })
-  val x_wdata = Wire(Vec(p.retirementBufferSize, Vec(32, UInt(32.W))))
-  val x_wb    = Wire(Vec(p.retirementBufferSize, Vec(32, Bool())))
-  val f_wdata = Wire(Vec(p.retirementBufferSize, Vec(32, UInt(32.W))))
-  val f_wb    = Wire(Vec(p.retirementBufferSize, Vec(32, Bool())))
-  val v_wdata = Wire(Vec(p.retirementBufferSize, Vec(32, UInt(128.W))))
-  val v_wb    = Wire(Vec(p.retirementBufferSize, Vec(32, Bool())))
-  val csr     = Wire(Vec(p.retirementBufferSize, Vec(4096, UInt(32.W))))
-  val csr_wb  = Wire(Vec(p.retirementBufferSize, Vec(4096, Bool())))
+  val x_wdata = Wire(Vec(p.retirementLanes, Vec(32, UInt(32.W))))
+  val x_wb    = Wire(Vec(p.retirementLanes, Vec(32, Bool())))
+  val f_wdata = Wire(Vec(p.retirementLanes, Vec(32, UInt(32.W))))
+  val f_wb    = Wire(Vec(p.retirementLanes, Vec(32, Bool())))
+  val v_wdata = Wire(Vec(p.retirementLanes, Vec(32, UInt(128.W))))
+  val v_wb    = Wire(Vec(p.retirementLanes, Vec(32, Bool())))
+  val csr     = Wire(Vec(p.retirementLanes, Vec(4096, UInt(32.W))))
+  val csr_wb  = Wire(Vec(p.retirementLanes, Vec(4096, Bool())))
 
   val count = RegInit(0.U(64.W))
   count := count + PopCount(io.rb.inst.map(_.valid))
 
   val rvviTraceBlackBox = Module(new RvviTraceBlackBox(p))
   rvviTraceBlackBox.io.clk_i := clock
-  for (i <- 0 until p.retirementBufferSize) {
+  for (i <- 0 until p.retirementLanes) {
     rvviTraceBlackBox.io.x_wdata_i(i) := x_wdata(i).asUInt
     rvviTraceBlackBox.io.x_wb_i(i)    := x_wb(i).asUInt
     rvviTraceBlackBox.io.f_wdata_i(i) := f_wdata(i).asUInt
     rvviTraceBlackBox.io.f_wb_i(i)    := f_wb(i).asUInt
     rvviTraceBlackBox.io.v_wdata_i(i) := v_wdata(i).asUInt
     rvviTraceBlackBox.io.v_wb_i(i)    := v_wb(i).asUInt
-    for (j <- 0 until p.retirementBufferSize) {
+    for (j <- 0 until p.retirementLanes) {
       val subsize = rvviTraceBlackBox.io.csr_i(i).getWidth
       rvviTraceBlackBox.io
-        .csr_i(i * p.retirementBufferSize + j) := csr(i).asUInt(subsize * (j + 1) - 1, subsize * j)
+        .csr_i(i * p.retirementLanes + j) := csr(i).asUInt(subsize * (j + 1) - 1, subsize * j)
     }
     rvviTraceBlackBox.io.csr_wb_i(i) := csr_wb(i).asUInt
   }
 
-  for (i <- 0 until p.retirementBufferSize) {
+  for (i <- 0 until p.retirementLanes) {
     val valid    = io.rb.inst(i).valid
     val insn     = io.rb.inst(i).bits.inst
     val pc_rdata = io.rb.inst(i).bits.pc

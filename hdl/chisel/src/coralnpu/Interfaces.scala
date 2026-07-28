@@ -169,7 +169,7 @@ class DFlushIO(p: Parameters) extends Bundle {
 
 class RetirementBufferDebugIO(p: Parameters) extends Bundle {
   val inst = Vec(
-    p.retirementBufferSize,
+    p.retirementLanes,
     Valid(new Bundle {
       val pc        = UInt(p.programCounterBits.W)
       val inst      = UInt(p.instructionBits.W)

@@ -185,7 +185,7 @@ object DebugCause extends ChiselEnum {
 }
 
 class CsrCounters(p: Parameters) extends Bundle {
-  val nRetired = UInt(log2Ceil(p.retirementBufferSize + 1).W)
+  val nRetired = UInt(log2Ceil(p.retirementLanes + 1).W)
 }
 
 class CsrBruIO(p: Parameters) extends Bundle {

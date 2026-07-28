@@ -35,7 +35,7 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
     Option.when(p.enableRvv)(Input(Vec(p.instructionLanes, Valid(new VectorWriteDataIO(p)))))
   val fault       = Input(Valid(new FaultManagerOutput(p)))
   val nSpace      = Output(UInt(log2Ceil(p.retirementBufferSize + 1).W))
-  val nRetired    = Output(UInt(log2Ceil(p.retirementBufferSize + 1).W))
+  val nRetired    = Output(UInt(log2Ceil(p.retirementLanes + 1).W))
   val empty       = Output(Bool())
   val trapPending = Output(Bool())
   val debug       = Option.when(p.shouldExposeDebugPorts)(Output(new RetirementBufferDebugIO(p)))
@@ -73,7 +73,8 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
 
   val bufferSize = p.retirementBufferSize
   assert(bufferSize >= p.instructionLanes)
-  assert(bufferSize >= io.writeDataScalar.length)
+  assert(bufferSize >= p.retirementLanes)
+  assert(p.retirementLanes >= io.writeDataScalar.length)
   // Construct a circular buffer of `bufferSize`, that can enqueue and dequeue `bufferSize` elements
   // per cycle. This will be used to store information about dispatched instructions.
   val instBuffer = Module(
@@ -511,18 +512,36 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     }
   }
 
-  val hasTrap      = resultUpdate.map(x => x.valid && x.bits.trap).reduce(_ || _)
-  val trapDetected = VecInit(resultUpdate.map(x => x.valid && x.bits.trap))
-  val firstTrapIdx = PriorityEncoder(trapDetected)
-  val countValid   = Cto(VecInit(resultUpdate.map(x => x.valid && x.bits.cfDone)).asUInt)
+  val hasTrap = resultUpdate.map(x => x.valid && x.bits.trap).reduce(_ || _)
 
-  val limit             = firstTrapIdx + 1.U
-  val trapReadyToRetire = hasTrap && (limit <= countValid)
-  val deqReady          = Mux(trapReadyToRetire, limit, countValid)
+  val deqReady = {
+    val blockRetire = VecInit
+      .tabulate(p.retirementLanes) { i =>
+        if (i == 0) {
+          !resultUpdate(i).valid || !resultUpdate(i).bits.cfDone
+        } else {
+          !resultUpdate(i).valid || !resultUpdate(i).bits.cfDone || resultUpdate(i - 1).bits.trap
+        }
+      }
+      .asUInt
+    Ctz(blockRetire)
+  }
 
   instBuffer.io.deqReady := deqReady
 
-  val trapRetired = trapReadyToRetire
+  val trapRetired = {
+    val laneReady = VecInit(
+      resultUpdate.take(p.retirementLanes).map(x => x.valid && x.bits.cfDone)
+    )
+    // This does not consider previous traps because we're going to reduce.
+    val laneCanTrap = laneReady.scanLeft(true.B)(_ && _).drop(1)
+    VecInit
+      .tabulate(p.retirementLanes) { i =>
+        laneCanTrap(i) && resultUpdate(i).bits.trap
+      }
+      .reduce(_ || _)
+  }
+
   instBuffer.io.flush := trapRetired
 
   if (!mini && p.enableRvv) {
@@ -549,7 +568,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
 
   val retiredEcalls = PopCount(
     VecInit(
-      (0 until bufferSize).map(i => (i.U < deqReady) && instBuffer.io.dataOut(i).isEcall)
+      (0 until p.retirementLanes).map(i => (i.U < deqReady) && instBuffer.io.dataOut(i).isEcall)
     ).asUInt
   )
 
@@ -560,7 +579,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   io.trapPending := RegNext(hasTrap && !trapRetired, false.B)
 
   io.debug.foreach { debug =>
-    for (i <- 0 until bufferSize) {
+    for (i <- 0 until p.retirementLanes) {
       val valid      = (i.U < instBuffer.io.deqReady)
       val allowDebug =
         resultUpdate(i).bits.trap && instBuffer.io.dataOut(i).isControlFlow && noFire0Fault

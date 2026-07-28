@@ -121,7 +121,8 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen
   val rvvRegfileBaseAddr            = 64
   val rvvRegCount                   = 32
   val rvvRegCountWidth              = log2Ceil(rvvRegCount)
-  val retirementBufferSize          = 8
+  val retirementBufferSize          = 16
+  val retirementLanes               = 8
   def retirementBufferIdxWidth: Int = {
     val activeFloatRegCount = (if (enableFloat) { floatRegCount }
                                else { 0 })

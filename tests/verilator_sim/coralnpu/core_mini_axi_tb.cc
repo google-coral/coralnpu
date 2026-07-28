@@ -200,7 +200,7 @@ void CoreMiniAxi_tb::Connect() {
   core_->io_debug_rb_inst_##x##_bits_data(debug_io_.rb_inst_##x##_bits_data); \
   core_->io_debug_rb_inst_##x##_bits_trap(debug_io_.rb_inst_##x##_bits_trap); \
   BIND_RB_DEBUG_IO_VECS_8(x)
-  REPEAT(BIND_RB_DEBUG_IO, KP_retirementBufferSize);
+  REPEAT(BIND_RB_DEBUG_IO, KP_retirementLanes);
 #undef BIND_RB_DEBUG_IO
 #undef BIND_RB_DEBUG_IO_VECS_8
 #undef BIND_RB_DEBUG_IO_VEC
@@ -463,7 +463,7 @@ void CoreMiniAxi_tb::TraceInstructions() {
     tracer_.TraceInstructionRaw(pc, inst, idx, data_vec, trap); \
   } \
 } while (0);
-REPEAT(TRACE_INSTRUCTION, KP_retirementBufferSize);
+  REPEAT(TRACE_INSTRUCTION, KP_retirementLanes);
 #undef TRACE_INSTRUCTION
 }
 
