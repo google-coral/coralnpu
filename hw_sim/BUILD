@@ -35,9 +35,11 @@ cc_library(
         "mailbox.h",
     ],
     deps = [
+        ":coralnpu_simulator_headers",
         ":hw_primitives",
         "//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_cc",
         "//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_cc",
+        "//hdl/chisel/src/coralnpu:vme_core_mini_axi_cc_library_cc",
         "//hdl/verilog:sram_backdoor",
     ],
 )
@@ -90,6 +92,19 @@ cc_library(
     alwayslink = True,
 )
 
+cc_library(
+    name = "core_mini_axi_simulator_vme",
+    srcs = ["core_mini_axi_simulator.cc"],
+    copts = ["-DENABLE_VME"],
+    linkstatic = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":coralnpu_simulator_headers",
+        ":core_mini_axi_wrapper",
+    ],
+    alwayslink = True,
+)
+
 coralnpu_v2_binary(
     name = "mailbox_example",
     srcs = [
@@ -125,6 +140,13 @@ cc_binary(
     linkshared = True,
     visibility = ["//visibility:public"],
     deps = [":core_mini_axi_simulator_rvv"],
+)
+
+cc_binary(
+    name = "libcoralnpu_simulator_vme.so",
+    linkshared = True,
+    visibility = ["//visibility:public"],
+    deps = [":core_mini_axi_simulator_vme"],
 )
 
 genrule(

@@ -19,10 +19,13 @@
 #include <memory>
 #include <vector>
 
+#include "hw_sim/coralnpu_simulator.h"
 #include "hw_sim/hw_primitives.h"
 #include "hw_sim/mailbox.h"
 
-#ifdef ENABLE_RVV
+#if defined(ENABLE_VME)
+#include "VVmeCoreMiniAxi.h"
+#elif defined(ENABLE_RVV)
 #include "VRvvCoreMiniAxi.h"
 #else
 #include "VCoreMiniAxi.h"
@@ -30,88 +33,56 @@
 
 class CoreMiniAxiWrapper {
  public:
-  explicit CoreMiniAxiWrapper(VerilatedContext* context)
+  explicit CoreMiniAxiWrapper(VerilatedContext *context,
+                              const CoralNPUSimulatorOptions &options = {})
       : context_(context),
         core_(context, "core"),
+        options_(options),
         clock_(context, &core_.io_aclk, &core_),
-        slave_write_driver_(&clock_, &core_.io_axi_slave_write_addr_valid,
-                            &core_.io_axi_slave_write_addr_bits_addr,
-                            &core_.io_axi_slave_write_addr_bits_prot,
-                            &core_.io_axi_slave_write_addr_bits_id,
-                            &core_.io_axi_slave_write_addr_bits_len,
-                            &core_.io_axi_slave_write_addr_bits_size,
-                            &core_.io_axi_slave_write_addr_bits_burst,
-                            &core_.io_axi_slave_write_addr_bits_lock,
-                            &core_.io_axi_slave_write_addr_bits_cache,
-                            &core_.io_axi_slave_write_addr_bits_qos,
-                            &core_.io_axi_slave_write_addr_bits_region,
-                            &core_.io_axi_slave_write_addr_ready,
-                            &core_.io_axi_slave_write_data_valid,
-                            &core_.io_axi_slave_write_data_bits_data,
-                            &core_.io_axi_slave_write_data_bits_strb,
-                            &core_.io_axi_slave_write_data_bits_last,
-                            &core_.io_axi_slave_write_data_ready,
-                            &core_.io_axi_slave_write_resp_valid,
-                            &core_.io_axi_slave_write_resp_bits_id,
-                            &core_.io_axi_slave_write_resp_bits_resp,
-                            &core_.io_axi_slave_write_resp_ready),
-        slave_read_driver_(&clock_, &core_.io_axi_slave_read_addr_valid,
-                           &core_.io_axi_slave_read_addr_bits_addr,
-                           &core_.io_axi_slave_read_addr_bits_prot,
-                           &core_.io_axi_slave_read_addr_bits_id,
-                           &core_.io_axi_slave_read_addr_bits_len,
-                           &core_.io_axi_slave_read_addr_bits_size,
-                           &core_.io_axi_slave_read_addr_bits_burst,
-                           &core_.io_axi_slave_read_addr_bits_lock,
-                           &core_.io_axi_slave_read_addr_bits_cache,
-                           &core_.io_axi_slave_read_addr_bits_qos,
-                           &core_.io_axi_slave_read_addr_bits_region,
-                           &core_.io_axi_slave_read_addr_ready,
-                           &core_.io_axi_slave_read_data_valid,
-                           &core_.io_axi_slave_read_data_bits_data,
-                           &core_.io_axi_slave_read_data_bits_id,
-                           &core_.io_axi_slave_read_data_bits_resp,
-                           &core_.io_axi_slave_read_data_bits_last,
-                           &core_.io_axi_slave_read_data_ready),
-        master_read_driver_(&clock_, &core_.io_axi_master_read_addr_valid,
-                            &core_.io_axi_master_read_addr_bits_addr,
-                            &core_.io_axi_master_read_addr_bits_prot,
-                            &core_.io_axi_master_read_addr_bits_id,
-                            &core_.io_axi_master_read_addr_bits_len,
-                            &core_.io_axi_master_read_addr_bits_size,
-                            &core_.io_axi_master_read_addr_bits_burst,
-                            &core_.io_axi_master_read_addr_bits_lock,
-                            &core_.io_axi_master_read_addr_bits_cache,
-                            &core_.io_axi_master_read_addr_bits_qos,
-                            &core_.io_axi_master_read_addr_bits_region,
-                            &core_.io_axi_master_read_addr_ready,
-                            &core_.io_axi_master_read_data_valid,
-                            &core_.io_axi_master_read_data_bits_data,
-                            &core_.io_axi_master_read_data_bits_id,
-                            &core_.io_axi_master_read_data_bits_resp,
-                            &core_.io_axi_master_read_data_bits_last,
-                            &core_.io_axi_master_read_data_ready),
-        master_write_driver_(&clock_, &core_.io_axi_master_write_addr_valid,
-                             &core_.io_axi_master_write_addr_bits_addr,
-                             &core_.io_axi_master_write_addr_bits_prot,
-                             &core_.io_axi_master_write_addr_bits_id,
-                             &core_.io_axi_master_write_addr_bits_len,
-                             &core_.io_axi_master_write_addr_bits_size,
-                             &core_.io_axi_master_write_addr_bits_burst,
-                             &core_.io_axi_master_write_addr_bits_lock,
-                             &core_.io_axi_master_write_addr_bits_cache,
-                             &core_.io_axi_master_write_addr_bits_qos,
-                             &core_.io_axi_master_write_addr_bits_region,
-                             &core_.io_axi_master_write_addr_ready,
-                             &core_.io_axi_master_write_data_valid,
-                             &core_.io_axi_master_write_data_bits_data,
-                             &core_.io_axi_master_write_data_bits_strb,
-                             &core_.io_axi_master_write_data_bits_last,
-                             &core_.io_axi_master_write_data_ready,
-                             &core_.io_axi_master_write_resp_valid,
-                             &core_.io_axi_master_write_resp_bits_id,
-                             &core_.io_axi_master_write_resp_bits_resp,
-                             &core_.io_axi_master_write_resp_ready),
+        slave_write_driver_(
+            &clock_, &core_.io_axi_slave_write_addr_valid, &core_.io_axi_slave_write_addr_bits_addr,
+            &core_.io_axi_slave_write_addr_bits_prot, &core_.io_axi_slave_write_addr_bits_id,
+            &core_.io_axi_slave_write_addr_bits_len, &core_.io_axi_slave_write_addr_bits_size,
+            &core_.io_axi_slave_write_addr_bits_burst, &core_.io_axi_slave_write_addr_bits_lock,
+            &core_.io_axi_slave_write_addr_bits_cache, &core_.io_axi_slave_write_addr_bits_qos,
+            &core_.io_axi_slave_write_addr_bits_region, &core_.io_axi_slave_write_addr_ready,
+            &core_.io_axi_slave_write_data_valid, &core_.io_axi_slave_write_data_bits_data,
+            &core_.io_axi_slave_write_data_bits_strb, &core_.io_axi_slave_write_data_bits_last,
+            &core_.io_axi_slave_write_data_ready, &core_.io_axi_slave_write_resp_valid,
+            &core_.io_axi_slave_write_resp_bits_id, &core_.io_axi_slave_write_resp_bits_resp,
+            &core_.io_axi_slave_write_resp_ready),
+        slave_read_driver_(
+            &clock_, &core_.io_axi_slave_read_addr_valid, &core_.io_axi_slave_read_addr_bits_addr,
+            &core_.io_axi_slave_read_addr_bits_prot, &core_.io_axi_slave_read_addr_bits_id,
+            &core_.io_axi_slave_read_addr_bits_len, &core_.io_axi_slave_read_addr_bits_size,
+            &core_.io_axi_slave_read_addr_bits_burst, &core_.io_axi_slave_read_addr_bits_lock,
+            &core_.io_axi_slave_read_addr_bits_cache, &core_.io_axi_slave_read_addr_bits_qos,
+            &core_.io_axi_slave_read_addr_bits_region, &core_.io_axi_slave_read_addr_ready,
+            &core_.io_axi_slave_read_data_valid, &core_.io_axi_slave_read_data_bits_data,
+            &core_.io_axi_slave_read_data_bits_id, &core_.io_axi_slave_read_data_bits_resp,
+            &core_.io_axi_slave_read_data_bits_last, &core_.io_axi_slave_read_data_ready),
+        master_read_driver_(
+            &clock_, &core_.io_axi_master_read_addr_valid, &core_.io_axi_master_read_addr_bits_addr,
+            &core_.io_axi_master_read_addr_bits_prot, &core_.io_axi_master_read_addr_bits_id,
+            &core_.io_axi_master_read_addr_bits_len, &core_.io_axi_master_read_addr_bits_size,
+            &core_.io_axi_master_read_addr_bits_burst, &core_.io_axi_master_read_addr_bits_lock,
+            &core_.io_axi_master_read_addr_bits_cache, &core_.io_axi_master_read_addr_bits_qos,
+            &core_.io_axi_master_read_addr_bits_region, &core_.io_axi_master_read_addr_ready,
+            &core_.io_axi_master_read_data_valid, &core_.io_axi_master_read_data_bits_data,
+            &core_.io_axi_master_read_data_bits_id, &core_.io_axi_master_read_data_bits_resp,
+            &core_.io_axi_master_read_data_bits_last, &core_.io_axi_master_read_data_ready),
+        master_write_driver_(
+            &clock_, &core_.io_axi_master_write_addr_valid,
+            &core_.io_axi_master_write_addr_bits_addr, &core_.io_axi_master_write_addr_bits_prot,
+            &core_.io_axi_master_write_addr_bits_id, &core_.io_axi_master_write_addr_bits_len,
+            &core_.io_axi_master_write_addr_bits_size, &core_.io_axi_master_write_addr_bits_burst,
+            &core_.io_axi_master_write_addr_bits_lock, &core_.io_axi_master_write_addr_bits_cache,
+            &core_.io_axi_master_write_addr_bits_qos, &core_.io_axi_master_write_addr_bits_region,
+            &core_.io_axi_master_write_addr_ready, &core_.io_axi_master_write_data_valid,
+            &core_.io_axi_master_write_data_bits_data, &core_.io_axi_master_write_data_bits_strb,
+            &core_.io_axi_master_write_data_bits_last, &core_.io_axi_master_write_data_ready,
+            &core_.io_axi_master_write_resp_valid, &core_.io_axi_master_write_resp_bits_id,
+            &core_.io_axi_master_write_resp_bits_resp, &core_.io_axi_master_write_resp_ready),
         halted_(&core_.io_halted),
         wfi_(&core_.io_wfi) {}
   ~CoreMiniAxiWrapper() = default;
@@ -125,7 +96,14 @@ class CoreMiniAxiWrapper {
     context_->timeInc(1);
   }
 
-  void Step() { clock_.Step(); }
+  void Step() {
+    clock_.Step();
+    cycle_count_++;
+    if (options_.cycle_callback && options_.cycle_callback_period > 0 &&
+        (cycle_count_ % options_.cycle_callback_period == 0)) {
+      options_.cycle_callback(cycle_count_);
+    }
+  }
 
   CoralNPUMailbox& mailbox() { return mailbox_; }
 
@@ -218,11 +196,15 @@ class CoreMiniAxiWrapper {
  private:
   VerilatedContext* const context_;
   CoralNPUMailbox mailbox_;
-#ifdef ENABLE_RVV
+#if defined(ENABLE_VME)
+  VVmeCoreMiniAxi core_;
+#elif defined(ENABLE_RVV)
   VRvvCoreMiniAxi core_;
 #else
   VCoreMiniAxi core_;
 #endif
+  const CoralNPUSimulatorOptions options_;
+  uint64_t cycle_count_ = 0;
   Clock clock_;
   AxiSlaveWriteDriver slave_write_driver_;
   AxiSlaveReadDriver slave_read_driver_;

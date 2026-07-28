@@ -16,12 +16,21 @@
 #define HW_SIM_CORALNPU_SIMULATOR_H_
 
 #include <cstdint>
+#include <functional>
 
 #include "hw_sim/mailbox.h"
+
+struct CoralNPUSimulatorOptions {
+  using CycleCallback = std::function<void(uint64_t cycle_count)>;
+
+  CycleCallback cycle_callback   = nullptr;
+  uint64_t cycle_callback_period = 1000;
+};
 
 class CoralNPUSimulator {
  public:
   static CoralNPUSimulator* Create();
+  static CoralNPUSimulator *Create(const CoralNPUSimulatorOptions &options);
 
   virtual ~CoralNPUSimulator() = default;
 

@@ -21,7 +21,8 @@
 
 class CoreMiniAxiSimulator : public CoralNPUSimulator {
  public:
-  CoreMiniAxiSimulator() : context_(), wrapper_(&context_) {
+  explicit CoreMiniAxiSimulator(const CoralNPUSimulatorOptions &options = {})
+      : context_(), wrapper_(&context_, options) {
     ddr_memory_.resize(1024 * 1024 * 1024, 0);  // 1GB DDR
     auto read_cb = [this](const AxiAddr &axi_addr) { return this->ReadCallback(axi_addr); };
     wrapper_.RegisterReadCallback(read_cb);
@@ -165,3 +166,7 @@ AxiRData CoreMiniAxiSimulator::ReadCallback(const AxiAddr &addr) {
 
 // static
 CoralNPUSimulator *CoralNPUSimulator::Create() { return new CoreMiniAxiSimulator(); }
+
+CoralNPUSimulator *CoralNPUSimulator::Create(const CoralNPUSimulatorOptions &options) {
+  return new CoreMiniAxiSimulator(options);
+}
