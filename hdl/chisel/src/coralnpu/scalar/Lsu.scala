@@ -168,6 +168,8 @@ class LsuCmd(p: Parameters) extends Bundle {
   val elemWidth = Option.when(p.enableRvv) { UInt(3.W) }
   val nfields   = Option.when(p.enableRvv) { UInt(3.W) }
   val bit24To20 = Option.when(p.enableRvv) { UInt(5.W) }
+  // Whether or not a vector L/S instruction is masked. Unused in other ops.
+  val vm = Option.when(p.enableRvv) { Bool() }
 
   def umop = bit24To20 // when unit-stride
   def rs2  = bit24To20 // when const-stride
@@ -214,6 +216,10 @@ class LsuUOp(p: Parameters) extends Bundle {
   val emul_data_orig = Option.when(p.enableRvv) { UInt(3.W) }
   val nfields        = Option.when(p.enableRvv) { UInt(3.W) }
   val strict         = Option.when(p.enableRvv) { Bool() }
+  val vl             = Option.when(p.enableRvv) { UInt(log2Ceil(p.rvvVlen + 1).W) }
+  val vstart         = Option.when(p.enableRvv) { UInt(log2Ceil(p.rvvVlen).W) }
+  // Whether or not a vector L/S instruction is masked. Unused in other ops.
+  val masked = Option.when(p.enableRvv) { Bool() }
 
   override def toPrintable: Printable = {
     cf"LsuUOp(store -> ${store}, rd -> ${rd}, op -> ${op}, " +
@@ -290,6 +296,22 @@ object LsuUOp {
       result.elemWidth.get      := eew
       result.emul_data.get      := lmulToDataEmul(lmul_eff)
       result.emul_data_orig.get := lmulToDataEmul(lmul_orig)
+      result.vl.get             := MuxUpTo1H(
+        rvvState.get.bits.vl,
+        Seq(
+          cmd.isMaskOperation() -> ((rvvState.get.bits.vl >> 3) + rvvState.get.bits.vl.take(3).orR),
+          cmd.isWholeRegister() -> MuxUpTo1H(
+            WireInit(UInt(result.vl.get.getWidth.W), DontCare),
+            Seq(
+              (cmd.nfields.get === 0.U) -> p.rvvVlenb.U,       // NF1 -> LMUL1
+              (cmd.nfields.get === 1.U) -> (p.rvvVlenb * 2).U, // NF2 -> LMUL2
+              (cmd.nfields.get === 3.U) -> (p.rvvVlenb * 4).U, // NF4 -> LMUL4
+              (cmd.nfields.get === 7.U) -> (p.rvvVlenb * 8).U  // NF8 -> LMUL8
+            )
+          )
+        )
+      )
+      result.vstart.get := rvvState.get.bits.vstart
 
       // If mask operation, force fields to zero
       result.nfields.get := MuxUpTo1H(
@@ -307,6 +329,7 @@ object LsuUOp {
           cmd.rs2.get =/= 0.U &&
           sbus.data(i) === 0.U
       )
+      result.masked.get := !cmd.vm.get
     }
 
     result
@@ -1389,6 +1412,14 @@ class LsuCell(p: Parameters) extends Bundle {
     )
   }
 
+  def initSkip(): LsuCell = {
+    MakeWireBundle[LsuCell](
+      new LsuCell(p),
+      _       -> this,
+      _.state -> LsuCellState.W_WB
+    )
+  }
+
   def initLoad(addr: UInt, needData: Bool): LsuCell = {
     MakeWireBundle[LsuCell](
       new LsuCell(p),
@@ -2240,9 +2271,31 @@ class LsuSuperSlot(p: Parameters) extends Module {
       nfields: UInt,
       maxVectorPerSegment: UInt,
       maxVectorPerSegmentOrig: UInt,
-      elemWidth: UInt
+      elemWidth: UInt,
+      vl: UInt,
+      vstart: UInt,
+      masked: Bool
     ): State = {
-      // TODO(davidgao): unmasked can skip W_DATA
+      // From lmul and nfields, inclusive
+      val maxActiveReg = maxVectorPerSegment * nfields + nfields + maxVectorPerSegment
+      // From vstart and nfields, inclusive
+      val startElem = vstart * nfields + vstart
+      val startCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
+        Seq(
+          "b000".U -> Cat(0.U(2.W), startElem),
+          "b101".U -> Cat(0.U(1.W), startElem, 0.U(1.W)),
+          "b110".U -> Cat(startElem, 0.U(2.W))
+        )
+      )
+      // From vl and nfields, exclusive
+      val endElem = vl * nfields + vl
+      val endCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
+        Seq(
+          "b000".U -> Cat(0.U(2.W), endElem),
+          "b101".U -> Cat(0.U(1.W), endElem, 0.U(1.W)),
+          "b110".U -> Cat(endElem, 0.U(2.W))
+        )
+      )
       MakeWireBundle[State](
         new State(),
         _ -> initVectorUS(
@@ -2256,10 +2309,18 @@ class LsuSuperSlot(p: Parameters) extends Module {
           write = false
         ),
         _.cells -> VecInit.tabulate(nCells) { i =>
-          Mux(
-            (i / p.rvvVlenb).U <= maxVectorPerSegment * nfields + nfields + maxVectorPerSegment,
-            cells(i).initLoad(addr + i.U, needData = true.B),
-            cells(i).initDone()
+          MuxUpTo1H(
+            cells(i).initDone(),
+            Seq(
+              // Prestart: skip to WB
+              (i.U < startCell) -> cells(i).initSkip(),
+              // Active cells: skip HS if not masked
+              (i.U >= startCell && i.U < endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
+                .initLoad(addr + i.U, needData = masked),
+              // tail cells:  skip to WB
+              (i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i).initSkip()
+              // Default: unreachable cells
+            )
           )
         }
       )
@@ -2376,9 +2437,31 @@ class LsuSuperSlot(p: Parameters) extends Module {
       maxVectorPerSegmentOrig: UInt,
       elemWidth: UInt,
       stride: UInt,
-      strict: Bool
+      strict: Bool,
+      vl: UInt,
+      vstart: UInt,
+      masked: Bool
     ): State = {
-      // TODO: unmasked can skip W_DATA
+      // From lmul and nfields, inclusive
+      val maxActiveReg = maxVectorPerSegment * nfields + nfields + maxVectorPerSegment
+      // From vstart and nfields, inclusive
+      val startElem = vstart * nfields + vstart
+      val startCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
+        Seq(
+          "b000".U -> Cat(0.U(2.W), startElem),
+          "b101".U -> Cat(0.U(1.W), startElem, 0.U(1.W)),
+          "b110".U -> Cat(startElem, 0.U(2.W))
+        )
+      )
+      // From vl and nfields, exclusive
+      val endElem = vl * nfields + vl
+      val endCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
+        Seq(
+          "b000".U -> Cat(0.U(2.W), endElem),
+          "b101".U -> Cat(0.U(1.W), endElem, 0.U(1.W)),
+          "b110".U -> Cat(endElem, 0.U(2.W))
+        )
+      )
       // TODO: assert
       val offsets =
         MuxLookup(Cat(nfields, elemWidth), VecInit.fill(nCells)(WireInit(UInt(32.W), DontCare)))(
@@ -2427,11 +2510,18 @@ class LsuSuperSlot(p: Parameters) extends Module {
           write = false
         ),
         _.cells -> VecInit.tabulate(nCells) { i =>
-          Mux(
-            // TODO: consider vl/vstart
-            (i / p.rvvVlenb).U <= maxVectorPerSegment * nfields + nfields + maxVectorPerSegment,
-            cells(i).initLoad(addr + offsets(i), needData = true.B),
-            cells(i).initDone()
+          MuxUpTo1H(
+            cells(i).initDone(),
+            Seq(
+              // Prestart: skip to WB
+              (i.U < startCell) -> cells(i).initSkip(),
+              // Active cells: skip HS if not masked
+              (i.U >= startCell && i.U < endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
+                .initLoad(addr + offsets(i), needData = masked),
+              // tail cells:  skip to WB
+              (i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i).initSkip()
+              // Default: unreachable cells
+            )
           )
         }
       )
@@ -2772,7 +2862,10 @@ class LsuSuperSlot(p: Parameters) extends Module {
             nfields = nfields,
             maxVectorPerSegment = maxVectorPerSegment,
             maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
-            elemWidth = elemWidth
+            elemWidth = elemWidth,
+            vl = uop.vl.get,
+            vstart = uop.vstart.get,
+            masked = uop.masked.get
           ),
           LsuOp.VLOAD_STRIDED -> initVectorLoadCS(
             pc = uop.pc,
@@ -2783,7 +2876,10 @@ class LsuSuperSlot(p: Parameters) extends Module {
             maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
             elemWidth = elemWidth,
             stride = uop.data,
-            strict = uop.strict.getOrElse(false.B)
+            strict = uop.strict.getOrElse(false.B),
+            vl = uop.vl.get,
+            vstart = uop.vstart.get,
+            masked = uop.masked.get
           ),
           LsuOp.VLOAD_OINDEXED -> indexedInitFunc(
             strict = true.B,

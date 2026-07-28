@@ -457,8 +457,7 @@ object GenerateBackendConfig {
     }
     config += """
         |// LSU interaction
-        |// Disable until scalar side supports NOHANDSHAKE
-        |// `define UNMK_USCS_LOAD_NOHANDSHAKE
+        |`define UNMK_USCS_LOAD_NOHANDSHAKE
         |
         |// ARBITER
         |`define ARBITER_ON
