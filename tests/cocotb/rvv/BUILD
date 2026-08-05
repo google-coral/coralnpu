@@ -68,6 +68,9 @@ template_rule(
         "vstart_store": {
             "srcs": ["vstart_store.S"],
         },
+        "vstart_test": {
+            "srcs": ["vstart_test.cc"],
+        },
     },
 )
 
@@ -90,6 +93,7 @@ filegroup(
         "vsetvl_test.elf",
         "vslide.elf",
         "vstart_store.elf",
+        "vstart_test.elf",
     ],
 )
 

@@ -1259,3 +1259,66 @@ async def vgather_test(dut):
         'dtype': np.uint16,
     } for n in [2, 4, 8, 16]]
     await vgather1_test(dut, cases)
+
+
+@cocotb.test()
+async def vstart_test(dut):
+    """Test vstart usage."""
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vstart_test.elf'), [
+            'vstart',
+            'vstart_reset',
+            'data_input',
+            'reg',
+            'n',
+        ]
+    )
+    for test_vstart_val in range(1, 8, 1):
+        n = 'n'
+        test_vstart_val = test_vstart_val
+        data_array = np.zeros(128, dtype=np.uint16)
+        data_array[8:16] = np.arange(80, 72, -1)
+        data_array[16:24] = np.arange(70, 62, -1)
+        expected_output = np.zeros(128, dtype=np.uint16)
+        expected_output[0:8] = data_array[8:16]
+        expected_output[18:26] = data_array[16:24]
+        expected_output[36 + test_vstart_val:44] = data_array[
+            8 + test_vstart_val:16] + data_array[16 + test_vstart_val:24]
+        expected_output[54 + test_vstart_val:62] = data_array[
+            8 + test_vstart_val:16] + data_array[16 + test_vstart_val:24]
+
+        data_input_buf = 'data_input'
+        reg_buf = 'reg'
+        vstart_buf = 'vstart'
+
+        await fixture.write(data_input_buf, data_array)
+        await fixture.write(
+            vstart_buf, np.array([test_vstart_val], dtype=np.uint32)
+        )
+        await fixture.run_to_halt()
+        actual_data = (
+            await
+            fixture.read(data_input_buf, 128 * np.dtype(np.uint16).itemsize)
+        ).view(np.uint16)
+        actual_output = (
+            await fixture.read(reg_buf, 128 * np.dtype(np.uint16).itemsize)
+        ).view(np.uint16)
+        actual_vstart = (
+            await fixture.read(vstart_buf,
+                               np.dtype(np.uint32).itemsize)
+        ).view(np.uint32)
+
+        debug_msg = str({
+            'data_input': data_input_buf,
+            'output': actual_output,
+            'reg': reg_buf,
+            'n': n,
+            'vstart': actual_vstart,
+        })
+        assert (actual_output == expected_output).all(), (
+            f"Output mismatch!\n{debug_msg}\n"
+            f"Actual (indices 0-127):\n{actual_output[0:127]}\n"
+            f"Expected (indices 0-127):\n{expected_output[0:127]}"
+        )
