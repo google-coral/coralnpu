@@ -248,21 +248,22 @@ class FtdiSpiMaster:
                     continue
         raise ValueError(f"Could not find DATA_WORD in output: {out}")
 
-    def load_file(self, file_path, address):
-        self._run_cmd([
-            "--load_data", file_path, "--load_data_addr",
-            hex(address)
-        ])
+    def load_file(self, file_path, address, timeout=None):
+        cmd = ["--load_data", file_path, "--load_data_addr", hex(address)]
+        if timeout is not None:
+            self._run_cmd(cmd, timeout=timeout)
+        else:
+            self._run_cmd(cmd)
 
-    def load_data(self, data, address):
-        tf = tempfile.NamedTemporaryFile(delete=False)
+    def load_data(self, data, address, timeout=None):
+        temp_file = tempfile.NamedTemporaryFile(delete=False)
         try:
-            tf.write(data)
-            tf.close()
-            self.load_file(tf.name, address)
+            temp_file.write(data)
+            temp_file.close()
+            self.load_file(temp_file.name, address, timeout=timeout)
         finally:
-            if os.path.exists(tf.name):
-                os.remove(tf.name)
+            if os.path.exists(temp_file.name):
+                os.remove(temp_file.name)
 
     def load_elf(
         self,
@@ -327,14 +328,18 @@ class FtdiSpiMaster:
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return False
 
-    def read_data(self, address, size, verbose=True):
+    def read_data(self, address, size, verbose=True, timeout=None):
         if size == 0:
             return bytearray()
+        # SPI read throughput is ~500 kB/s (500,000 B/s). Base overhead of 10s + 2.0x safety factor.
+        to = timeout if timeout is not None else (
+            10.0 + (size / 500_000.0) * 2.0
+        )
         out = self._run_cmd(
             ["--read_data_addr",
              hex(address), "--read_data_size",
              str(size)],
             capture=True,
-            timeout=30.0,
+            timeout=to,
         )
         return bytearray(out)

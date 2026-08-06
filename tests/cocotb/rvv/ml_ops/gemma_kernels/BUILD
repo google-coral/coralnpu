@@ -489,3 +489,18 @@ cocotb_test_suite(
     vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
     verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
+
+py_binary(
+    name = "run_gemma_matmul_fpga",
+    srcs = ["fpga_tests/run_gemma_matmul_fpga.py"],
+    data = [
+        ":rvv_bf16_matmul",
+        ":rvv_matmul",
+    ],
+    deps = [
+        "//coralnpu_test_utils:fpga_test_fixture",
+        "//sw/utils:metrics",
+        requirement("numpy"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)

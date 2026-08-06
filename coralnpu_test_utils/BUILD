@@ -145,13 +145,52 @@ py_binary(
     ],
 )
 
-py_binary(
-    name = "run_matmul_test",
-    srcs = ["run_matmul_test.py"],
+py_library(
+    name = "fpga_test_fixture",
+    srcs = ["fpga_test_fixture.py"],
+    visibility = ["//visibility:public"],
     deps = [
         ":ftdi_spi_master_lib",
         requirement("numpy"),
         requirement("pyelftools"),
+    ],
+)
+
+py_test(
+    name = "fpga_test_fixture_test",
+    srcs = ["fpga_test_fixture_test.py"],
+    deps = [
+        ":fpga_test_fixture",
+        requirement("numpy"),
+    ],
+)
+
+py_binary(
+    name = "run_matmul_test",
+    srcs = ["run_matmul_test.py"],
+    data = [
+        "//tests/cocotb/rvv/ml_ops:rvv_matmul",
+        "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem",
+    ],
+    deps = [
+        ":fpga_test_fixture",
+        "//sw/utils:metrics",
+        requirement("numpy"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+py_binary(
+    name = "run_float_matmul_fpga",
+    srcs = ["run_float_matmul_fpga.py"],
+    data = [
+        "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_optimized",
+    ],
+    deps = [
+        ":fpga_test_fixture",
+        "//sw/utils:metrics",
+        requirement("numpy"),
+        "@bazel_tools//tools/python/runfiles",
     ],
 )
 
@@ -179,6 +218,17 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "run_ddr_test",
+    srcs = ["run_ddr_test.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":fpga_test_fixture",
+        requirement("numpy"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
 py_library(
     name = "axi_slave",
     srcs = ["axi_slave.py"],
@@ -200,8 +250,7 @@ py_binary(
     srcs = ["run_binary.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":ftdi_spi_master_lib",
-        requirement("pyelftools"),
+        ":fpga_test_fixture",
     ],
 )
 

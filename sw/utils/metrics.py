@@ -13,6 +13,16 @@
 # limitations under the License.
 
 
+def _log_banner(dut, banner: str):
+    """Always prints performance metric banner directly to stdout and forwards to cocotb log."""
+    print(banner)
+    if hasattr(dut, "_log") and hasattr(dut._log, "info"):
+        try:
+            dut._log.info(banner)
+        except Exception:
+            pass
+
+
 def log_matmul_metrics(
     dut,
     test_name: str,
@@ -25,11 +35,7 @@ def log_matmul_metrics(
     num_heads: int = 1,
     batch_size: int = 1,
 ):
-    """Logs performance metrics for matrix multiplication and GEMM workloads.
-
-    Calculates total MACs as (num_heads * batch_size * lhs_rows * rhs_cols * inner)
-    unless explicitly overridden via `macs=...`.
-    """
+    """Logs performance metrics for matrix multiplication and GEMM workloads."""
     if macs is not None:
         total_macs = macs
     else:
@@ -43,7 +49,7 @@ def log_matmul_metrics(
         f"  Cycles / MAC   : {cycles_per_mac:.2f}\n"
         f"  MACs / Cycle   : {macs_per_cycle:.2f}\n{'='*60}"
     )
-    dut._log.info(banner)
+    _log_banner(dut, banner)
 
 
 def log_vector_metrics(dut, test_name: str, cycles: int, total_elements: int):
@@ -53,4 +59,4 @@ def log_vector_metrics(dut, test_name: str, cycles: int, total_elements: int):
         f"  Total Cycles     : {cycles:,}\n  Total Elements   : {total_elements:,}\n"
         f"  Cycles / Element : {cycles_per_element:.3f}\n{'='*60}"
     )
-    dut._log.info(banner)
+    _log_banner(dut, banner)
