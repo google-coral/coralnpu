@@ -1533,6 +1533,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
     val cells     = Vec(nCells, new LsuCell(p))
     val leadIndex = UInt(indexWidth.W)
+    val rowAddr   = UInt(p.dbusRowAddrBits.W)
 
     def isDone(): Bool = {
       cells.forall(_.state === LsuCellState.DONE) &&
@@ -1547,7 +1548,6 @@ class LsuSuperSlot(p: Parameters) extends Module {
           Mux(index < nCells.U(ctrWidth.W), cells(index), LsuCell(p))
         }
       }
-      def rowAddr: UInt = cells(leadIndex).rowAddr // TODO: if timing violation, retime this
 
       def canBundleFn(w: Vec[LsuCell]): UInt = {
         VecInit(w.map { x =>
@@ -1889,98 +1889,100 @@ class LsuSuperSlot(p: Parameters) extends Module {
         }
       }
 
-      val ret = MakeWireBundle[State](
-        new State(),
-        _         -> this,
-        _.faulted -> (faulted || fault),
-        _.cells   -> VecInit.tabulate(nCells) { i =>
-          // If we're in strict mode, or we're writing, there's no snooping.
-          // In strict mode respMask only includes what's bundled in the tx,
-          // but in non-strict writing, respMask also includes skippable cells.
-          val cellAcceptResp = resp && Mux(
-            strictMode || write,
-            respMask(i),
-            cells(i).rowAddr === respRowAddr && (
-              cells(i).state === LsuCellState.W_START ||
-                cells(i).state === LsuCellState.W_RESP
-            )
+      val cellsNext = VecInit.tabulate(nCells) { i =>
+        // If we're in strict mode, or we're writing, there's no snooping.
+        // In strict mode respMask only includes what's bundled in the tx,
+        // but in non-strict writing, respMask also includes skippable cells.
+        val cellAcceptResp = resp && Mux(
+          strictMode || write,
+          respMask(i),
+          cells(i).rowAddr === respRowAddr && (
+            cells(i).state === LsuCellState.W_START ||
+              cells(i).state === LsuCellState.W_RESP
           )
-          val cellRespData = MuxUpTo1H(
-            WireInit(UInt(8.W), DontCare),
-            (0 until p.lsuDataBytes).map { j =>
-              cells(i).mask(j) -> respData(j)
+        )
+        val cellRespData = MuxUpTo1H(
+          WireInit(UInt(8.W), DontCare),
+          (0 until p.lsuDataBytes).map { j =>
+            cells(i).mask(j) -> respData(j)
+          }
+        )
+        val acceptVectorData = Option.when(p.enableRvv) {
+          vectorData.get.valid &&
+          vectorDataActive.get.map(_(i)).reduce(_ || _) &&
+          cells(i).state === LsuCellState.W_DATA
+        }
+
+        val cellVectorIndex = Option.when(p.enableRvv) {
+          MuxUpTo1H(
+            MakeInvalid(UInt(32.W)),
+            (0 until p.rvvVlenb).map { j =>
+              (
+                vectorData.get.valid &&
+                  vectorData.get.bits.idx.valid &&
+                  vectorDataActive.get(j)(i) &&
+                  cells(i).state === LsuCellState.W_DATA
+              ) -> MakeValid(vectorIndices.get(j))
             }
           )
-          val acceptVectorData = Option.when(p.enableRvv) {
-            vectorData.get.valid &&
-            vectorDataActive.get.map(_(i)).reduce(_ || _) &&
-            cells(i).state === LsuCellState.W_DATA
-          }
-
-          val cellVectorIndex = Option.when(p.enableRvv) {
-            MuxUpTo1H(
-              MakeInvalid(UInt(32.W)),
-              (0 until p.rvvVlenb).map { j =>
-                (
-                  vectorData.get.valid &&
-                    vectorData.get.bits.idx.valid &&
-                    vectorDataActive.get(j)(i) &&
-                    cells(i).state === LsuCellState.W_DATA
-                ) -> MakeValid(vectorIndices.get(j))
-              }
-            )
-          }
-          if (p.enableRvv) {
-            assert(
-              !acceptVectorData.get ||
-                !write ||
-                vectorData.get.bits.vregfile.valid
-            )
-          }
-          val cellVectorData = Option.when(p.enableRvv) {
-            MuxUpTo1H(
-              MakeInvalid(UInt(8.W)),
-              (0 until p.rvvVlenb).map { j =>
-                (
-                  vectorData.get.valid &&
-                    vectorData.get.bits.vregfile.valid &&
-                    vectorDataActive.get(j)(i) &&
-                    cells(i).state === LsuCellState.W_DATA
-                ) -> MakeValid(vectorDataBytes.get(j))
-              }
-            )
-          }
-          if (p.enableRvv) {
-            assert(
-              !acceptVectorData.get ||
-                vectorData.get.bits.mask.valid
-            )
-          }
-          val cellVectorMask = Option.when(p.enableRvv) {
-            MuxUpTo1H(
-              MakeInvalid(Bool()),
-              (0 until p.rvvVlenb).map { j =>
-                (
-                  vectorData.get.valid &&
-                    vectorData.get.bits.mask.valid &&
-                    vectorDataActive.get(j)(i) &&
-                    cells(i).state === LsuCellState.W_DATA
-                ) -> MakeValid(vectorData.get.bits.mask.bits(j))
-              }
-            )
-          }
-          val cellWriteback = Mux(skipWriteback, cellAcceptResp, writebacks(i))
-          cells(i).next(
-            write = write,
-            vectorIndex = cellVectorIndex,
-            vectorData = cellVectorData,
-            vectorMask = cellVectorMask,
-            start = starts(i),
-            respData = MakeValid(cellAcceptResp, cellRespData),
-            wb = cellWriteback
+        }
+        if (p.enableRvv) {
+          assert(
+            !acceptVectorData.get ||
+              !write ||
+              vectorData.get.bits.vregfile.valid
           )
-        },
-        _.leadIndex -> (leadIndex + moveLead)
+        }
+        val cellVectorData = Option.when(p.enableRvv) {
+          MuxUpTo1H(
+            MakeInvalid(UInt(8.W)),
+            (0 until p.rvvVlenb).map { j =>
+              (
+                vectorData.get.valid &&
+                  vectorData.get.bits.vregfile.valid &&
+                  vectorDataActive.get(j)(i) &&
+                  cells(i).state === LsuCellState.W_DATA
+              ) -> MakeValid(vectorDataBytes.get(j))
+            }
+          )
+        }
+        if (p.enableRvv) {
+          assert(
+            !acceptVectorData.get ||
+              vectorData.get.bits.mask.valid
+          )
+        }
+        val cellVectorMask = Option.when(p.enableRvv) {
+          MuxUpTo1H(
+            MakeInvalid(Bool()),
+            (0 until p.rvvVlenb).map { j =>
+              (
+                vectorData.get.valid &&
+                  vectorData.get.bits.mask.valid &&
+                  vectorDataActive.get(j)(i) &&
+                  cells(i).state === LsuCellState.W_DATA
+              ) -> MakeValid(vectorData.get.bits.mask.bits(j))
+            }
+          )
+        }
+        val cellWriteback = Mux(skipWriteback, cellAcceptResp, writebacks(i))
+        cells(i).next(
+          write = write,
+          vectorIndex = cellVectorIndex,
+          vectorData = cellVectorData,
+          vectorMask = cellVectorMask,
+          start = starts(i),
+          respData = MakeValid(cellAcceptResp, cellRespData),
+          wb = cellWriteback
+        )
+      }
+      val ret = MakeWireBundle[State](
+        new State(),
+        _           -> this,
+        _.faulted   -> (faulted || fault),
+        _.cells     -> cellsNext,
+        _.leadIndex -> (leadIndex + moveLead),
+        _.rowAddr   -> cellsNext(leadIndex + moveLead).rowAddr
       )
       ret.vector.foreach { x =>
         val curr = vector.get
@@ -2051,7 +2053,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.skipWriteback -> write.B,
         // scalarWritebackMode to be filled by caller
         // cells to be filled by caller
-        _.leadIndex -> 0.U
+        _.leadIndex -> 0.U,
+        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
       )
       ret.float.foreach { x =>
         x.writeback := false.B
@@ -2129,7 +2132,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.skipWriteback -> write.B,
         // scalarWritebackMode to be filled by caller
         // cells to be filled by caller
-        _.leadIndex -> 0.U
+        _.leadIndex -> 0.U,
+        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
       )
       ret.vector.foreach { x =>
         x.segmentStep                := 0.U
@@ -2217,7 +2221,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.skipWriteback       -> false.B,
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
         // cells to be filled by caller
-        _.leadIndex -> 0.U
+        _.leadIndex -> 0.U,
+        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
       )
       ret.float.foreach { x =>
         x.writeback := false.B
@@ -2381,7 +2386,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.skipWriteback       -> false.B,
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
         // cells to be filled by caller
-        _.leadIndex -> 0.U
+        _.leadIndex -> 0.U,
+        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
       )
       ret.float.foreach { x =>
         x.writeback := false.B
@@ -2646,6 +2652,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
         _.cells               -> newCells,
         _.leadIndex           -> 0.U
+        // rowAddr is untouched because we need to wait for indices
       )
       ret.float.foreach { x =>
         x.writeback := false.B
@@ -2939,7 +2946,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.skipWriteback       -> false.B,
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
         _.cells               -> VecInit.fill(nCells)(LsuCell(p)),
-        _.leadIndex           -> 0.U
+        _.leadIndex           -> 0.U,
+        _.rowAddr             -> 0.U
       )
       ret.float.foreach { x =>
         x.writeback := false.B
