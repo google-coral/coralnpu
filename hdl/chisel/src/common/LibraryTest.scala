@@ -80,6 +80,37 @@ class ShiftVectorRightTester extends Module {
   io.out := ShiftVectorRight(io.in, io.shift)
 }
 
+class VectorWindowTester(
+  dataLen: Int,
+  windowSize: Int,
+  indexWidth: Int,
+  fn: (Vec[UInt], UInt, UInt, Int) => Vec[UInt]
+) extends Module {
+  val io = IO(new Bundle {
+    val data   = Input(Vec(dataLen, UInt(32.W)))
+    val filler = Input(UInt(32.W))
+    val index  = Input(UInt(indexWidth.W))
+    val out    = Output(Vec(windowSize, UInt(32.W)))
+  })
+
+  io.out := fn(io.data, io.filler, io.index, windowSize)
+}
+
+class CircularVectorWindowTester(
+  dataLen: Int,
+  windowSize: Int,
+  indexWidth: Int,
+  fn: (Vec[UInt], UInt, Int) => Vec[UInt]
+) extends Module {
+  val io = IO(new Bundle {
+    val data  = Input(Vec(dataLen, UInt(32.W)))
+    val index = Input(UInt(indexWidth.W))
+    val out   = Output(Vec(windowSize, UInt(32.W)))
+  })
+
+  io.out := fn(io.data, io.index, windowSize)
+}
+
 class LibrarySpec extends AnyFreeSpec with ChiselSim {
   "ForceZero" in {
     simulate(new ForceZeroTester) { dut =>
@@ -232,6 +263,96 @@ class LibrarySpec extends AnyFreeSpec with ChiselSim {
           }
         }
       }
+    }
+  }
+
+  def testVectorWindow(
+    dataLen: Int,
+    windowSize: Int,
+    indexWidth: Int,
+    fn: (Vec[UInt], UInt, UInt, Int) => Vec[UInt]
+  ): Unit = {
+    simulate(new VectorWindowTester(dataLen, windowSize, indexWidth, fn)) { dut =>
+      val data   = Seq.fill(dataLen)(Random.between(1, 1000000))
+      val filler = 9999999
+
+      for (i <- 0 until dataLen) {
+        dut.io.data(i).poke(data(i))
+      }
+      dut.io.filler.poke(filler)
+
+      val maxIndex = dataLen.min(1 << indexWidth)
+      for (idx <- 0 until maxIndex) {
+        dut.io.index.poke(idx)
+        for (w <- 0 until windowSize) {
+          val expected = if (idx + w < dataLen) data(idx + w) else filler
+          dut.io.out(w).expect(expected)
+        }
+      }
+    }
+  }
+
+  def testCircularVectorWindow(
+    dataLen: Int,
+    windowSize: Int,
+    indexWidth: Int,
+    fn: (Vec[UInt], UInt, Int) => Vec[UInt]
+  ): Unit = {
+    simulate(new CircularVectorWindowTester(dataLen, windowSize, indexWidth, fn)) { dut =>
+      val data = Seq.fill(dataLen)(Random.between(1, 1000000))
+
+      for (i <- 0 until dataLen) {
+        dut.io.data(i).poke(data(i))
+      }
+
+      val maxIndex = dataLen.min(1 << indexWidth)
+      for (idx <- 0 until maxIndex) {
+        dut.io.index.poke(idx)
+        for (w <- 0 until windowSize) {
+          val expected = data((idx + w) % dataLen)
+          dut.io.out(w).expect(expected)
+        }
+      }
+    }
+  }
+
+  Seq(
+    ("VectorWindow.mux2", VectorWindow.mux2[UInt] _),
+    ("VectorWindow.mux4", VectorWindow.mux4[UInt] _)
+  ).foreach { case (name, fn) =>
+    name in {
+      // Case 1: 16 elements, window 4, index 4 bits (even index width)
+      testVectorWindow(16, 4, 4, fn)
+      // Case 2: 8 elements, window 3, index 3 bits (odd index width)
+      testVectorWindow(8, 3, 3, fn)
+      // Case 3: 4 elements, window 6, index 2 bits (windowSize > dataLen)
+      testVectorWindow(4, 6, 2, fn)
+      // Case 4: 2 elements, window 2, index 1 bit (1-bit index)
+      testVectorWindow(2, 2, 1, fn)
+      // Case 5: 10 elements, window 4, index 4 bits (irregular non-power-of-2 dataLen < 2^indexWidth)
+      testVectorWindow(10, 4, 4, fn)
+      // Case 6: 5 elements, window 3, index 3 bits (irregular odd index width)
+      testVectorWindow(5, 3, 3, fn)
+    }
+  }
+
+  Seq(
+    ("VectorWindow.circularMux2", VectorWindow.circularMux2[UInt] _),
+    ("VectorWindow.circularMux4", VectorWindow.circularMux4[UInt] _)
+  ).foreach { case (name, fn) =>
+    name in {
+      // Case 1: 16 elements, window 4, index 4 bits (even index width)
+      testCircularVectorWindow(16, 4, 4, fn)
+      // Case 2: 8 elements, window 3, index 3 bits (odd index width)
+      testCircularVectorWindow(8, 3, 3, fn)
+      // Case 3: 4 elements, window 6, index 2 bits (windowSize > dataLen)
+      testCircularVectorWindow(4, 6, 2, fn)
+      // Case 4: 2 elements, window 2, index 1 bit (1-bit index)
+      testCircularVectorWindow(2, 2, 1, fn)
+      // Case 5: 10 elements, window 4, index 4 bits (irregular non-power-of-2 dataLen < 2^indexWidth)
+      testCircularVectorWindow(10, 4, 4, fn)
+      // Case 6: 5 elements, window 3, index 3 bits (irregular odd index width)
+      testCircularVectorWindow(5, 3, 3, fn)
     }
   }
 }

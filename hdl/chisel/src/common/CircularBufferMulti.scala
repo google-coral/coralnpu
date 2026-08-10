@@ -51,8 +51,9 @@ class CircularBufferMulti[T <: Data](t: T, n: Int, capacity: Int) extends Module
 
   for (i <- 0 until capacity) {
     val matches = VecInit((0 until n).map { j =>
-      val slotIdx = if (capacity > 1) (enqPtr + j.U)(log2Ceil(capacity) - 1, 0) else 0.U
-      (j.U < io.enqValid) && (slotIdx === i.U)
+      val isTargetSlot =
+        if (capacity > 1) enqPtr === ((i - j + capacity) % capacity).U else true.B
+      (j.U < io.enqValid) && isTargetSlot
     })
     val writeEnable = matches.asUInt.orR
     val writeData   = Mux1H(matches, io.enqData)
@@ -67,8 +68,9 @@ class CircularBufferMulti[T <: Data](t: T, n: Int, capacity: Int) extends Module
   io.nEnqueued := nEnqueued
   io.nSpace    := capacity.U - nEnqueued
 
-  for (i <- 0 until n) {
-    val readIdx = if (capacity > 1) (deqPtr + i.U)(log2Ceil(capacity) - 1, 0) else 0.U
-    io.dataOut(i) := buffer(readIdx)
-  }
+  io.dataOut := (if (capacity > 1) {
+                   VectorWindow.circularMux4(buffer, deqPtr, n)
+                 } else {
+                   buffer
+                 })
 }

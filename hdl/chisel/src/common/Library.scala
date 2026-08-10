@@ -185,6 +185,118 @@ object ShiftVectorRight {
   }
 }
 
+// Extracts a dynamically-indexed, statically-sized window from a vec.
+// - mux2 / mux4: out-of-bounds positions are filled with `filler`.
+// - circularMux2 / circularMux4: indices wrap around circularly modulo `data.length`.
+object VectorWindow {
+  private def shiftStage2[T <: Data](
+    curr: Vec[T],
+    bit: Bool,
+    stage: Int,
+    windowSize: Int
+  ): Vec[T] = {
+    val shiftAmt    = 1 << stage
+    val remMaxShift = (1 << stage) - 1
+    val nextLen     = curr.length.min(windowSize + remMaxShift)
+    VecInit.tabulate(nextLen) { i =>
+      if (i + shiftAmt < curr.length) {
+        Mux(bit, curr(i + shiftAmt), curr(i))
+      } else {
+        curr(i)
+      }
+    }
+  }
+
+  private def shiftStage4[T <: Data](
+    curr: Vec[T],
+    bits: Seq[Bool],
+    stages: Seq[Int],
+    windowSize: Int
+  ): Vec[T] = {
+    val shift1      = 1 << stages(0)
+    val shift2      = 1 << stages(1)
+    val shift3      = shift1 + shift2
+    val remMaxShift = (1 << stages(1)) - 1
+    val nextLen     = curr.length.min(windowSize + remMaxShift)
+    VecInit.tabulate(nextLen) { i =>
+      val idx0 = i
+      val idx2 = i + shift2
+      val idx1 = i + shift1
+      val idx3 = i + shift3
+      if (idx3 < curr.length) {
+        Mux(bits(1), Mux(bits(0), curr(idx3), curr(idx2)), Mux(bits(0), curr(idx1), curr(idx0)))
+      } else if (idx1 < curr.length) {
+        Mux(bits(1), curr(idx2), Mux(bits(0), curr(idx1), curr(idx0)))
+      } else if (idx2 < curr.length) {
+        Mux(bits(1), curr(idx2), curr(idx0))
+      } else {
+        curr(idx0)
+      }
+    }
+  }
+
+  private def shiftMux2[T <: Data](
+    padded: Vec[T],
+    index: UInt,
+    windowSize: Int
+  ): Vec[T] = {
+    val shifted = index.asBools.zipWithIndex.reverse.foldLeft(padded) { case (curr, (bit, stage)) =>
+      shiftStage2(curr, bit, stage, windowSize)
+    }
+    VecInit(shifted.take(windowSize))
+  }
+
+  private def shiftMux4[T <: Data](
+    padded: Vec[T],
+    index: UInt,
+    windowSize: Int
+  ): Vec[T] = {
+    val bitsWithStages = index.asBools.zipWithIndex.reverse
+
+    // Group into pairs from MSB, so that if the width is odd, the leftover LSB
+    // is a single-bit stage that is processed last.
+    // TODO: some libs like GF22 have mux8 cell. Do we want radix-8?
+    val grouped = bitsWithStages.grouped(2).toList
+
+    val shifted = grouped.foldLeft(padded) { (curr, group) =>
+      if (group.length == 2) {
+        val bits   = group.map(_._1)
+        val stages = group.map(_._2)
+        shiftStage4(curr, bits, stages, windowSize)
+      } else {
+        assert(group.length == 1)
+        val (bit, stage) = group(0)
+        shiftStage2(curr, bit, stage, windowSize)
+      }
+    }
+    VecInit(shifted.take(windowSize))
+  }
+
+  def mux2[T <: Data](data: Vec[T], filler: T, index: UInt, windowSize: Int): Vec[T] = {
+    assert(index < data.length.U)
+    val padded = VecInit(data ++ VecInit.fill((windowSize - 1).max(0))(filler))
+    shiftMux2(padded, index, windowSize)
+  }
+
+  def circularMux2[T <: Data](data: Vec[T], index: UInt, windowSize: Int): Vec[T] = {
+    assert(index < data.length.U)
+    val padded = VecInit.tabulate(data.length + (windowSize - 1).max(0))(i => data(i % data.length))
+    shiftMux2(padded, index, windowSize)
+  }
+
+  def mux4[T <: Data](data: Vec[T], filler: T, index: UInt, windowSize: Int): Vec[T] = {
+    assert(index < data.length.U)
+    val padded = VecInit(data ++ VecInit.fill((windowSize - 1).max(0))(filler))
+    shiftMux4(padded, index, windowSize)
+  }
+
+  def circularMux4[T <: Data](data: Vec[T], index: UInt, windowSize: Int): Vec[T] = {
+    assert(index < data.length.U)
+    val padded = VecInit.tabulate(data.length + (windowSize - 1).max(0))(i => data(i % data.length))
+    shiftMux4(padded, index, windowSize)
+  }
+}
+
 // Check valids, fires, or other bool vec/seq is set in order, fail if not (1100 OK, 1101 NOT OK)
 object OneHotInOrder {
   def apply(oneHotBits: Seq[Bool]): Bool = {

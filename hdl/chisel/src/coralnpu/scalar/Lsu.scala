@@ -1701,12 +1701,14 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val rowAddr   = UInt(p.dbusRowAddrBits.W)
     val isDone    = Bool()
 
-    def leadWindow: Vec[LsuCell] = VecInit.tabulate(windowSizeNormal + 1) { i =>
-      val index = leadIndex + i.U
-      Mux(index < nCells.U(ctrWidth.W), cells(index), LsuCell(p))
-    }
+    def leadWindow: Vec[LsuCell] = VectorWindow.mux4(
+      cells,
+      filler = LsuCell(p),
+      index = leadIndex,
+      windowSize = windowSizeNormal + 1
+    )
 
-    // The second ret val indicates which cells are affected by the new tx
+    // returns: (tx, started, moveLead)
     def maybeStart(): (ValidIO[BusReq], UInt, UInt) = {
       def canBundleFn(w: Vec[LsuCell]): UInt = {
         VecInit(w.map { x =>
