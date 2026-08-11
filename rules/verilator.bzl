@@ -24,6 +24,9 @@ SPIKE_DENYLIST = [
     "//tests/cocotb:wfi_slot_1",
     "//tests/cocotb:wfi_slot_2",
     "//tests/cocotb:wfi_slot_3",
+    "//tests/cocotb/exceptions:vfwadd_trap",
+    "//tests/cocotb/exceptions:vfwsub_trap",
+    "//tests/cocotb/exceptions:vfwmul_trap",
 ]
 
 def _verilator_model_impl(ctx):

@@ -53,6 +53,9 @@ DENYLIST = [
     "//tests/cocotb/rvv:rvv_vstart_vset_test",
     "//tests/cocotb:vector_store",
     "//tests/cocotb:vector_store_fault",
+    "//tests/cocotb/exceptions:vfwadd_trap",
+    "//tests/cocotb/exceptions:vfwsub_trap",
+    "//tests/cocotb/exceptions:vfwmul_trap",
     # Jump to dtcm (also disabled in cocotb)
     "//third_party/riscv-tests:rv32ui-p-fence_i",
     "//third_party/riscv-tests:rv32ui-v-fence_i",
@@ -112,6 +115,9 @@ SPIKE_DENYLIST = [
     "//tests/cocotb:wfi_slot_1",
     "//tests/cocotb:wfi_slot_2",
     "//tests/cocotb:wfi_slot_3",
+    "//tests/cocotb/exceptions:vfwadd_trap",
+    "//tests/cocotb/exceptions:vfwsub_trap",
+    "//tests/cocotb/exceptions:vfwmul_trap",
 ]
 
 # Map of targets to custom timeouts (in nanoseconds)

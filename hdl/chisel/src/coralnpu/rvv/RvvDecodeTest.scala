@@ -24,7 +24,12 @@ import common.ProcessTestResults
 import coralnpu.Parameters
 
 class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with ParallelTestExecution {
-  val p = new Parameters
+  val p = {
+    val params = new Parameters
+    params.enableFloat = true
+    params.enableVectorBf16 = true
+    params
+  }
   class Tester extends Module {
     val io = IO(new Bundle {
       val inst      = Input(UInt(32.W))

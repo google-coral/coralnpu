@@ -61,6 +61,69 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     bits(7, 5)
   }
 
+  /** Checks if a vector floating-point instruction is illegal and should trap.
+    *
+    * The decision is evaluated in the following order:
+    *   1. Check if the instruction is a floating-point vector operation (funct3 === OPFVV or
+    *      OPFVF). If it is not a float instruction, it is allowed (returns false).
+    *   2. If it is a float instruction:
+    *      a. If scalar float support (p.enableFloat) is ENABLED:
+    *         - Standard single-precision vector float instructions (e.g., vfadd.vv) are allowed.
+    *         - Unimplemented widening/narrowing float instructions (e.g., vfwadd, vfwsub, vfwmul,
+    *           vfwmacc, vfwmsac, vfwnmacc, vfwnmsac) are inhibited.
+    *         - Supported vector BF16 instructions (VFWMACCBF16, VFNCVTBF16, VFWCVTBF16) are allowed
+    *           if vector BF16 support (p.enableVectorBf16) is enabled; otherwise they are
+    *           inhibited.
+    *      b. If scalar float support (p.enableFloat) is DISABLED:
+    *         - All vector float instructions are inhibited.
+    *         - The only exceptions are the supported vector BF16 instructions (VFWMACCBF16,
+    *           VFNCVTBF16, VFWCVTBF16) which are allowed if vector BF16 support
+    *           (p.enableVectorBf16) is enabled.
+    */
+  def isIllegalFloat(p: Parameters): Bool = {
+    val isFloat   = funct3() === "b001".U || funct3() === "b101".U
+    val funct6Val = funct6()
+    val vs1Val    = vs1()
+
+    val isBf16 = if (p.enableVectorBf16) {
+      (funct6Val === "b111011".U) || // VFWMACCBF16
+      (funct6Val === "b010010".U && (vs1Val === "b11101".U || vs1Val === "b01101".U)) // VFNCVTBF16, VFWCVTBF16
+    } else {
+      false.B
+    }
+
+    val isWidenFloat = (
+      (funct6Val(5, 3) === "b110".U) || // vfwadd, vfwsub (110xxx)
+        (funct6Val === "b111000".U) ||  // vfwmul
+        (funct6Val === "b111100".U) ||  // vfwmacc
+        (funct6Val === "b111101".U) ||  // vfwnmacc
+        (funct6Val === "b111110".U) ||  // vfwmsac
+        (funct6Val === "b111111".U)     // vfwnmsac
+    )
+
+    val isBf16OnlyWiden = (funct6Val === "b111011".U) ||
+      (funct6Val === "b010010".U && (vs1Val === "b11101".U || vs1Val === "b01101".U))
+
+    val isVmeMatmulFp = if (p.enableVme) {
+      (funct6Val === "b111100".U) && (funct3() === "b001".U)
+    } else {
+      false.B
+    }
+
+    val isIllegalWiden = (if (p.enableVectorBf16) isWidenFloat
+                          else (isWidenFloat || isBf16OnlyWiden)) && !isVmeMatmulFp
+
+    Mux(
+      isFloat,
+      if (p.enableFloat) {
+        isIllegalWiden
+      } else {
+        !isBf16 && !isVmeMatmulFp
+      },
+      false.B
+    )
+  }
+
   // These instructions need to trap when vstart is not zero. This includes
   // all reduction instructions.
   def requireZeroVstart(): Bool = {
@@ -227,11 +290,18 @@ object RvvCompressedInstruction {
       )
     )
 
+    val temp_inst = Wire(new RvvCompressedInstruction(p))
+    temp_inst.bits    := bits
+    temp_inst.opcode  := RvvCompressedOpcode.RVVALU
+    temp_inst.pc      := pc
+    temp_inst.rob_tag := 0.U
+    val illegal_float = temp_inst.isIllegalFloat(p)
+
     val new_opcode = MuxLookup(old_opcode, MakeInvalid(RvvCompressedOpcode()))(
       Seq(
         "b0000111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVLOAD),
         "b0100111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVSTORE),
-        "b1010111".U -> MakeValid(RvvCompressedOpcode.RVVALU)
+        "b1010111".U -> MakeValid(!illegal_float, RvvCompressedOpcode.RVVALU)
       )
     )
 

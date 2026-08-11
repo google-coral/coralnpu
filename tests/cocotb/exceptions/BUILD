@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
+load("//rules:utils.bzl", "template_rule")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -61,6 +62,21 @@ coralnpu_v2_binary(
     srcs = ["store_fault_1.cc"],
 )
 
+template_rule(
+    coralnpu_v2_binary,
+    {
+        "vfw{}_trap".format(op): {
+            "srcs": ["vfw_trap.cc"],
+            "defines": ["TRAP_OP=vfw{}.vv".format(op)],
+        }
+        for op in [
+            "add",
+            "mul",
+            "sub",
+        ]
+    },
+)
+
 filegroup(
     name = "elf_files",
     srcs = [
@@ -73,6 +89,9 @@ filegroup(
         ":load_fault_1.elf",
         ":store_fault_0.elf",
         ":store_fault_1.elf",
+        ":vfwadd_trap.elf",
+        ":vfwmul_trap.elf",
+        ":vfwsub_trap.elf",
     ],
 )
 
