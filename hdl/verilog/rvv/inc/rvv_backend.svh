@@ -520,6 +520,8 @@ typedef struct packed {
   logic                               vregfile_write_valid;
   logic	[`REGFILE_INDEX_WIDTH-1:0] 	  vregfile_write_addr;  
   logic	[`VLEN-1:0] 			          	vregfile_write_data;  	// vd   
+  // vregfile_write_data[`VLEN-1:ff_tail_index*8] is treated as TAIL.
+  logic [$clog2(`VLENB):0]            ff_tail_index;
   // Store done signal to help ROB retire the store uop
   logic                               lsu_vstore_last;
 } UOP_LSU2RVV_t;  
@@ -535,6 +537,7 @@ typedef struct packed {
 `endif
   logic                               w_valid;            // write valid
   logic [`VLEN-1:0]                   w_data;             // write data; w_data[`XLEN-1:0] is scalar result if write type is XRF
+  logic [$clog2(`VLENB):0]            ff_tail_index;
   logic [`VLENB-1:0]                  vsaturate;
 `ifdef ZVE32F_ON
   RVFEXP_t  [`VLENB-1:0]              fpexp;
@@ -550,6 +553,7 @@ typedef struct packed {
   logic   [`REGFILE_INDEX_WIDTH-1:0]  w_index;            //wr addr
   W_DATA_TYPE_e                       w_type;             //write type: 0 for VRF, 1 for XRF
   BYTE_TYPE_t                         byte_type;          //wr Byte mask
+  logic                               is_ff;
   RVVConfigState                      vector_csr;         //Receive Vstart, vlen,... And need to update vcsr when trap
   logic                               last_uop_valid;
 } DP2ROB_t;

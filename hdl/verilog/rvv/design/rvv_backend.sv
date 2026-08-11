@@ -131,8 +131,8 @@ module rvv_backend
     input   logic                                 vcsr_ready;
 
 // retire information
-    output  logic     [`NUM_RT_UOP-1:0]           rd_valid_rob2rt_o;
-    output  ROB2RT_t  [`NUM_RT_UOP-1:0]           rd_rob2rt_o;
+    output  logic     [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_valid_rob2rt_o;
+    output  ROB2RT_t  [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_rob2rt_o;
 
 // rvv_backend is not active.(IDLE)
     output  logic                                 rvv_idle;
@@ -292,8 +292,9 @@ module rvv_backend
     logic         [`NUM_PU-1:`NUM_LSU]    res_ff_empty;
   `endif
   // ARB to ROB
-    logic         [`NUM_SMPORT-1:0]       res_valid_arb2rob;
-    PU2ROB_t      [`NUM_SMPORT-1:0]       res_arb2rob;
+    logic         [`NUM_SMPORT-1:0]                   res_valid_arb2rob;
+    PU2ROB_t      [`NUM_SMPORT-1:0]                   res_arb2rob;
+    logic         [`NUM_SMPORT-1:0][$clog2(`VLENB):0] res_ff_tail_index;
   // ALU result
     logic         [`NUM_ALU-1:0]          res_valid_alu;
     PU2ROB_t      [`NUM_ALU-1:0]          res_alu;
@@ -317,9 +318,10 @@ module rvv_backend
     logic         [`NUM_FALU-1:0]         res_ready_falu;
 `endif
   // LSU result
-    logic         [`NUM_LSU-1:0]          res_valid_lsu;
-    PU2ROB_t      [`NUM_LSU-1:0]          res_lsu;
-    logic         [`NUM_LSU-1:0]          res_ready_lsu;
+    logic         [`NUM_LSU-1:0]          	    res_valid_lsu;
+    PU2ROB_t      [`NUM_LSU-1:0]          	    res_lsu;
+    logic         [`NUM_LSU-1:0][$clog2(`VLENB):0]  ff_tail_index;
+    logic         [`NUM_LSU-1:0]          	    res_ready_lsu;
 `ifdef ZVT_ON
   // VME2RVV
     logic                                 res_vme2rvv_vld;
@@ -1074,6 +1076,7 @@ module rvv_backend
       .pop_lsu_res                  (pop_lsu_res),
       .result_valid                 (res_valid_lsu),
       .result                       (res_lsu),      
+      .ff_tail_index                (ff_tail_index),
       .result_ready                 (res_ready_lsu),
       .trap_valid_rmp2rob           (trap_valid_rmp2rob),
       .trap_rob_entry_rmp2rob       (trap_rob_entry_rmp2rob),
@@ -1165,18 +1168,21 @@ module rvv_backend
 
     rvv_backend_arb 
     u_arb(
-      .clk          (clk),
-      .rst_n        (rst_n),
-      .req          (req_arb),
-      .item         (item_arb),
-      .grant        (grant_arb),
-      .result_valid (res_valid_arb2rob),
-      .result       (res_arb2rob)
+      .clk                (clk),
+      .rst_n              (rst_n),
+      .req                (req_arb),
+      .item               (item_arb),
+      .ff_tail_index      (ff_tail_index),
+      .grant              (grant_arb),
+      .result_valid       (res_valid_arb2rob),
+      .result             (res_arb2rob),
+      .res_ff_tail_index  (res_ff_tail_index)
     );
 
 `else
     assign res_valid_arb2rob = res_valid_pu2arb;
     assign res_arb2rob       = res_pu2arb;
+    assign res_ff_tail_index = {'0, ff_tail_index};
     assign res_ready_arb2pu  = '1;
 `endif
 
@@ -1195,6 +1201,7 @@ module rvv_backend
       // PU to ROB
         .wr_valid_pu2rob        (res_valid_arb2rob),
         .wr_pu2rob              (res_arb2rob),
+        .ff_tail_index          (res_ff_tail_index),
       // ROB to RT
         .rd_valid_rob2rt        (rd_valid_rob2rt),
         .rd_rob2rt              (rd_rob2rt),

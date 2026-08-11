@@ -7,21 +7,25 @@ module rvv_backend_arb(
   rst_n,
   req,
   item,
+  ff_tail_index,
   grant,
   result_valid,
-  result
+  result,
+  res_ff_tail_index
 );
 
 // global signal
-    input   logic                       clk;
-    input   logic                       rst_n;
+    input   logic                                         clk;
+    input   logic                                         rst_n;
 // PU to ARB
-    input   logic     [`NUM_PU-1:0]     req;
-    input   PU2ROB_t  [`NUM_PU-1:0]     item;
-    output  logic     [`NUM_PU-1:0]     grant;
+    input   logic     [`NUM_PU-1:0]                       req;
+    input   PU2ROB_t  [`NUM_PU-1:0]                       item;
+    input   logic     [`NUM_LSU-1:0][$clog2(`VLENB):0]    ff_tail_index;
+    output  logic     [`NUM_PU-1:0]                       grant;
 // ARB to ROB
-    output  logic     [`NUM_SMPORT-1:0] result_valid;
-    output  PU2ROB_t  [`NUM_SMPORT-1:0] result;
+    output  logic     [`NUM_SMPORT-1:0]                   result_valid;
+    output  PU2ROB_t  [`NUM_SMPORT-1:0]                   result;
+    output  logic     [`NUM_SMPORT-1:0][$clog2(`VLENB):0] res_ff_tail_index;
 
 // ---internal signal definition--------------------------------------
 `ifdef ZVE32F_ON
@@ -143,6 +147,11 @@ assign grant[5] = odd_np_total_grant[1];
 `ifdef ZVE32F_ON
   assign grant[9] = odd_np_total_grant[2];
 `endif
+
+  assign res_ff_tail_index[0] = ff_tail_index[0];
+  assign res_ff_tail_index[1] = ff_tail_index[1];
+  assign res_ff_tail_index[2] = 'b0;
+  assign res_ff_tail_index[3] = 'b0;
 
 endmodule
 

@@ -15,6 +15,7 @@ module rvv_backend_lsu_remap
   pop_lsu_res,
   result_valid,
   result,
+  ff_tail_index,
   result_ready,
   trap_valid_rmp2rob,
   trap_rob_entry_rmp2rob,
@@ -33,9 +34,10 @@ module rvv_backend_lsu_remap
   output  logic           [`NUM_LSU-1:0]  pop_lsu_res;
 
   // submit LSU result to ROB
-  output  logic           [`NUM_LSU-1:0]  result_valid;
-  output  PU2ROB_t        [`NUM_LSU-1:0]  result;
-  input   logic           [`NUM_LSU-1:0]  result_ready;
+  output  logic           [`NUM_LSU-1:0]                    result_valid;
+  output  PU2ROB_t        [`NUM_LSU-1:0]                    result;
+  output  logic           [`NUM_LSU-1:0][$clog2(`VLENB):0]  ff_tail_index;  
+  input   logic           [`NUM_LSU-1:0]                    result_ready;
 
   // submit trap to ROB
   output  logic                           trap_valid_rmp2rob;
@@ -74,6 +76,7 @@ module rvv_backend_lsu_remap
       `ifdef ZVE32F_ON
         assign result[i].fpexp     = 'b0;
       `endif
+        assign ff_tail_index[i]    = lsu_res[i].uop_lsu2rvv.ff_tail_index;
     end
   endgenerate
 
