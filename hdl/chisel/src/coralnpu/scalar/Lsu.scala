@@ -1308,6 +1308,10 @@ class LsuCell(p: Parameters) extends Bundle {
 
   def addr: UInt = Cat(rowAddr, OHToUInt(mask))
 
+  def canAcceptResp(respRowAddr: UInt): Bool = {
+    rowAddr === respRowAddr && state.isOneOf(LsuCellState.W_START, LsuCellState.W_RESP)
+  }
+
   def next(
     write: Bool,
     vectorIndex: Option[ValidIO[UInt]],
@@ -1367,7 +1371,7 @@ class LsuCell(p: Parameters) extends Bundle {
       _.state -> MuxUpTo1H(
         state,
         Seq(
-          doInvalidate -> LsuCellState.DONE,
+          doInvalidate -> LsuCellState.W_WB,
           doData       -> LsuCellState.W_START,
           doStart      -> LsuCellState.W_RESP,
           doResp       -> LsuCellState.W_WB,
@@ -1534,11 +1538,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val cells     = Vec(nCells, new LsuCell(p))
     val leadIndex = UInt(indexWidth.W)
     val rowAddr   = UInt(p.dbusRowAddrBits.W)
-
-    def isDone(): Bool = {
-      cells.forall(_.state === LsuCellState.DONE) &&
-      vector.map(!_.writebackActiveCells.valid).getOrElse(true.B)
-    }
+    val isDone    = Bool()
 
     // The second ret val indicates which cells are affected by the new tx
     def maybeStart(): (ValidIO[BusReq], UInt, UInt) = {
@@ -1889,18 +1889,20 @@ class LsuSuperSlot(p: Parameters) extends Module {
         }
       }
 
-      val cellsNext = VecInit.tabulate(nCells) { i =>
-        // If we're in strict mode, or we're writing, there's no snooping.
-        // In strict mode respMask only includes what's bundled in the tx,
-        // but in non-strict writing, respMask also includes skippable cells.
-        val cellAcceptResp = resp && Mux(
-          strictMode || write,
-          respMask(i),
-          cells(i).rowAddr === respRowAddr && (
-            cells(i).state === LsuCellState.W_START ||
-              cells(i).state === LsuCellState.W_RESP
+      // If we're in strict mode, or we're writing, there's no snooping.
+      // In strict mode respMask only includes what's bundled in the tx,
+      // but in non-strict writing, respMask also includes skippable cells.
+      val cellAcceptResp = VecInit
+        .tabulate(nCells) { i =>
+          resp && Mux(
+            strictMode || write,
+            respMask(i),
+            cells(i).canAcceptResp(respRowAddr)
           )
-        )
+        }
+        .asUInt
+      val cellWriteback = Mux(skipWriteback, cellAcceptResp, writebacks)
+      val cellsNext     = VecInit.tabulate(nCells) { i =>
         val cellRespData = MuxUpTo1H(
           WireInit(UInt(8.W), DontCare),
           (0 until p.lsuDataBytes).map { j =>
@@ -1965,24 +1967,31 @@ class LsuSuperSlot(p: Parameters) extends Module {
             }
           )
         }
-        val cellWriteback = Mux(skipWriteback, cellAcceptResp, writebacks(i))
         cells(i).next(
           write = write,
           vectorIndex = cellVectorIndex,
           vectorData = cellVectorData,
           vectorMask = cellVectorMask,
           start = starts(i),
-          respData = MakeValid(cellAcceptResp, cellRespData),
-          wb = cellWriteback
+          respData = MakeValid(cellAcceptResp(i), cellRespData),
+          wb = cellWriteback(i)
         )
       }
+      val allCellsDone = VecInit
+        .tabulate(nCells) { i =>
+          cells(i).state === LsuCellState.DONE ||
+          cellWriteback(i)
+          // We don't need to worry about invalidate because it doesn't skip WB.
+        }
+        .reduce(_ && _)
       val ret = MakeWireBundle[State](
         new State(),
         _           -> this,
         _.faulted   -> (faulted || fault),
         _.cells     -> cellsNext,
         _.leadIndex -> (leadIndex + moveLead),
-        _.rowAddr   -> cellsNext(leadIndex + moveLead).rowAddr
+        _.rowAddr   -> cellsNext(leadIndex + moveLead).rowAddr,
+        _.isDone    -> allCellsDone
       )
       ret.vector.foreach { x =>
         val curr = vector.get
@@ -2054,7 +2063,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         // scalarWritebackMode to be filled by caller
         // cells to be filled by caller
         _.leadIndex -> 0.U,
-        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
+        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
+        _.isDone    -> false.B
       )
       ret.float.foreach { x =>
         x.writeback := false.B
@@ -2133,7 +2143,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         // scalarWritebackMode to be filled by caller
         // cells to be filled by caller
         _.leadIndex -> 0.U,
-        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
+        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
+        _.isDone    -> false.B
       )
       ret.vector.foreach { x =>
         x.segmentStep                := 0.U
@@ -2222,7 +2233,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
         // cells to be filled by caller
         _.leadIndex -> 0.U,
-        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
+        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
+        _.isDone    -> false.B
       )
       ret.float.foreach { x =>
         x.writeback := false.B
@@ -2387,7 +2399,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
         // cells to be filled by caller
         _.leadIndex -> 0.U,
-        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
+        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
+        _.isDone    -> false.B
       )
       ret.float.foreach { x =>
         x.writeback := false.B
@@ -2651,7 +2664,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.skipWriteback       -> false.B,
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
         _.cells               -> newCells,
-        _.leadIndex           -> 0.U
+        _.leadIndex           -> 0.U,
+        _.isDone              -> false.B
         // rowAddr is untouched because we need to wait for indices
       )
       ret.float.foreach { x =>
@@ -2947,7 +2961,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
         _.cells               -> VecInit.fill(nCells)(LsuCell(p)),
         _.leadIndex           -> 0.U,
-        _.rowAddr             -> 0.U
+        _.rowAddr             -> 0.U,
+        _.isDone              -> true.B
       )
       ret.float.foreach { x =>
         x.writeback := false.B
@@ -3135,7 +3150,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     x.bits  := writebackReq.vector.get.bits
   }
 
-  val canMoveLead = !state.isDone() && (
+  val canMoveLead = !state.isDone && (
     !io.busReq.valid || io.busReq.ready
   )
   val stateFromAction = state.act(
@@ -3159,7 +3174,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
       MakeValid(x.valid, x.bits)
     }
   )
-  io.uop.ready := stateFromAction.isDone()
+  io.uop.ready := stateFromAction.isDone
   state        := Mux(io.uop.fire, stateFromUop, stateFromAction)
 
   io.active := state.cells.forall { x =>
