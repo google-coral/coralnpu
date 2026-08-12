@@ -18,9 +18,9 @@ module rvv_backend_dispatch_structure_hazard
 );
 
 //---port definition--------------------------------------------------
-    output logic [`NUM_DP_VRF-1:0][`REGFILE_INDEX_WIDTH-1:0] rd_index;
-    output ARCH_HAZARD_t                                     arch_hazard;
-    input  STRCT_UOP_t [`NUM_DP_UOP-1:0]                     strct_uop;
+    output logic [`NUM_DP_VRF-1:0][`REGIDX_WIDTH-1:0] rd_index;
+    output ARCH_HAZARD_t                              arch_hazard;
+    input  STRCT_UOP_t [`NUM_DP_UOP-1:0]              strct_uop;
 //---internal signal definition---------------------------------------
 //---code start-------------------------------------------------------
 //determine rd_index for VRF read ports

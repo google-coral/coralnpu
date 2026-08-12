@@ -23,14 +23,14 @@ input   logic                   rst_n;
     
 // Dispatch unit to VRF unit
 // Vs_data would be return from VRF at the current cycle.
-input   logic     [`NUM_DP_VRF-1:0][`REGFILE_INDEX_WIDTH-1:0] dp2vrf_rd_index;
+input   logic     [`NUM_DP_VRF-1:0][`REGIDX_WIDTH-1:0] dp2vrf_rd_index;
 
 // VRF to Dispatch read data
 output  logic     [`NUM_DP_VRF-1:0][`VLEN-1:0]  vrf2dp_rd_data;
 output  logic                      [`VLEN-1:0]  vrf2dp_v0_data;
 
 // Permutation unit to VRF unit
-input   logic     [`REGFILE_INDEX_WIDTH-1:0]    pmt2vrf_rd_index;
+input   logic     [`REGIDX_WIDTH-1:0]           pmt2vrf_rd_index;
 
 // VRF to Permutation read data
 output  logic     [`VLEN-1:0]                   vrf2pmt_rd_data;
@@ -50,7 +50,7 @@ genvar  j,k;
 // code start
 //
 logic [`NUM_RT_UOP-1:0]                           wr_valid;
-logic [`NUM_RT_UOP-1:0][`REGFILE_INDEX_WIDTH-1:0] wr_addr;
+logic [`NUM_RT_UOP-1:0][`REGIDX_WIDTH-1:0]        wr_addr;
 logic [`NUM_RT_UOP-1:0][`VLEN-1:0]                wr_data;
 logic [`NUM_RT_UOP-1:0][`VLENB-1:0]               wr_we;              // byte enable
 logic [`NUM_RT_UOP-1:0][`VLEN-1:0]                wr_web;             // bit enable

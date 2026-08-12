@@ -47,7 +47,7 @@ module rvv_backend_pmtrdt
   input   logic        [`NUM_PMTRDT-1:0]  fifo_almost_empty_rs2ex;
 
 // read vrf for permutation
-  output logic [`REGFILE_INDEX_WIDTH-1:0] rd_index_pmt2vrf;
+  output logic [`REGIDX_WIDTH-1:0]        rd_index_pmt2vrf;
   input  logic [`VLEN-1:0]                rd_data_vrf2pmt;
 
 // PMTRDT unit to ROB

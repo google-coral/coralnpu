@@ -112,6 +112,9 @@ module fp_addfront#(
       .in_exponent   (in_exponents[i]),
       .in_significand(in_significands[i]),
 
+      .ext_lzc_cnt   ('0),
+      .ext_in_zero   (1'b0),
+
       .align_minimum_exponent(subnormal_fix_align_exp),
       .align_trimmed_exponent(max_exponent),
 
@@ -126,19 +129,19 @@ module fp_addfront#(
     `ifdef ASSERT_ON
       `rvv_forbid(aligned_exponents[0] != max_exponent ||
                   aligned_exponents[1] != max_exponent)
-        else $warning("Aligned exponent should be equal to max_exponent by design");
+        else $error("Aligned exponent should be equal to max_exponent by design");
       `rvv_forbid((aligned_exponents[0] == 0 && aligned_significands[0][IN_SIG_BITS-1]))
-        else $warning("Exponent and significand argue on it is subnormal for input a");
+        else $error("Exponent and significand argue on it is subnormal for input a");
       `rvv_forbid((aligned_exponents[1] == 0 && aligned_significands[1][IN_SIG_BITS-1]))
-        else $warning("Exponent and significand argue on it is subnormal for input b");
-      `rvv_forbid(!|overflow)
-        else $warning("Overflow should not happen on align stage in correct design");
+        else $error("Exponent and significand argue on it is subnormal for input b");
+      `rvv_forbid(|overflow)
+        else $error("Overflow should not happen on align stage in correct design");
     `endif
   end
 
   `ifdef ASSERT_ON
     `rvv_expect(aligned_exponents[0] == aligned_exponents[1])
-      else $warning("Why align failed?");
+      else $error("Why align failed?");
   `endif
 
   wire [OUT_SIG_BITS+2+1-1:0] sum_significand;  // another MSB for overflow
@@ -146,28 +149,42 @@ module fp_addfront#(
   wire sum_round_bit, sum_sticky_bit;
   wire sum_negative;
 
-  // do significand add/subtract with overflow bit
+  localparam int unsigned SUM_LZA_WIDTH   = OUT_SIG_BITS + 4; // absaddsub input width
+  localparam int unsigned SUM_TOTAL_WIDTH = OUT_SIG_BITS + 5; // absaddsub output width (with carry)
+
+  // do significand add/subtract with overflow bit, and LZA in parallel
+  logic [$clog2(SUM_LZA_WIDTH+1)-1:0] lza_scnt;
   fp_absaddsub#(
-    .IN_WIDTH(OUT_SIG_BITS+4)
+    .IN_WIDTH   (SUM_LZA_WIDTH),
+    .ENABLE_LZA (1'b1)
   ) u_addsub (
     .a({aligned_significands[0], aligned_round_bits[0], aligned_sticky_bits[0]}),
     .b({aligned_significands[1], aligned_round_bits[1], aligned_sticky_bits[1]}),
     .do_subtract(a_sign ^ b_sign ^ do_subtract),
     .sum({sum_significand, sum_round_bit, sum_sticky_bit}),
-    .sum_negative(sum_negative)
+    .sum_negative(sum_negative),
+    .lza_scnt(lza_scnt)
   );
+
+  wire [SUM_TOTAL_WIDTH-1:0] sum_concat = {sum_significand, sum_round_bit, sum_sticky_bit};
+  wire                       sum_is_zero = ~|sum_concat;
 
   // post add/sub align to
   // 1. fix leading bit
   // 2. trim down to OUT_SIG_BITS + round + sticky
   fp_align#(
     .IN_EXP_BITS(IN_EXP_BITS+2),
-    .IN_SIG_BITS(OUT_SIG_BITS+5),
+    .IN_SIG_BITS(SUM_TOTAL_WIDTH),
     .OUT_EXP_BITS(OUT_EXP_BITS),
-    .OUT_SIG_BITS(OUT_SIG_BITS)
+    .OUT_SIG_BITS(OUT_SIG_BITS),
+    .USE_EXT_LZC(1'b1),
+    .USE_LZA_POSTFIX(1'b1)
   ) u_sum_align (
     .in_exponent(signed'({2'b0, sum_exponent}) + 1'b1),  // +1 to adjust point position, P(sum) == 2
-    .in_significand({sum_significand, sum_round_bit, sum_sticky_bit}),
+    .in_significand(sum_concat),
+
+    .ext_lzc_cnt(lza_scnt),
+    .ext_in_zero(sum_is_zero),
 
     .align_minimum_exponent({{OUT_EXP_BITS-1{1'b0}}, 1'b1}),
     .align_trimmed_exponent('0),

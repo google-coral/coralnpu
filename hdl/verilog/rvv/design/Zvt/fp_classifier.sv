@@ -19,8 +19,12 @@ module fp_classifier#(
 );
 
   for(genvar op = 0; op < NUM_OP; op++) begin: gen
-    wire   exp_zero          = exponent == '0;
-    wire   exp_all_1         = exponent == '1;
+    // Per-op slice. Original used the full `exponent` bus, so for NUM_OP>=2
+    // exp_zero / exp_all_1 only fired when *every* operand met the
+    // condition -- silently corrupted implicit_bit for ops with zero or
+    // inf exponent whenever another lane was normal.
+    wire   exp_zero          = exponent[op] == '0;
+    wire   exp_all_1         = exponent[op] == '1;
     wire   man_zero          = mantissa[op] == '0;
     assign is_nan[op]        = exp_all_1 && ~man_zero;
     assign is_signal_nan[op] = is_nan[op] && ~mantissa[op][MAN_BITS-1];

@@ -79,6 +79,7 @@ module handshake_fifo (
     // write
     .push           (push),
     .datain         (indata),
+    .pushRdy        (),
     // read
     .pop            (pop),
     .dataout        (outdata),

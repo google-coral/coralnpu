@@ -62,11 +62,11 @@ module rvv_backend_pmtrdt_unit
   input               pmtrdt_res_ready;
 
 // read vrf for permutation
-  output logic [`REGFILE_INDEX_WIDTH-1:0] rd_index_pmt2vrf;
-  input  logic [`VLEN-1:0]                rd_data_vrf2pmt;
+  output logic [`REGIDX_WIDTH-1:0]    rd_index_pmt2vrf;
+  input  logic [`VLEN-1:0]            rd_data_vrf2pmt;
 
 // MISC
-  input  logic [`ROB_DEPTH_WIDTH-1:0]     rob_rptr;
+  input  logic [`ROB_DEPTH_WIDTH-1:0] rob_rptr;
 // trap-flush
   input               trap_flush_rvv;
 
@@ -99,12 +99,14 @@ module rvv_backend_pmtrdt_unit
   logic               frdt_res_ready;
 
   // arbiter
-  logic [2:0]         pmtrdt_req; // 'b01 for rdt, 'b10 for pmt, 'b100 for frdt
-  logic [2:0]         pmtrdt_grant; // 'b01 for rdt, 'b10 for pmt 'b100 for frdt
+  logic    [2:0]      pmtrdt_req; // 'b01 for rdt, 'b10 for pmt, 'b100 for frdt
+  PU2ROB_t [2:0]      pmtrdt_reqData; // 'b01 for rdt, 'b10 for pmt, 'b100 for frdt
+  logic    [2:0]      pmtrdt_grant; // 'b01 for rdt, 'b10 for pmt 'b100 for frdt
 `else
   // arbiter
-  logic [1:0]         pmtrdt_req; // 'b01 for rdt, 'b10 for pmt
-  logic [1:0]         pmtrdt_grant; // 'b01 for rdt, 'b10 for pmt
+  logic    [1:0]      pmtrdt_req; // 'b01 for rdt, 'b10 for pmt
+  PU2ROB_t [1:0]      pmtrdt_reqData; // 'b01 for rdt, 'b10 for pmt
+  logic    [1:0]      pmtrdt_grant; // 'b01 for rdt, 'b10 for pmt
 `endif
 
   genvar i;
@@ -113,16 +115,16 @@ module rvv_backend_pmtrdt_unit
 // control signals based on uop
   assign rdt_uop = pmtrdt_uop;
   assign pmt_uop = pmtrdt_uop;
-  assign pmt_uop_valid = pmtrdt_uop_valid &&  pmtrdt_uop.uop_exe_unit == PMT;
+  assign pmt_uop_valid = pmtrdt_uop_valid &&  pmtrdt_uop.uop_exe_unit == VEU_PMT;
 `ifdef ZVE32F_ON
   assign frdt_uop= pmtrdt_uop;
-  assign rdt_uop_valid  = pmtrdt_uop_valid && pmtrdt_uop.uop_exe_unit != PMT && pmtrdt_uop.uop_funct3 != OPFVV;
-  assign frdt_uop_valid = pmtrdt_uop_valid && pmtrdt_uop.uop_exe_unit != PMT && pmtrdt_uop.uop_funct3 == OPFVV;
-  assign pmtrdt_uop_ready = pmtrdt_uop.uop_exe_unit == PMT ? pmt_uop_ready :
+  assign rdt_uop_valid  = pmtrdt_uop_valid && pmtrdt_uop.uop_exe_unit != VEU_PMT && pmtrdt_uop.uop_funct3 != OPFVV;
+  assign frdt_uop_valid = pmtrdt_uop_valid && pmtrdt_uop.uop_exe_unit != VEU_PMT && pmtrdt_uop.uop_funct3 == OPFVV;
+  assign pmtrdt_uop_ready = pmtrdt_uop.uop_exe_unit == VEU_PMT ? pmt_uop_ready :
                            (pmtrdt_uop.uop_funct3 == OPFVV)? frdt_uop_ready: rdt_uop_ready;
 `else
-  assign rdt_uop_valid = pmtrdt_uop_valid && pmtrdt_uop.uop_exe_unit != PMT;
-  assign pmtrdt_uop_ready = pmtrdt_uop.uop_exe_unit == PMT ? pmt_uop_ready : rdt_uop_ready;
+  assign rdt_uop_valid = pmtrdt_uop_valid && pmtrdt_uop.uop_exe_unit != VEU_PMT;
+  assign pmtrdt_uop_ready = pmtrdt_uop.uop_exe_unit == VEU_PMT ? pmt_uop_ready : rdt_uop_ready;
 `endif
 
 // Reduction unit
@@ -196,43 +198,29 @@ module rvv_backend_pmtrdt_unit
   endgenerate
 
 `ifdef ZVE32F_ON
-  assign pmtrdt_req = {frdt_res_valid, pmt_res_valid, rdt_res_valid};
+  assign pmtrdt_req     = {frdt_res_valid, pmt_res_valid, rdt_res_valid};
+  assign pmtrdt_reqData = {frdt_res, pmt_res, rdt_res};
 `else
-  assign pmtrdt_req = {pmt_res_valid, rdt_res_valid};
+  assign pmtrdt_req     = {pmt_res_valid, rdt_res_valid};
+  assign pmtrdt_reqData = {pmt_res, rdt_res};
 `endif
   arb_round_robin #(
-`ifdef ZVE32F_ON
-    .REQ_NUM(3)
-`else
-    .REQ_NUM(2)
-`endif
+  `ifdef ZVE32F_ON
+    .REQ_NUM  (3),
+  `else
+    .REQ_NUM  (2),
+  `endif
+    .T        (PU2ROB_t)
   ) arb_pmtrdt (
-    .clk    (clk),
-    .rst_n  (rst_n),
-    .req    (pmtrdt_req),
-    .grant  (pmtrdt_grant)
+    .clk      (clk),
+    .rst_n    (rst_n),
+    .req      (pmtrdt_req),
+    .reqData  (pmtrdt_reqData),
+    .grant    (pmtrdt_grant),
+    .grantData(pmtrdt_res)
   );
-
-  always_comb begin
-    pmtrdt_res_valid = 1'b0;
-    pmtrdt_res  = '0;
-    case (1'b1)
-      pmtrdt_grant[1]: begin
-        pmtrdt_res_valid = pmt_res_valid;
-        pmtrdt_res = pmt_res;
-      end
-    `ifdef ZVE32F_ON 
-      pmtrdt_grant[2]: begin
-        pmtrdt_res_valid = frdt_res_valid;
-        pmtrdt_res = frdt_res;
-      end 
-    `endif
-      default: begin
-        pmtrdt_res_valid = rdt_res_valid;
-        pmtrdt_res = rdt_res;
-      end
-    endcase
-  end
+  
+  assign pmtrdt_res_valid = |pmtrdt_req;
 
   always_comb begin
     rdt_res_ready = 1'b0;

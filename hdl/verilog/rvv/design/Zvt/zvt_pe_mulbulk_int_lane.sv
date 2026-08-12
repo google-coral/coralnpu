@@ -26,13 +26,13 @@ module zvt_pe_mulbulk_int_lane#(
   // type requirements
   `ifdef ASSERT_ON
     `rvv_expect(!(up_valid && reg_enable[0]) || (
-                fpnew_pkg::int_width(isrc_fmt)<=WIDTH && WIDTH%fpnew_pkg::int_width(isrc_fmt) == 0))
+                fpnew_pkg::int_width(src_fmt)<=WIDTH && WIDTH%fpnew_pkg::int_width(src_fmt) == 0))
       else $warning("Input type too wide!");
     `rvv_expect(!(up_valid && reg_enable[0]) || (
                   (INT_FMT_CONFIG[0] && (src_fmt == fpnew_pkg::INT8 )) ||
                   (INT_FMT_CONFIG[1] && (src_fmt == fpnew_pkg::INT16))))
       else $warning("Input type not supported");
-    `rvv_expect(!(up_valid && reg_enable[0]) || fpnew_pkg::int_width(isrc_fmt)==WIDTH)
+    `rvv_expect(!(up_valid && reg_enable[0]) || fpnew_pkg::int_width(dst_fmt)==WIDTH)
       else $warning("Output type not supported");
   `endif
 
@@ -54,11 +54,21 @@ module zvt_pe_mulbulk_int_lane#(
     
     // 2. make partial products (pp=Ai*Bj)
     for (j = 0; j < WIDTH/8; j++) begin: pp_b
-      assign pp_raw[i][j] = {9'b0, A[i]} * {9'b0, B[j]};
+      assign pp_raw[i][j] = signed'({{9{A[i][8]}}, A[i]}) * signed'({{9{B[j][8]}}, B[j]});
       assign pp[i][j] = pp_raw[i][j][15:0];  // no overflow when actual input is [u]int8, guarded
       `ifdef ASSERT_ON
-        `rvv_expect(pp_raw[i][j][16] == pp_raw[i][j][17] && (!inject_en || pp_raw[i][j][15]==pp_raw[i][j][16]))
-          else $warning("Overflow on partial product trim");  // which should not be possible
+        wire inject_en_j = (INT_FMT_CONFIG[0] && (src_fmt == fpnew_pkg::INT8 )) ||
+                          (INT_FMT_CONFIG[1] && (src_fmt == fpnew_pkg::INT16) && j[0]);
+        wire byte_A_signed = inject_en   & operand_signed[0];
+        wire byte_B_signed = inject_en_j & operand_signed[1];
+        wire any_signed    = byte_A_signed | byte_B_signed;
+
+        `rvv_expect(any_signed
+          ? (pp_raw[i][j][17] == pp_raw[i][j][16]
+          && pp_raw[i][j][16] == pp_raw[i][j][15])   // signed:   fits in int16
+          : (pp_raw[i][j][17] == 1'b0
+          && pp_raw[i][j][16] == 1'b0))              // unsigned: fits in uint16
+          else $warning("pp_raw does not fit in 16-bit %s range", any_signed ? "signed" : "unsigned");
       `endif
 
       // 3. select enable bits from src_fmt

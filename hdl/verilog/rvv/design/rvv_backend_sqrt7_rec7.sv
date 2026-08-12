@@ -29,7 +29,7 @@ module rvv_backend_sqrt7_rec7(
 
   // Input signals
   input       [`WORD_WIDTH-1:0]     operand_i; // 1 operand
-  input  [`REGFILE_INDEX_WIDTH-1:0] vs1_i;
+  input       [`REGIDX_WIDTH-1:0]   vs1_i;
   input                       RVFRM rnd_mode_i;
   input                     TagType tag_i;
   // Input Handshake

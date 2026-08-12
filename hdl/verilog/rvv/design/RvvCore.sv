@@ -195,6 +195,9 @@ module RvvCore #(parameter N = 4,
 
   // Floating point regfile write-back
   logic [`NUM_RT_UOP-1:0]                           rvv2rvs_frd_valid;
+`ifdef TB_SUPPORT
+  logic [`NUM_RT_UOP-1:0][`PC_WIDTH-1:0]            rvv2rvs_frd_pc;
+`endif
   logic [`NUM_RT_UOP-1:0][`REGFILE_INDEX_WIDTH-1:0] rvv2rvs_frd_addr;
   logic [`NUM_RT_UOP-1:0][`XLEN-1:0]                rvv2rvs_frd_data;
   logic [`NUM_RT_UOP-1:0]                           rvv2rvs_frd_ready;
@@ -239,6 +242,8 @@ module RvvCore #(parameter N = 4,
   logic                 uop_vme2lsu_vld_dummy;
   UOP_VME2LSU_t         uop_vme2lsu_dummy;
   logic                 uop_lsu2vme_rdy_dummy;
+  logic                 vme_lsuflush_vld_dummy;
+  logic                 vme_lsuflush_rdy_dummy;
 `endif
 
   logic   [`ISSUE_LANE-1:0] insts_ready_cq2rvs;
@@ -266,6 +271,9 @@ module RvvCore #(parameter N = 4,
 
 `ifdef ZVE32F_ON
       .async_frd_valid(rvv2rvs_frd_valid),
+`ifdef TB_SUPPORT
+      .async_frd_pc(rvv2rvs_frd_pc),
+`endif
       .async_frd_addr(rvv2rvs_frd_addr),
       .async_frd_data(rvv2rvs_frd_data),
       .async_frd_ready(rvv2rvs_frd_ready),
@@ -294,7 +302,12 @@ module RvvCore #(parameter N = 4,
       .uop_vme2lsu_rdy(1'b0),
       .uop_lsu2vme_vld(1'b0),
       .uop_lsu2vme('0),
-      .uop_lsu2vme_rdy(uop_lsu2vme_rdy_dummy)
+      .uop_lsu2vme_rdy(uop_lsu2vme_rdy_dummy),
+      .vme_lsuflush_vld(vme_lsuflush_vld_dummy),
+      .vme_lsuflush_rdy(vme_lsuflush_rdy_dummy),
+      .vmeRtVld(),
+      .vmeRt(),
+      .vmeRtRdy(1'b0)
 `endif
   );
 

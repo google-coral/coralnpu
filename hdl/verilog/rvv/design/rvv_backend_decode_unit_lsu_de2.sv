@@ -1,4 +1,3 @@
-
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `include "rvv_backend.svh"
 `endif
@@ -29,53 +28,52 @@ module rvv_backend_decode_unit_lsu_de2
 //
 // internal signals
 //
-  logic   [`FUNCT6_WIDTH-1:0]                         inst_funct6;      // inst original encoding[31:26]
-  logic   [`NFIELD_WIDTH-1:0]                         inst_nf;          // inst original encoding[31:29]
-  logic   [`VM_WIDTH-1:0]                             inst_vm;          // inst original encoding[25] 
-  logic   [`REGFILE_INDEX_WIDTH-1:0]                  inst_vs2;         // inst original encoding[24:20]
-  logic   [`UMOP_WIDTH-1:0]                           inst_umop;        // inst original encoding[24:20]
-  logic   [`FUNCT3_WIDTH-1:0]                         inst_funct3;      // inst original encoding[14:12]
-  logic   [`REGFILE_INDEX_WIDTH-1:0]                  inst_vd;          // inst original encoding[11:7]
-  RVVOpCode                                           inst_opcode;      // inst original encoding[6:0]
-  logic                                               lsu_is_store;
-  RVVConfigState                                      vector_csr_lsu;
-  logic   [`VSTART_WIDTH-1:0]                         csr_vstart;
-  logic   [`XLEN-1:0]                                 rs1;
-  logic   [`UOP_INDEX_WIDTH-1:0]                      uop_index_max;         
-  RVVLMUL                                             reduced_lmul;  
-  EMUL_e                                              emul_vd;          
-  EMUL_e                                              emul_vs2;          
-  EMUL_e                                              emul_max; 
-  EEW_e                                               eew_vd;          
-  EEW_e                                               eew_vs2;          
-  EEW_e                                               eew_max;          
+  logic   [`FUNCT6_WIDTH-1:0]                       inst_funct6;      // inst original encoding[31:26]
+  logic   [`NFIELD_WIDTH-1:0]                       inst_nf;          // inst original encoding[31:29]
+  logic   [`VM_WIDTH-1:0]                           inst_vm;          // inst original encoding[25] 
+  logic   [`REGIDX_WIDTH-1:0]                       inst_vs2;         // inst original encoding[24:20]
+  logic   [`UMOP_WIDTH-1:0]                         inst_umop;        // inst original encoding[24:20]
+  logic   [`FUNCT3_WIDTH-1:0]                       inst_funct3;      // inst original encoding[14:12]
+  logic   [`REGIDX_WIDTH-1:0]                       inst_vd;          // inst original encoding[11:7]
+  RVVOpCode                                         inst_opcode;      // inst original encoding[6:0]
+  logic                                             lsu_is_store;
+  RVVConfigState                                    vector_csr_lsu;
+  logic   [`VSTART_WIDTH-1:0]                       csr_vstart;
+  logic   [`XLEN-1:0]                               rs1;
+  logic   [`UOP_INDEX_WIDTH-1:0]                    uop_index_max;         
+  RVVLMUL                                           reduced_lmul;  
+  EMUL_e                                            emul_vd;          
+  EMUL_e                                            emul_vs2;          
+  EMUL_e                                            emul_max; 
+  EEW_e                                             eew_vd;          
+  EEW_e                                             eew_vs2;          
+  EEW_e                                             eew_max;          
 
-  logic                                               valid_lsu;
-  logic                                               valid_lsu_opcode;
-  logic                                               valid_lsu_mop;
-  logic   [`UOP_INDEX_WIDTH-1:0]                      uop_index_base;         
-  logic   [`NUM_DE_UOP-1:0][`UOP_INDEX_WIDTH:0]       uop_index_current;   
-  logic   [`NUM_DE_UOP-1:0]                           first_uop_valid;    
-  logic   [`NUM_DE_UOP-1:0]                           last_uop_valid;     
-  EXE_UNIT_e                                          uop_exe_unit; 
-  UOP_CLASS_e                                         uop_class;   
-  RVVConfigState  [`NUM_DE_UOP-1:0]                   vector_csr;  
-  logic   [`NUM_DE_UOP-1:0][`REGFILE_INDEX_WIDTH-1:0] vd_index;           
-  logic   [`NUM_DE_UOP-1:0][$clog2(`EMUL_MAX)-1:0]    vd_offset;
-  logic                                               vd_valid;
-  logic                                               vs3_valid;          
-  logic   [`NUM_DE_UOP-1:0][`REGFILE_INDEX_WIDTH-1:0] vs2_index; 	        
-  logic   [`NUM_DE_UOP-1:0][$clog2(`EMUL_MAX)-1:0]    vs2_offset;
-  logic   [`NUM_DE_UOP-1:0]                           vs2_valid;
+  logic                                             valid_lsu_opcode;
+  logic                                             valid_lsu_mop;
+  logic   [`UOP_INDEX_WIDTH-1:0]                    uop_index_base;         
+  logic   [`NUM_DE_UOP-1:0][`UOP_INDEX_WIDTH:0]     uop_index_current;   
+  logic   [`NUM_DE_UOP-1:0]                         first_uop_valid;    
+  logic   [`NUM_DE_UOP-1:0]                         last_uop_valid;     
+  EXE_UNIT_e                                        uop_exe_unit; 
+  UOP_CLASS_e                                       uop_class;   
+  RVVConfigState  [`NUM_DE_UOP-1:0]                 vector_csr;  
+  logic   [`NUM_DE_UOP-1:0][`REGIDX_WIDTH-1:0]      vd_index;           
+  logic   [`NUM_DE_UOP-1:0][$clog2(`EMUL_MAX)-1:0]  vd_offset;
+  logic                                             vd_valid;
+  logic                                             vs3_valid;          
+  logic   [`NUM_DE_UOP-1:0][`REGIDX_WIDTH-1:0]      vs2_index; 	        
+  logic   [`NUM_DE_UOP-1:0][$clog2(`EMUL_MAX)-1:0]  vs2_offset;
+  logic   [`NUM_DE_UOP-1:0]                         vs2_valid;
 `ifdef ZVT_ON
-  logic                                               mt_valid; 
+  logic                                             mt_valid; 
 `endif
-  logic   [`NUM_DE_UOP-1:0][`UOP_INDEX_WIDTH-1:0]     uop_index;          
-  logic   [`NUM_DE_UOP-1:0][$clog2(`EMUL_MAX)-1:0]    seg_field_index;
-  logic   [`NUM_DE_UOP-1:0]                           pshrob_valid;  
-  logic                                               pshlsu_valid;
-  FUNCT6_u                                            funct6_lsu;  
-  genvar                                              j;
+  logic   [`NUM_DE_UOP-1:0][`UOP_INDEX_WIDTH-1:0]   uop_index;          
+  logic   [`NUM_DE_UOP-1:0][$clog2(`EMUL_MAX)-1:0]  seg_field_index;
+  logic   [`NUM_DE_UOP-1:0]                         pshrob_valid;  
+  logic                                             pshlsu_valid;
+  FUNCT6_u                                          funct6_lsu;  
+  genvar                                            j;
 
 //
 // decode
@@ -102,8 +100,6 @@ module rvv_backend_decode_unit_lsu_de2
 
   // valid signal
   assign valid_lsu_opcode = inst_opcode==LOAD || inst_opcode==STORE;
-  
-  assign valid_lsu = valid_lsu_opcode&valid_lsu_mop&lcmd_valid;
 
   // identify load or store
   assign lsu_is_store = inst_opcode == STORE;

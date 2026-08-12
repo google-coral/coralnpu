@@ -15,75 +15,75 @@ module rvv_backend_decode_unit_lsu
 //
 // interface signals
 //
-  input   logic                       inst_valid;
-  input   RVVCmd                      inst;
+  input   logic                   inst_valid;
+  input   RVVCmd                  inst;
   
-  output  logic                       lcmd_valid;
-  output  LCMD_t                      lcmd;
+  output  logic                   lcmd_valid;
+  output  LCMD_t                  lcmd;
 
 //
 // internal signals
 //
-  logic   [`FUNCT6_WIDTH-1:0]         inst_funct6;      // inst original encoding[31:26]  
-  logic   [`NFIELD_WIDTH-1:0]         inst_nf;          // inst original encoding[31:29]
-  logic   [`VM_WIDTH-1:0]             inst_vm;          // inst original encoding[25]      
-  logic   [`REGFILE_INDEX_WIDTH-1:0]  inst_vs2;         // inst original encoding[24:20]
-  logic   [`UMOP_WIDTH-1:0]           inst_umop;        // inst original encoding[24:20]
-  logic   [`FUNCT3_WIDTH-1:0]         inst_funct3;      // inst original encoding[14:12]
-  logic   [`REGFILE_INDEX_WIDTH-1:0]  inst_vd;          // inst original encoding[11:7]
-  RVVOpCode                           inst_opcode;      // inst original encoding[6:0]
+  logic   [`FUNCT6_WIDTH-1:0]     inst_funct6;      // inst original encoding[31:26]  
+  logic   [`NFIELD_WIDTH-1:0]     inst_nf;          // inst original encoding[31:29]
+  logic   [`VM_WIDTH-1:0]         inst_vm;          // inst original encoding[25]      
+  logic   [`REGIDX_WIDTH-1:0]     inst_vs2;         // inst original encoding[24:20]
+  logic   [`UMOP_WIDTH-1:0]       inst_umop;        // inst original encoding[24:20]
+  logic   [`FUNCT3_WIDTH-1:0]     inst_funct3;      // inst original encoding[14:12]
+  logic   [`REGIDX_WIDTH-1:0]     inst_vd;          // inst original encoding[11:7]
+  RVVOpCode                       inst_opcode;      // inst original encoding[6:0]
 
-  logic   [`XLEN-1:0]                 rs1;    
-  logic                               csr_vill;
-  logic   [`VSTART_WIDTH-1:0]         csr_vstart;
-  logic   [`VL_WIDTH-1:0]             csr_vl;
-  logic   [`VL_WIDTH-1:0]             evl;
-  RVVSEW                              csr_sew;
-  RVVLMUL                             csr_lmul;
-  RVVLMUL                             reduced_lmul;  
+  logic   [`XLEN-1:0]             rs1;    
+  logic                           csr_vill;
+  logic   [`VSTART_WIDTH-1:0]     csr_vstart;
+  logic   [`VL_WIDTH-1:0]         csr_vl;
+  logic   [`VL_WIDTH-1:0]         evl;
+  RVVSEW                          csr_sew;
+  RVVLMUL                         csr_lmul;
+  RVVLMUL                         reduced_lmul;  
 `ifdef ZVT_ON
-  logic   [1:0]                       csr_mtwiden;
-  logic   [$clog2(`TE):0]             csr_tm;
-  logic   [$clog2(`TE):0]             csr_tn;
-  TSS_t                               tss;
+  logic   [1:0]                   csr_mtwiden;
+  logic   [$clog2(`TE):0]         csr_tm;
+  logic   [$clog2(`TE):0]         csr_tn;
+  TSS_t                           tss;
 `endif  
-  EMUL_e                              emul_vd;          
-  EMUL_e                              emul_vs2;          
-  EMUL_e                              emul_vd_nf; 
-  EMUL_e                              emul_max; 
-  logic   [`UOP_INDEX_WIDTH-1:0]      uop_index_max;         
-  EEW_e                               eew_vd;          
+  EMUL_e                          emul_vd;          
+  EMUL_e                          emul_vs2;          
+  EMUL_e                          emul_vd_nf; 
+  EMUL_e                          emul_max; 
+  logic   [`UOP_INDEX_WIDTH-1:0]  uop_index_max;         
+  EEW_e                           eew_vd;          
 `ifdef ZVT_ON
-  EEW_e                               eew_mt;
+  EEW_e                           eew_mt;
 `endif
-  EEW_e                               eew_vs2;          
-  EEW_e                               eew_max;         
-  logic                               valid_lsu;
-  logic                               valid_lsu_opcode;
-  logic                               valid_lsu_mop;
-  logic                               inst_encoding_correct;
-  logic                               check_special;
-  logic                               check_vd_overlap_v0;
-  logic                               check_vd_part_overlap_vs2;
-  logic   [`REGFILE_INDEX_WIDTH:0]    vd_index_start;
-  logic   [`REGFILE_INDEX_WIDTH:0]    vd_index_end;
-  logic   [`REGFILE_INDEX_WIDTH-1:0]  vd_index_offset;
-  logic                               check_vd_overlap_vs2;
-  logic                               check_vs2_part_overlap_vd_2_1;
-  logic                               check_vs2_part_overlap_vd_4_1;
-  logic                               check_common;
-  logic                               check_vd_align;
-  logic                               check_vs2_align;
-  logic                               check_vd_in_range;
-  logic   [`REGFILE_INDEX_WIDTH-1:0]  check_vd_cmp;
-  logic                               check_sew;
-  logic                               check_lmul;
-  logic                               check_evl_not_0;
-  logic                               check_vstart_sle_evl;
-  FUNCT6_u                            funct6_lsu;
-  logic                               force_vma_agnostic; 
-  logic                               force_vta_agnostic; 
-  genvar                              j;
+  EEW_e                           eew_vs2;          
+  EEW_e                           eew_max;         
+  logic                           valid_lsu;
+  logic                           valid_lsu_opcode;
+  logic                           valid_lsu_mop;
+  logic                           inst_encoding_correct;
+  logic                           check_special;
+  logic                           check_vd_overlap_v0;
+  logic                           check_vd_part_overlap_vs2;
+  logic   [`REGIDX_WIDTH:0]       vd_index_start;
+  logic   [`REGIDX_WIDTH:0]       vd_index_end;
+  logic   [`REGIDX_WIDTH-1:0]     vd_index_offset;
+  logic                           check_vd_overlap_vs2;
+  logic                           check_vs2_part_overlap_vd_2_1;
+  logic                           check_vs2_part_overlap_vd_4_1;
+  logic                           check_common;
+  logic                           check_vd_align;
+  logic                           check_vs2_align;
+  logic                           check_vd_in_range;
+  logic   [`REGIDX_WIDTH-1:0]     check_vd_cmp;
+  logic                           check_sew;
+  logic                           check_lmul;
+  logic                           check_evl_not_0;
+  logic                           check_vstart_sle_evl;
+  FUNCT6_u                        funct6_lsu;
+  logic                           force_vma_agnostic; 
+  logic                           force_vta_agnostic; 
+  genvar                          j;
   
   // local parameter for SEW in original endocing[14:12]
   localparam  SEW_8     = 3'b000;
@@ -3059,20 +3059,43 @@ module rvv_backend_decode_unit_lsu
       `ifdef ZVT_ON
         TILELDST: begin
           case(csr_lmul)
+            LMUL1: begin
+              if(inst_funct6[5:3]==TILESEW8) begin
+                emul_max = EMUL1;
+              end
+            end
+            LMUL2: begin
+              if(inst_funct6[5:3]==TILESEW16) begin
+                emul_max      = EMUL2;
+                uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+
+                //if((!tss.pattern && (|csr_tm[$clog2(`TE):$clog2(`TE)-1])) || 
+                //   ( tss.pattern && (|csr_tn[$clog2(`TE):$clog2(`TE)-1])) )
+                //  uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+              end
+            end
             LMUL4: begin
-              case(csr_sew)
-                SEW8: begin
-                  emul_max      = EMUL1;
-                end
-                SEW16: begin
-                  uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-                  emul_max      = EMUL2;
-                end
-                SEW32: begin
-                  uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-                  emul_max      = EMUL4;
-                end
-              endcase
+              if(inst_funct6[5:3]==TILESEW32) begin
+                emul_max      = EMUL4;
+                uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+
+                //if(!tss.pattern) begin
+                //  if(csr_tm[$clog2(`TE):$clog2(`TE)-2]>=3'b011)
+                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                //  else if(csr_tm[$clog2(`TE):$clog2(`TE)-2]>=3'b010)
+                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d2);
+                //  else if(csr_tm[$clog2(`TE):$clog2(`TE)-2]>=3'b001)
+                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                //end
+                //else begin
+                //  if(csr_tn[$clog2(`TE):$clog2(`TE)-2]>=3'b011)
+                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                //  else if(csr_tn[$clog2(`TE):$clog2(`TE)-2]>=3'b010)
+                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d2);
+                //  else if(csr_tn[$clog2(`TE):$clog2(`TE)-2]>=3'b001)
+                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                //end
+              end
             end
           endcase
         end
@@ -3237,13 +3260,13 @@ module rvv_backend_decode_unit_lsu
         check_vd_part_overlap_vs2 = 1'b1;          
       end
       EMUL2: begin
-        check_vd_part_overlap_vs2 = !((inst_vd[0]!='b0) & ((inst_vd[`REGFILE_INDEX_WIDTH-1:1]==inst_vs2[`REGFILE_INDEX_WIDTH-1:1])));
+        check_vd_part_overlap_vs2 = !((inst_vd[0]!='b0) & ((inst_vd[`REGIDX_WIDTH-1:1]==inst_vs2[`REGIDX_WIDTH-1:1])));
       end
       EMUL4: begin
-        check_vd_part_overlap_vs2 = !((inst_vd[1:0]!='b0) & ((inst_vd[`REGFILE_INDEX_WIDTH-1:2]==inst_vs2[`REGFILE_INDEX_WIDTH-1:2])));
+        check_vd_part_overlap_vs2 = !((inst_vd[1:0]!='b0) & ((inst_vd[`REGIDX_WIDTH-1:2]==inst_vs2[`REGIDX_WIDTH-1:2])));
       end
       EMUL8 : begin
-        check_vd_part_overlap_vs2 = !((inst_vd[2:0]!='b0) & ((inst_vd[`REGFILE_INDEX_WIDTH-1:3]==inst_vs2[`REGFILE_INDEX_WIDTH-1:3])));
+        check_vd_part_overlap_vs2 = !((inst_vd[2:0]!='b0) & ((inst_vd[`REGIDX_WIDTH-1:3]==inst_vs2[`REGIDX_WIDTH-1:3])));
       end
     endcase
   end
@@ -3255,13 +3278,13 @@ module rvv_backend_decode_unit_lsu
 
   always_comb begin
     case(emul_vd_nf)
-      EMUL2:   vd_index_offset = (`REGFILE_INDEX_WIDTH)'('d1);
-      EMUL3:   vd_index_offset = (`REGFILE_INDEX_WIDTH)'('d2);
-      EMUL4:   vd_index_offset = (`REGFILE_INDEX_WIDTH)'('d3);
-      EMUL5:   vd_index_offset = (`REGFILE_INDEX_WIDTH)'('d4);
-      EMUL6:   vd_index_offset = (`REGFILE_INDEX_WIDTH)'('d5);
-      EMUL7:   vd_index_offset = (`REGFILE_INDEX_WIDTH)'('d6);
-      EMUL8:   vd_index_offset = (`REGFILE_INDEX_WIDTH)'('d7);
+      EMUL2:   vd_index_offset = (`REGIDX_WIDTH)'('d1);
+      EMUL3:   vd_index_offset = (`REGIDX_WIDTH)'('d2);
+      EMUL4:   vd_index_offset = (`REGIDX_WIDTH)'('d3);
+      EMUL5:   vd_index_offset = (`REGIDX_WIDTH)'('d4);
+      EMUL6:   vd_index_offset = (`REGIDX_WIDTH)'('d5);
+      EMUL7:   vd_index_offset = (`REGIDX_WIDTH)'('d6);
+      EMUL8:   vd_index_offset = (`REGIDX_WIDTH)'('d7);
       default: vd_index_offset = 'b0;
     endcase
   end
@@ -3276,16 +3299,16 @@ module rvv_backend_decode_unit_lsu
                                ({1'b0,inst_vs2}>vd_index_end);          
       end
       EMUL2: begin
-        check_vd_overlap_vs2 = ({1'b0,inst_vs2[`REGFILE_INDEX_WIDTH-1:1]}<vd_index_start[`REGFILE_INDEX_WIDTH:1]) || 
-                               ({1'b0,inst_vs2[`REGFILE_INDEX_WIDTH-1:1]}>vd_index_end[`REGFILE_INDEX_WIDTH:1]);          
+        check_vd_overlap_vs2 = ({1'b0,inst_vs2[`REGIDX_WIDTH-1:1]}<vd_index_start[`REGIDX_WIDTH:1]) || 
+                               ({1'b0,inst_vs2[`REGIDX_WIDTH-1:1]}>vd_index_end[`REGIDX_WIDTH:1]);          
       end
       EMUL4: begin
-        check_vd_overlap_vs2 = ({1'b0,inst_vs2[`REGFILE_INDEX_WIDTH-1:2]}<vd_index_start[`REGFILE_INDEX_WIDTH:2]) || 
-                               ({1'b0,inst_vs2[`REGFILE_INDEX_WIDTH-1:2]}>vd_index_end[`REGFILE_INDEX_WIDTH:2]);          
+        check_vd_overlap_vs2 = ({1'b0,inst_vs2[`REGIDX_WIDTH-1:2]}<vd_index_start[`REGIDX_WIDTH:2]) || 
+                               ({1'b0,inst_vs2[`REGIDX_WIDTH-1:2]}>vd_index_end[`REGIDX_WIDTH:2]);          
       end
       EMUL8 : begin
-        check_vd_overlap_vs2 = ({1'b0,inst_vs2[`REGFILE_INDEX_WIDTH-1:3]}<vd_index_start[`REGFILE_INDEX_WIDTH:3]) || 
-                               ({1'b0,inst_vs2[`REGFILE_INDEX_WIDTH-1:3]}>vd_index_end[`REGFILE_INDEX_WIDTH:3]);          
+        check_vd_overlap_vs2 = ({1'b0,inst_vs2[`REGIDX_WIDTH-1:3]}<vd_index_start[`REGIDX_WIDTH:3]) || 
+                               ({1'b0,inst_vs2[`REGIDX_WIDTH-1:3]}>vd_index_end[`REGIDX_WIDTH:3]);          
       end
     endcase
   end
@@ -3300,13 +3323,13 @@ module rvv_backend_decode_unit_lsu
         check_vs2_part_overlap_vd_2_1 = 1'b1;
       end
       EMUL2: begin
-        check_vs2_part_overlap_vd_2_1 = !((inst_vd[`REGFILE_INDEX_WIDTH-1:1]==inst_vs2[`REGFILE_INDEX_WIDTH-1:1])&(inst_vs2[0]!=1'b1));
+        check_vs2_part_overlap_vd_2_1 = !((inst_vd[`REGIDX_WIDTH-1:1]==inst_vs2[`REGIDX_WIDTH-1:1])&(inst_vs2[0]!=1'b1));
       end
       EMUL4: begin
-        check_vs2_part_overlap_vd_2_1 = !((inst_vd[`REGFILE_INDEX_WIDTH-1:2]==inst_vs2[`REGFILE_INDEX_WIDTH-1:2])&(inst_vs2[1:0]!=2'b10));
+        check_vs2_part_overlap_vd_2_1 = !((inst_vd[`REGIDX_WIDTH-1:2]==inst_vs2[`REGIDX_WIDTH-1:2])&(inst_vs2[1:0]!=2'b10));
       end
       EMUL8: begin
-        check_vs2_part_overlap_vd_2_1 = !((inst_vd[`REGFILE_INDEX_WIDTH-1:3]==inst_vs2[`REGFILE_INDEX_WIDTH-1:3])&(inst_vs2[2:0]!=3'b100));
+        check_vs2_part_overlap_vd_2_1 = !((inst_vd[`REGIDX_WIDTH-1:3]==inst_vs2[`REGIDX_WIDTH-1:3])&(inst_vs2[2:0]!=3'b100));
       end
     endcase
   end
@@ -3321,13 +3344,13 @@ module rvv_backend_decode_unit_lsu
         check_vs2_part_overlap_vd_4_1 = 1'b1;
       end
       EMUL2: begin
-        check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGFILE_INDEX_WIDTH-1:1]==inst_vs2[`REGFILE_INDEX_WIDTH-1:1])&(inst_vs2[0]!=1'b1));
+        check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGIDX_WIDTH-1:1]==inst_vs2[`REGIDX_WIDTH-1:1])&(inst_vs2[0]!=1'b1));
       end
       EMUL4: begin
-        check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGFILE_INDEX_WIDTH-1:2]==inst_vs2[`REGFILE_INDEX_WIDTH-1:2])&(inst_vs2[1:0]!=2'b11));
+        check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGIDX_WIDTH-1:2]==inst_vs2[`REGIDX_WIDTH-1:2])&(inst_vs2[1:0]!=2'b11));
       end
       EMUL8: begin
-        check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGFILE_INDEX_WIDTH-1:3]==inst_vs2[`REGFILE_INDEX_WIDTH-1:3])&(inst_vs2[2:0]!=3'b110));
+        check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGIDX_WIDTH-1:3]==inst_vs2[`REGIDX_WIDTH-1:3])&(inst_vs2[2:0]!=3'b110));
       end
     endcase
   end

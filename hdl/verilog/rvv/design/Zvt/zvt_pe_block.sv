@@ -10,16 +10,20 @@ module zvt_pe_block (
   blkCmdRdy,
   hitBlkRaw,
   rawStall,
-  readAccIdx,
+  readMtIdx,
   readSubIdx,
   readData,  
   writeEn,  
-  writeAccIdx,
+  writeMtIdx,
   writeSubIdx,
   writeData,  
   fpexpVld,
   fpexp,
   fpexpRdy,
+  blkRtVld,
+`ifdef RVVI_ON
+  blkRtMtIdx,
+`endif
   flush,
   busy
 );
@@ -35,35 +39,40 @@ module zvt_pe_block (
   input  logic                                              blkCmdVld;
   input  BLKCMD_t                                           blkCmd;
   output logic                                              blkCmdRdy;
-  // ACC 
+  // MT 
   output logic                                              hitBlkRaw;
   input  logic                                              rawStall;
-  output logic [`NUM_BLKPORT-1:0][$clog2(`NUM_ACC)-1:0]     readAccIdx;
+  output logic [`NUM_BLKPORT-1:0][$clog2(`NUM_MT)-1:0]      readMtIdx;
   output logic [`NUM_BLKPORT-1:0][$clog2(`NUM_SUBTILE)-1:0] readSubIdx;
   input  logic [`NUM_BLKPORT-1:0][`SUBTILE_SIZE*8-1:0]      readData;  
   output logic [`NUM_BLKPORT-1:0][`SUBTILE_SIZE-1:0]        writeEn;  
-  output logic [`NUM_BLKPORT-1:0][$clog2(`NUM_ACC)-1:0]     writeAccIdx;
+  output logic [`NUM_BLKPORT-1:0][$clog2(`NUM_MT)-1:0]      writeMtIdx;
   output logic [`NUM_BLKPORT-1:0][$clog2(`NUM_SUBTILE)-1:0] writeSubIdx;
   output logic [`NUM_BLKPORT-1:0][`SUBTILE_SIZE*8-1:0]      writeData;  
   // floating-point status
   output logic                                              fpexpVld;
   output RVFEXP_t                                           fpexp;
   input  logic                                              fpexpRdy;
+  // retiring informaiton
+  output logic                                              blkRtVld;
+`ifdef RVVI_ON
+  output logic [$clog2(`NUM_MT)-1:0]                        blkRtMtIdx;
+`endif
   // control&status  
   input  logic                                              flush;
   output logic                                              busy;
 
 // -------------- code start --------------------
   // mul+bulk input
-  MULBULKTAG_t                                  mulbulkTag;
-  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][3:0]  maskIn;
+  MULBULKTAG_t                                 mulbulkTag;
+  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][3:0] maskIn;
   // mul+bulk Result
-  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]       outVld;
-  logic                                         mulbulkResVld;
-  MULBULKRES_t                                  mulbulkRes;
-  logic                                         mulbulkResRdy;
-  // mul+bulk status                            
-  logic                                         mulbulkBusy;
+  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]      outVld;
+  logic                                        mulbulkResVld;
+  MULBULKRES_t                                 mulbulkRes;
+  logic                                        mulbulkResRdy;
+  // mul+bulk status                           
+  logic                                        mulbulkBusy;
 
 `ifdef TB_SUPPORT
   assign mulbulkTag.uop_pc     = blkCmd.vaInfo.uop_pc;
@@ -72,38 +81,43 @@ module zvt_pe_block (
   assign mulbulkTag.op         = blkCmd.vaInfo.op;
   assign mulbulkTag.fdstFmt    = blkCmd.vaInfo.fdstFmt;
   assign mulbulkTag.idstFmt    = blkCmd.vaInfo.idstFmt;
-  assign mulbulkTag.readAccIdx = blkCmd.vaInfo.readAccIdx;
-  assign mulbulkTag.readAccId  = blkCmd.vaInfo.readAccId;
+  assign mulbulkTag.readMtIdx  = blkCmd.vaInfo.readMtIdx;
+  assign mulbulkTag.readMtId   = blkCmd.vaInfo.readMtId;
+  assign mulbulkTag.lastUopVld = blkCmd.vaInfo.lastUopVld;
 
   // instance mul+bulk-normalization
+  //
+  // Each PE block has ROWS_PER_CNT = TE/2*COMPRATIO adder rows. For tm
+  // values larger than ROWS_PER_CNT, the pe_array stripmines M across cnt
+  // cycles and pre-slices vaGroupLo to deliver the correct rows per cycle.
   for(genvar i=0; i<`TE/2*`COMPRATIO; i++) begin: mul_bulk_row
     for(genvar j=0; j<`TE/2; j++) begin: mul_bulk_col
       assign maskIn[i][j] = blkCmd.vaInfo.vaMask[i]&blkCmd.vbInfo.vbMask[j];
-      
+
       if ((i==0)&(j==0)) begin
         zvt_pe_mulbulk #(
-          .FP_FMT_CONFIG    (5'b10001),  
+          .FP_FMT_CONFIG    (5'b10001),
           `ifdef ZVTI16I32_ON
           .INT_FMT_CONFIG   (2'b11),
           `else
           .INT_FMT_CONFIG   (2'b01),
           `endif
           .NUM_PIPE_REGS    (MULBULKPIPENUM),
-          .PIPE_CONFIG      (fpnew_pkg::DISTRIBUTED),  
+          .PIPE_CONFIG      (fpnew_pkg::DISTRIBUTED),
           .TAG_TYPE         (MULBULKTAG_t),
           .REMV_PIPE_BUBBLE (REMVPIPEBUBB)
         ) peMulBulk (
           .clk            (clk),
           .rst_n          (rst_n),
           // Input signals
-          .operands       ({blkCmd.vaInfo.va[i], blkCmd.vbInfo.vb[j]}),   
-          .rnd_mode       (blkCmd.vaInfo.rndMode),   
-          .op             (blkCmd.vaInfo.op),         
-          .op_mod         (blkCmd.vaInfo.opMod),     
-          .fsrc_fmt       (blkCmd.vaInfo.fsrcFmt),   
-          .isrc_fmt       (blkCmd.vaInfo.isrcFmt),   
-          .fdst_fmt       (blkCmd.vaInfo.fdstFmt),   
-          .idst_fmt       (blkCmd.vaInfo.idstFmt),   
+          .operands       ({blkCmd.vaInfo.va[i], blkCmd.vbInfo.vb[j]}),
+          .rnd_mode       (blkCmd.vaInfo.rndMode),
+          .op             (blkCmd.vaInfo.op),
+          .op_mod         (blkCmd.vaInfo.opMod),
+          .fsrc_fmt       (blkCmd.vaInfo.fsrcFmt),
+          .isrc_fmt       (blkCmd.vaInfo.isrcFmt),
+          .fdst_fmt       (blkCmd.vaInfo.fdstFmt),
+          .idst_fmt       (blkCmd.vaInfo.idstFmt),
           .in_tag         (mulbulkTag),
           .mask           (maskIn[i][j]),
           // Input Handshake
@@ -122,27 +136,27 @@ module zvt_pe_block (
         );
       end else begin
         zvt_pe_mulbulk #(
-          .FP_FMT_CONFIG    (5'b10001),  
+          .FP_FMT_CONFIG    (5'b10001),
           `ifdef ZVTI16I32_ON
           .INT_FMT_CONFIG   (2'b11),
           `else
           .INT_FMT_CONFIG   (2'b01),
           `endif
           .NUM_PIPE_REGS    (MULBULKPIPENUM),
-          .PIPE_CONFIG      (fpnew_pkg::DISTRIBUTED),  
+          .PIPE_CONFIG      (fpnew_pkg::DISTRIBUTED),
           .REMV_PIPE_BUBBLE (REMVPIPEBUBB)
         ) peMulBulk (
           .clk            (clk),
           .rst_n          (rst_n),
           // Input signals
-          .operands       ({blkCmd.vaInfo.va[i], blkCmd.vbInfo.vb[j]}),   
-          .rnd_mode       (blkCmd.vaInfo.rndMode),   
-          .op             (blkCmd.vaInfo.op),         
-          .op_mod         (blkCmd.vaInfo.opMod),     
-          .fsrc_fmt       (blkCmd.vaInfo.fsrcFmt),   
-          .isrc_fmt       (blkCmd.vaInfo.isrcFmt),   
-          .fdst_fmt       (blkCmd.vaInfo.fdstFmt),   
-          .idst_fmt       (blkCmd.vaInfo.idstFmt),   
+          .operands       ({blkCmd.vaInfo.va[i], blkCmd.vbInfo.vb[j]}),
+          .rnd_mode       (blkCmd.vaInfo.rndMode),
+          .op             (blkCmd.vaInfo.op),
+          .op_mod         (blkCmd.vaInfo.opMod),
+          .fsrc_fmt       (blkCmd.vaInfo.fsrcFmt),
+          .isrc_fmt       (blkCmd.vaInfo.isrcFmt),
+          .fdst_fmt       (blkCmd.vaInfo.fdstFmt),
+          .idst_fmt       (blkCmd.vaInfo.idstFmt),
           .in_tag         ('0),
           .mask           (maskIn[i][j]),
           // Input Handshake
@@ -166,11 +180,11 @@ module zvt_pe_block (
   end
 
   // mulbulk result buffer
-  logic         mulbulkBufAfull;
-  logic         mulbulkBufAempty;
-  logic         mulbulkCmdVld;
-  MULBULKRES_t  mulbulkCmd;
-  logic         mulbulkCmdRdy;
+  logic        mulbulkBufAfull;
+  logic        mulbulkBufAempty;
+  logic        mulbulkCmdVld;
+  MULBULKRES_t mulbulkCmd;
+  logic        mulbulkCmdRdy;
 
   assign mulbulkResVld = outVld[0][0];   
   assign mulbulkResRdy = !mulbulkBufAfull;
@@ -187,6 +201,7 @@ module zvt_pe_block (
       .rst_n        (rst_n),
     // write
       .push         (mulbulkResVld & mulbulkResRdy),
+      .pushRdy      (),
       .datain       (mulbulkRes),
     // read
       .pop          (mulbulkCmdVld & mulbulkCmdRdy),
@@ -204,10 +219,10 @@ module zvt_pe_block (
   );  
 
 // Adder
-  ADDERTAG_t                                                adderTagIn;
-  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][ADDERPIPENUM:1]   adderVld;
-  logic                                                     adderRdy;
-  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]                   adderResVld;  
+  ADDERTAG_t                                              adderTagIn;
+  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][ADDERPIPENUM:1] adderVld;
+  logic                                                   adderRdy;
+  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]                 adderResVld;  
   generate 
     for(genvar i=0; i<`TE/2*`COMPRATIO; i++) begin: gen_res_vld_i
       for(genvar j=0; j<`TE/2; j++) begin: gen_res_vld_j
@@ -215,40 +230,40 @@ module zvt_pe_block (
       end
     end
   endgenerate
-  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][`WORD_WIDTH-1:0]  adderRes;
-  logic                                                     adderResRdy;
-  fpnew_pkg::status_t [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]     adderStatus;
-  ADDERTAG_t [ADDERPIPENUM:1]                               adderTag;
-  logic                                                     adderBusy;
+  logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][`WORD_WIDTH-1:0] adderRes;
+  logic                                                    adderResRdy;
+  fpnew_pkg::status_t [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]    adderStatus;
+  ADDERTAG_t [ADDERPIPENUM:1]                              adderTag;
+  logic                                                    adderBusy;
 
   // handshake
   assign mulbulkCmdVld = !mulbulkBufAempty;
   assign mulbulkCmdRdy = !rawStall && adderRdy;
 
-  // check RAW of ACC
+  // check RAW of MT
   always_comb begin
     hitBlkRaw = 'b0;
     for (int i=1;i<=ADDERPIPENUM;i++) begin
       hitBlkRaw = hitBlkRaw || (mulbulkCmdVld && 
                                 adderVld[0][0][i] &&
-                                (mulbulkCmd.tag.readAccIdx == adderTag[i].writeAccIdx) &&
-                                (mulbulkCmd.tag.readAccId == adderTag[i].writeAccId));
+                                (mulbulkCmd.tag.readMtIdx == adderTag[i].writeMtIdx) &&
+                                (mulbulkCmd.tag.readMtId == adderTag[i].writeMtId));
     end
   end
 
-  // read the operands from ACC
+  // read the operands from MT
   always_comb begin
     if(mulbulkCmdVld) begin
       for(int i=0; i<`TE/4*`COMPRATIO; i++) begin: SubtileRow
         for(int j=0; j<`TE/8; j++) begin: SubtileCol
-          readAccIdx[(`TE/4*i)+(2*j)  ] = {mulbulkCmd.tag.readAccIdx[3:2], BLKID[1], 1'b0};
-          readAccIdx[(`TE/4*i)+(2*j+1)] = {mulbulkCmd.tag.readAccIdx[3:2], BLKID[1], 1'b1};
-          readSubIdx[(`TE/4*i)+(2*j)  ] = ($clog2(`NUM_SUBTILE))'((`TE/8)*BLKID[0]+(`TE/4*`COMPRATIO*mulbulkCmd.tag.readAccId+i)*(`TE/4)+j); 
-          readSubIdx[(`TE/4*i)+(2*j+1)] = ($clog2(`NUM_SUBTILE))'((`TE/8)*BLKID[0]+(`TE/4*`COMPRATIO*mulbulkCmd.tag.readAccId+i)*(`TE/4)+j);
+          readMtIdx[(`TE/4*i)+(2*j)  ] = {mulbulkCmd.tag.readMtIdx[3:2], BLKID[1], 1'b0};
+          readMtIdx[(`TE/4*i)+(2*j+1)] = {mulbulkCmd.tag.readMtIdx[3:2], BLKID[1], 1'b1};
+          readSubIdx[(`TE/4*i)+(2*j)  ] = ($clog2(`NUM_SUBTILE))'((`TE/8)*BLKID[0]+(`TE/4*`COMPRATIO*mulbulkCmd.tag.readMtId+i)*(`TE/4)+j); 
+          readSubIdx[(`TE/4*i)+(2*j+1)] = ($clog2(`NUM_SUBTILE))'((`TE/8)*BLKID[0]+(`TE/4*`COMPRATIO*mulbulkCmd.tag.readMtId+i)*(`TE/4)+j);
         end
       end
     end else begin
-      readAccIdx = 'b0;
+      readMtIdx = 'b0;
       readSubIdx = 'b0;
     end
   end
@@ -268,8 +283,9 @@ module zvt_pe_block (
   assign adderTagIn.uop_pc      = mulbulkCmd.tag.uop_pc;
 `endif
   assign adderTagIn.status      = mulbulkCmd.status;
-  assign adderTagIn.writeAccIdx = mulbulkCmd.tag.readAccIdx;
-  assign adderTagIn.writeAccId  = mulbulkCmd.tag.readAccId;
+  assign adderTagIn.writeMtIdx = mulbulkCmd.tag.readMtIdx;
+  assign adderTagIn.writeMtId  = mulbulkCmd.tag.readMtId;
+  assign adderTagIn.lastUopVld  = mulbulkCmd.tag.lastUopVld;
 
   // adder
   for(genvar i=0; i<`TE/2*`COMPRATIO; i++) begin: adderRow
@@ -281,22 +297,22 @@ module zvt_pe_block (
           .TAG_TYPE         (ADDERTAG_t),
           .REMV_PIPE_BUBBLE (REMVPIPEBUBB)
         ) peAdder (
-          .clk          (clk),
-          .rst_n        (rst_n),
-          .operands     ({operands[i][j], mulbulkCmd.res[i][j]}),  
-          .rnd_mode     (mulbulkCmd.tag.rndMode),  
-          .op_mod       ('0), 
-          .op           (mulbulkCmd.tag.op==FPMUL),         
-          .in_tag       (adderTagIn),        
-          .in_valid     (mulbulkCmdVld & !rawStall && &mulbulkCmd.resMask[i][j]),  
-          .in_ready     (adderRdy),
-          .flush        (flush),      
-          .result       (adderRes[i][j]),   
-          .status       (adderStatus[i][j]),     
-          .out_tag      (adderTag),        
-          .out_valid    (adderVld[i][j]),
-          .out_ready    (adderResRdy),
-          .busy         (adderBusy)
+          .clk              (clk),
+          .rst_n            (rst_n),
+          .operands         ({operands[i][j], mulbulkCmd.res[i][j]}),  
+          .rnd_mode         (mulbulkCmd.tag.rndMode),  
+          .op_mod           ('0), 
+          .op               (mulbulkCmd.tag.op==FPMUL),         
+          .in_tag           (adderTagIn),        
+          .in_valid         (mulbulkCmdVld & !rawStall && &mulbulkCmd.resMask[i][j]),  
+          .in_ready         (adderRdy),
+          .flush            (flush),      
+          .result           (adderRes[i][j]),   
+          .status           (adderStatus[i][j]),     
+          .out_tag          (adderTag),        
+          .out_valid        (adderVld[i][j]),
+          .out_ready        (adderResRdy),
+          .busy             (adderBusy)
         );
       end else begin
         zvt_pe_adder #(
@@ -304,22 +320,22 @@ module zvt_pe_block (
           .PIPE_CONFIG      (fpnew_pkg::DISTRIBUTED),
           .REMV_PIPE_BUBBLE (REMVPIPEBUBB)
         ) peAdder (
-          .clk          (clk),
-          .rst_n        (rst_n),
-          .operands     ({operands[i][j], mulbulkCmd.res[i][j]}),   
-          .rnd_mode     (mulbulkCmd.tag.rndMode),   
-          .op_mod       ('0),
-          .op           (mulbulkCmd.tag.op==FPMUL),         
-          .in_tag       ('0),        
-          .in_valid     (mulbulkCmdVld & !hitBlkRaw && &mulbulkCmd.resMask[i][j]),  
-          .in_ready     (),
-          .flush        (flush),      
-          .result       (adderRes[i][j]),   
-          .status       (adderStatus[i][j]),      
-          .out_tag      (),        
-          .out_valid    (adderVld[i][j]),
-          .out_ready    (adderResRdy),
-          .busy         ()
+          .clk              (clk),
+          .rst_n            (rst_n),
+          .operands         ({operands[i][j], mulbulkCmd.res[i][j]}),   
+          .rnd_mode         (mulbulkCmd.tag.rndMode),   
+          .op_mod           ('0),
+          .op               (mulbulkCmd.tag.op==FPMUL),         
+          .in_tag           ('0),        
+          .in_valid         (mulbulkCmdVld & !hitBlkRaw && &mulbulkCmd.resMask[i][j]),  
+          .in_ready         (),
+          .flush            (flush),      
+          .result           (adderRes[i][j]),   
+          .status           (adderStatus[i][j]),      
+          .out_tag          (),        
+          .out_valid        (adderVld[i][j]),
+          .out_ready        (adderResRdy),
+          .busy             ()
         ); 
       end
     end
@@ -339,20 +355,30 @@ module zvt_pe_block (
     fpexpVld    = |fpexp;
     adderResRdy = !fpexpVld || fpexpRdy; 
     writeEn     = 'b0; 
-    writeAccIdx = 'b0;
+    writeMtIdx  = 'b0;
     writeSubIdx = 'b0;
     writeData   = 'b0; 
 
     for(int i=0; i<`TE/2*`COMPRATIO; i++) begin
       for(int j=0; j<`TE/2; j++) begin
-        writeAccIdx[(`TE/4)*(i/2)+(j/2)] = {adderTag[ADDERPIPENUM].writeAccIdx[3:2], BLKID[1], j[1]};
+        writeMtIdx[(`TE/4)*(i/2)+(j/2)] = {adderTag[ADDERPIPENUM].writeMtIdx[3:2], BLKID[1], j[1]};
+        // Stripmine subIdx by writeMtId so multi-cycle (tm > TE/2*COMPRATIO)
+        // dispatches land in different subtiles. The original `*+i/2`
+        // collapsed to 0 for i<2 (i/2=0), so cnt=1+ would overwrite cnt=0.
+        // Matches the symmetric READ formula at line ~246.
         writeSubIdx[(`TE/4)*(i/2)+(j/2)] = ($clog2(`NUM_SUBTILE))'(`TE/8)*BLKID[0]+
-                                         (`TE/4)*(`TE/4*`COMPRATIO*adderTag[ADDERPIPENUM].writeAccId*+i/2)+(j/4);
+                                           (`TE/4)*(`TE/4*`COMPRATIO*adderTag[ADDERPIPENUM].writeMtId+i/2)+(j/4);
         writeEn[(`TE/4)*(i/2)+(j/2)][{i[0],j[0]}*4 +: 4] = {4{adderResVld[i][j]&&adderResRdy}};
         writeData[(`TE/4)*(i/2)+(j/2)][{i[0],j[0]}*`WORD_WIDTH +: `WORD_WIDTH] = adderRes[i][j];
       end
     end
   end
+
+  // retire
+  assign blkRtVld   = adderResVld[0][0] && adderTag[ADDERPIPENUM].lastUopVld;
+`ifdef RVVI_ON
+  assign blkRtMtIdx = adderTag[ADDERPIPENUM].writeMtIdx;
+`endif
 
   // busy
   assign busy = mulbulkBusy || !mulbulkBufAempty || adderBusy;

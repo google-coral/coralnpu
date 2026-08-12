@@ -16,13 +16,13 @@ module rvv_backend_retire_waw(
 //
 // interface signals
 //
-  input   logic [UOP_NUM-1:0]                           valid;
-  input   logic [UOP_NUM-1:0][`REGFILE_INDEX_WIDTH-1:0] w_index;
-  input   logic [UOP_NUM-1:0][`VLENB-1:0]               w_strobe;
-  input   logic [UOP_NUM-1:0][`VLEN-1:0]                w_data;
-  output  logic [`NUM_RT_UOP-1:0]                       waw;
-  output  logic [`VLEN-1:0]                             res;
-  output  logic [`VLENB-1:0]                            res_strobe;
+  input   logic [UOP_NUM-1:0]                     valid;
+  input   logic [UOP_NUM-1:0][`REGIDX_WIDTH-1:0]  w_index;
+  input   logic [UOP_NUM-1:0][`VLENB-1:0]         w_strobe;
+  input   logic [UOP_NUM-1:0][`VLEN-1:0]          w_data;
+  output  logic [`NUM_RT_UOP-1:0]                 waw;
+  output  logic [`VLEN-1:0]                       res;
+  output  logic [`VLENB-1:0]                      res_strobe;
 //
 // internal signals
 //

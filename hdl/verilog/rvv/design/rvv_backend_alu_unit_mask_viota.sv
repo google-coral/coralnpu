@@ -148,7 +148,6 @@ module rvv_backend_alu_unit_mask_viota32
       assign result_viota32[j+14] = ($clog2(32)+1)'(sum_20to14[j])+($clog2(32)+1)'({carry_20to14[j],1'b0});
       assign result_viota32[j+21] = ($clog2(32)+1)'(sum_27to21[j])+($clog2(32)+1)'({({1'b0,carry_27to21[j]})+($clog2(32)+1)'({1'b0,cout_27to21[j]}),1'b0});
 
-
       compressor_3_2
       #(
         .WIDTH        (3)

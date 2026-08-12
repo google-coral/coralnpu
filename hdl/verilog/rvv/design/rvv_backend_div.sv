@@ -113,10 +113,20 @@ module rvv_backend_div
 
 `ifdef ZVE32F_ON
   assign arb_req = {fp_result_vld[0], x_result_vld[0]};
-  arb_round_robin #(.REQ_NUM(2)) arb2rob (.clk(clk), .rst_n(rst_n), .req(arb_req), .grant(arb_grt));
+
+  arb_round_robin #(
+    .REQ_NUM    (2),
+    .T          (PU2ROB_t)
+  ) arb2rob (
+    .clk        (clk), 
+    .rst_n      (rst_n), 
+    .req        (arb_req), 
+    .reqData    ({fp_result[0], x_result[0]}),
+    .grant      (arb_grt),
+    .grantData  (result[0])
+  );
 
   assign result_valid[0]  = |arb_req;
-  assign result[0]        = arb_grt[0] ? x_result[0]: fp_result[0];
   assign x_result_rdy[0]  = arb_grt[0] & result_ready[0];
   assign fp_result_rdy[0] = arb_grt[1] & result_ready[0];
 `else

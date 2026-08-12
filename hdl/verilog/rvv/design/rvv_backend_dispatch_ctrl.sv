@@ -119,25 +119,25 @@ module rvv_backend_dispatch_ctrl
                   `ifdef ZVT_ON
                     VME: rs_ready[0] = rs_ready_zvt2dp[0];
                   `endif
-                    CMP,
-                    ALU: rs_ready[0] = rs_ready_alu2dp[0];
-                    MUL,
-                    MAC: rs_ready[0] = rs_ready_mul2dp[0];
-                    MISC,
-                    PMT,
+                    VEU_CMP,
+                    VEU_ALU: rs_ready[0] = rs_ready_alu2dp[0];
+                    VEU_MUL,
+                    VEU_MAC: rs_ready[0] = rs_ready_mul2dp[0];
+                    VEU_MISC,
+                    VEU_PMT,
                   `ifdef ZVE32F_ON
-                    FRDT,
+                    VEU_FRDT,
                   `endif
-                    RDT: rs_ready[0] = rs_ready_pmtrdt2dp[0];
+                    VEU_RDT: rs_ready[0] = rs_ready_pmtrdt2dp[0];
                   `ifdef ZVE32F_ON
-                    FNCMP,
-                    FCMP,
-                    FMA,
-                    FCVT,
-                    FTBL:rs_ready[0] = rs_ready_falu2dp[0];
-                    FDIV,
+                    VEU_FNCMP,
+                    VEU_FCMP,
+                    VEU_FMA,
+                    VEU_FCVT,
+                    VEU_FTBL:rs_ready[0] = rs_ready_falu2dp[0];
+                    VEU_FDIV,
                   `endif
-                    DIV: rs_ready[0] = rs_ready_div2dp[0];
+                    VEU_DIV: rs_ready[0] = rs_ready_div2dp[0];
                     LSU: rs_ready[0] = (!uop_ctrl[0].pshlsu_valid||rs_ready_lsu2dp[0]) & mapinfo_ready_lsu2dp[0];
                     default: rs_ready[0] = 1'b0;
                 endcase
@@ -148,24 +148,24 @@ module rvv_backend_dispatch_ctrl
                   `ifdef ZVT_ON
                     VME: rs_ready[i] = rs_ready[i-1] & rs_ready_zvt2dp[i];
                   `endif
-                    CMP,
-                    ALU: rs_ready[i] = rs_ready[i-1] & rs_ready_alu2dp[i];
-                    MUL,
-                    MAC: rs_ready[i] = rs_ready[i-1] & rs_ready_mul2dp[i];
-                    MISC,
-                    PMT,
+                    VEU_CMP,
+                    VEU_ALU: rs_ready[i] = rs_ready[i-1] & rs_ready_alu2dp[i];
+                    VEU_MUL,
+                    VEU_MAC: rs_ready[i] = rs_ready[i-1] & rs_ready_mul2dp[i];
+                    VEU_MISC,
+                    VEU_PMT,
                   `ifdef ZVE32F_ON
-                    FRDT,
+                    VEU_FRDT,
                   `endif
-                    RDT: rs_ready[i] = rs_ready[i-1] & rs_ready_pmtrdt2dp[i];
+                    VEU_RDT: rs_ready[i] = rs_ready[i-1] & rs_ready_pmtrdt2dp[i];
                   `ifdef ZVE32F_ON
-                    FNCMP,
-                    FCMP,
-                    FMA,
-                    FCVT:rs_ready[i] = rs_ready[i-1] & rs_ready_falu2dp[i];
-                    FDIV,
+                    VEU_FNCMP,
+                    VEU_FCMP,
+                    VEU_FMA,
+                    VEU_FCVT:rs_ready[i] = rs_ready[i-1] & rs_ready_falu2dp[i];
+                    VEU_FDIV,
                   `endif
-                    DIV: rs_ready[i] = rs_ready[i-1] & rs_ready_div2dp[i];
+                    VEU_DIV: rs_ready[i] = rs_ready[i-1] & rs_ready_div2dp[i];
                     LSU: rs_ready[i] = rs_ready[i-1] & (!uop_ctrl[i].pshlsu_valid||rs_ready_lsu2dp[i]) & mapinfo_ready_lsu2dp[i];
                     default: rs_ready[i] = 1'b0;
                 endcase
@@ -185,31 +185,31 @@ module rvv_backend_dispatch_ctrl
                                              (uop_ctrl[i].uop_exe_unit == VME);
           `endif
             assign rs_valid_dp2alu[i]      = uop_ready_dp2uop[i] & 
-                                             ((uop_ctrl[i].uop_exe_unit == ALU) ||
-                                              (uop_ctrl[i].uop_exe_unit == CMP) );
+                                             ((uop_ctrl[i].uop_exe_unit == VEU_ALU) ||
+                                              (uop_ctrl[i].uop_exe_unit == VEU_CMP) );
             assign rs_valid_dp2pmtrdt[i]   = uop_ready_dp2uop[i] & 
-                                             ((uop_ctrl[i].uop_exe_unit == MISC)|| 
+                                             ((uop_ctrl[i].uop_exe_unit == VEU_MISC)|| 
                                             `ifdef ZVE32F_ON
-                                              (uop_ctrl[i].uop_exe_unit == FRDT)|| 
+                                              (uop_ctrl[i].uop_exe_unit == VEU_FRDT)|| 
                                             `endif
-                                              (uop_ctrl[i].uop_exe_unit == PMT) || 
-                                              (uop_ctrl[i].uop_exe_unit == RDT) ); 
+                                              (uop_ctrl[i].uop_exe_unit == VEU_PMT) || 
+                                              (uop_ctrl[i].uop_exe_unit == VEU_RDT) ); 
             assign rs_valid_dp2mul[i]      = uop_ready_dp2uop[i] & 
-                                             (uop_ctrl[i].uop_exe_unit == MUL || 
-                                              uop_ctrl[i].uop_exe_unit == MAC );
+                                             (uop_ctrl[i].uop_exe_unit == VEU_MUL || 
+                                              uop_ctrl[i].uop_exe_unit == VEU_MAC );
           `ifdef ZVE32F_ON
             assign rs_valid_dp2falu[i]     = uop_ready_dp2uop[i] & 
-                                             ((uop_ctrl[i].uop_exe_unit == FMA)  ||
-                                              (uop_ctrl[i].uop_exe_unit == FNCMP)||
-                                              (uop_ctrl[i].uop_exe_unit == FCMP) ||
-                                              (uop_ctrl[i].uop_exe_unit == FTBL) ||
-                                              (uop_ctrl[i].uop_exe_unit == FCVT) );
+                                             ((uop_ctrl[i].uop_exe_unit == VEU_FMA)  ||
+                                              (uop_ctrl[i].uop_exe_unit == VEU_FNCMP)||
+                                              (uop_ctrl[i].uop_exe_unit == VEU_FCMP) ||
+                                              (uop_ctrl[i].uop_exe_unit == VEU_FTBL) ||
+                                              (uop_ctrl[i].uop_exe_unit == VEU_FCVT) );
           `endif
             assign rs_valid_dp2div[i]      = uop_ready_dp2uop[i] & (
                                             `ifdef ZVE32F_ON
-                                             uop_ctrl[i].uop_exe_unit == FDIV ||
+                                             uop_ctrl[i].uop_exe_unit == VEU_FDIV ||
                                             `endif
-                                             uop_ctrl[i].uop_exe_unit == DIV);
+                                             uop_ctrl[i].uop_exe_unit == VEU_DIV);
             assign rs_valid_dp2lsu[i]      = uop_ready_dp2uop[i] & 
                                              uop_ctrl[i].pshlsu_valid &
                                              (uop_ctrl[i].uop_exe_unit == LSU);

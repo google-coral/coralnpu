@@ -103,6 +103,15 @@ module fp_mulfront#(
   wire [IN_SIG_BITS-1:0] a_significand = {a_implicit_bit, a_mantissa},
                          b_significand = {b_implicit_bit, b_mantissa};
 
+  // Per-operand LZCs — feed the internal fp_align via USE_EXT_LZC so we don't
+  // pay for a full lzc(2*IN_SIG_BITS) on the raw product.
+  logic [$clog2(IN_SIG_BITS)-1:0] lzc_a_cnt, lzc_b_cnt;
+  logic                           a_zero, b_zero;
+  lzc #(.WIDTH(IN_SIG_BITS), .MODE(1)) u_lzc_a (
+    .in_i(a_significand), .cnt_o(lzc_a_cnt), .empty_o(a_zero));
+  lzc #(.WIDTH(IN_SIG_BITS), .MODE(1)) u_lzc_b (
+    .in_i(b_significand), .cnt_o(lzc_b_cnt), .empty_o(b_zero));
+
   // ----------
   // Product & LZC
   // ----------
@@ -111,19 +120,32 @@ module fp_mulfront#(
   // 2. Adjust to P=1
   //    S'(P=1)=S(P=2), E'=E0+1
   // merge 1&2
-  wire [IN_SIG_BITS*2-1:0] prod_significand_raw = {(IN_SIG_BITS)'('b0), a_significand} * {(IN_SIG_BITS)'('b0), a_significand};
+  wire [IN_SIG_BITS*2-1:0] prod_significand_raw = {(IN_SIG_BITS)'('b0), a_significand} * {(IN_SIG_BITS)'('b0), b_significand};
   assign prod_exponent_raw =  // add MSB +1 bits, sign +1 bits -> total +2
     {2'b0, a_exponent + a_is_subnormal} + {2'b0, b_exponent + b_is_subnormal} - BIAS + 1;
+
+  // LZA hint: LZC(prod) is either La+Lb or La+Lb+1 depending on whether the
+  // MSB carry of the multiply lands. Choosing which requires a dynamic bit-
+  // select on the raw product, so we over-predict by +1 and let fp_align's
+  // USE_LZA_POSTFIX handle the possible 1-bit overshoot.
+  localparam int unsigned RAW_LZC_WIDTH = 32'($clog2(IN_SIG_BITS*2));
+  wire [RAW_LZC_WIDTH-1:0] lza_scnt = {1'b0, lzc_a_cnt} + {1'b0, lzc_b_cnt} + 1'b1;
 
   // 3. Align
   fp_align#(
     .IN_EXP_BITS(IN_EXP_BITS+2),
     .IN_SIG_BITS(IN_SIG_BITS*2),
     .OUT_EXP_BITS(OUT_EXP_BITS),
-    .OUT_SIG_BITS(OUT_SIG_BITS)
+    .OUT_SIG_BITS(OUT_SIG_BITS),
+    .USE_EXT_LZC(1'b1),
+    .USE_LZA_POSTFIX(1'b1)
   ) u_align (
     .in_exponent(prod_exponent_raw),
     .in_significand(prod_significand_raw),
+
+    // LZA hint from LZC(A)+LZC(B)+1 -- over-predicts by <=1
+    .ext_lzc_cnt(lza_scnt),
+    .ext_in_zero(a_zero | b_zero),
 
     .align_minimum_exponent(align_minimum_exponent),
     .align_trimmed_exponent(align_trimmed_exponent),
@@ -136,5 +158,17 @@ module fp_mulfront#(
 
     .overflow       (align_overflow)
   );
+
+  `ifdef ASSERT_ON
+    // lza_scnt must over-predict LZC(prod) by 0 or 1.
+    logic [RAW_LZC_WIDTH-1:0] ref_lzc_cnt;
+    logic                     ref_lzc_empty;
+    lzc #(.WIDTH(IN_SIG_BITS*2), .MODE(1)) u_ref_lzc (
+      .in_i(prod_significand_raw),
+      .cnt_o(ref_lzc_cnt),
+      .empty_o(ref_lzc_empty));
+    `rvv_expect(ref_lzc_empty || (lza_scnt == ref_lzc_cnt) || (lza_scnt == ref_lzc_cnt + 1'b1))
+      else $warning("lza_scnt does not follow LZA condition of lzc_cnt");
+  `endif
 
 endmodule

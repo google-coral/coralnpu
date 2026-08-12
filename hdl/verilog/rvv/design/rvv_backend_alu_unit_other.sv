@@ -28,30 +28,29 @@ module rvv_backend_alu_unit_other
 // internal signals
 //
   // ALU_RS_t struct signals
-  logic   [`ROB_DEPTH_WIDTH-1:0]      rob_entry;
-  FUNCT6_u                            uop_funct6;
-  logic   [`FUNCT3_WIDTH-1:0]         uop_funct3;
-  logic                               vm;
-  EEW_e                               vd_eew;
-  logic   [`VLEN-1:0]                 v0_data;
-  logic   [`REGFILE_INDEX_WIDTH-1:0]  vs1_opcode;              
-  logic   [`VLEN-1:0]                 vs1_data;           
-  logic   [`VLEN-1:0]                 vs2_data;	        
-  EEW_e                               vs2_eew;
-  logic   [`XLEN-1:0] 	              rs1_data;        
-  logic   [$clog2(`EMUL_MAX)-1:0]     uop_index;          
+  logic   [`ROB_DEPTH_WIDTH-1:0]  rob_entry;
+  FUNCT6_u                        uop_funct6;
+  logic   [`FUNCT3_WIDTH-1:0]     uop_funct3;
+  EEW_e                           vd_eew;
+  logic   [`VLEN-1:0]             v0_data;
+  logic   [`REGIDX_WIDTH-1:0]     vs1_opcode;              
+  logic   [`VLEN-1:0]             vs1_data;           
+  logic   [`VLEN-1:0]             vs2_data;	        
+  EEW_e                           vs2_eew;
+  logic   [`XLEN-1:0] 	          rs1_data;        
+  logic   [$clog2(`EMUL_MAX)-1:0] uop_index;          
 
   // execute 
   // mask logic instructions
-  logic   [`VLENB-1:0]                v0_data_in_use;
-  logic   [`VLEN-1:0]                 src2_data;
-  logic   [`VLEN-1:0]                 src1_data;
-  logic   [`VLEN-1:0]                 result_data;
-  logic   [`VLEN-1:0]                 result_data_extend;  
-  logic   [`VLEN-1:0]                 result_data_vmerge; 
+  logic   [`VLENB-1:0]            v0_data_in_use;
+  logic   [`VLEN-1:0]             src2_data;
+  logic   [`VLEN-1:0]             src1_data;
+  logic   [`VLEN-1:0]             result_data;
+  logic   [`VLEN-1:0]             result_data_extend;  
+  logic   [`VLEN-1:0]             result_data_vmerge; 
   
   // for-loop
-  genvar                              j;
+  genvar                          j;
 
 //
 // prepare source data to calculate    
@@ -60,7 +59,6 @@ module rvv_backend_alu_unit_other
   assign  rob_entry      = alu_uop.rob_entry;
   assign  uop_funct6     = alu_uop.uop_funct6;
   assign  uop_funct3     = alu_uop.uop_funct3;
-  assign  vm             = alu_uop.vm;
   assign  v0_data        = alu_uop.v0_data;
   assign  vd_eew         = alu_uop.vd_eew;
   assign  vs1_opcode     = alu_uop.vs1;
@@ -157,7 +155,7 @@ module rvv_backend_alu_unit_other
         case(uop_funct6.ari_funct6)
           VMERGE_VMV: begin
             // vmv.v
-            if(vm) begin
+            if(alu_uop.vm) begin
               src1_data = vs1_data;
             end
             // vmerge.v
@@ -173,7 +171,7 @@ module rvv_backend_alu_unit_other
         case(uop_funct6.ari_funct6)
           VMERGE_VMV: begin
             // vmv.v
-            if(vm==1'b1) begin
+            if(alu_uop.vm==1'b1) begin
               for(int i=0;i<`VLENW;i=i+1) begin
                 case(vd_eew)
                   EEW8: begin
@@ -231,7 +229,7 @@ module rvv_backend_alu_unit_other
         case(uop_funct6.ari_funct6)
           VMERGE_VMV: begin
             // vmv.v
-            if(vm==1'b1) begin
+            if(alu_uop.vm==1'b1) begin
               for(int i=0;i<`VLENW;i=i+1) begin
                 case(vd_eew)
                   EEW8: begin
@@ -283,7 +281,7 @@ module rvv_backend_alu_unit_other
             end
           end
           VSMUL_VMVNRR: begin
-            if(vm) begin
+            if(alu_uop.vm) begin
               src2_data = vs2_data;
             end
           end
@@ -356,7 +354,7 @@ module rvv_backend_alu_unit_other
         case(uop_funct6.ari_funct6)
           VFMERGE_VFMV: begin
             // vfmv.v.f
-            if(vm==1'b1) begin
+            if(alu_uop.vm==1'b1) begin
               for(int i=0;i<`VLENW;i=i+1) begin
                 case(vd_eew)
                   //EEW8: begin
@@ -562,7 +560,7 @@ module rvv_backend_alu_unit_other
       OPIVI: begin
         case(uop_funct6.ari_funct6)
           VMERGE_VMV: begin
-            if(vm==1'b0)
+            if(alu_uop.vm==1'b0)
               result_data = result_data_vmerge;
             else
               result_data = src1_data;
@@ -593,7 +591,7 @@ module rvv_backend_alu_unit_other
       OPFVF: begin
         case(uop_funct6.ari_funct6)
           VFMERGE_VFMV: begin
-            if(vm==1'b0)
+            if(alu_uop.vm==1'b0)
               result_data = result_data_vmerge;
             else
               result_data = src1_data;

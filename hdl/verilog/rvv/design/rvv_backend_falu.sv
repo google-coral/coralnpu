@@ -56,18 +56,18 @@ module rvv_backend_falu(
 //
 // code start
 //
-  assign uop_addmul[0]  = uop[0].uop_exe_unit==FMA;
-  assign uop_cmp[0]     = uop[0].uop_exe_unit==FNCMP || ((uop[0].uop_exe_unit==FCMP)&falu_uop_rdy[0][1]);
-  assign uop_cvt[0]     = uop[0].uop_exe_unit==FCVT;
-  assign uop_tbl[0]     = uop[0].uop_exe_unit==FTBL;
+  assign uop_addmul[0]  = uop[0].uop_exe_unit==VEU_FMA;
+  assign uop_cmp[0]     = uop[0].uop_exe_unit==VEU_FNCMP || ((uop[0].uop_exe_unit==VEU_FCMP)&falu_uop_rdy[0][1]);
+  assign uop_cvt[0]     = uop[0].uop_exe_unit==VEU_FCVT;
+  assign uop_tbl[0]     = uop[0].uop_exe_unit==VEU_FTBL;
   assign uop_type[0]    = {uop_tbl[0], uop_cvt[0], uop_cmp[0], uop_addmul[0]};
 
   generate
     for(i=1;i<`NUM_FALU;i++) begin
-      assign uop_addmul[i]  = uop[i].uop_exe_unit==FMA;
-      assign uop_cmp[i]     = uop[i].uop_exe_unit==FNCMP;
-      assign uop_cvt[i]     = uop[i].uop_exe_unit==FCVT;
-      assign uop_tbl[i]     = uop[i].uop_exe_unit==FTBL;
+      assign uop_addmul[i]  = uop[i].uop_exe_unit==VEU_FMA;
+      assign uop_cmp[i]     = uop[i].uop_exe_unit==VEU_FNCMP;
+      assign uop_cvt[i]     = uop[i].uop_exe_unit==VEU_FCVT;
+      assign uop_tbl[i]     = uop[i].uop_exe_unit==VEU_FTBL;
       assign uop_type[i]    = {uop_tbl[i], uop_cvt[i], uop_cmp[i], uop_addmul[i]};
     end
   endgenerate

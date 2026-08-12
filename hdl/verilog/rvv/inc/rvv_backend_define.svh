@@ -3,6 +3,11 @@
 
 // number of scalar core issue lane
 `define ISSUE_LANE              4
+`define INST_LANE               4
+
+`define REGIDX_WIDTH            5
+
+`define RV32F_ON
 
 // multi-issue and multi-read-ports of VRF
 `ifdef DISPATCH3
@@ -86,7 +91,8 @@
 `endif
 
 `define NUM_ARI               (`NUM_ALU+`NUM_PMTRDT+`NUM_MUL+`NUM_DIV+`NUM_FALU+`NUM_VME)
-`define NUM_PU                (`NUM_ARI+`NUM_LSU)
+`define NUM_PU_NOPINGPONG       (`NUM_LSU+`NUM_VME)
+`define NUM_PU                  (`NUM_ARI+`NUM_LSU)
 
 `ifdef ARBITER_ON
 `define NUM_SMPORT              4
@@ -177,7 +183,7 @@
 `ifdef ZVT_ON
   `define ZVT_RS_DEPTH        (`ZVT_LMUL*2)
   
-  `define NUM_ACC             16
+  `define NUM_MT              16
   // 16 byte each subtile
   `define SUBTILE_SIZE        16
   `define NUM_BLK             4

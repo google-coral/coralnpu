@@ -47,7 +47,12 @@ module zvt_pe_mulbulk #(
   // ----------
   // Handshake & control logic
   // ----------
-  logic [0:NUM_PIPE_REGS-1] reg_enable;  // reg_ena[i] indicates data reg enable signal on i-th stage
+  // Descending range to match `handshake_multistage_ctrl`'s port declaration
+  // (output [N-1:0] reg_enable). Mixing ascending [0:N-1] here causes
+  // SystemVerilog port-connection rules to reverse the bit order, so the
+  // input register would fire on what handshake intended as the output
+  // stage enable -- the input operands clear before the input reg captures.
+  logic [NUM_PIPE_REGS-1:0] reg_enable;  // reg_ena[i] indicates data reg enable signal on i-th stage
   handshake_multistage_ctrl#(
     .NUM_PIPE_REGS(NUM_PIPE_REGS),
     .REMV_PIPE_BUBBLE(REMV_PIPE_BUBBLE)
@@ -143,7 +148,7 @@ module zvt_pe_mulbulk #(
   assign inp_lane_int = op_q == INTMUL || op_q == UINTMUL;  // Do not validate input op now
 
   `ifdef ASSERT_ON
-    `rvv_forbid(reg_enable[NUM_INP_REGS] && !(inp_lane_fp | inp_lane_int_q))
+    `rvv_forbid(reg_enable[NUM_INP_REGS] && !(inp_lane_fp | inp_lane_int))
       else $warning("MulBulk input handshaked with no lane hit");
  `endif
 

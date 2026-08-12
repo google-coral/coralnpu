@@ -232,10 +232,10 @@
 
 // ZVT
 `ifdef ZVT_ON
-  parameter VT_F_MMTVV  = 6'b111_100; 
+  parameter VTXMMXTVV = 6'b111_100; 
   // vwxunary0 and vrxunary0
-  parameter VTMVVT      = 5'b11111;
-  parameter VTZERO      = 5'b11110;
+  parameter VTMVVT    = 5'b11111;
+  parameter VTZERO    = 5'b11110;
 `endif // ZVT_ON
 
 `endif // HDL_VERILOG_RVV_OPCODE_SVH

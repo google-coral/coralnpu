@@ -1,4 +1,3 @@
-
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `include "rvv_backend.svh"
 `endif
@@ -89,6 +88,7 @@ module rvv_backend_falu_unit(
   logic     [3:0]                           result_vld;
   logic     [3:0]                           arb_rdy;
   // fma
+  logic     [`VLENW-1:0][4:0][2:0]          addmul_NaNboxing; 
   logic                                     addmul_result_vld;
   logic     [`VLEN-1:0]                     addmul_result;
   fpnew_pkg::status_t [`VLENW-1:0]          addmul_status_o;
@@ -170,6 +170,7 @@ module rvv_backend_falu_unit(
     src1 = falu_uop.vs1_data;
     src2 = falu_uop.vs2_data;
     src3 = falu_uop.vs3_data;
+    addmul_NaNboxing = '1;
     
     case(falu_uop.uop_funct3)
       OPFVF: begin
@@ -177,6 +178,7 @@ module rvv_backend_falu_unit(
       `ifdef ZVFBFWMA_ON
         if(falu_uop.uop_funct6.ari_funct6==VFWMACCBF16) begin
           for(int i=0;i<`VLENW;i++) begin
+            addmul_NaNboxing[i][4][0] = {`VLENW{&src1[`XLEN-1:16]}}; 
             if(falu_uop.uop_index[0]) begin
               src2[i*`WORD_WIDTH+:`WORD_WIDTH] = {(`HWORD_WIDTH'('1)), falu_uop.vs2_data[`VLEN/2+i*`HWORD_WIDTH+:`HWORD_WIDTH]};    
             end
@@ -347,21 +349,21 @@ module rvv_backend_falu_unit(
             op_type   = fpnew_pkg::SGNJ;
             rnd_mod_i = fpnew_pkg::RNE;
             for(int i=0;i<`VLENW;i++) begin
-              op_i[i] = {`WORD_WIDTH'b0, src1[i*`WORD_WIDTH+:`WORD_WIDTH], src2[i*`WORD_WIDTH+:`WORD_WIDTH]};
+              op_i[i] = {src3[i*`WORD_WIDTH+:`WORD_WIDTH], src1[i*`WORD_WIDTH+:`WORD_WIDTH], src2[i*`WORD_WIDTH+:`WORD_WIDTH]};
             end
           end
           VFSGNJN: begin
             op_type   = fpnew_pkg::SGNJ;
             rnd_mod_i = fpnew_pkg::RTZ;
             for(int i=0;i<`VLENW;i++) begin
-              op_i[i] = {`WORD_WIDTH'b0, src1[i*`WORD_WIDTH+:`WORD_WIDTH], src2[i*`WORD_WIDTH+:`WORD_WIDTH]};
+              op_i[i] = {src3[i*`WORD_WIDTH+:`WORD_WIDTH], src1[i*`WORD_WIDTH+:`WORD_WIDTH], src2[i*`WORD_WIDTH+:`WORD_WIDTH]};
             end
           end
           VFSGNJX: begin
             op_type   = fpnew_pkg::SGNJ;
             rnd_mod_i = fpnew_pkg::RDN;
             for(int i=0;i<`VLENW;i++) begin
-              op_i[i] = {`WORD_WIDTH'b0, src1[i*`WORD_WIDTH+:`WORD_WIDTH], src2[i*`WORD_WIDTH+:`WORD_WIDTH]};
+              op_i[i] = {src3[i*`WORD_WIDTH+:`WORD_WIDTH], src1[i*`WORD_WIDTH+:`WORD_WIDTH], src2[i*`WORD_WIDTH+:`WORD_WIDTH]};
             end
           end
           VFMIN: begin
@@ -460,7 +462,7 @@ module rvv_backend_falu_unit(
 `endif
   assign tag_fma.rob_entry          = falu_uop.rob_entry;
   assign tag_fcmp.com_tag.rob_entry = falu_uop.rob_entry;
-  assign tag_fcmp.is_fcmp           = falu_uop.uop_exe_unit==FCMP;
+  assign tag_fcmp.is_fcmp           = falu_uop.uop_exe_unit==VEU_FCMP;
   assign tag_fcmp.uop_index         = falu_uop.uop_index;
   assign tag_fcmp.last_uop_valid    = falu_uop.last_uop_valid;
   assign tag_fcvt.com_tag.rob_entry = falu_uop.rob_entry;
@@ -486,7 +488,7 @@ module rvv_backend_falu_unit(
       .rst_ni             (rst_n),
       // Input signals
       .operands_i         (op_i[0]), // 3 operands
-      .is_boxed_i         ('1), // 3 operands
+      .is_boxed_i         (addmul_NaNboxing[0]), // 3 operands
       .rnd_mode_i         (rnd_mod_i),
       .op_i               (op_type),
       .op_mod_i           (op_mod),
@@ -647,7 +649,7 @@ module rvv_backend_falu_unit(
         .rst_ni             (rst_n),
         // Input signals
         .operands_i         (op_i[i]), // 3 operands
-        .is_boxed_i         ('1), // 3 operands
+        .is_boxed_i         (addmul_NaNboxing[i]), // 3 operands
         .rnd_mode_i         (rnd_mod_i),
         .op_i               (op_type),
         .op_mod_i           (op_mod),
@@ -794,8 +796,8 @@ module rvv_backend_falu_unit(
   endgenerate
 
   // register some extra information for FCMP instructions.
-  assign info_vld[0][0]     = falu_uop_vld&(falu_uop.uop_exe_unit==FCMP);
-  assign info_vld[0][1]     = falu_uop_vld&(falu_uop.uop_exe_unit==FNCMP);
+  assign info_vld[0][0]     = falu_uop_vld&(falu_uop.uop_exe_unit==VEU_FCMP);
+  assign info_vld[0][1]     = falu_uop_vld&(falu_uop.uop_exe_unit==VEU_FNCMP);
   assign info_rdy[PIPEREGS] = allcmp_result_rdy_tmp; 
   assign cmp_info[0].vstart = falu_uop.vstart;
   assign cmp_info[0].vl     = falu_uop.vl;   
@@ -942,9 +944,9 @@ module rvv_backend_falu_unit(
   end
 
   // commit result
-  arb_round_robin #(.REQ_NUM(4)) arb2rob (.clk(clk), .rst_n(rst_n), .req(result_vld), .grant(arb_rdy));
+  arb_round_robin #(.REQ_NUM(4)) arb2rob (.clk(clk), .rst_n(rst_n), .req(result_vld), .reqData('0), .grant(arb_rdy), .grantData(/*unused*/));
   assign result_vld         = falu_result_rdy ? {tbl_result_vld, cvt_result_vld, allcmp_result_vld, addmul_result_vld} : 'b0;
-  assign falu_result_vld     = |result_vld;
+  assign falu_result_vld    = |result_vld;
   assign addmul_result_rdy  = arb_rdy[0];
   assign allcmp_result_rdy  = arb_rdy[1];
   assign cvt_result_rdy     = arb_rdy[2];

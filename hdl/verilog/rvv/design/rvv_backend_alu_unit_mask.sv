@@ -28,46 +28,45 @@ module rvv_backend_alu_unit_mask
 // internal signals
 //
   // ALU_RS_t struct signals
-  logic   [`ROB_DEPTH_WIDTH-1:0]      rob_entry;
-  FUNCT6_u                            uop_funct6;
-  logic   [`FUNCT3_WIDTH-1:0]         uop_funct3;
-  logic   [`VSTART_WIDTH-1:0]         vstart;
-  logic   [`VLEN-1:0]                 vstart_elements_tmp;
-  logic   [`VLEN-1:0]                 vstart_elements;
-  logic   [`VL_WIDTH-1:0]             vl;       
-  logic                               vm;
-  logic   [`VLEN-1:0]                 v0_data;           
-  logic   [`VLEN-1:0]                 vd_data;           
-  EEW_e                               vd_eew;
-  logic   [`REGFILE_INDEX_WIDTH-1:0]  vs1_opcode;              
-  logic   [`VLEN-1:0]                 vs1_data;           
-  logic   [`VLEN-1:0]                 vs2_data;	        
-  EEW_e                               vs2_eew;
-  logic   [`XLEN-1:0] 	              rs1_data;        
-  logic   [$clog2(`EMUL_MAX)-1:0]     uop_index;          
+  logic   [`ROB_DEPTH_WIDTH-1:0]  rob_entry;
+  FUNCT6_u                        uop_funct6;
+  logic   [`FUNCT3_WIDTH-1:0]     uop_funct3;
+  logic   [`VSTART_WIDTH-1:0]     vstart;
+  logic   [`VLEN-1:0]             vstart_elements_tmp;
+  logic   [`VLEN-1:0]             vstart_elements;
+  logic   [`VL_WIDTH-1:0]         vl;       
+  logic   [`VLEN-1:0]             v0_data;           
+  logic   [`VLEN-1:0]             vd_data;           
+  EEW_e                           vd_eew;
+  logic   [`REGIDX_WIDTH-1:0]     vs1_opcode;              
+  logic   [`VLEN-1:0]             vs1_data;           
+  logic   [`VLEN-1:0]             vs2_data;	        
+  EEW_e                           vs2_eew;
+  logic   [`XLEN-1:0] 	          rs1_data;        
+  logic   [$clog2(`EMUL_MAX)-1:0] uop_index;          
 
   // execute 
-  logic   [`VLEN-1:0]                 src2_data;
-  logic   [`VLEN-1:0]                 src2_data_sub1;
-  logic   [`VLEN-1:0]                 src1_data;
-  logic   [`VLEN-1:0]                 tail_mask;
-  logic   [`VLEN-1:0]                 result_data;
-  logic   [`VLEN-1:0]                 result_data_andn;
-  logic   [`VLEN-1:0]                 result_data_and; 
-  logic   [`VLEN-1:0]                 result_data_or;  
-  logic   [`VLEN-1:0]                 result_data_xor; 
-  logic   [`VLEN-1:0]                 result_data_orn; 
-  logic   [`VLEN-1:0]                 result_data_nand;
-  logic   [`VLEN-1:0]                 result_data_nor; 
-  logic   [`VLEN-1:0]                 result_data_xnor;
-  logic   [`VLEN-1:0]                 result_data_vmsof;
-  logic   [`VLEN-1:0]                 result_vmsif;
-  logic   [`VLEN-1:0]                 result_data_vmsif;
-  logic   [`VLEN-1:0]                 result_data_vmsbf;
-  logic   [`VLEN-1:0]                 result_data_vfirst;
-  logic   [`VLEN-1:0]                 result_data_vid8;
-  logic   [`VLEN-1:0]                 result_data_vid16;
-  logic   [`VLEN-1:0]                 result_data_vid32;
+  logic   [`VLEN-1:0]             src2_data;
+  logic   [`VLEN-1:0]             src2_data_sub1;
+  logic   [`VLEN-1:0]             src1_data;
+  logic   [`VLEN-1:0]             tail_mask;
+  logic   [`VLEN-1:0]             result_data;
+  logic   [`VLEN-1:0]             result_data_andn;
+  logic   [`VLEN-1:0]             result_data_and; 
+  logic   [`VLEN-1:0]             result_data_or;  
+  logic   [`VLEN-1:0]             result_data_xor; 
+  logic   [`VLEN-1:0]             result_data_orn; 
+  logic   [`VLEN-1:0]             result_data_nand;
+  logic   [`VLEN-1:0]             result_data_nor; 
+  logic   [`VLEN-1:0]             result_data_xnor;
+  logic   [`VLEN-1:0]             result_data_vmsof;
+  logic   [`VLEN-1:0]             result_vmsif;
+  logic   [`VLEN-1:0]             result_data_vmsif;
+  logic   [`VLEN-1:0]             result_data_vmsbf;
+  logic   [`VLEN-1:0]             result_data_vfirst;
+  logic   [`VLEN-1:0]             result_data_vid8;
+  logic   [`VLEN-1:0]             result_data_vid16;
+  logic   [`VLEN-1:0]             result_data_vid32;
 
   // for-loop
   genvar                              j;
@@ -82,7 +81,7 @@ module rvv_backend_alu_unit_mask
   assign  uop_funct3     = alu_uop.uop_funct3;
   assign  vstart         = alu_uop.vstart;
   assign  vl             = alu_uop.vl;
-  assign  vm             = alu_uop.vm;
+  // assign  vm             = alu_uop.vm;
   assign  v0_data        = alu_uop.v0_data;
   assign  vd_data        = alu_uop.vd_data;
   assign  vd_eew         = alu_uop.vd_eew;
@@ -212,7 +211,7 @@ module rvv_backend_alu_unit_mask
           VWRXUNARY0: begin
             case(vs1_opcode)
               VFIRST: begin
-                if (vm==1'b1)
+                if (alu_uop.vm==1'b1)
                   src2_data = vs2_data&tail_mask;
                 else
                   src2_data = vs2_data&tail_mask&v0_data; 
@@ -224,7 +223,7 @@ module rvv_backend_alu_unit_mask
               VMSBF,
               VMSOF,
               VMSIF: begin
-                if (vm==1'b1)
+                if (alu_uop.vm==1'b1)
                   src2_data = vs2_data;
                 else
                   src2_data = vs2_data&v0_data; 
@@ -429,7 +428,7 @@ module rvv_backend_alu_unit_mask
               VMSBF,
               VMSOF,
               VMSIF: begin
-                if (vm==1'b1)
+                if (alu_uop.vm==1'b1)
                   result.w_data = result_data;
                 else 
                   result.w_data = result_data&v0_data | vd_data&(~v0_data);

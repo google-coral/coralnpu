@@ -150,8 +150,8 @@ module rvv_backend_freduction(
 
       //total result
     `ifdef TB_SUPPORT
-      result.uop_pc     = sub_rdtcmp_result_vld? rdtcmp_tag_o[`ROB_DEPTH_WIDTH+:`PC_WIDTH]:rdtadd_tag_o[`ROB_DEPTH_WIDTH+:`PC_WIDTH];;
-      result_last_uop   = sub_rdtcmp_result_vld? rdtcmp_tag_o[`PC_WIDTH+`ROB_DEPTH_WIDTH]:rdtadd_tag_o[`PC_WIDTH+`ROB_DEPTH_WIDTH];;
+      result.uop_pc     = sub_rdtcmp_result_vld? rdtcmp_tag_o[`ROB_DEPTH_WIDTH+:`PC_WIDTH]:rdtadd_tag_o[`ROB_DEPTH_WIDTH+:`PC_WIDTH];
+      result_last_uop   = sub_rdtcmp_result_vld? rdtcmp_tag_o[`PC_WIDTH+`ROB_DEPTH_WIDTH]:rdtadd_tag_o[`PC_WIDTH+`ROB_DEPTH_WIDTH];
     `else
       result_last_uop   = sub_rdtcmp_result_vld? rdtcmp_tag_o[`ROB_DEPTH_WIDTH]:rdtadd_tag_o[`ROB_DEPTH_WIDTH];
     `endif

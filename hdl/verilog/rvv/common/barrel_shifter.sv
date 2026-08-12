@@ -1,4 +1,3 @@
-
 module barrel_shifter 
 (
   din,            

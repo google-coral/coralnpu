@@ -94,9 +94,9 @@ module rvv_backend_dispatch_opr_byte_type
         always_comb begin
           case (uop_info.uop_exe_unit)
           `ifdef ZVE32F_ON
-            FRDT,
+            VEU_FRDT,
           `endif
-            RDT:begin
+            VEU_RDT:begin
               uop_vs2_start = (`VSTART_WIDTH)'(uop_info.uop_index) << uop_vs2_offset ;
             end
             default:begin
@@ -263,9 +263,9 @@ module rvv_backend_dispatch_opr_byte_type
           always_comb begin
             case (uop_info.uop_exe_unit)
             `ifdef ZVE32F_ON
-              FRDT,
+              VEU_FRDT,
             `endif
-              RDT:begin
+              VEU_RDT:begin
                 case(uop_info.vd_eew)
                   EEW32:vd[i] = i<4 ? BODY_ACTIVE : TAIL;
                   EEW16:vd[i] = i<2 ? BODY_ACTIVE : TAIL;

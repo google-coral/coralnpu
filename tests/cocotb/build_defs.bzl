@@ -32,6 +32,7 @@ VERILATOR_BUILD_ARGS = [
     "-Wno-WIDTHEXPAND",
     "-Wno-WIDTHTRUNC",
     "-Wno-UNSIGNED",
+    "-Wno-PINMISSING",
     "-DUSE_GENERIC=\"\"",
     "-DTB_SUPPORT",
     "-DZVE32F_ON",

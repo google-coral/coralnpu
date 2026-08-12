@@ -46,11 +46,11 @@ module rvv_backend_pmtrdt_unit_permutation
   input             pmt_res_ready;
 
 // vrf read
-  output logic [`REGFILE_INDEX_WIDTH-1:0] rd_index_pmt2vrf;
-  input  logic [`VLENB-1:0][`BYTE_WIDTH-1:0] rd_data_vrf2pmt;
+  output logic [`REGIDX_WIDTH-1:0]            rd_index_pmt2vrf;
+  input  logic [`VLENB-1:0][`BYTE_WIDTH-1:0]  rd_data_vrf2pmt;
 
 // MISC
-  input  logic [`ROB_DEPTH_WIDTH-1:0]     rob_rptr;
+  input  logic [`ROB_DEPTH_WIDTH-1:0]         rob_rptr;
 // trap-flush
   input             trap_flush_rvv;
 

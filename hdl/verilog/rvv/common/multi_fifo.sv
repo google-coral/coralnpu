@@ -16,6 +16,7 @@ module multi_fifo
   rst_n,
   // push side
   push,
+  pushRdy,
   datain,
   full,
   almost_full,
@@ -48,6 +49,7 @@ module multi_fifo
   input   logic                   clk;
   input   logic                   rst_n;
   input   logic [M-1:0]           push;         // M bits indicates M push operation(s). 
+  output  logic [M-1:0]           pushRdy;      // ready to receive data.
   input   T     [M-1:0]           datain;
   output  logic                   full;
   output  logic [M-1:0]           almost_full;  // almost_full[0]==1 - full
@@ -152,56 +154,28 @@ module multi_fifo
       end
 
       if (ASYNC_RSTN) begin
-        if (CHAOS_PUSH) begin
-          for (i=0; i<N; i++) begin : gen_dataout
-            always_ff @(posedge clk, negedge rst_n) begin
-              if (!rst_n)
-                dataout[i] <= 'b0;
-              else if ((i<remain_count)&(|pop)) 
-                dataout[i] <= mem[current_rptr_mem[i]]; 
-              else if ((push_seq[current_rptr_psh[i]]&(current_rptr_psh[i]<(DEPTH_BITS)'(M)))&
-                       ((|pop)|(|push_seq))
-                      )
-                dataout[i] <= datain_seq[current_rptr_psh[i]];
-            end
-          end
-        end else begin
-          for (i=0; i<N; i++) begin : gen_dataout
-            always_ff @(posedge clk, negedge rst_n) begin
-              if (!rst_n)
-                dataout[i] <= 'b0;
-              else if ((i<remain_count)&(|pop))
-                dataout[i] <= mem[current_rptr_mem[i]]; 
-              else if ((push[current_rptr_psh[i]]&(current_rptr_psh[i]<(DEPTH_BITS)'(M)))&
-                       ((|pop)|(|push))
-                      )
-                dataout[i] <= datain[current_rptr_psh[i]];
-            end
+        for (i=0; i<N; i++) begin : gen_dataout
+          always_ff @(posedge clk, negedge rst_n) begin
+            if (!rst_n)
+              dataout[i] <= 'b0;
+            else if ((i<remain_count)&(|pop)) 
+              dataout[i] <= mem[current_rptr_mem[i]]; 
+            else if ((push_seq[current_rptr_psh[i]]&(current_rptr_psh[i]<(DEPTH_BITS)'(M)))&
+                     ((|pop)|(|push_seq))
+                    )
+              dataout[i] <= datain_seq[current_rptr_psh[i]];
           end
         end
       end 
       else begin
-        if (CHAOS_PUSH) begin
-          for (i=0; i<N; i++) begin : gen_dataout
-            always_ff @(posedge clk) begin
-              if ((i<remain_count)&(|pop)) 
-                dataout[i] <= mem[current_rptr_mem[i]]; 
-              else if ((push_seq[current_rptr_psh[i]]&(current_rptr_psh[i]<(DEPTH_BITS)'(M)))&
-                       ((|pop)|(|push_seq))
-                      )
-                dataout[i] <= datain_seq[current_rptr_psh[i]];
-            end
-          end
-        end else begin
-          for (i=0; i<N; i++) begin : gen_dataout
-            always_ff @(posedge clk) begin
-              if ((i<remain_count)&(|pop))
-                dataout[i] <= mem[current_rptr_mem[i]]; 
-              else if ((push[current_rptr_psh[i]]&(current_rptr_psh[i]<(DEPTH_BITS)'(M)))&
-                       ((|pop)|(|push))
-                      )
-                dataout[i] <= datain[current_rptr_psh[i]];
-            end
+        for (i=0; i<N; i++) begin : gen_dataout
+          always_ff @(posedge clk) begin
+            if ((i<remain_count)&(|pop)) 
+              dataout[i] <= mem[current_rptr_mem[i]]; 
+            else if ((push_seq[current_rptr_psh[i]]&(current_rptr_psh[i]<(DEPTH_BITS)'(M)))&
+                     ((|pop)|(|push_seq))
+                    )
+              dataout[i] <= datain_seq[current_rptr_psh[i]];
           end
         end
       end
@@ -226,9 +200,12 @@ module multi_fifo
     if (CHAOS_PUSH) begin
       always_comb begin
         push_seq = '0;
+        pushRdy  = '0;
         datain_seq = '0;
         l = 0;
         for (k=0; k<M; k++) begin
+          pushRdy[k]  = !almost_full[l];
+          
           if (push[k]) begin
             push_seq[l] = 1'b1;
             datain_seq[l] = datain[k];
@@ -238,6 +215,7 @@ module multi_fifo
       end
     end else begin
       assign push_seq = push;
+      assign pushRdy  = ~almost_full;
       assign datain_seq = datain;
     end
 

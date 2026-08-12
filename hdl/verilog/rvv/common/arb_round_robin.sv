@@ -1,15 +1,20 @@
-module arb_round_robin(
+module arb_round_robin (
   grant,
+  grantData,
   req,
+  reqData,
   clk,
   rst_n
 );
-  parameter REQ_NUM         = 2;
+  parameter REQ_NUM = 2;
+  parameter type T  = logic;
 
   input   logic               clk;
   input   logic               rst_n;
   input   logic [REQ_NUM-1:0] req;
+  input   T     [REQ_NUM-1:0] reqData;
   output  logic [REQ_NUM-1:0] grant;
+  output  T                   grantData;
 
 // ---internal signal definition--------------------------------------
   logic [REQ_NUM-1:0]   prio;
@@ -20,6 +25,13 @@ module arb_round_robin(
   assign grant_tmp  = {req,req} & ~({req,req} - (2*REQ_NUM)'(prio));
   assign grant      = grant_tmp[2*REQ_NUM-1:REQ_NUM] | grant_tmp[REQ_NUM-1:0];
   
+  always_comb begin
+    grantData = 'b0;
+
+    for(int i=0; i<REQ_NUM; i++)
+      if(grant[i]) grantData = reqData[i];
+  end
+
   assign prio_en    = |req;
   assign prio_new   = {grant[REQ_NUM-2:0],grant[REQ_NUM-1]};
 

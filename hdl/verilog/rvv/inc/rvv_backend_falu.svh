@@ -12,7 +12,7 @@ typedef struct packed {
   logic   [`FUNCT3_WIDTH-1:0]         uop_funct3;
   logic                               is_fcmp;
   RVFRM                               frm;
-  logic   [`REGFILE_INDEX_WIDTH-1:0]  vs1;              
+  logic   [`REGIDX_WIDTH-1:0]         vs1;              
   logic   [`WORD_WIDTH-1:0]           src1;           
   logic                               src1_valid; 
   logic   [`WORD_WIDTH-1:0]           src2;	        

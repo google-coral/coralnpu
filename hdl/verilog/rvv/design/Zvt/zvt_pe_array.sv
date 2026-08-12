@@ -10,16 +10,20 @@ module zvt_pe_array (
   peCmdVld,
   peCmd,
   peCmdRdy,
-  readAccIdx,
+  readMtIdx,
   readSubIdx,
   readData,
   writeEn,  
-  writeAccIdx,
+  writeMtIdx,
   writeSubIdx,
   writeData,
   fpexpVld,
   fpexp,
   fpexpRdy,
+  peRtVld,
+`ifdef RVVI_ON
+  peRtMtIdx,
+`endif
   flush,
   busy
 );
@@ -31,72 +35,77 @@ module zvt_pe_array (
   input  logic    [`ZVT_LMUL-1:0]           peCmdVld;
   input  ZVT_RS_t [`ZVT_LMUL-1:0]           peCmd;
   output logic    [`ZVT_LMUL-1:0]           peCmdRdy;
-  // ACC accessing
-  output logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_ACC)-1:0]     readAccIdx;
+  // MT accessing
+  output logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_MT)-1:0]      readMtIdx;
   output logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_SUBTILE)-1:0] readSubIdx;
   input  logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][`SUBTILE_SIZE*8-1:0]      readData;  
   output logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][`SUBTILE_SIZE-1:0]        writeEn;  
-  output logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_ACC)-1:0]     writeAccIdx;
+  output logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_MT)-1:0]      writeMtIdx;
   output logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_SUBTILE)-1:0] writeSubIdx;
   output logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][`SUBTILE_SIZE*8-1:0]      writeData;  
   // floating-point status
   output logic                              fpexpVld;
   output RVFEXP_t                           fpexp;
   input  logic                              fpexpRdy;
+  // retiring informaiton
+  output logic [`NUM_BLK-1:0]               peRtVld;
+`ifdef RVVI_ON
+  output logic [`NUM_BLK-1:0][$clog2(`NUM_MT)-1:0] peRtMtIdx;
+`endif
   // control&status  
   input  logic                              flush;
   output logic                              busy;
 
 // -------------- code start --------------------
   // source operands
-  logic [`TE-1:0]                           tail_tm, tail_tm_tmp;
-  logic [`TE-1:0]                           tail_tn, tail_tn_tmp;
-  logic [`TE/2-1:0][`WORD_WIDTH-1:0]        vaGroupLo, vaGroupHi;
-  logic [`TE/2-1:0][3:0]                    vaMaskLo, vaMaskHi;  
-  logic [`TE/2-1:0][`WORD_WIDTH-1:0]        vbGroupLo, vbGroupHi;
-  logic [`TE/2-1:0][3:0]                    vbMaskLo, vbMaskHi; 
+  logic [`TE-1:0]                    tailTm, tailTmTmp;
+  logic [`TE-1:0]                    tailTn, tailTnTmp;
+  logic [`TE/2-1:0][`WORD_WIDTH-1:0] vaGroupLo, vaGroupHi;
+  logic [`TE/2-1:0][3:0]             vaMaskLo, vaMaskHi;  
+  logic [`TE/2-1:0][`WORD_WIDTH-1:0] vbGroupLo, vbGroupHi;
+  logic [`TE/2-1:0][3:0]             vbMaskLo, vbMaskHi; 
 
   barrel_shifter #(.DATA_WIDTH(`TE)) 
-    tm_tail (.din((`TE)'('1)), .shift_amount(peCmd[0].tm[$clog2(`TE)-1:0]), .shift_mode(2'b00), .dout(tail_tm_tmp));
+    tm_tail (.din((`TE)'('1)), .shift_amount(peCmd[0].tm[$clog2(`TE)-1:0]), .shift_mode(2'b00), .dout(tailTmTmp));
   barrel_shifter #(.DATA_WIDTH(`TE)) 
-    tn_tail (.din((`TE)'('1)), .shift_amount(peCmd[0].vl[$clog2(`TE)-1:0]), .shift_mode(2'b00), .dout(tail_tn_tmp));
+    tn_tail (.din((`TE)'('1)), .shift_amount(peCmd[0].vl[$clog2(`TE)-1:0]), .shift_mode(2'b00), .dout(tailTnTmp));
 
-  assign tail_tm = {`TE{!peCmd[0].tm[$clog2(`TE)]}} & tail_tm_tmp;
-  assign tail_tn = {`TE{!peCmd[0].vl[$clog2(`TE)]}} & tail_tn_tmp;
+  assign tailTm = {`TE{!peCmd[0].tm[$clog2(`TE)]}} & tailTmTmp;
+  assign tailTn = {`TE{!peCmd[0].vl[$clog2(`TE)]}} & tailTnTmp;
 
   always_comb begin
     for(int i=0; i<`TE/2; i++) begin
-      vaMaskLo[i] = {4{!tail_tm[i]}};
-      vbMaskLo[i] = {4{!tail_tn[i]}};
-      vaMaskHi[i] = {4{!tail_tm[i+`TE/2]}};
-      vbMaskHi[i] = {4{!tail_tn[i+`TE/2]}};
+      vaMaskLo[i] = {4{!tailTm[i]}};
+      vbMaskLo[i] = {4{!tailTn[i]}};
+      vaMaskHi[i] = {4{!tailTm[i+`TE/2]}};
+      vbMaskHi[i] = {4{!tailTn[i+`TE/2]}};
 
       case(peCmd[0].sew)
         SEW16: begin
           if(peCmd[0].tk==3'd1)
-          vaMaskLo[i] = {2'b0, {2{!tail_tm[i]}}};
-          vbMaskLo[i] = {2'b0, {2{!tail_tn[i]}}};
-          vaMaskHi[i] = {2'b0, {2{!tail_tm[i+`TE/2]}}};
-          vbMaskHi[i] = {2'b0, {2{!tail_tn[i+`TE/2]}}};
+          vaMaskLo[i] = {2'b0, {2{!tailTm[i]}}};
+          vbMaskLo[i] = {2'b0, {2{!tailTn[i]}}};
+          vaMaskHi[i] = {2'b0, {2{!tailTm[i+`TE/2]}}};
+          vbMaskHi[i] = {2'b0, {2{!tailTn[i+`TE/2]}}};
         end
         SEW8: begin
           if(peCmd[0].tk==3'd1) begin
-            vaMaskLo[i] = {3'b0, {!tail_tm[i]}};
-            vbMaskLo[i] = {3'b0, {!tail_tn[i]}};
-            vaMaskHi[i] = {3'b0, {!tail_tm[i+`TE/2]}};
-            vbMaskHi[i] = {3'b0, {!tail_tn[i+`TE/2]}};
+            vaMaskLo[i] = {3'b0, {!tailTm[i]}};
+            vbMaskLo[i] = {3'b0, {!tailTn[i]}};
+            vaMaskHi[i] = {3'b0, {!tailTm[i+`TE/2]}};
+            vbMaskHi[i] = {3'b0, {!tailTn[i+`TE/2]}};
           end
           else if(peCmd[0].tk==3'd2) begin
-            vaMaskLo[i] = {2'b0, {2{!tail_tm[i]}}};
-            vbMaskLo[i] = {2'b0, {2{!tail_tn[i]}}};
-            vaMaskHi[i] = {2'b0, {2{!tail_tm[i+`TE/2]}}};
-            vbMaskHi[i] = {2'b0, {2{!tail_tn[i+`TE/2]}}};
+            vaMaskLo[i] = {2'b0, {2{!tailTm[i]}}};
+            vbMaskLo[i] = {2'b0, {2{!tailTn[i]}}};
+            vaMaskHi[i] = {2'b0, {2{!tailTm[i+`TE/2]}}};
+            vbMaskHi[i] = {2'b0, {2{!tailTn[i+`TE/2]}}};
           end
           else if(peCmd[0].tk==3'd3) begin
-            vaMaskLo[i] = {1'b0, {3{!tail_tm[i]}}};
-            vbMaskLo[i] = {1'b0, {3{!tail_tn[i]}}};
-            vaMaskHi[i] = {1'b0, {3{!tail_tm[i+`TE/2]}}};
-            vbMaskHi[i] = {1'b0, {3{!tail_tn[i+`TE/2]}}};
+            vaMaskLo[i] = {1'b0, {3{!tailTm[i]}}};
+            vbMaskLo[i] = {1'b0, {3{!tailTn[i]}}};
+            vaMaskHi[i] = {1'b0, {3{!tailTm[i+`TE/2]}}};
+            vbMaskHi[i] = {1'b0, {3{!tailTn[i+`TE/2]}}};
           end
         end
       endcase
@@ -155,14 +164,19 @@ module zvt_pe_array (
   end
   
   // control logic
-  logic                               canStart;
-  logic [$clog2(`TE):0]               tmsub1, tnsub1;
-  logic [$clog2(`PROCESS_DELAY)-1:0]  cnt, cntMax00, cntMax10;
-  logic                               cntEn, cntCr;
-  logic                               vaHiActive, vbHiActive;
-  logic                               pipeLaEn, pipeHa0En, pipeHa1En, pipeLbEn, pipeHb0En, pipeHb1En;
-  logic                               pipeLaRdy, pipeHa0Rdy, pipeHa1Rdy, pipeLbRdy, pipeHb0Rdy, pipeHb1Rdy;
-  logic                               pipeLaVld, pipeHa0Vld, pipeHa1Vld, pipeLbVld, pipeHb0Vld, pipeHb1Vld;
+  logic                              canStart;
+  logic [$clog2(`TE):0]              tmsub1, tnsub1;
+  logic [$clog2(`PROCESS_DELAY)-1:0] cnt, cntMax00, cntMax10;
+  logic                              cntEn, cntCr;
+  logic                              vaHiActive, vbHiActive;
+  logic                              pipeLaEn, pipeHa0En, pipeHa1En, pipeLbEn, pipeHb0En, pipeHb1En;
+  logic                              pipeLaVld, pipeHa0Vld, pipeHa1Vld, pipeLbVld, pipeHb0Vld, pipeHb1Vld;
+  // information
+  PEVAINFO_t                         vaInfoLo, vaInfoHi, vaInfoLoD1, vaInfoHiD1, vaInfoHiD2;
+  PEVBINFO_t                         vbInfoLo, vbInfoHi, vbInfoLoD1, vbInfoHiD1, vbInfoHiD2;
+  logic     [1:0][1:0]               blkCmdVld;
+  BLKCMD_t  [1:0][1:0]               blkCmd;
+  logic     [`NUM_BLK-1:0]           blkCmdRdy;
 
   // ready to start up. 
   assign canStart = &peCmdVld[3:0] && peCmd[0].first_uop_valid && peCmd[3].last_uop_valid;
@@ -172,181 +186,118 @@ module zvt_pe_array (
   cdffr #(.T(logic [$clog2(`PROCESS_DELAY)-1:0]))
   counter (.q(cnt), .clk(clk), .rst_n(rst_n), .e(cntEn), .c(cntCr), .d(cnt+($clog2(`PROCESS_DELAY))'('d1)));
   
-  assign tmsub1   = peCmd[0].tm-'d1;
-  assign tnsub1   = peCmd[0].vl-'d1;
+  assign tmsub1   = peCmd[0].tm - 'd1;
+  assign tnsub1   = peCmd[0].vl - 'd1;
   assign cntMax00 = tmsub1[$clog2(`TE)-1] ? ($clog2(`PROCESS_DELAY))'(`PROCESS_DELAY-1) : tmsub1[$clog2(`TE/2)-1:$clog2(`TE/2*`COMPRATIO)];
   assign cntCr    = cnt == cntMax00;
-  assign cntEn    = canStart && &{pipeLaRdy, pipeHa0Rdy, pipeHa1Rdy, pipeLbRdy, pipeHb0Rdy, pipeHb1Rdy};
+  assign cntEn    = canStart && &blkCmdRdy;
 
   // 01
   assign vbHiActive = tnsub1[$clog2(`TE)-1];
   assign pipeLaEn   = canStart & vbHiActive;
-  assign pipeHb0En  = canStart & (cnt=='d0) & vbHiActive;
+  assign pipeHb0En  = canStart & vbHiActive;
   // 10
   assign vaHiActive = tmsub1[$clog2(`TE)-1];
   assign cntMax10   = tmsub1[$clog2(`TE/2)-1:$clog2(`TE/2*`COMPRATIO)];
   assign pipeHa0En  = canStart & vaHiActive & (cnt<=cntMax10);
-  assign pipeLbEn   = canStart & vaHiActive & (cnt=='d0);
+  assign pipeLbEn   = canStart & vaHiActive;
   // 11
   assign pipeHa1En  = pipeHa0Vld & pipeHb0Vld;
-  assign pipeHb1En  = pipeHa0Vld & pipeHb0Vld & (cnt=='d1);
-
-  // information
-  PEVAINFO_t            vaInfoLo, vaInfoHi, vaInfoLoD1, vaInfoHiD1, vaInfoHiD2;
-  PEVBINFO_t            vbInfoLo, vbInfoHi, vbInfoLoD1, vbInfoHiD1, vbInfoHiD2;
-  logic     [1:0][1:0]  blkCmdVld;
-  BLKCMD_t  [1:0][1:0]  blkCmd;
-  logic     [3:0]       blkCmdRdy;
+  assign pipeHb1En  = pipeHa0Vld & pipeHb0Vld;
 
 `ifdef TB_SUPPORT
-  assign vaInfoLo.uop_pc = peCmd[0].uop_pc;
-  assign vaInfoHi.uop_pc = peCmd[0].uop_pc;
+  assign vaInfoLo.uop_pc     = peCmd[0].uop_pc;
+  assign vaInfoHi.uop_pc     = peCmd[0].uop_pc;
 `endif 
   assign vaInfoLo.rndMode    = peCmd[0].rndMode;
   assign vaInfoHi.rndMode    = peCmd[0].rndMode;
-  assign vaInfoLo.readAccIdx = peCmd[0].dst_index[4:1];
-  assign vaInfoHi.readAccIdx = peCmd[0].dst_index[4:1];
-  assign vaInfoLo.readAccId  = cnt;
-  assign vaInfoHi.readAccId  = cnt;
+  assign vaInfoLo.readMtIdx  = peCmd[0].dst_index[4:1];
+  assign vaInfoHi.readMtIdx  = peCmd[0].dst_index[4:1];
+  assign vaInfoLo.readMtId   = cnt;
+  assign vaInfoHi.readMtId   = cnt;
+  assign vaInfoLo.lastUopVld = cntCr;
+  assign vaInfoHi.lastUopVld = cntCr;
 
   always_comb begin
-    vaInfoLo.op       = INTMUL;
-    vaInfoHi.op       = INTMUL;
-    vaInfoLo.opMod    = 'b0;
-    vaInfoHi.opMod    = 'b0;
-    vaInfoLo.fsrcFmt  = fpnew_pkg::FP32;
-    vaInfoHi.fsrcFmt  = fpnew_pkg::FP32;
-    vaInfoLo.isrcFmt  = fpnew_pkg::INT32;
-    vaInfoHi.isrcFmt  = fpnew_pkg::INT32;
-    vaInfoLo.fdstFmt  = fpnew_pkg::FP32;
-    vaInfoHi.fdstFmt  = fpnew_pkg::FP32;
-    vaInfoLo.idstFmt  = fpnew_pkg::INT32;
-    vaInfoHi.idstFmt  = fpnew_pkg::INT32;
+    vaInfoLo.op      = INTMUL;
+    vaInfoHi.op      = INTMUL;
+    vaInfoLo.opMod   = 'b0;
+    vaInfoHi.opMod   = 'b0;
+    vaInfoLo.fsrcFmt = fpnew_pkg::FP32;
+    vaInfoHi.fsrcFmt = fpnew_pkg::FP32;
+    vaInfoLo.isrcFmt = fpnew_pkg::INT32;
+    vaInfoHi.isrcFmt = fpnew_pkg::INT32;
+    vaInfoLo.fdstFmt = fpnew_pkg::FP32;
+    vaInfoHi.fdstFmt = fpnew_pkg::FP32;
+    vaInfoLo.idstFmt = fpnew_pkg::INT32;
+    vaInfoHi.idstFmt = fpnew_pkg::INT32;
 
     case(peCmd[0].uop_funct3)
       OPIVV: begin
-        vaInfoLo.op       = peCmd[0].dst_index[0] ? INTMUL : UINTMUL;
-        vaInfoHi.op       = peCmd[0].dst_index[0] ? INTMUL : UINTMUL;
-        vaInfoLo.opMod    = peCmd[0].altfmt;
-        vaInfoHi.opMod    = peCmd[0].altfmt;
+        vaInfoLo.op      = peCmd[0].dst_index[0] ? INTMUL : UINTMUL;
+        vaInfoHi.op      = peCmd[0].dst_index[0] ? INTMUL : UINTMUL;
+        vaInfoLo.opMod   = peCmd[0].altfmt;
+        vaInfoHi.opMod   = peCmd[0].altfmt;
       `ifdef ZVTI16I32_ON
-        vaInfoLo.isrcFmt  = peCmd[0].sew==SEW16 ? fpnew_pkg::INT16 : fpnew_pkg::INT8;
-        vaInfoHi.isrcFmt  = peCmd[0].sew==SEW16 ? fpnew_pkg::INT16 : fpnew_pkg::INT8;
+        vaInfoLo.isrcFmt = peCmd[0].sew==SEW16 ? fpnew_pkg::INT16 : fpnew_pkg::INT8;
+        vaInfoHi.isrcFmt = peCmd[0].sew==SEW16 ? fpnew_pkg::INT16 : fpnew_pkg::INT8;
       `else
-        vaInfoLo.isrcFmt  = fpnew_pkg::INT8;
-        vaInfoHi.isrcFmt  = fpnew_pkg::INT8;
+        vaInfoLo.isrcFmt = fpnew_pkg::INT8;
+        vaInfoHi.isrcFmt = fpnew_pkg::INT8;
       `endif
-        vaInfoLo.idstFmt  = fpnew_pkg::INT32;
-        vaInfoHi.idstFmt  = fpnew_pkg::INT32;        
+        vaInfoLo.idstFmt = fpnew_pkg::INT32;
+        vaInfoHi.idstFmt = fpnew_pkg::INT32;        
       end
       OPFVV: begin
-        vaInfoLo.op       = FPMUL;
-        vaInfoHi.op       = FPMUL;
-        vaInfoLo.fsrcFmt  = peCmd[0].sew==SEW16 ? fpnew_pkg::FP16ALT : fpnew_pkg::FP32;
-        vaInfoHi.fsrcFmt  = peCmd[0].sew==SEW16 ? fpnew_pkg::FP16ALT : fpnew_pkg::FP32;
-        vaInfoLo.fdstFmt  = fpnew_pkg::FP32;
-        vaInfoHi.fdstFmt  = fpnew_pkg::FP32;
+        vaInfoLo.op      = FPMUL;
+        vaInfoHi.op      = FPMUL;
+        vaInfoLo.fsrcFmt = peCmd[0].sew==SEW16 ? fpnew_pkg::FP16ALT : fpnew_pkg::FP32;
+        vaInfoHi.fsrcFmt = peCmd[0].sew==SEW16 ? fpnew_pkg::FP16ALT : fpnew_pkg::FP32;
+        vaInfoLo.fdstFmt = fpnew_pkg::FP32;
+        vaInfoHi.fdstFmt = fpnew_pkg::FP32;
       end
     endcase
   end
   
-  assign vaInfoLo.va     = vaGroupLo;
-  assign vaInfoLo.vaMask = vaMaskLo;
+  // M-direction stripmining: vaInfo.va only carries ROWS_PER_CNT = TE/2*COMPRATIO
+  // rows per cycle. The pe_array advances cnt to walk through tm rows in
+  // ROWS_PER_CNT-sized chunks; this mux picks the correct chunk of vaGroup{Lo,Hi}
+  // for the current cnt. Without this slice, every cnt cycle re-multiplied
+  // rows 0..ROWS_PER_CNT-1.
+  localparam ROWS_PER_CNT = `TE/2*`COMPRATIO;
+  always_comb begin
+    for (int k = 0; k < ROWS_PER_CNT; k++) begin
+      vaInfoLo.va[k]     = vaGroupLo[k + ROWS_PER_CNT * cnt];
+      vaInfoLo.vaMask[k] = vaMaskLo[ k + ROWS_PER_CNT * cnt];
+      vaInfoHi.va[k]     = vaGroupHi[k + ROWS_PER_CNT * cnt];
+      vaInfoHi.vaMask[k] = vaMaskHi[ k + ROWS_PER_CNT * cnt];
+    end
+  end
   assign vbInfoLo.vb     = vbGroupLo;
   assign vbInfoLo.vbMask = vbMaskLo;
-  assign vaInfoHi.va     = vaGroupHi;
-  assign vaInfoHi.vaMask = vaMaskHi;
   assign vbInfoHi.vb     = vbGroupHi;
   assign vbInfoHi.vbMask = vbMaskHi;
-
-  handshake_ff #(
-    .T          (PEVAINFO_t)
-  ) pipeLa (
-    .indata     (vaInfoLo),
-    .invalid    (pipeLaEn),
-    .inready    (pipeLaRdy),
-    .outdata    (vaInfoLoD1),
-    .outvalid   (pipeLaVld),
-    .outready   (&blkCmdRdy),
-    .c          (flush),
-    .clk        (clk), 
-    .rst_n      (rst_n)
-  );
   
-  handshake_ff #(
-    .T          (PEVAINFO_t)
-  ) pipeHa0 (
-    .indata     (vaInfoHi),
-    .invalid    (pipeHa0En),
-    .inready    (pipeHa0Rdy),
-    .outdata    (vaInfoHiD1),
-    .outvalid   (pipeHa0Vld),
-    .outready   (&blkCmdRdy),
-    .c          (flush),
-    .clk        (clk), 
-    .rst_n      (rst_n)
-  );
+  // systolic pipeline register
+  edff regLaVld  (.q(pipeLaVld ), .clk(clk), .rst_n(rst_n), .e(&blkCmdRdy), .d(pipeLaEn));
+  edff regHa0Vld (.q(pipeHa0Vld), .clk(clk), .rst_n(rst_n), .e(&blkCmdRdy), .d(pipeHa0En));
+  edff regHa1Vld (.q(pipeHa1Vld), .clk(clk), .rst_n(rst_n), .e(&blkCmdRdy), .d(pipeHa1En));
+  edff regLbVld  (.q(pipeLbVld ), .clk(clk), .rst_n(rst_n), .e(&blkCmdRdy), .d(pipeLbEn));
+  edff regHb0Vld (.q(pipeHb0Vld), .clk(clk), .rst_n(rst_n), .e(&blkCmdRdy), .d(pipeHb0En));
+  edff regHb1Vld (.q(pipeHb1Vld), .clk(clk), .rst_n(rst_n), .e(&blkCmdRdy), .d(pipeHb1En));
 
-  handshake_ff #(
-    .T          (PEVAINFO_t)
-  ) pipeHa1 (
-    .indata     (vaInfoHiD1),
-    .invalid    (pipeHa1En),
-    .inready    (pipeHa1Rdy),
-    .outdata    (vaInfoHiD2),
-    .outvalid   (pipeHa1Vld),
-    .outready   (&blkCmdRdy),
-    .c          (flush),
-    .clk        (clk), 
-    .rst_n      (rst_n)
-  );
+  edff #(.T(PEVAINFO_t)) regLaData  (.q(vaInfoLoD1), .clk(clk), .rst_n(rst_n), .e(pipeLaEn  && &blkCmdRdy), .d(vaInfoLo));
+  edff #(.T(PEVAINFO_t)) regHa0Data (.q(vaInfoHiD1), .clk(clk), .rst_n(rst_n), .e(pipeHa0En && &blkCmdRdy), .d(vaInfoHi));
+  edff #(.T(PEVAINFO_t)) regHa1Data (.q(vaInfoHiD2), .clk(clk), .rst_n(rst_n), .e(pipeHa1En && &blkCmdRdy), .d(vaInfoHiD1));
+  edff #(.T(PEVBINFO_t)) regLbData  (.q(vbInfoLoD1), .clk(clk), .rst_n(rst_n), .e(pipeLbEn  && (cnt=='d0) && (&blkCmdRdy)), .d(vbInfoLo));
+  edff #(.T(PEVBINFO_t)) regHb0Data (.q(vbInfoHiD1), .clk(clk), .rst_n(rst_n), .e(pipeHb0En && (cnt=='d0) && (&blkCmdRdy)), .d(vbInfoHi));
+  edff #(.T(PEVBINFO_t)) regHb1Data (.q(vbInfoHiD2), .clk(clk), .rst_n(rst_n), .e(pipeHb1En && (cnt=='d1) && (&blkCmdRdy)), .d(vbInfoHiD1));
 
-  handshake_ff #(
-    .T          (PEVBINFO_t)
-  ) pipeLb (
-    .indata     (vbInfoLo),
-    .invalid    (pipeLbEn),
-    .inready    (pipeLbRdy),
-    .outdata    (vbInfoLoD1),
-    .outvalid   (pipeLbVld),
-    .outready   (&blkCmdRdy),
-    .c          (flush),
-    .clk        (clk), 
-    .rst_n      (rst_n)
-  );
-  
-  handshake_ff #(
-    .T          (PEVBINFO_t)
-  ) pipeHb0 (
-    .indata     (vbInfoHi),
-    .invalid    (pipeHb0En),
-    .inready    (pipeHb0Rdy),
-    .outdata    (vbInfoHiD1),
-    .outvalid   (pipeHb0Vld),
-    .outready   (&blkCmdRdy),
-    .c          (flush),
-    .clk        (clk), 
-    .rst_n      (rst_n)
-  );
-
-  handshake_ff #(
-    .T          (PEVBINFO_t)
-  ) pipeHb1 (
-    .indata     (vbInfoHiD1),
-    .invalid    (pipeHb1En),
-    .inready    (pipeHb1Rdy),
-    .outdata    (vbInfoHiD2),
-    .outvalid   (pipeHb1Vld),
-    .outready   (&blkCmdRdy),
-    .c          (flush),
-    .clk        (clk), 
-    .rst_n      (rst_n)
-  );
-
-  assign blkCmdVld[0][0] = canStart;
-  assign blkCmdVld[0][1] = pipeLaVld && pipeHb0Vld;
-  assign blkCmdVld[1][0] = pipeHa0Vld && pipeLbVld;
-  assign blkCmdVld[1][1] = pipeHa1Vld && pipeHb1Vld;
+  // Block Command
+  assign blkCmdVld[0][0] = canStart   && &blkCmdRdy;
+  assign blkCmdVld[0][1] = pipeLaVld  && pipeHb0Vld && &blkCmdRdy;
+  assign blkCmdVld[1][0] = pipeHa0Vld && pipeLbVld  && &blkCmdRdy;
+  assign blkCmdVld[1][1] = pipeHa1Vld && pipeHb1Vld && &blkCmdRdy;
 
   assign blkCmd[0][0].vaInfo = vaInfoLo;
   assign blkCmd[0][0].vbInfo = vbInfoLo;
@@ -358,11 +309,11 @@ module zvt_pe_array (
   assign blkCmd[1][1].vbInfo = vbInfoHiD2;
 
 // pe block
-  logic     [1:0][1:0] hitBlkRaw;
-  logic                rawStall;
-  logic     [1:0][1:0] fpexpBlkVld;
-  RVFEXP_t  [1:0][1:0] fpexpBlk;
-  logic     [1:0][1:0] blkBusy;
+  logic    [1:0][1:0] hitBlkRaw;
+  logic               rawStall;
+  logic    [1:0][1:0] fpexpBlkVld;
+  RVFEXP_t [1:0][1:0] fpexpBlk;
+  logic    [1:0][1:0] blkBusy;
 
   assign rawStall = |hitBlkRaw;
 
@@ -383,16 +334,20 @@ module zvt_pe_array (
         .blkCmdRdy      (blkCmdRdy[BLKID]),
         .hitBlkRaw      (hitBlkRaw[i][j]),
         .rawStall       (rawStall),
-        .readAccIdx     (readAccIdx[BLKID]),
+        .readMtIdx      (readMtIdx[BLKID]),
         .readSubIdx     (readSubIdx[BLKID]),
         .readData       (readData[BLKID]),  
         .writeEn        (writeEn[BLKID]),  
-        .writeAccIdx    (writeAccIdx[BLKID]),
+        .writeMtIdx     (writeMtIdx[BLKID]),
         .writeSubIdx    (writeSubIdx[BLKID]),
         .writeData      (writeData[BLKID]),  
         .fpexpVld       (fpexpBlkVld[i][j]),
         .fpexp          (fpexpBlk[i][j]),
         .fpexpRdy       (fpexpRdy),
+        .blkRtVld       (peRtVld[BLKID]),
+      `ifdef RVVI_ON
+        .blkRtMtIdx     (peRtMtIdx[BLKID]),
+      `endif
         .flush          (flush),
         .busy           (blkBusy[i][j])
       );

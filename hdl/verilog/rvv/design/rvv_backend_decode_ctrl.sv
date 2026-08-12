@@ -48,7 +48,6 @@ module rvv_backend_decode_ctrl
   // last uop signal for pop
   logic [`NUM_DE_UOP-1:0]                                 last_uop;
   // signals in uop_index DFF 
-  logic [`UOP_INDEX_WIDTH-1:0]                            final_uop_index;
   logic                                                   uop_index_en;
   logic [`UOP_INDEX_WIDTH-1:0]                            uop_index_din;
   

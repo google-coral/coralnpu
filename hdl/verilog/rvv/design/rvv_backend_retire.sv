@@ -38,97 +38,97 @@ module rvv_backend_retire(
 `endif
 );
 // ROB dataout
-    input   logic    [`NUM_RT_UOP-1:0]            rob2rt_write_valid;
-    input   ROB2RT_t [`NUM_RT_UOP-1:0]            rob2rt_write_data;
-    output  logic    [`NUM_RT_UOP-1:0]            rt2rob_write_ready;
+    input   logic    [`NUM_RT_UOP-1:0]          rob2rt_write_valid;
+    input   ROB2RT_t [`NUM_RT_UOP-1:0]          rob2rt_write_data;
+    output  logic    [`NUM_RT_UOP-1:0]          rt2rob_write_ready;
 
 // write back to XRF
-    output  logic    [`NUM_RT_UOP-1:0]            rt2xrf_write_valid;
-    output  RT2RVS_t [`NUM_RT_UOP-1:0]            rt2rvs_write_data;
-    input   logic    [`NUM_RT_UOP-1:0]            rvs2rt_write_ready;
+    output  logic    [`NUM_RT_UOP-1:0]          rt2xrf_write_valid;
+    output  RT2RVS_t [`NUM_RT_UOP-1:0]          rt2rvs_write_data;
+    input   logic    [`NUM_RT_UOP-1:0]          rvs2rt_write_ready;
 
 // write back to FRF
 `ifdef ZVE32F_ON
-    output  logic    [`NUM_RT_UOP-1:0]            rt2frf_write_valid;
-    input   logic    [`NUM_RT_UOP-1:0]            frf2rt_write_ready;
+    output  logic    [`NUM_RT_UOP-1:0]          rt2frf_write_valid;
+    input   logic    [`NUM_RT_UOP-1:0]          frf2rt_write_ready;
 `endif
 
 // write back to VRF
-    output  logic    [`NUM_RT_UOP-1:0]            rt2vrf_write_valid;
-    output  RT2VRF_t [`NUM_RT_UOP-1:0]            rt2vrf_write_data;
+    output  logic    [`NUM_RT_UOP-1:0]          rt2vrf_write_valid;
+    output  RT2VRF_t [`NUM_RT_UOP-1:0]          rt2vrf_write_data;
 
 // write to update vcsr
-    output  logic                                 rt2vcsr_write_valid;
-    output  RVVConfigState                        rt2vcsr_write_data;
-    input   logic                                 vcsr2rt_write_ready;
+    output  logic                               rt2vcsr_write_valid;
+    output  RVVConfigState                      rt2vcsr_write_data;
+    input   logic                               vcsr2rt_write_ready;
 
 // vxsat
-    output  logic                                 rt2vxsat_write_valid;
-    output  logic   [`VCSR_VXSAT_WIDTH-1:0]       rt2vxsat_write_data;
-    input   logic                                 vxsat2rt_write_ready;
+    output  logic                               rt2vxsat_write_valid;
+    output  logic   [`VCSR_VXSAT_WIDTH-1:0]     rt2vxsat_write_data;
+    input   logic                               vxsat2rt_write_ready;
 
 `ifdef ZVT_ON
 // ZVT Floating-point exception
-    input   logic                                 zvtFpexpVld;
-    input   RVFEXP_t                              zvtFpexp;
-    output  logic                                 zvtFpexpRdy;
+    input   logic                               zvtFpexpVld;
+    input   RVFEXP_t                            zvtFpexp;
+    output  logic                               zvtFpexpRdy;
 `endif
 
 `ifdef ZVE32F_ON
 // Floating-point exception
-    output  logic                                 rt2fcsr_write_valid;
-    output  RVFEXP_t                              rt2fcsr_write_data;
-    input   logic                                 fcsr2rt_write_ready;
+    output  logic                               rt2fcsr_write_valid;
+    output  RVFEXP_t                            rt2fcsr_write_data;
+    input   logic                               fcsr2rt_write_ready;
 `endif
 
 `ifdef TB_SUPPORT
 // Retire information for RVVI.
-    input   logic    [`NUM_VRF-1:0][`VLEN-1:0]    vrf_data;
-    output  logic    [`NUM_RT_UOP-1:0]            rt2rvvi_valid; // always ready to receive.
-    output  ROB2RT_t [`NUM_RT_UOP-1:0]            rt2rvvi_data;  
+    input   logic    [`NUM_VRF-1:0][`VLEN-1:0]  vrf_data;
+    output  logic    [`NUM_RT_UOP-1:0]          rt2rvvi_valid; // always ready to receive.
+    output  ROB2RT_t [`NUM_RT_UOP-1:0]          rt2rvvi_data;  
 `endif
 
 ////////////Wires & Regs  ///////////////
-logic [`NUM_RT_UOP-1:0]                           w_valid_chkTrap;
-logic [`NUM_RT_UOP-1:0][`VLENB-1:0]               w_strobe;
-logic [`NUM_RT_UOP-1:0][`REGFILE_INDEX_WIDTH-1:0] w_addr;
-logic [`NUM_RT_UOP-1:0]                           w_valid;
-logic [`NUM_RT_UOP-1:0][`VLEN-1:0]                w_data;
-logic [`NUM_RT_UOP-1:0]                           trap_flag;
-RVVConfigState  [`NUM_RT_UOP-1:0]                 w_vcsr;
-logic [`NUM_RT_UOP-1:0][`VLENB-1:0]               w_vxsaturate;
-logic [`NUM_RT_UOP-1:0][`VCSR_VXSAT_WIDTH-1:0]    w_vxsat;
+logic [`NUM_RT_UOP-1:0]                         w_valid_chkTrap;
+logic [`NUM_RT_UOP-1:0][`VLENB-1:0]             w_strobe;
+logic [`NUM_RT_UOP-1:0][`REGIDX_WIDTH-1:0]      w_addr;
+logic [`NUM_RT_UOP-1:0]                         w_valid;
+logic [`NUM_RT_UOP-1:0][`VLEN-1:0]              w_data;
+logic [`NUM_RT_UOP-1:0]                         trap_flag;
+RVVConfigState  [`NUM_RT_UOP-1:0]               w_vcsr;
+logic [`NUM_RT_UOP-1:0][`VLENB-1:0]             w_vxsaturate;
+logic [`NUM_RT_UOP-1:0][`VCSR_VXSAT_WIDTH-1:0]  w_vxsat;
 `ifdef ZVE32F_ON
-logic [`NUM_RT_UOP-1:0][`VLENB-1:0]               fpexp_nv_lanes;
-logic [`NUM_RT_UOP-1:0][`VLENB-1:0]               fpexp_dz_lanes;
-logic [`NUM_RT_UOP-1:0][`VLENB-1:0]               fpexp_of_lanes;
-logic [`NUM_RT_UOP-1:0][`VLENB-1:0]               fpexp_uf_lanes;
-logic [`NUM_RT_UOP-1:0][`VLENB-1:0]               fpexp_nx_lanes;
-logic [`NUM_RT_UOP-1:0]                           fpexp_nv;
-logic [`NUM_RT_UOP-1:0]                           fpexp_dz;
-logic [`NUM_RT_UOP-1:0]                           fpexp_of;
-logic [`NUM_RT_UOP-1:0]                           fpexp_uf;
-logic [`NUM_RT_UOP-1:0]                           fpexp_nx;
-RVFEXP_t  [`NUM_RT_UOP-1:0]                       w_fpexp;
-logic     [`NUM_RT_UOP-1:0]                       w_fpexp_vld;
-logic     [`NUM_RT_UOP-1:0]                       fcsr2rt_ready;
+logic [`NUM_RT_UOP-1:0][`VLENB-1:0]             fpexp_nv_lanes;
+logic [`NUM_RT_UOP-1:0][`VLENB-1:0]             fpexp_dz_lanes;
+logic [`NUM_RT_UOP-1:0][`VLENB-1:0]             fpexp_of_lanes;
+logic [`NUM_RT_UOP-1:0][`VLENB-1:0]             fpexp_uf_lanes;
+logic [`NUM_RT_UOP-1:0][`VLENB-1:0]             fpexp_nx_lanes;
+logic [`NUM_RT_UOP-1:0]                         fpexp_nv;
+logic [`NUM_RT_UOP-1:0]                         fpexp_dz;
+logic [`NUM_RT_UOP-1:0]                         fpexp_of;
+logic [`NUM_RT_UOP-1:0]                         fpexp_uf;
+logic [`NUM_RT_UOP-1:0]                         fpexp_nx;
+RVFEXP_t  [`NUM_RT_UOP-1:0]                     w_fpexp;
+logic     [`NUM_RT_UOP-1:0]                     w_fpexp_vld;
+logic     [`NUM_RT_UOP-1:0]                     fcsr2rt_ready;
 `endif
-logic [`NUM_RT_UOP-1:1][`NUM_RT_UOP-1:0]          waw;
-logic [`NUM_RT_UOP-1:0]                           hit_waw;
-logic [`NUM_RT_UOP-1:0]                           vrfres_valid;
-logic [`NUM_RT_UOP-1:0][`VLEN-1:0]                vrfres;
-logic [`NUM_RT_UOP-1:0][`VLENB-1:0]               vrfres_strobe;
-logic [`NUM_RT_UOP-1:0]                           w_vrf_valid;
-logic [`NUM_RT_UOP-1:0]                           w_vrf;
-logic [`NUM_RT_UOP-1:0]                           w_xrf_valid;
-logic [`NUM_RT_UOP-1:0]                           w_xrf;
+logic [`NUM_RT_UOP-1:1][`NUM_RT_UOP-1:0]        waw;
+logic [`NUM_RT_UOP-1:0]                         hit_waw;
+logic [`NUM_RT_UOP-1:0]                         vrfres_valid;
+logic [`NUM_RT_UOP-1:0][`VLEN-1:0]              vrfres;
+logic [`NUM_RT_UOP-1:0][`VLENB-1:0]             vrfres_strobe;
+logic [`NUM_RT_UOP-1:0]                         w_vrf_valid;
+logic [`NUM_RT_UOP-1:0]                         w_vrf;
+logic [`NUM_RT_UOP-1:0]                         w_xrf_valid;
+logic [`NUM_RT_UOP-1:0]                         w_xrf;
 `ifdef ZVE32F_ON
-logic [`NUM_RT_UOP-1:0]                           w_frf_valid;
-logic [`NUM_RT_UOP-1:0]                           w_frf;
+logic [`NUM_RT_UOP-1:0]                         w_frf_valid;
+logic [`NUM_RT_UOP-1:0]                         w_frf;
 `endif
-logic [`NUM_RT_UOP-1:0]                           vxsat2rt_ready;
+logic [`NUM_RT_UOP-1:0]                         vxsat2rt_ready;
 
-genvar                                            i,j;
+genvar                                          i,j;
 
 /////////////////////////////////
 /////////////Main////////////////
@@ -312,9 +312,9 @@ generate
   for(j=0;j<`NUM_RT_UOP;j++) begin : gen_rt2rob_write
     always_comb begin
       `ifdef ZVE32F_ON
-      if(rt2rob_write_ready[j]&(w_xrf[j]|w_frf[j])) begin
+      if(w_xrf[j]|w_frf[j]) begin
       `else
-      if(rt2rob_write_ready[j]&w_xrf[j]) begin
+      if(w_xrf[j]) begin
       `endif
         rt2xrf_write_valid[j]           = w_xrf[j];     
         `ifdef ZVE32F_ON

@@ -122,9 +122,9 @@ module rvv_backend_dispatch
 // Dispatch unit sends read request to VRF for vector data.
 // Dispatch unit to VRF unit
 // rd_data would be return from VRF at the current cycle.
-    output logic [`NUM_DP_VRF-1:0][`REGFILE_INDEX_WIDTH-1:0] rd_index_dp2vrf;          
-    input  logic [`NUM_DP_VRF-1:0][`VLEN-1:0]                rd_data_vrf2dp;
-    input  logic [`VLEN-1:0]                                 v0_mask_vrf2dp;
+    output logic [`NUM_DP_VRF-1:0][`REGIDX_WIDTH-1:0] rd_index_dp2vrf;          
+    input  logic [`NUM_DP_VRF-1:0][`VLEN-1:0]         rd_data_vrf2dp;
+    input  logic [`VLEN-1:0]                          v0_mask_vrf2dp;
 
 // Dispatch unit accept all ROB entry to determine if vs_data of RS is from ROB or not
 // ROB unit to Dispatch unit
@@ -162,7 +162,7 @@ module rvv_backend_dispatch
     // vlmax = lmul * `VLENB / sew 
     generate
       for (i=0; i<`NUM_DP_UOP; i++) begin : gen_vlmax
-        assign lmul[i] = uop_uop2dp[i].uop_exe_unit==PMT ? uop_uop2dp[i].vector_csr.lmul_orig : uop_uop2dp[i].vector_csr.lmul;
+        assign lmul[i] = uop_uop2dp[i].uop_exe_unit==VEU_PMT ? uop_uop2dp[i].vector_csr.lmul_orig : uop_uop2dp[i].vector_csr.lmul;
         assign vlmax_shift[i] = ($clog2(`VL_WIDTH))'(lmul[i][1:0]) 
                                 + $clog2(`VLENB) 
                                 - ($clog2(`VL_WIDTH))'(uop_uop2dp[i].vector_csr.sew) 
@@ -361,7 +361,7 @@ module rvv_backend_dispatch
             assign rs_dp2alu[i].rob_entry       = rob_address[i]; 
             assign rs_dp2alu[i].uop_funct6      = uop_uop2dp[i].uop_funct6;
             assign rs_dp2alu[i].uop_funct3      = uop_uop2dp[i].uop_funct3;
-            assign rs_dp2alu[i].is_cmp          = uop_uop2dp[i].uop_exe_unit==CMP; 
+            assign rs_dp2alu[i].is_cmp          = uop_uop2dp[i].uop_exe_unit==VEU_CMP; 
             assign rs_dp2alu[i].vstart          = uop_uop2dp[i].vector_csr.vstart;
             assign rs_dp2alu[i].vl              = uop_uop2dp[i].vs_evl;
             assign rs_dp2alu[i].vm              = uop_uop2dp[i].vm;
@@ -436,7 +436,7 @@ module rvv_backend_dispatch
             assign rs_dp2div[i].rob_entry       = rob_address[i]; 
             assign rs_dp2div[i].uop_funct6      = uop_uop2dp[i].uop_funct6;
             assign rs_dp2div[i].uop_funct3      = uop_uop2dp[i].uop_funct3;
-            assign rs_dp2div[i].is_div          = uop_uop2dp[i].uop_exe_unit==DIV; 
+            assign rs_dp2div[i].is_div          = uop_uop2dp[i].uop_exe_unit==VEU_DIV; 
             assign rs_dp2div[i].vs1_data        = uop_uop2dp[i].vs1_valid ? uop_operand[i].vs1 : (`VLEN)'(uop_uop2dp[i].rs1_data);
             assign rs_dp2div[i].vs1_data_valid  = uop_uop2dp[i].vs1_valid;
             assign rs_dp2div[i].rs1_data_valid  = uop_uop2dp[i].rs1_data_valid;
@@ -495,7 +495,12 @@ module rvv_backend_dispatch
             assign rs_dp2zvt[i].vl              = uop_uop2dp[i].vs_evl[$clog2(`TE):0];
             assign rs_dp2zvt[i].tk              = uop_uop2dp[i].vector_csr.tk;
             assign rs_dp2zvt[i].sew             = uop_uop2dp[i].vector_csr.sew;
-            assign rs_dp2zvt[i].eew_mt          = EEW_e'(uop_uop2dp[i].vector_csr.sew);
+            // Use the de2-computed mt_eew, not a raw cast of `sew`: the SEW
+            // enum (SEW8=0, SEW16=1, SEW32=2) and EEW enum (EEW_NONE=0, EEW1=1,
+            // EEW8=2, EEW16=3, EEW32=4) do not align, so `EEW_e'(sew)` silently
+            // mis-tags the move (e.g. SEW8 -> EEW_NONE), causing zvt_ctrl to
+            // fall through to its EEW32 default path for vtmv.v.t / vtmv.t.v.
+            assign rs_dp2zvt[i].eew_mt          = uop_uop2dp[i].mt_eew;
             assign rs_dp2zvt[i].rndMode         = fpnew_pkg::roundmode_e'(uop_uop2dp[i].vector_csr.frm);
             assign rs_dp2zvt[i].tss             = {uop_uop2dp[i].rs1_data[30:27],
                                                    uop_uop2dp[i].rs1_data[24],
@@ -532,17 +537,19 @@ module rvv_backend_dispatch
 
           // ROB
           `ifdef TB_SUPPORT
-            assign uop_dp2rob[i].uop_pc         = uop_uop2dp[i].uop_pc; 
+            assign uop_dp2rob[i].uop_pc           = uop_uop2dp[i].uop_pc; 
+            assign uop_dp2rob[i].res_updating_end = uop_uop2dp[i].res_updating_end; 
           `endif
-            assign uop_dp2rob[i].w_index        = uop_uop2dp[i].dst_index;
-            assign uop_dp2rob[i].w_type         = uop_uop2dp[i].vd_valid ? VRF : 
-          `ifdef ZVE32F_ON
-                                                  uop_uop2dp[i].fd_valid ? FRF :
-          `endif
-                                                  XRF;
-            assign uop_dp2rob[i].byte_type      = uop_operand_byte_type[i].vd;
-            assign uop_dp2rob[i].vector_csr     = uop_uop2dp[i].vector_csr;
-            assign uop_dp2rob[i].last_uop_valid = uop_uop2dp[i].last_uop_valid;
+            assign uop_dp2rob[i].w_index          = uop_uop2dp[i].dst_index;
+            assign uop_dp2rob[i].w_type           = uop_uop2dp[i].vd_valid ? VRF : 
+                                                  `ifdef ZVE32F_ON
+                                                    uop_uop2dp[i].fd_valid ? FRF :
+                                                  `endif
+                                                    uop_uop2dp[i].xd_valid ? XRF : NOWRITE;
+            assign uop_dp2rob[i].byte_type        = uop_operand_byte_type[i].vd;
+            assign uop_dp2rob[i].is_ff            = (uop_uop2dp[i].uop_exe_unit==LSU)&(uop_uop2dp[i].uop_funct6.lsu_funct6.lsu_umop==US_FF);
+            assign uop_dp2rob[i].vector_csr       = uop_uop2dp[i].vector_csr;
+            assign uop_dp2rob[i].last_uop_valid   = uop_uop2dp[i].last_uop_valid;
         end
     endgenerate
 

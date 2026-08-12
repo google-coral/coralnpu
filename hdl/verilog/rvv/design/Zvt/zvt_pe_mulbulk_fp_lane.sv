@@ -73,18 +73,28 @@ module zvt_pe_mulbulk_fp_lane#(
 
   logic [NUM_FORMATS-1:0] fmt_special_inf, fmt_special_inf_sign, fmt_special_nan, fmt_special_invalid;
 
+  genvar i, j, k;
+
+  // Pre-mask to utilized logic share
+  logic [1:0][WIDTH-1:0]        operands_masked;
+  generate
+    for(i = 0; i < WIDTH/8; i++) begin: apply_mask
+      assign operands_masked[0][i*8 +: 8] = (up_valid && mask[i]) ? operands[0][i*8 +: 8] : 8'b0;
+      assign operands_masked[1][i*8 +: 8] = (up_valid && mask[i]) ? operands[1][i*8 +: 8] : 8'b0;
+    end
+  endgenerate
+
   // generate product instances, special conditions and rvbna reference exponents
-  genvar i, j;
   generate
     for(i = 0; i < NUM_FORMATS; i++) begin: fmt_product_gen
       if (!FP_FMT_CONFIG[i]) begin: disabled
         // set defaults
-        assign fmt_products[i]         = '1;
+        assign fmt_products[i]         = '0;
         assign fmt_product_enable[i]   = '0;
         assign fmt_special_inf[i]      = 1'b0;
         assign fmt_special_inf_sign[i] = 1'b0;
-        assign fmt_special_nan[i]      = 1'b1;
-        assign fmt_special_invalid[i]  = 1'b1;
+        assign fmt_special_nan[i]      = 1'b0;
+        assign fmt_special_invalid[i]  = 1'b0;
       end else begin: enabled
         // width calculation
         localparam EXP_BITS = fpnew_pkg::FP_ENCODINGS[i].exp_bits;
@@ -131,16 +141,22 @@ module zvt_pe_mulbulk_fp_lane#(
 
         logic [FMT_VEC_LEN-1:0] component_inf, component_nan, component_invalid, component_inf_sign;
 
-        for (j = FMT_VEC_LEN; j < VEC_LEN; j++) begin: assign_unused_signals
+        for (j = FMT_VEC_LEN; j < VEC_LEN; j++) begin: untouched
           // attach unused signals to 0
           assign fmt_product_enable[i][j] = 1'b0;
           assign fmt_products[i][j] = '0;
         end
         for (j = 0; j < FMT_VEC_LEN; j++) begin: gen_vec
           // instanciate submodule, assert on batch-normalize exponent equality & sig/exp subnormal match
-          assign fmt_product_enable[i][j] = up_valid && int'(src_fmt) == i && mask[j * (VEC_LEN / FMT_VEC_LEN)];
-          wire m = fmt_product_enable[i][j];
+          assign fmt_product_enable[i][j] = mask[j * (VEC_LEN / FMT_VEC_LEN)];
           logic align_overflow;
+
+          `ifdef ASSERT_ON
+            `rvv_forbid(up_valid && reg_enable[0] && int'(src_fmt) == i &&
+              |(mask[j*(VEC_LEN/FMT_VEC_LEN) +: (VEC_LEN/FMT_VEC_LEN)]) !=
+              &(mask[j*(VEC_LEN/FMT_VEC_LEN) +: (VEC_LEN/FMT_VEC_LEN)]))
+              else $warning("Partial mask detected on element #%d with src_fmt=%d!", j, i);
+          `endif
 
           fp_mulfront#(
             .IN_EXP_BITS(EXP_BITS),       .IN_MANT_BITS(MAN_BITS),       // input as is
@@ -151,12 +167,12 @@ module zvt_pe_mulbulk_fp_lane#(
             .BIAS((2**EXP_BITS)-(2**(SUPER_EXP_BITS-1))-1)
           ) u_mulfront (
             // inputs from bit extractions, with isolation
-            .a_sign    (m ? operands[0][j*FMT_BITS+MAN_BITS+EXP_BITS]              : '1),
-            .a_exponent(m ? operands[0][j*FMT_BITS+MAN_BITS           +: EXP_BITS] : '1),
-            .a_mantissa(m ? operands[0][j*FMT_BITS                    +: MAN_BITS] : '1),
-            .b_sign    (m ? operands[1][j*FMT_BITS+MAN_BITS+EXP_BITS]              : '1),
-            .b_exponent(m ? operands[1][j*FMT_BITS+MAN_BITS           +: EXP_BITS] : '1),
-            .b_mantissa(m ? operands[1][j*FMT_BITS                    +: MAN_BITS] : '1),
+            .a_sign    (operands_masked[0][j*FMT_BITS+MAN_BITS+EXP_BITS]),
+            .a_exponent(operands_masked[0][j*FMT_BITS+MAN_BITS           +: EXP_BITS]),
+            .a_mantissa(operands_masked[0][j*FMT_BITS                    +: MAN_BITS]),
+            .b_sign    (operands_masked[1][j*FMT_BITS+MAN_BITS+EXP_BITS]),
+            .b_exponent(operands_masked[1][j*FMT_BITS+MAN_BITS           +: EXP_BITS]),
+            .b_mantissa(operands_masked[1][j*FMT_BITS                    +: MAN_BITS]),
             
             // export signals for batch-normalize
             .prod_exponent_raw(prod_exponent_raw[j]),
@@ -181,7 +197,8 @@ module zvt_pe_mulbulk_fp_lane#(
           assign component_inf_sign[j] = fmt_products[i][j].sign;
 
           `ifdef ASSERT_ON
-            `rvv_forbid(up_valid && reg_enable[0] && ((!fmt_products[i][j].significand[SUPER_MAN_BITS])^(!|fmt_products[i][j].exponent)))
+            `rvv_forbid(up_valid && reg_enable[0] &&
+                ((!fmt_products[i][j].significand[PROD_SIG_BITS-1]) ^ (!(|fmt_products[i][j].exponent))))
               else $warning("Significand and exponent argue on multiply stage is a subnormal");
             if (j != 0) begin
               `rvv_forbid(up_valid && reg_enable[0] && fmt_products[i][j].exponent != fmt_products[i][0].exponent)
@@ -203,123 +220,288 @@ module zvt_pe_mulbulk_fp_lane#(
     end
   endgenerate
 
-  wire [VEC_LEN-1:0] product_enable   = fmt_product_enable[src_fmt];
   wire               special_inf      = fmt_special_inf[src_fmt];
   wire               special_inf_sign = fmt_special_inf_sign[src_fmt];
   wire               special_nan      = fmt_special_nan[src_fmt];
   wire               special_invalid  = fmt_special_invalid[src_fmt];
-  fpu_product_t [VEC_LEN-1:0] products;
-  assign products = fmt_products[src_fmt];
 
   // ----------
   // Mid pipeline
   // ----------
 
+  // Control signals shared across all formats, one register per pipe stage.
   typedef struct packed {
     logic                       en;
-    fpu_product_t [VEC_LEN-1:0] products;
-    logic         [VEC_LEN-1:0] product_en;
+    fpnew_pkg::fp_format_e      src_fmt;
     logic                       special_nan, special_inf, special_inf_sign, special_invalid;
     fpnew_pkg::fp_format_e      dst_fmt;
     fpnew_pkg::roundmode_e      rnd_mode;
-  } fs_mid_reg_t;
-  // pipeline signals
-  fs_mid_reg_t[0:NUM_MID_REGS] mid_pipe;
+  } fp_mid_ctrl_reg_t;
+
+  // Per-format data payload, one register per format per pipe stage. Only the
+  // register whose format matches src_fmt clocks new data each cycle; the
+  // others hold, saving switching power on the wide fmt_products lanes.
+  typedef struct packed {
+    fpu_product_t [VEC_LEN-1:0] fmt_products;
+    logic         [VEC_LEN-1:0] fmt_product_en;
+  } fp_mid_data_reg_t;
+
+  fp_mid_ctrl_reg_t [0:NUM_MID_REGS]                  mid_ctrl_pipe;
+  fp_mid_data_reg_t [0:NUM_MID_REGS][NUM_FORMATS-1:0] mid_data_pipe;
+
   // Input stage
-  assign mid_pipe[0].en               = up_valid;
-  assign mid_pipe[0].products         = products;
-  assign mid_pipe[0].product_en       = product_enable;
-  assign mid_pipe[0].special_nan      = special_nan;
-  assign mid_pipe[0].special_inf      = special_inf;
-  assign mid_pipe[0].special_inf_sign = special_inf_sign;
-  assign mid_pipe[0].special_invalid  = special_invalid;
-  assign mid_pipe[0].dst_fmt          = dst_fmt;
-  assign mid_pipe[0].rnd_mode         = (src_fmt == dst_fmt) ? rnd_mode : fpnew_pkg::ROD;
+  assign mid_ctrl_pipe[0].en               = up_valid;
+  assign mid_ctrl_pipe[0].src_fmt          = src_fmt;
+  assign mid_ctrl_pipe[0].special_nan      = special_nan;
+  assign mid_ctrl_pipe[0].special_inf      = special_inf;
+  assign mid_ctrl_pipe[0].special_inf_sign = special_inf_sign;
+  assign mid_ctrl_pipe[0].special_invalid  = special_invalid;
+  assign mid_ctrl_pipe[0].dst_fmt          = dst_fmt;
+  assign mid_ctrl_pipe[0].rnd_mode         = (src_fmt == dst_fmt) ? rnd_mode : fpnew_pkg::ROD;
+  for (i = 0; i < NUM_FORMATS; i++) begin: gen_mid_data_in
+    if (FP_FMT_CONFIG[i]) begin: enabled
+      assign mid_data_pipe[0][i].fmt_products   = fmt_products[i];
+      assign mid_data_pipe[0][i].fmt_product_en = fmt_product_enable[i];
+    end else begin: disabled
+      assign mid_data_pipe[0][i] = '0;
+    end
+  end
 
   // Generate the register stages
   for (i = 0; i < NUM_MID_REGS; i++) begin: gen_mid_pipeline
-    edff #(.T(fs_mid_reg_t)) mid_reg(.q(mid_pipe[i+1]), .d(mid_pipe[i]), .e(reg_enable[i] & mid_pipe[i].en),
+    edff #(.T(fp_mid_ctrl_reg_t)) ctrl_reg (
+      .q(mid_ctrl_pipe[i+1]),
+      .d(mid_ctrl_pipe[i]),
+      .e(reg_enable[i] & mid_ctrl_pipe[i].en),
       .clk(clk), .rst_n(rst_n));
+    for (j = 0; j < NUM_FORMATS; j++) begin: gen_mid_data_reg
+      if (FP_FMT_CONFIG[j]) begin: enabled
+        edff #(.T(fp_mid_data_reg_t)) data_reg (
+          .q(mid_data_pipe[i+1][j]),
+          .d(mid_data_pipe[i][j]),
+          // Only clock the format that is actually in flight this cycle.
+          .e(reg_enable[i] & mid_ctrl_pipe[i].en & (int'(mid_ctrl_pipe[i].src_fmt) == j)),
+          .clk(clk), .rst_n(rst_n));
+      end else begin: disabled
+        assign mid_data_pipe[i+1][j] = '0;
+      end
+    end
   end
   // Output stage
-  assign                      down_valid         = mid_pipe[NUM_MID_REGS].en;
-  wire                        special_nan_q      = mid_pipe[NUM_MID_REGS].special_nan;
-  wire                        special_inf_q      = mid_pipe[NUM_MID_REGS].special_inf;
-  wire                        special_invalid_q  = mid_pipe[NUM_MID_REGS].special_invalid;
-  wire fpnew_pkg::fp_format_e dst_fmt_q          = mid_pipe[NUM_MID_REGS].dst_fmt;
+  assign                      down_valid         = mid_ctrl_pipe[NUM_MID_REGS].en;
+  wire fpnew_pkg::fp_format_e src_fmt_q          = mid_ctrl_pipe[NUM_MID_REGS].src_fmt;
+  wire fpnew_pkg::fp_format_e dst_fmt_q          = mid_ctrl_pipe[NUM_MID_REGS].dst_fmt;
   
   // ----------
   // Stage 2: Add tree + rounding
   // ----------
 
-  localparam int unsigned ADD_TREE_STAGE = 32'($clog2(VEC_LEN));
-  `ifdef ASSERT_ON
-    `rvv_expect(ADD_TREE_STAGE == OVERFLOW_BITS);
-  `endif
-  logic [ADD_TREE_STAGE:0][VEC_LEN-1:0] tree_sign;
-  logic [ADD_TREE_STAGE:0][VEC_LEN-1:0][PROD_SIG_BITS+OVERFLOW_BITS+2-1:0] tree_significand;
-  generate for (i = 0; i < VEC_LEN; i++) begin
-    // Prepare input data
-    wire fpu_product_t this_prod = mid_pipe[NUM_MID_REGS].products[i];
-    assign tree_sign[0][i] = mid_pipe[NUM_MID_REGS].products[i].sign;
-    assign tree_significand[0][i] = mid_pipe[NUM_MID_REGS].product_en[i] ?
-                                    {{OVERFLOW_BITS{1'b0}},
-                                     this_prod.significand,  // already contains lower guard bits
-                                     this_prod.round_bit,
-                                     this_prod.sticky_bit} :
-                                    '0;
-  end endgenerate
-  generate
-    // Build the tree using fp_absaddsub
-    for (i = 0; i < ADD_TREE_STAGE; i++) begin: add_tree
-      for (j = 0; j < (1 << (ADD_TREE_STAGE-i)); j=j+2) begin: branch
-        logic sum_negative;
-        // Build up each branch of the tree
-        fp_absaddsub#(.IN_WIDTH(PROD_SIG_BITS+i+2)) u_absaddsub(
-          .a(tree_significand[i][ j ][PROD_SIG_BITS+i+2-1:0]),
-          .b(tree_significand[i][j+1][PROD_SIG_BITS+i+2-1:0]),
-          .do_subtract(tree_sign[i][j] != tree_sign[i][j+1]),
-          .sum(tree_significand[i+1][j/2][PROD_SIG_BITS+i+2:0]),
-          .sum_negative(sum_negative));
+  // Actually PROD_SIG_BITS+2 should be enough,
+  // but let's trust EDA for this optimization since lower bits directly tie to 0.
+  localparam int unsigned TREE_OUTPUT_SIG_WIDTH = PROD_SIG_BITS + OVERFLOW_BITS + 2;  // 2 for R and S
 
-        assign tree_sign[i+1][j/2] = tree_sign[i][j] ^ sum_negative;
+  // Per-format preround bundle. Single-lane formats fill this directly from
+  // the mulfront-normalized product (no stage-2 lzc/fp_align needed).
+  // Multi-lane formats build it from an adder tree + a shared fp_align.
+  logic [NUM_FORMATS-1:0]                       fmt_preround_sign;
+  logic [NUM_FORMATS-1:0]                       fmt_preround_lead_bit;
+  logic [NUM_FORMATS-1:0][SUPER_MAN_BITS-1:0]   fmt_preround_mantissa;
+  logic [NUM_FORMATS-1:0][SUPER_EXP_BITS:0]     fmt_preround_exponent;
+  logic [NUM_FORMATS-1:0]                       fmt_preround_round_bit;
+  logic [NUM_FORMATS-1:0]                       fmt_preround_sticky_bit;
+  logic [NUM_FORMATS-1:0]                       fmt_preround_sticky_msb;
+  logic [NUM_FORMATS-1:0]                       fmt_preround_align_overflow;
+
+  // fmt_tree_* : per-format pre-align adder-tree result. Vector-lane branches
+  // publish here; a src_fmt_q-mux selects one bundle to feed u_vec_align.
+  logic [NUM_FORMATS-1:0][TREE_OUTPUT_SIG_WIDTH-1:0]                 fmt_tree_sig;
+  logic signed [NUM_FORMATS-1:0][PROD_EXP_BITS+2-1:0]                fmt_tree_exp;
+  logic [NUM_FORMATS-1:0][$clog2(TREE_OUTPUT_SIG_WIDTH)-1:0]         fmt_tree_scnt;
+  logic [NUM_FORMATS-1:0]                                            fmt_tree_zero;
+
+  // Shared vector aligner outputs -- declared early so vector-lane branches can
+  // wire fmt_preround_*[i] straight to these signals. Driven by u_vec_align
+  // instantiated after the generate block.
+  logic [SUPER_MAN_BITS:0]  vec_out_sig;  // {lead, mantissa}
+  logic [SUPER_EXP_BITS:0]  vec_out_exp;
+  logic                     vec_out_round_bit, vec_out_sticky_bit, vec_out_sticky_msb, vec_out_overflow;
+
+  generate
+    for (i = 0; i < NUM_FORMATS; i++) begin: fmt_add_tree_gen
+      if (!FP_FMT_CONFIG[i]) begin: disabled
+        assign fmt_preround_sign[i]           = 1'b0;
+        assign fmt_preround_lead_bit[i]       = 1'b0;
+        assign fmt_preround_mantissa[i]       = '0;
+        assign fmt_preround_exponent[i]       = '0;
+        assign fmt_preround_round_bit[i]      = 1'b0;
+        assign fmt_preround_sticky_bit[i]     = 1'b0;
+        assign fmt_preround_sticky_msb[i]     = 1'b0;
+        assign fmt_preround_align_overflow[i] = 1'b0;
+        assign fmt_tree_sig[i]    = '0;
+        assign fmt_tree_exp[i]    = '0;
+        assign fmt_tree_scnt[i]   = '0;
+        assign fmt_tree_zero[i]   = 1'b1;
+      end else begin: enabled
+        localparam int unsigned EXP_BITS    = fpnew_pkg::FP_ENCODINGS[i].exp_bits;
+        localparam int unsigned MAN_BITS    = fpnew_pkg::FP_ENCODINGS[i].man_bits;
+        localparam int unsigned FMT_BITS    = EXP_BITS + MAN_BITS + 1;
+        localparam int unsigned FMT_VEC_LEN = WIDTH / FMT_BITS;
+
+        if (FMT_VEC_LEN == 1) begin: bypass_stage2
+          // Single-lane path: mulfront output is already fully normalized (P=1).
+          // Fold GUARD_BITS of extra precision below the mantissa into round/sticky.
+          //
+          // Layout of this_prod.significand (PROD_SIG_BITS = SUPER_MAN_BITS+GUARD_BITS+1):
+          //   [PROD_SIG_BITS-1]           = lead bit
+          //   [PROD_SIG_BITS-2:GUARD_BITS]= mantissa (SUPER_MAN_BITS bits)
+          //   [GUARD_BITS-1:0]            = guard bits (may be empty)
+          wire fpu_product_t this_prod = mid_data_pipe[NUM_MID_REGS][i].fmt_products[0];
+
+          assign fmt_preround_sign[i]           = this_prod.sign;
+          assign fmt_preround_lead_bit[i]       = this_prod.significand[PROD_SIG_BITS-1];
+          assign fmt_preround_mantissa[i]       = this_prod.significand[PROD_SIG_BITS-2 -: SUPER_MAN_BITS];
+          assign fmt_preround_exponent[i]       = this_prod.exponent;
+          assign fmt_preround_align_overflow[i] = 1'b0;  // guaranteed by mul-stage assertion
+          if (GUARD_BITS >= 2) begin: g_multi_guard
+            assign fmt_preround_round_bit[i]  = this_prod.significand[GUARD_BITS-1];
+            assign fmt_preround_sticky_bit[i] = |this_prod.significand[GUARD_BITS-2:0] |
+                                                this_prod.round_bit | this_prod.sticky_bit;
+            assign fmt_preround_sticky_msb[i] = this_prod.significand[GUARD_BITS-2];
+          end else if (GUARD_BITS == 1) begin: g_one_guard
+            assign fmt_preround_round_bit[i]  = this_prod.significand[0];
+            assign fmt_preround_sticky_bit[i] = this_prod.round_bit | this_prod.sticky_bit;
+            assign fmt_preround_sticky_msb[i] = this_prod.round_bit;
+          end else begin: g_no_guard  // GUARD_BITS == 0
+            assign fmt_preround_round_bit[i]  = this_prod.round_bit;
+            assign fmt_preround_sticky_bit[i] = this_prod.sticky_bit;
+            assign fmt_preround_sticky_msb[i] = this_prod.sticky_msb;
+          end
+          // Tree bundle is unused for single-lane; tie to safe defaults.
+          assign fmt_tree_sig[i]    = '0;
+          assign fmt_tree_exp[i]    = '0;
+          assign fmt_tree_scnt[i]   = '0;
+          assign fmt_tree_zero[i]   = 1'b1;
+        end else begin: multi_lane
+          localparam int unsigned FMT_TREE_STAGE   = 32'($clog2(FMT_VEC_LEN));
+          localparam int unsigned FMT_TREE_SIG_LEN = PROD_SIG_BITS + FMT_TREE_STAGE + 2;
+          localparam int unsigned FMT_LSB_PAD      = TREE_OUTPUT_SIG_WIDTH - FMT_TREE_SIG_LEN;
+
+          logic [FMT_TREE_STAGE:0][FMT_VEC_LEN-1:0]                       fmt_tree_sign;
+          logic [FMT_TREE_STAGE:0][FMT_VEC_LEN-1:0][FMT_TREE_SIG_LEN-1:0] fmt_tree_significand;
+
+          // Prepare input data
+          for (k = 0; k < FMT_VEC_LEN; k = k + 1) begin: load
+            wire fpu_product_t this_prod = mid_data_pipe[NUM_MID_REGS][i].fmt_products[k];
+            assign fmt_tree_sign[0][k] = this_prod.sign;
+            assign fmt_tree_significand[0][k] = mid_data_pipe[NUM_MID_REGS][i].fmt_product_en[k] ?
+                                              {{FMT_TREE_STAGE{1'b0}},
+                                               this_prod.significand,  // already contains lower guard bits
+                                               this_prod.round_bit,
+                                               this_prod.sticky_bit} :
+                                              '0;
+          end
+
+          logic [$clog2(FMT_TREE_SIG_LEN)-1:0] fmt_scnt;
+          logic                                fmt_zero;
+          // Build the tree using fp_absaddsub
+          for (j = 0; j < FMT_TREE_STAGE; j++) begin: add_tree
+            // Each stage will reduce count of significands by a half.
+            // Set higher entries to 0 to make spyglass happy.
+            for (k = (1 << (FMT_TREE_STAGE-j-1)); k < FMT_VEC_LEN; k++) begin: untouched
+              assign fmt_tree_significand[j+1][k] = '0;
+            end
+            for (k = 0; k < (1 << (FMT_TREE_STAGE-j)); k=k+2) begin: branch
+              localparam bit LAST_STAGE = (j == (FMT_TREE_STAGE-1)) && (k == 0);
+              localparam int unsigned STAGE_IN_WIDTH = PROD_SIG_BITS + j + 2;
+              // When there is only one add stage, one of the operands has significand
+              // whose valid bits occupy only the top 2*MAN_BITS+2, and the
+              // low guard/round/sticky bits are all zero.  This enables the split
+              // optimization in fp_absaddsub.  Otherwise keep VALID_HIGH_BITS =
+              // IN_WIDTH to fall back to the original full-width path.
+              localparam int unsigned STAGE_VALID_HIGH_BITS =
+                  (FMT_TREE_STAGE == 1 && 2*MAN_BITS + 2 < STAGE_IN_WIDTH) ?
+                  (2*MAN_BITS + 2) : STAGE_IN_WIDTH;
+              logic sum_negative;
+              logic [$clog2(PROD_SIG_BITS+j+2+1)-1:0] scnt_wire;
+              // Build up each branch of the tree
+              fp_absaddsub#(
+                .IN_WIDTH        (STAGE_IN_WIDTH),
+                .VALID_HIGH_BITS (STAGE_VALID_HIGH_BITS),
+                .ENABLE_LZA      (LAST_STAGE)
+              ) u_absaddsub(
+                .a          (fmt_tree_significand[j][ k ][PROD_SIG_BITS+j+2-1:0]),
+                .b          (fmt_tree_significand[j][k+1][PROD_SIG_BITS+j+2-1:0]),
+                .do_subtract(fmt_tree_sign[j][k] != fmt_tree_sign[j][k+1]),
+                .sum        (fmt_tree_significand[j+1][k/2][PROD_SIG_BITS+j+2:0]),
+                .sum_negative(sum_negative),
+                .lza_scnt   (scnt_wire));
+
+              assign fmt_tree_sign[j+1][k/2] = fmt_tree_sign[j][k] ^ sum_negative;
+
+              if (LAST_STAGE) begin: g_capture_lza
+                assign fmt_scnt = scnt_wire;
+                assign fmt_zero = ~|(fmt_tree_significand[j+1][k/2][PROD_SIG_BITS+j+2:0]);
+              end
+            end
+          end
+
+          // Left align tree result to the input of shared vector fp_align
+          assign fmt_tree_sig[i]    = {fmt_tree_significand[FMT_TREE_STAGE][0], {FMT_LSB_PAD{1'b0}}};
+          assign fmt_tree_exp[i]    = {2'b0, mid_data_pipe[NUM_MID_REGS][i].fmt_products[0].exponent} + FMT_TREE_STAGE;
+          assign fmt_tree_scnt[i]   = fmt_scnt;
+          assign fmt_tree_zero[i]   = fmt_zero;
+          `ifdef ASSERT_ON
+            `rvv_expect(PROD_EXP_BITS >= $clog2(FMT_TREE_STAGE + 1))
+              else $warning("Overflow detect on fmt_tree_exp offset feeding u_vec_align.in_exponent!");
+          `endif
+
+          // Connect fp_align's output to fp_round input of this format
+          assign fmt_preround_sign[i]           = fmt_tree_sign[FMT_TREE_STAGE][0];
+          assign fmt_preround_lead_bit[i]       = vec_out_sig[SUPER_MAN_BITS];
+          assign fmt_preround_mantissa[i]       = vec_out_sig[SUPER_MAN_BITS-1:0];
+          assign fmt_preround_exponent[i]       = vec_out_exp;
+          assign fmt_preround_round_bit[i]      = vec_out_round_bit;
+          assign fmt_preround_sticky_bit[i]     = vec_out_sticky_bit;
+          assign fmt_preround_sticky_msb[i]     = vec_out_sticky_msb;
+          assign fmt_preround_align_overflow[i] = vec_out_overflow;
+        end
       end
     end
   endgenerate
 
-  // Now we have Si=tree_significand[OVERFLOW_BITS][0], P=OVERFLOW_BITS+1
-  // and Ei=mid_pipe[NUM_MID_REGS].products[0].exponent
-  // We need So(P=1), and Eo>=0 (wrt subnormal)
-  // Let's do a full align, i.e. suppose GUARD_BITS==OVERFLOW_BITS==3
-  // For normal(exp >= 1)
-  //     <O> <-------WP------> <G> R S
-  // Si: xxx x.xxxxxxxxxxxxxxx xxx x x
-  // adjust to P=1 first, and align
-  wire signed [PROD_EXP_BITS+2-1:0] prealign_exponent = {2'b0, mid_pipe[NUM_MID_REGS].products[0].exponent} + ADD_TREE_STAGE;
-  logic preround_lead_bit;
-  logic [SUPER_EXP_BITS:0] preround_exponent;
-  logic [SUPER_MAN_BITS-1:0] preround_mantissa;
-  logic preround_round_bit, preround_sticky_bit, preround_sticky_msb;
-  logic final_align_overflow;
+  // shared vector aligner
   fp_align#(
-    .IN_EXP_BITS(32'(PROD_EXP_BITS+2)),
-    .IN_SIG_BITS(32'(PROD_SIG_BITS + OVERFLOW_BITS + 2)),  // 2 for R and S
-    .OUT_EXP_BITS(32'(SUPER_EXP_BITS + 1)),
-    .OUT_SIG_BITS(32'(SUPER_MAN_BITS + 1))
-  ) u_align (
-    .in_exponent(prealign_exponent),
-    .in_significand(tree_significand[ADD_TREE_STAGE][0]),
-
+    .IN_EXP_BITS   (32'(PROD_EXP_BITS+2)),
+    .IN_SIG_BITS   (32'(TREE_OUTPUT_SIG_WIDTH)),
+    .OUT_EXP_BITS  (32'(SUPER_EXP_BITS + 1)),
+    .OUT_SIG_BITS  (32'(SUPER_MAN_BITS + 1)),
+    .USE_EXT_LZC   (1'b1),
+    .USE_LZA_POSTFIX(1'b1)
+  ) u_vec_align (
+    .in_exponent   (fmt_tree_exp[src_fmt_q]),
+    .in_significand(fmt_tree_sig[src_fmt_q]),
+    .ext_lzc_cnt   (fmt_tree_scnt[src_fmt_q]),
+    .ext_in_zero   (fmt_tree_zero[src_fmt_q]),
     .align_minimum_exponent((SUPER_EXP_BITS+1)'(1'b1)),  // subnormal align mode
     .align_trimmed_exponent((SUPER_EXP_BITS+1)'(1'b0)),
+    .out_exponent   (vec_out_exp),
+    .out_significand(vec_out_sig),
+    .out_round_bit  (vec_out_round_bit),
+    .out_sticky_bit (vec_out_sticky_bit),
+    .out_sticky_msb (vec_out_sticky_msb),
+    .overflow       (vec_out_overflow));
 
-    .out_exponent   (preround_exponent),
-    .out_significand({preround_lead_bit, preround_mantissa}),
-    .out_round_bit  (preround_round_bit),
-    .out_sticky_bit (preround_sticky_bit),
-    .out_sticky_msb (preround_sticky_msb),
-    .overflow       (final_align_overflow)
-  );
+  // Final preround selection: a plain per-signal mux by src_fmt_q. Each
+  // fmt_preround_*[i] slot was already routed to the right source inside its
+  // generate branch (scalar bypass or shared aligner output).
+  wire                       preround_sign         = fmt_preround_sign[src_fmt_q];
+  wire                       preround_lead_bit     = fmt_preround_lead_bit[src_fmt_q];
+  wire [SUPER_MAN_BITS-1:0]  preround_mantissa     = fmt_preround_mantissa[src_fmt_q];
+  wire [SUPER_EXP_BITS:0]    preround_exponent     = fmt_preround_exponent[src_fmt_q];
+  wire                       preround_round_bit    = fmt_preround_round_bit[src_fmt_q];
+  wire                       preround_sticky_bit   = fmt_preround_sticky_bit[src_fmt_q];
+  wire                       preround_sticky_msb   = fmt_preround_sticky_msb[src_fmt_q];
+  wire                       final_align_overflow  = fmt_preround_align_overflow[src_fmt_q];
 
   `ifdef ASSERT_ON
     `rvv_expect(!down_valid || ((preround_exponent != 0) == preround_lead_bit))
@@ -334,9 +516,9 @@ module zvt_pe_mulbulk_fp_lane#(
     .FP_FMT_CONFIG(FP_FMT_CONFIG)
   ) u_rounding (
     .dst_fmt             (dst_fmt_q),
-    .rnd_mode            (mid_pipe[NUM_MID_REGS].rnd_mode),
-    .exact_zero_keep_sign(mid_pipe[NUM_MID_REGS].rnd_mode != fpnew_pkg::ROD),  // TODO: align behavior with model
-    .preround_sign       (tree_sign[ADD_TREE_STAGE][0]),
+    .rnd_mode            (mid_ctrl_pipe[NUM_MID_REGS].rnd_mode),
+    .exact_zero_keep_sign(mid_ctrl_pipe[NUM_MID_REGS].rnd_mode != fpnew_pkg::ROD),  // TODO: align behavior with model
+    .preround_sign       (preround_sign),
     .preround_exponent   (preround_exponent),
     .preround_mantissa   (preround_mantissa),
     .round_bit           (preround_round_bit),
@@ -356,12 +538,12 @@ module zvt_pe_mulbulk_fp_lane#(
 
   // special mux
   always_comb begin
-    inf_sign = tree_sign[ADD_TREE_STAGE][0];
-    if (mid_pipe[NUM_MID_REGS].special_nan) begin
+    inf_sign = preround_sign;
+    if (mid_ctrl_pipe[NUM_MID_REGS].special_nan) begin
       result = fmt_nan[dst_fmt_q];
-      status = '{NV: mid_pipe[NUM_MID_REGS].special_invalid, default: '0};
-    end else if (mid_pipe[NUM_MID_REGS].special_inf) begin
-      inf_sign = mid_pipe[NUM_MID_REGS].special_inf_sign;
+      status = '{NV: mid_ctrl_pipe[NUM_MID_REGS].special_invalid, default: '0};
+    end else if (mid_ctrl_pipe[NUM_MID_REGS].special_inf) begin
+      inf_sign = mid_ctrl_pipe[NUM_MID_REGS].special_inf_sign;
       result = fmt_inf[dst_fmt_q];
       status = '0;
     end else if (final_align_overflow) begin
