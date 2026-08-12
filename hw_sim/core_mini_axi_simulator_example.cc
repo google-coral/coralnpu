@@ -24,11 +24,11 @@
 #include "tests/verilator_sim/elf.h"
 
 int main() {
-  CoralNPUSimulator* simulator = CoralNPUSimulator::Create();
+  CoralNPUSimulator *simulator = CoralNPUSimulator::Create();
 
   // Load elf
   auto file_name = "hw_sim/mailbox_example.elf";
-  int fd = open(file_name, 0);
+  int fd         = open(file_name, 0);
   if (fd < 0) {
     std::cout << "Fail " << __LINE__ << std::endl;
     return -1;
@@ -41,12 +41,12 @@ int main() {
   }
   auto file_size = sb.st_size;
   auto file_data = mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
-  CopyFn copy_fn = [simulator](void* dest, const void* src, size_t count) {
+  CopyFn copy_fn = [simulator](void *dest, const void *src, size_t count) {
     uint32_t addr = static_cast<uint32_t>(reinterpret_cast<uint64_t>(dest));
-    simulator->WriteTCM(addr, count, reinterpret_cast<const char*>(src));
+    simulator->WriteMem(addr, count, reinterpret_cast<const char *>(src));
     return dest;
   };
-  uint32_t start_pc = LoadElf(reinterpret_cast<uint8_t*>(file_data), copy_fn);
+  uint32_t start_pc = LoadElf(reinterpret_cast<uint8_t *>(file_data), copy_fn);
 
   munmap(file_data, file_size);
   close(fd);

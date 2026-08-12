@@ -36,9 +36,9 @@ class CoreMiniAxiSimulator : public CoralNPUSimulator {
   }
   ~CoreMiniAxiSimulator() final = default;
 
-  void ReadTCM(uint32_t addr, size_t size, char *data) final;
+  void ReadMem(uint32_t addr, size_t size, char *data) final;
   const CoralNPUMailbox &ReadMailbox(void) final;
-  void WriteTCM(uint32_t addr, size_t size, const char *data) final;
+  void WriteMem(uint32_t addr, size_t size, const char *data) final;
   void WriteMailbox(const CoralNPUMailbox &mailbox) final;
   void Run(uint32_t start_addr) final;
   bool WaitForTermination(int timeout) final;
@@ -54,7 +54,7 @@ class CoreMiniAxiSimulator : public CoralNPUSimulator {
   AxiRData ReadCallback(const AxiAddr &);
 };
 
-void CoreMiniAxiSimulator::ReadTCM(uint32_t addr, size_t size, char *data) {
+void CoreMiniAxiSimulator::ReadMem(uint32_t addr, size_t size, char *data) {
   if (IsDdrAddress(addr)) {
     uint32_t offset = addr - 0x80000000;
     if (offset + size <= ddr_memory_.size()) {
@@ -70,7 +70,7 @@ void CoreMiniAxiSimulator::ReadTCM(uint32_t addr, size_t size, char *data) {
 
 const CoralNPUMailbox &CoreMiniAxiSimulator::ReadMailbox(void) { return wrapper_.ReadMailbox(); }
 
-void CoreMiniAxiSimulator::WriteTCM(uint32_t addr, size_t size, const char *data) {
+void CoreMiniAxiSimulator::WriteMem(uint32_t addr, size_t size, const char *data) {
   if (IsDdrAddress(addr)) {
     uint32_t offset = addr - 0x80000000;
     if (offset + size <= ddr_memory_.size()) {

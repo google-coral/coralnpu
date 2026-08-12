@@ -4,6 +4,7 @@ module(
 )
 
 # Core rules
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "rules_cc", version = "0.2.14")
 bazel_dep(name = "rules_python", version = "1.6.3")
 bazel_dep(name = "rules_scala", version = "7.2.6", repo_name = "io_bazel_rules_scala")

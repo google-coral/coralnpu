@@ -29,16 +29,16 @@ struct CoralNPUSimulatorOptions {
 
 class CoralNPUSimulator {
  public:
-  static CoralNPUSimulator* Create();
+  static CoralNPUSimulator *Create();
   static CoralNPUSimulator *Create(const CoralNPUSimulatorOptions &options);
 
   virtual ~CoralNPUSimulator() = default;
 
-  // Functions for reading/writing TCMs and Mailbox.
-  virtual void ReadTCM(uint32_t addr, size_t size, char* data) = 0;
-  virtual const CoralNPUMailbox& ReadMailbox(void) = 0;
-  virtual void WriteTCM(uint32_t addr, size_t size, const char* data) = 0;
-  virtual void WriteMailbox(const CoralNPUMailbox& mailbox) = 0;
+  // Functions for reading/writing memory and Mailbox.
+  virtual void ReadMem(uint32_t addr, size_t size, char *data)        = 0;
+  virtual const CoralNPUMailbox &ReadMailbox(void)                    = 0;
+  virtual void WriteMem(uint32_t addr, size_t size, const char *data) = 0;
+  virtual void WriteMailbox(const CoralNPUMailbox &mailbox)           = 0;
 
   // Wait for interrupt
   virtual bool WaitForTermination(int timeout) = 0;
