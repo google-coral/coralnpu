@@ -23,11 +23,23 @@ struct TestCase {
   uint32_t fflags;
 };
 
+struct FmvTestCase {
+  uint32_t input;
+  uint32_t fmv_h_x_output;
+  uint32_t fmv_h_x_fflags;
+  uint32_t fmv_x_h_output;
+  uint32_t fmv_x_h_fflags;
+  uint32_t fmv_roundtrip_output;
+  uint32_t fmv_roundtrip_fflags;
+};
+
 TestCase fcvt_s_bf16_cases[MAX_TEST_CASES] __attribute__((section(".data")));
 TestCase fcvt_bf16_s_cases[MAX_TEST_CASES] __attribute__((section(".data")));
+FmvTestCase fmv_cases[MAX_TEST_CASES] __attribute__((section(".data")));
 
 uint32_t num_fcvt_s_bf16_cases __attribute__((section(".data"))) = 0;
 uint32_t num_fcvt_bf16_s_cases __attribute__((section(".data"))) = 0;
+uint32_t num_fmv_cases __attribute__((section(".data")))         = 0;
 
 void run_fcvt_s_bf16() {
   for (uint32_t i = 0; i < num_fcvt_s_bf16_cases; i++) {
@@ -35,10 +47,9 @@ void run_fcvt_s_bf16() {
     uint32_t out;
     uint32_t flags;
 
-    // Clear fflags
-    asm volatile("csrw fflags, zero");
-
     asm volatile(
+        // Clear fflags
+        "csrw fflags, zero;"
         "fmv.w.x fa1, %[in];"
         "fcvt.s.bf16 fa0, fa1;"
         "fmv.x.w %[out], fa0;"
@@ -59,9 +70,9 @@ void run_fcvt_bf16_s() {
     uint32_t out;
     uint32_t flags;
 
-    asm volatile("csrw fflags, zero");
-
     asm volatile(
+        // Clear fflags
+        "csrw fflags, zero;"
         "csrw frm, %[rm];"
         "fmv.w.x fa1, %[in];"
         "fcvt.bf16.s fa0, fa1, dyn;"
@@ -76,8 +87,44 @@ void run_fcvt_bf16_s() {
   }
 }
 
+void run_fmv() {
+  for (uint32_t i = 0; i < num_fmv_cases; i++) {
+    asm volatile(
+        // Clear fflags
+        "csrw fflags, zero;"
+        "fmv.h.x fa0, %[in];"
+        "fmv.x.w %[out], fa0;"
+        "csrr %[flags], fflags;"
+        : [out] "=r"(fmv_cases[i].fmv_h_x_output), [flags] "=r"(fmv_cases[i].fmv_h_x_fflags)
+        : [in] "r"(fmv_cases[i].input)
+        : "fa0");
+
+    asm volatile(
+        // Clear fflags
+        "csrw fflags, zero;"
+        "fmv.w.x fa0, %[in];"
+        "fmv.x.h %[out], fa0;"
+        "csrr %[flags], fflags;"
+        : [out] "=r"(fmv_cases[i].fmv_x_h_output), [flags] "=r"(fmv_cases[i].fmv_x_h_fflags)
+        : [in] "r"(fmv_cases[i].input)
+        : "fa0");
+
+    asm volatile(
+        // Clear fflags
+        "csrw fflags, zero;"
+        "fmv.h.x fa0, %[in];"
+        "fmv.x.h %[out], fa0;"
+        "csrr %[flags], fflags;"
+        : [out] "=r"(fmv_cases[i].fmv_roundtrip_output), [flags] "=r"(
+                                                             fmv_cases[i].fmv_roundtrip_fflags)
+        : [in] "r"(fmv_cases[i].input)
+        : "fa0");
+  }
+}
+
 int main() {
   run_fcvt_s_bf16();
   run_fcvt_bf16_s();
+  run_fmv();
   return 0;
 }

@@ -359,12 +359,16 @@ class FloatCore(p: Parameters) extends Module {
     }
   }
 
-  val fmv_x_w =
-    inst.valid && (inst.bits.opcode === FloatOpcode.OPFP) && (inst.bits.funct5 === "b11100".U) && (inst.bits.rm === "b000".U)
-  val fmv_w_x =
-    inst.valid && (inst.bits.opcode === FloatOpcode.OPFP) && (inst.bits.funct5 === "b11110".U) && (inst.bits.rm === "b000".U)
-  val fmv     = (fmv_x_w || fmv_w_x)
-  val storefp = (inst.valid && (inst.bits.opcode === FloatOpcode.STOREFP))
+  val fmt         = inst.bits.inst(26, 25)
+  val is_fmt_fp32 = fmt === 0.U
+  val is_fmt_bf16 = (fmt === 2.U) && p.enableZfbfmin.B
+
+  val fmv_funct5_valid = (inst.bits.funct5 === "b11100".U) || (inst.bits.funct5 === "b11110".U)
+  val fmv              =
+    inst.valid && (inst.bits.opcode === FloatOpcode.OPFP) && fmv_funct5_valid && (inst.bits.rm === "b000".U) && (is_fmt_fp32 || is_fmt_bf16)
+  val fmv_to_gpr = fmv && (inst.bits.funct5 === "b11100".U)
+  val fmv_to_fpr = fmv && (inst.bits.funct5 === "b11110".U)
+  val storefp    = inst.valid && (inst.bits.opcode === FloatOpcode.STOREFP)
 
   val op0_addr = inst.bits.rs1
   val op1_addr = Mux(op_i === FpNewOperation.ADD, inst.bits.rs1, inst.bits.rs2)
@@ -405,11 +409,12 @@ class FloatCore(p: Parameters) extends Module {
   floatCoreWrapper.io.flush_i    := false.B
   floatCoreWrapper.io.in_valid_i := (inst.valid && !fmv) && !fpuActive && rnd_mode.valid
 
+  val fmv_fpr_data = Mux(is_fmt_bf16, Cat("hffff".U(16.W), io.rs1.data(15, 0)), io.rs1.data(31, 0))
   io.write_ports(0)
-    .valid := ((floatCoreWrapper.io.out_valid_o && inst.fire && !inst.bits.scalar_rd) || fmv_w_x) && !storefp
+    .valid := ((floatCoreWrapper.io.out_valid_o && inst.fire && !inst.bits.scalar_rd) || fmv_to_fpr) && !storefp
   io.write_ports(0).addr := inst.bits.rd
   io.write_ports(0).data := Fp32.fromWord(
-    Mux(fmv_w_x, io.rs1.data(31, 0), floatCoreWrapper.io.result_o)
+    Mux(fmv_to_fpr, fmv_fpr_data, floatCoreWrapper.io.result_o)
   )
 
   io.write_ports(1).valid := io.lsu_rd.valid
@@ -420,11 +425,16 @@ class FloatCore(p: Parameters) extends Module {
   io.csr.in.fflags.bits  := floatCoreWrapper.io.status_o.asUInt
 
   val scalar_rd_pre_pipe = Wire(Decoupled(new RegfileWriteDataIO(p)))
-  scalar_rd_pre_pipe.valid := (((floatCoreWrapper.io.in_valid_i && floatCoreWrapper.io.in_ready_o) || fpuActive) && floatCoreWrapper.io.out_valid_o && floatCoreWrapper.io.out_ready_i && inst.bits.scalar_rd) || (fmv_x_w)
+  scalar_rd_pre_pipe.valid := (((floatCoreWrapper.io.in_valid_i && floatCoreWrapper.io.in_ready_o) || fpuActive) && floatCoreWrapper.io.out_valid_o && floatCoreWrapper.io.out_ready_i && inst.bits.scalar_rd) || (fmv_to_gpr)
   scalar_rd_pre_pipe.bits.addr := inst.bits.rd
+  val fmv_gpr_data = Mux(
+    is_fmt_bf16,
+    Cat(Fill(16, io.read_ports(0).data.asWord(15)), io.read_ports(0).data.asWord(15, 0)),
+    io.read_ports(0).data.asWord
+  )
   scalar_rd_pre_pipe.bits.data := Mux(
-    fmv_x_w,
-    io.read_ports(0).data.asWord,
+    fmv_to_gpr,
+    fmv_gpr_data,
     floatCoreWrapper.io.result_o
   )
 

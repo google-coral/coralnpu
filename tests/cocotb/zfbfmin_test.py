@@ -15,6 +15,7 @@
 import cocotb
 from coralnpu_test_utils.sim_test_fixture import Fixture
 from bazel_tools.tools.python.runfiles import runfiles
+import numpy as np
 import random
 import struct
 
@@ -117,9 +118,38 @@ def fp32_to_bf16_bits_with_flags(fp32_bits, rm=RNE):
     return res, flags
 
 
+def fmv_h_x_expected_with_flags(in_32):
+    # fmv.h.x: moves rs1[15:0] to rd[15:0], NaN-boxes bits [31:16] with 1s.
+    # Does not modify fflags.
+    expected_bits = 0xFFFF0000 | (in_32 & 0xFFFF)
+    return expected_bits, 0
+
+
+def fmv_x_h_expected_with_flags(in_32):
+    # fmv.x.h: moves fs1[15:0] to rd[15:0], sign-extends bit 15 to bits [31:16].
+    # Does not modify fflags.
+    lower_16 = in_32 & 0xFFFF
+    if lower_16 & 0x8000:
+        expected_bits = 0xFFFF0000 | lower_16
+    else:
+        expected_bits = lower_16
+    return expected_bits, 0
+
+
+def fmv_roundtrip_expected_with_flags(in_32):
+    # GPR -> fmv.h.x -> FPR -> fmv.x.h -> GPR
+    # fmv.h.x extracts in_32[15:0], fmv.x.h sign-extends bit 15.
+    lower_16 = in_32 & 0xFFFF
+    if lower_16 & 0x8000:
+        expected_bits = 0xFFFF0000 | lower_16
+    else:
+        expected_bits = lower_16
+    return expected_bits, 0
+
+
 @cocotb.test()
 async def zfbfmin_test(dut):
-    """Test that runs Zfbfmin conversion instructions with various inputs."""
+    """Test that runs Zfbfmin conversion and move instructions with various inputs."""
     fixture = await Fixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'zfbfmin_test.elf'
@@ -127,7 +157,7 @@ async def zfbfmin_test(dut):
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/' + elf_file), [
             'fcvt_s_bf16_cases', 'fcvt_bf16_s_cases', 'num_fcvt_s_bf16_cases',
-            'num_fcvt_bf16_s_cases'
+            'num_fcvt_bf16_s_cases', 'fmv_cases', 'num_fmv_cases'
         ]
     )
 
@@ -195,9 +225,52 @@ async def zfbfmin_test(dut):
         symbols['num_fcvt_bf16_s_cases'], len(bf16_s_inputs)
     )
 
+    # Combined test cases for FMV instructions (fmv.h.x, fmv.x.h, fmv_roundtrip)
+    fmv_inputs = [
+        0x00000000,  # +0.0
+        0x00008000,  # -0.0
+        0x00003fc0,  # 1.5 BF16 (positive normal)
+        0x0000bfc0,  # -1.5 BF16 (negative normal)
+        0x00007f80,  # +Inf
+        0x0000ff80,  # -Inf
+        0x00007fc0,  # qNaN
+        0x00007fbf,  # sNaN
+        0x00000001,  # min positive subnormal
+        0x00008001,  # min negative subnormal
+        0xFFFF3fc0,  # NaN-boxed positive BF16
+        0xFFFFbfc0,  # NaN-boxed negative BF16
+        0xFFFF7f80,  # NaN-boxed +Inf
+        0xFFFFFF80,  # NaN-boxed -Inf
+        0xFFFF7fc0,  # NaN-boxed qNaN
+        0xFFFF7fbf,  # NaN-boxed sNaN
+        0xFFFF0000,  # NaN-boxed +0.0
+        0xFFFF8000,  # NaN-boxed -0.0
+        0xFFFF0001,  # NaN-boxed positive subnormal
+        0xFFFF8001,  # NaN-boxed negative subnormal
+        0x12343fc0,  # Non-zero dirty high bits with positive normal
+        0x1234bfc0,  # Non-zero dirty high bits with negative normal
+        0x12340042,  # Arbitrary dirty high bits with positive sign bit
+        0x12348042,  # Arbitrary dirty high bits with negative sign bit
+        0xABCD0001,  # Dirty high bits with positive subnormal
+        0xABCD8001,  # Dirty high bits with negative subnormal
+        0x55555555,  # Alternating pattern (bit 15 = 0)
+        0xAAAAAAAA,  # Alternating pattern (bit 15 = 1)
+        0xDEADBEEF,  # Arbitrary 32-bit pattern (bit 15 = 1)
+        0xFFFFFFFF,  # All ones
+    ]
+    for _ in range(10):
+        fmv_inputs.append(random.getrandbits(32))
+
+    fmv_data = np.zeros((len(fmv_inputs), 7), dtype=np.uint32)
+    for i, val in enumerate(fmv_inputs):
+        fmv_data[i, 0] = val
+    await fixture.core_mini_axi.write(symbols['fmv_cases'], fmv_data.flatten())
+    await fixture.core_mini_axi.write_word(
+        symbols['num_fmv_cases'], len(fmv_inputs)
+    )
+
     # Run the core
-    cycles = await fixture.run_to_halt(timeout_cycles=1000000)
-    dut._log.info(f"Cycle count: {cycles}")
+    await fixture.run_to_halt(timeout_cycles=1000000)
 
     # Verify fcvt.s.bf16
     dut._log.info("Verifying fcvt.s.bf16 results...")
@@ -255,5 +328,73 @@ async def zfbfmin_test(dut):
 
         # Verify flags
         assert actual_flags == expected_flags, f"Case {i}: Input {val} (RM {rm}), Expected flags {hex(expected_flags)}, got {hex(actual_flags)}"
+
+    # Verify fmv instructions
+    dut._log.info("Verifying fmv results...")
+    fmv_results = (
+        await
+        fixture.core_mini_axi.read(symbols['fmv_cases'],
+                                   len(fmv_inputs) * 28)
+    ).view(np.uint32).reshape(-1, 7)
+
+    errors = []
+
+    # Verify fmv.h.x
+    for i, val in enumerate(fmv_inputs):
+        actual_bits = int(fmv_results[i, 1])
+        actual_flags = int(fmv_results[i, 2])
+
+        expected_bits, expected_flags = fmv_h_x_expected_with_flags(val)
+
+        if actual_bits != expected_bits:
+            errors.append(
+                f"fmv.h.x Case {i}: Input {hex(val)}, Expected {hex(expected_bits)}, got {hex(actual_bits)}"
+            )
+        if actual_flags != expected_flags:
+            errors.append(
+                f"fmv.h.x Case {i}: Input {hex(val)}, Expected flags {hex(expected_flags)}, got {hex(actual_flags)}"
+            )
+
+    # Verify fmv.x.h
+    for i, val in enumerate(fmv_inputs):
+        actual_bits = int(fmv_results[i, 3])
+        actual_flags = int(fmv_results[i, 4])
+
+        expected_bits, expected_flags = fmv_x_h_expected_with_flags(val)
+
+        if actual_bits != expected_bits:
+            errors.append(
+                f"fmv.x.h Case {i}: Input {hex(val)}, Expected {hex(expected_bits)}, got {hex(actual_bits)}"
+            )
+        if actual_flags != expected_flags:
+            errors.append(
+                f"fmv.x.h Case {i}: Input {hex(val)}, Expected flags {hex(expected_flags)}, got {hex(actual_flags)}"
+            )
+
+    # Verify fmv roundtrip
+    for i, val in enumerate(fmv_inputs):
+        actual_bits = int(fmv_results[i, 5])
+        actual_flags = int(fmv_results[i, 6])
+
+        expected_bits, expected_flags = fmv_roundtrip_expected_with_flags(val)
+
+        if actual_bits != expected_bits:
+            errors.append(
+                f"fmv roundtrip Case {i}: Input {hex(val)}, Expected {hex(expected_bits)}, got {hex(actual_bits)}"
+            )
+        if actual_flags != expected_flags:
+            errors.append(
+                f"fmv roundtrip Case {i}: Input {hex(val)}, Expected flags {hex(expected_flags)}, got {hex(actual_flags)}"
+            )
+
+    if errors:
+        dut._log.error(f"Zfbfmin test encountered {len(errors)} failure(s):")
+        for err in errors:
+            dut._log.error(f"  {err}")
+        assert len(
+            errors
+        ) == 0, f"Zfbfmin test failed with {len(errors)} error(s):\n" + "\n".join(
+            errors[:10]
+        )
 
     dut._log.info("All Zfbfmin tests passed!")

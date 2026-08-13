@@ -130,7 +130,9 @@ object FloatInstruction {
 
     val fcvt_s_bf16 = (funct5 === "b01000".U) && (rs2 === "b00110".U) && (fmt === 0.U)
     val fcvt_bf16_s = (funct5 === "b01000".U) && (rs2 === "b01000".U) && (fmt === 2.U)
-    val is_zfbfmin  = (fcvt_s_bf16 || fcvt_bf16_s) && p.enableZfbfmin.B
+    val fmv_h       =
+      (funct5 === "b11110".U || funct5 === "b11100".U) && (rs2 === "b00000".U) && (fmt === 2.U) && (rm === "b000".U)
+    val is_zfbfmin = (fcvt_s_bf16 || fcvt_bf16_s || fmv_h) && p.enableZfbfmin.B
 
     // TODO(atv): Hook scalar_rd and scalar_rs1 into scalar scoreboard
     // TODO(atv): FMV and FCLASS match the same... do we need to check RM too?
