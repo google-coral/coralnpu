@@ -680,20 +680,29 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     val lsu = SafeMuxUpTo1H(
       MakeValid(false.B, LsuOp.LB),
       Seq(
-        d.lb                                  -> MakeValid(true.B, LsuOp.LB),
-        d.lh                                  -> MakeValid(true.B, LsuOp.LH),
-        d.lw                                  -> MakeValid(true.B, LsuOp.LW),
-        d.lbu                                 -> MakeValid(true.B, LsuOp.LBU),
-        d.lhu                                 -> MakeValid(true.B, LsuOp.LHU),
-        d.sb                                  -> MakeValid(true.B, LsuOp.SB),
-        d.sh                                  -> MakeValid(true.B, LsuOp.SH),
-        d.sw                                  -> MakeValid(true.B, LsuOp.SW),
-        d.wfi                                 -> MakeValid(true.B, LsuOp.FENCEI),
-        d.fencei                              -> MakeValid(true.B, LsuOp.FENCEI),
-        d.flushat                             -> MakeValid(true.B, LsuOp.FLUSHAT),
-        d.flushall                            -> MakeValid(true.B, LsuOp.FLUSHALL),
-        (d.isFloatLoad() || d.isFloatStore()) -> MakeValid(true.B, LsuOp.FLOAT)
+        d.lb       -> MakeValid(true.B, LsuOp.LB),
+        d.lh       -> MakeValid(true.B, LsuOp.LH),
+        d.lw       -> MakeValid(true.B, LsuOp.LW),
+        d.lbu      -> MakeValid(true.B, LsuOp.LBU),
+        d.lhu      -> MakeValid(true.B, LsuOp.LHU),
+        d.sb       -> MakeValid(true.B, LsuOp.SB),
+        d.sh       -> MakeValid(true.B, LsuOp.SH),
+        d.sw       -> MakeValid(true.B, LsuOp.SW),
+        d.wfi      -> MakeValid(true.B, LsuOp.FENCEI),
+        d.fencei   -> MakeValid(true.B, LsuOp.FENCEI),
+        d.flushat  -> MakeValid(true.B, LsuOp.FLUSHAT),
+        d.flushall -> MakeValid(true.B, LsuOp.FLUSHALL)
       ) ++ Option
+        .when(p.enableFloat) {
+          Seq(
+            (d.isFloatLoad() || d.isFloatStore()) -> Mux(
+              d.float.get.bits.rm === "b001".U,
+              MakeValid(true.B, LsuOp.FLOAT_H),
+              MakeValid(true.B, LsuOp.FLOAT)
+            )
+          )
+        }
+        .getOrElse(Seq()) ++ Option
         .when(p.enableRvv) {
           val isRvvLoad = d.rvv.get.valid &&
             (d.rvv.get.bits.opcode === RvvCompressedOpcode.RVVLOAD)

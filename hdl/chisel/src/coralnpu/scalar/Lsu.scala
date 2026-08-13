@@ -82,6 +82,7 @@ object LsuOp extends ChiselEnum {
   val FLUSHALL = Value
   val VLDST    = Value
   val FLOAT    = Value
+  val FLOAT_H  = Value
 
   // Vector instructions.
   val VLOAD_UNIT      = Value
@@ -134,9 +135,9 @@ object LsuOp extends ChiselEnum {
     val size = MuxUpTo1H(
       16.U,
       Seq(
-        op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.SB)   -> 1.U,
-        op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH)   -> Mux(halfAligned, 2.U, 16.U),
-        op.isOneOf(LsuOp.LW, LsuOp.SW, LsuOp.FLOAT) ->
+        op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.SB)                -> 1.U,
+        op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH, LsuOp.FLOAT_H) -> Mux(halfAligned, 2.U, 16.U),
+        op.isOneOf(LsuOp.LW, LsuOp.SW, LsuOp.FLOAT)              ->
           Mux(wordAligned, 4.U, 16.U),
         LsuOp.isVector(op) -> 16.U
       )
@@ -148,8 +149,8 @@ object LsuOp extends ChiselEnum {
     val alignedAddress     = MuxUpTo1H(
       lineAlignedAddress,
       Seq(
-        op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.SB)                  -> address,
-        (op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH) && halfAligned) ->
+        op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.SB)                                 -> address,
+        (op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH, LsuOp.FLOAT_H) && halfAligned) ->
           halfAlignedAddress,
         (op.isOneOf(LsuOp.LW, LsuOp.SW, LsuOp.FLOAT) && wordAligned) ->
           wordAlignedAddress
@@ -243,7 +244,7 @@ object LsuUOp {
     result.pc    := cmd.pc
     if (fbus.isDefined) {
       result.addr := sbus.addr(i)
-      result.data := Mux(cmd.op === LsuOp.FLOAT, fbus.get.data(i), sbus.data(i))
+      result.data := Mux(cmd.op.isOneOf(LsuOp.FLOAT, LsuOp.FLOAT_H), fbus.get.data(i), sbus.data(i))
     } else {
       result.addr := sbus.addr(i)
       result.data := sbus.data(i)
@@ -724,12 +725,13 @@ class LsuSlot(p: Parameters, bytesPerSlot: Int) extends Bundle {
     byteSigned := byte.asSInt
     MuxLookup(op, 0.U)(
       Seq(
-        LsuOp.LB    -> byteSigned.asUInt,
-        LsuOp.LBU   -> byte,
-        LsuOp.LH    -> halfSigned.asUInt,
-        LsuOp.LHU   -> half,
-        LsuOp.LW    -> word,
-        LsuOp.FLOAT -> word
+        LsuOp.LB      -> byteSigned.asUInt,
+        LsuOp.LBU     -> byte,
+        LsuOp.LH      -> halfSigned.asUInt,
+        LsuOp.LHU     -> half,
+        LsuOp.LW      -> word,
+        LsuOp.FLOAT   -> word,
+        LsuOp.FLOAT_H -> Cat("hFFFF".U(16.W), half)
       )
     )
   }
@@ -1289,6 +1291,7 @@ object LsuScalarWritebackMode extends ChiselEnum {
   val U2   = Value
   val S2   = Value
   val U4   = Value
+  val F2   = Value
   // When we extend xlen to 64:
   // val S4   = Value
   // val U8   = Value
@@ -1714,7 +1717,11 @@ class LsuSuperSlot(p: Parameters) extends Module {
           LsuScalarWritebackMode.S1 -> MakeValid(scalar8Valid, scalar8S),
           LsuScalarWritebackMode.U2 -> MakeValid(scalar16Valid, scalar16U),
           LsuScalarWritebackMode.S2 -> MakeValid(scalar16Valid, scalar16S),
-          LsuScalarWritebackMode.U4 -> MakeValid(scalar32Valid, scalar32)
+          LsuScalarWritebackMode.U4 -> MakeValid(scalar32Valid, scalar32),
+          LsuScalarWritebackMode.F2 -> MakeValid(
+            scalar16Valid,
+            Cat("hFFFF".U(16.W), scalar16U(15, 0))
+          )
         )
       )
       val scalarWritebacks = VecInit
@@ -2167,14 +2174,16 @@ class LsuSuperSlot(p: Parameters) extends Module {
       rd: UInt,
       bytes: Int
     ): State = {
-      // Only 4 bytes is supported atm.
-      // TODO: assert
       val ret = MakeWireBundle[State](
         new State(),
         _                     -> initFloat(pc, addr, write = false),
         _.rd                  -> rd,
-        _.scalarWritebackMode -> LsuScalarWritebackMode.U4,
-        _.cells               -> VecInit.tabulate(nCells) { i =>
+        _.scalarWritebackMode -> (if (bytes == 2) {
+                                    LsuScalarWritebackMode.F2
+                                  } else {
+                                    LsuScalarWritebackMode.U4
+                                  }),
+        _.cells -> VecInit.tabulate(nCells) { i =>
           if (i < bytes) {
             cells(i).initLoad(addr + i.U, needData = false.B)
           } else {
@@ -2802,6 +2811,11 @@ class LsuSuperSlot(p: Parameters) extends Module {
               uop.store,
               initFloatStore(uop.pc, uop.addr, uop.data, bytes = 4),
               initFloatLoad(uop.pc, uop.addr, uop.rd, bytes = 4)
+            ),
+            LsuOp.FLOAT_H -> Mux(
+              uop.store,
+              initFloatStore(uop.pc, uop.addr, uop.data, bytes = 2),
+              initFloatLoad(uop.pc, uop.addr, uop.rd, bytes = 2)
             )
           )
         else Seq()
