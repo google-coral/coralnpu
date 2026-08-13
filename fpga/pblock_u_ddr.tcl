@@ -25,19 +25,19 @@ if {[llength [get_pblocks -quiet pblock_ddr4]] > 0} {
     puts "INFO: Deleted existing pblock_ddr4 to start fresh."
 }
 
-# Find top DDR controller cell
-set ddr_cells [get_cells -quiet -hierarchical -filter {NAME =~ i_ddr4}]
+# Find top DDR controller cell, 250MHz AXI CDC FIFO, AXI Bridge, and ID Remapper
+set ddr_cells [get_cells -quiet -hierarchical -filter {NAME =~ i_ddr4 || NAME =~ *ddr_ctrl* || NAME =~ *deviceInterfaces_ddr_ctrl_bridge*}]
 
 if {[llength $ddr_cells] > 0} {
     create_pblock pblock_ddr4
     add_cells_to_pblock [get_pblocks pblock_ddr4] $ddr_cells
 
-    # Floorplan to physical DDR I/O Bank clock regions (X3Y8 to X4Y11)
-    resize_pblock [get_pblocks pblock_ddr4] -add {CLOCKREGION_X3Y8:CLOCKREGION_X4Y11}
+    # Floorplan to physical DDR I/O Bank clock regions (4 columns: X1Y8 to X4Y11)
+    resize_pblock [get_pblocks pblock_ddr4] -add {CLOCKREGION_X1Y8:CLOCKREGION_X4Y11}
 
     # Set soft bounds to allow interconnect buffers to route cleanly
     set_property IS_SOFT TRUE [get_pblocks pblock_ddr4]
-    puts "INFO: Created pblock_ddr4 spanning CLOCKREGION_X3Y8:CLOCKREGION_X4Y11 for [llength $ddr_cells] DDR instances."
+    puts "INFO: Created pblock_ddr4 spanning CLOCKREGION_X1Y8:CLOCKREGION_X4Y11 for [llength $ddr_cells] DDR instances."
 } else {
     puts "INFO: No top i_ddr4 instance found for pblock_ddr4 floorplanning."
 }

@@ -139,3 +139,6 @@ set_property -dict { PACKAGE_PIN BA40 IOSTANDARD LVCMOS18 } [get_ports { spim_cs
 set_property -dict { PACKAGE_PIN AW36 IOSTANDARD LVCMOS18 } [get_ports { gpio[2] }];     # PMOD4_9
 set_property -dict { PACKAGE_PIN BC40 IOSTANDARD LVCMOS18 } [get_ports { gpio[3] }];     # PMOD4_10
 
+# Proactively replicate high-fanout drivers feeding 512-bit DDR write data/strobe bus (250MHz DDR clock)
+set_property MAX_FANOUT 16 [get_nets -quiet -hierarchical -filter {NAME =~ *USE_UPSIZER.upsizer_d2*wdata*}]
+set_property MAX_FANOUT 16 [get_nets -quiet -hierarchical -filter {NAME =~ *USE_UPSIZER.upsizer_d2*wstrb*}]
