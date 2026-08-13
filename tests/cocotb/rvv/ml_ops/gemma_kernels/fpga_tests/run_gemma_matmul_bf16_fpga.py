@@ -12,9 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""FP32 Gemma Transformer Matrix Multiplication (GeMV & Tiled GEMM) FPGA Hardware Test."""
+"""BF16 Gemma Transformer Matrix Multiplication (GeMV & Tiled GEMM) FPGA Hardware Test."""
 
 import argparse
+import ml_dtypes
 import numpy as np
 from coralnpu_test_utils.fpga_test_fixture import FpgaTestFixture
 from sw.utils.metrics import log_matmul_metrics
@@ -29,15 +30,15 @@ GEMMA_TEST_SHAPES = [
 ]
 
 
-def run_gemma_matmul_fpga(fixture: FpgaTestFixture, verify: bool = False):
-    """Executes FP32 Gemma GeMV (1D) and Tiled GEMM (2D) kernels across multiple shapes."""
+def run_gemma_matmul_bf16_fpga(fixture: FpgaTestFixture, verify: bool = False):
+    """Executes BF16 Gemma GeMV (1D) and Tiled GEMM (2D) kernels across multiple shapes."""
     core_freq_mhz = fixture.get_core_frequency_mhz()
     core_freq_hz = fixture.get_core_frequency_hz()
 
     print(
         f"\n===================================================================="
     )
-    print(f"CoralNPU FPGA Gemma Matrix Multiplication Test Suite")
+    print(f"CoralNPU FPGA Gemma BF16 Matrix Multiplication Test Suite")
     print(
         f"FPGA Core Clock Frequency: {core_freq_mhz} MHz ({core_freq_hz:,} Hz)"
     )
@@ -47,7 +48,7 @@ def run_gemma_matmul_fpga(fixture: FpgaTestFixture, verify: bool = False):
     )
 
     fixture.load_elf_and_lookup_symbols(
-        "tests/cocotb/rvv/ml_ops/gemma_kernels/rvv_matmul.elf",
+        "tests/cocotb/rvv/ml_ops/gemma_kernels/rvv_bf16_matmul.elf",
         symbols=[
             "lhs_input", "rhs_input", "result_output", "active_m", "active_k",
             "active_n", "cycle_count"
@@ -60,18 +61,28 @@ def run_gemma_matmul_fpga(fixture: FpgaTestFixture, verify: bool = False):
     for M, K, N, desc in GEMMA_TEST_SHAPES:
         print(f"\n--- Testing Shape: {desc} (M={M}, K={K}, N={N}) ---")
 
-        # 1. Generate random inputs and golden reference
-        lhs = rng.uniform(-2.0, 2.0, size=(M, K)).astype(np.float32)
-        rhs = rng.uniform(-2.0, 2.0, size=(K, N)).astype(np.float32)
-        golden = lhs @ rhs
+        # 1. Generate random FP32 inputs and convert to exact BF16
+        lhs_fp32 = rng.uniform(-2.0, 2.0, size=(M, K)).astype(np.float32)
+        rhs_fp32 = rng.uniform(-2.0, 2.0, size=(K, N)).astype(np.float32)
 
-        # 2. Upload dimensions and data to hardware
+        lhs_bf16 = lhs_fp32.astype(ml_dtypes.bfloat16)
+        rhs_bf16 = rhs_fp32.astype(ml_dtypes.bfloat16)
+
+        lhs_exact = lhs_bf16.astype(np.float32)
+        rhs_exact = rhs_bf16.astype(np.float32)
+        golden = (lhs_exact @ rhs_exact).astype(ml_dtypes.bfloat16
+                                                ).astype(np.float32)
+
+        # 2. Upload dimensions and BF16 raw data (as uint16) to hardware
         fixture.write_word("active_m", M)
         fixture.write_word("active_k", K)
         fixture.write_word("active_n", N)
-        fixture.write("lhs_input", lhs.flatten())
-        fixture.write("rhs_input", rhs.flatten())
-        fixture.write("result_output", np.zeros_like(golden).flatten())
+        fixture.write("lhs_input", lhs_bf16.view(np.uint16).flatten())
+        fixture.write("rhs_input", rhs_bf16.view(np.uint16).flatten())
+        fixture.write(
+            "result_output",
+            np.zeros((M, N), dtype=np.uint16).flatten()
+        )
 
         # 3. Execute kernel and wait for core to halt
         print(f"Executing kernel on hardware (M={M}, K={K}, N={N})...")
@@ -81,12 +92,15 @@ def run_gemma_matmul_fpga(fixture: FpgaTestFixture, verify: bool = False):
             )
 
         # 4. Verify output numerically
-        actual = fixture.read("result_output", dtype=np.float32, shape=(M, N))
+        actual_u16 = fixture.read(
+            "result_output", dtype=np.uint16, shape=(M, N)
+        )
+        actual = actual_u16.view(ml_dtypes.bfloat16).astype(np.float32)
         np.testing.assert_allclose(
             actual,
             golden,
-            rtol=1e-3,
-            atol=1e-3,
+            rtol=1e-2,
+            atol=1e-2,
             err_msg=f"Mismatch @ {M}x{K}x{N}"
         )
 
@@ -99,14 +113,14 @@ def run_gemma_matmul_fpga(fixture: FpgaTestFixture, verify: bool = False):
             f"Shape {M}x{K}x{N} PASSED! ({cycles:,} cycles, {latency_ms:.3f} ms, {macs_per_cycle:.2f} MACs/cyc @ {core_freq_mhz} MHz)"
         )
         log_matmul_metrics(
-            fixture, f"[FPGA] Gemma_MatMul_{M}x{K}x{N}", cycles, M, N, K
+            fixture, f"[FPGA] Gemma_BF16_MatMul_{M}x{K}x{N}", cycles, M, N, K
         )
 
     print(
         f"\n===================================================================="
     )
     print(
-        f"ALL {len(GEMMA_TEST_SHAPES)}/{len(GEMMA_TEST_SHAPES)} GEMMA SHAPES PASSED ON FPGA HARDWARE ({core_freq_mhz} MHz)!"
+        f"ALL {len(GEMMA_TEST_SHAPES)}/{len(GEMMA_TEST_SHAPES)} GEMMA BF16 SHAPES PASSED ON FPGA HARDWARE ({core_freq_mhz} MHz)!"
     )
     print(
         f"====================================================================\n"
@@ -116,7 +130,7 @@ def run_gemma_matmul_fpga(fixture: FpgaTestFixture, verify: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=
-        "Run FP32 Gemma Matrix Multiplication tests on CoralNPU FPGA Hardware"
+        "Run BF16 Gemma Matrix Multiplication tests on CoralNPU FPGA Hardware"
     )
     parser.add_argument(
         "--usb-serial",
@@ -145,4 +159,4 @@ if __name__ == "__main__":
         usb_serial=args.usb_serial, highmem=args.highmem
     )
     fixture.default_timeout = args.timeout
-    run_gemma_matmul_fpga(fixture, verify=args.verify)
+    run_gemma_matmul_bf16_fpga(fixture, verify=args.verify)

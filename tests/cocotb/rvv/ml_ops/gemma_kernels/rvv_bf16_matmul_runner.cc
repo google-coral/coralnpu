@@ -24,10 +24,9 @@ void rvv_gemv_1d_bf16(const __bf16 *__restrict__ A, const __bf16 *__restrict__ B
                       __bf16 *__restrict__ C, int K, int N);
 }
 
-// Max sizes for allocation (supports up to 128x512x128 and 12x640x512)
-#define MAX_M 128
+#define MAX_M 256
 #define MAX_K 640
-#define MAX_N 512
+#define MAX_N 1024
 
 extern "C" {
 // Inputs in ExtMem (.ddr_data)

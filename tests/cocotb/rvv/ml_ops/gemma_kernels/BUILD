@@ -460,3 +460,18 @@ py_binary(
         "@bazel_tools//tools/python/runfiles",
     ],
 )
+
+py_binary(
+    name = "run_gemma_matmul_bf16_fpga",
+    srcs = ["fpga_tests/run_gemma_matmul_bf16_fpga.py"],
+    data = [
+        ":rvv_bf16_matmul",
+    ],
+    deps = [
+        "//coralnpu_test_utils:fpga_test_fixture",
+        "//sw/utils:metrics",
+        requirement("ml_dtypes"),
+        requirement("numpy"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
