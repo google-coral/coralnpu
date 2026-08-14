@@ -46,6 +46,9 @@ class CoralNPUSimulator {
   // Begin executing starting with the PC set to the specified address. Returns
   // when the core halts.
   virtual void Run(uint32_t start_addr) = 0;
+
+  // Returns the total simulated cycle count.
+  virtual uint64_t GetCycleCount() const = 0;
 };
 
 #endif  // HW_SIM_CORALNPU_SIMULATOR_H_

@@ -42,6 +42,7 @@ class CoreMiniAxiSimulator : public CoralNPUSimulator {
   void WriteMailbox(const CoralNPUMailbox &mailbox) final;
   void Run(uint32_t start_addr) final;
   bool WaitForTermination(int timeout) final;
+  uint64_t GetCycleCount() const final;
 
  private:
   VerilatedContext context_;
@@ -96,6 +97,8 @@ void CoreMiniAxiSimulator::Run(uint32_t start_addr) {
 bool CoreMiniAxiSimulator::WaitForTermination(int timeout = 10000) {
   return wrapper_.WaitForTermination(timeout);
 }
+
+uint64_t CoreMiniAxiSimulator::GetCycleCount() const { return wrapper_.cycle_count(); }
 
 AxiWResp CoreMiniAxiSimulator::WriteCallback(const AxiAddr &addr, const AxiWData &data) {
   if (IsDdrAddress(addr.addr_bits_addr)) {

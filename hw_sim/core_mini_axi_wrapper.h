@@ -193,6 +193,8 @@ class CoreMiniAxiWrapper {
     return false;
   }
 
+  uint64_t cycle_count() const { return cycle_count_; }
+
  private:
   VerilatedContext* const context_;
   CoralNPUMailbox mailbox_;
