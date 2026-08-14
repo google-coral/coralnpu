@@ -149,8 +149,8 @@ module rvv_backend
     input   logic                                 vcsr_ready;
 
 // retire information
-    output  logic     [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_valid_rob2rt_o;
-    output  ROB2RT_t  [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_rob2rt_o;
+    output  logic     [`NUM_RT_UOP-1:0]           rd_valid_rob2rt_o;
+    output  ROB2RT_t  [`NUM_RT_UOP-1:0]           rd_rob2rt_o;
 
 // rvv_backend is not active.(IDLE)
     output  logic                                 rvv_idle;
