@@ -41,20 +41,36 @@ package coralnpu_irq_agent_pkg;
     endfunction
 
     virtual task run_phase(uvm_phase phase);
-      forever begin
-        @(vif.tb_ctrl_cb);
-        seq_item_port.get_next_item(req);
-        @(vif.tb_ctrl_cb);
-        if (req.drive_irq) begin
-          vif.tb_ctrl_cb.irq <= req.irq_level;
-          `uvm_info(get_type_name(), $sformatf("Driving irq=%0b", req.irq_level), UVM_LOW)
+      vif.tb_ctrl_cb.irq <= 1'b0;
+      vif.tb_ctrl_cb.te  <= 1'b0;
+      fork
+        forever begin
+          @(negedge vif.resetn);
+          vif.tb_ctrl_cb.irq <= 1'b0;
+          vif.tb_ctrl_cb.te  <= 1'b0;
         end
-        if (req.drive_te) begin
-          vif.tb_ctrl_cb.te <= req.te_level;
-          `uvm_info(get_type_name(), $sformatf("Driving te=%0b", req.te_level), UVM_LOW)
+        forever begin
+          @(vif.tb_ctrl_cb);
+          if (vif.resetn === 1'b0) begin
+            vif.tb_ctrl_cb.irq <= 1'b0;
+            vif.tb_ctrl_cb.te  <= 1'b0;
+            continue;
+          end
+          seq_item_port.get_next_item(req);
+          @(vif.tb_ctrl_cb);
+          if (vif.resetn === 1'b1) begin
+            if (req.drive_irq) begin
+              vif.tb_ctrl_cb.irq <= req.irq_level;
+              `uvm_info(get_type_name(), $sformatf("Driving irq=%0b", req.irq_level), UVM_LOW)
+            end
+            if (req.drive_te) begin
+              vif.tb_ctrl_cb.te <= req.te_level;
+              `uvm_info(get_type_name(), $sformatf("Driving te=%0b", req.te_level), UVM_LOW)
+            end
+          end
+          seq_item_port.item_done();
         end
-        seq_item_port.item_done();
-      end
+      join
     endtask
   endclass
 

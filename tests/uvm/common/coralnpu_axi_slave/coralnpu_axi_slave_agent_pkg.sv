@@ -47,18 +47,46 @@ package coralnpu_axi_slave_agent_pkg;
     endfunction
 
     virtual task run_phase(uvm_phase phase);
+      drive_defaults();
+      forever begin
+        drive_defaults();
+        mem.delete();
+
+        if (vif.resetn !== 1'b1) begin
+          @(posedge vif.resetn);
+          @(vif.tb_slave_cb);
+        end
+
+        fork
+          begin
+            handle_writes();
+          end
+          begin
+            handle_reads();
+          end
+          begin
+            @(negedge vif.resetn);
+          end
+        join_any
+        disable fork;
+
+        drive_defaults();
+        mem.delete();
+      end
+    endtask
+
+    protected virtual task drive_defaults();
       vif.tb_slave_cb.awready <= 1'b0;
       vif.tb_slave_cb.wready  <= 1'b0;
       vif.tb_slave_cb.arready <= 1'b0;
       vif.tb_slave_cb.bvalid  <= 1'b0;
-      vif.tb_slave_cb.rvalid  <= 1'b0;
+      vif.tb_slave_cb.bid     <= '0;
       vif.tb_slave_cb.bresp   <= AXI_OKAY;
+      vif.tb_slave_cb.rvalid  <= 1'b0;
+      vif.tb_slave_cb.rlast   <= 1'b0;
+      vif.tb_slave_cb.rid     <= '0;
       vif.tb_slave_cb.rresp   <= AXI_OKAY;
       vif.tb_slave_cb.rdata   <= '0;
-      fork
-        handle_writes();
-        handle_reads();
-      join_none
     endtask
 
     // Slave agent: Handles AXI write transactions.
@@ -78,7 +106,10 @@ package coralnpu_axi_slave_agent_pkg;
         vif.tb_slave_cb.awready <= 1'b0;
         do begin
           @(vif.tb_slave_cb);
+          if (vif.resetn === 1'b0) break;
         end while (vif.tb_slave_cb.awvalid !== 1'b1);
+        if (vif.resetn === 1'b0) continue;
+
         current_bid   = vif.tb_slave_cb.awid;
         current_addr  = vif.tb_slave_cb.awaddr;
         current_len   = vif.tb_slave_cb.awlen;
@@ -108,16 +139,19 @@ package coralnpu_axi_slave_agent_pkg;
         vif.tb_slave_cb.awready <= 1'b1;
         @(vif.tb_slave_cb);
         vif.tb_slave_cb.awready <= 1'b0;
+        if (vif.resetn === 1'b0) continue;
 
         // Handle Write Data
-        vif.tb_slave_cb.wready  <= 1'b0;
+        vif.tb_slave_cb.wready <= 1'b0;
 
         // Loop through all beats in the burst
         for (int i = 0; i <= current_len; i++) begin
           vif.tb_slave_cb.wready <= 1'b1;
           do begin
             @(vif.tb_slave_cb);
+            if (vif.resetn === 1'b0) break;
           end while (vif.tb_slave_cb.wvalid !== 1'b1);
+          if (vif.resetn === 1'b0) break;
 
           // Process data if valid address
           if (resp == AXI_OKAY) begin
@@ -144,14 +178,21 @@ package coralnpu_axi_slave_agent_pkg;
           // FIXED (0) does not change address.
           // WRAP (2) not implemented fully here (treated as FIXED/Manual).
         end
+        if (vif.resetn === 1'b0) continue;
 
         // Send write response
         @(vif.tb_slave_cb);
+        if (vif.resetn === 1'b0) continue;
         vif.tb_slave_cb.bvalid <= 1'b1;
         vif.tb_slave_cb.bresp  <= resp;
         vif.tb_slave_cb.bid    <= current_bid;
 
-        do @(vif.tb_slave_cb); while (!vif.tb_slave_cb.bready);
+        do begin
+          @(vif.tb_slave_cb);
+          if (vif.resetn === 1'b0) break;
+        end while (!vif.tb_slave_cb.bready);
+        if (vif.resetn === 1'b0) continue;
+
         // Handshake happened at this cycle.
         vif.tb_slave_cb.bvalid <= 1'b0;
         `uvm_info(get_type_name(), $sformatf("Slave Sent BResp %s ID=%0d", resp.name(), current_bid
@@ -176,7 +217,10 @@ package coralnpu_axi_slave_agent_pkg;
         vif.tb_slave_cb.arready <= 1'b0;
         do begin
           @(vif.tb_slave_cb);
+          if (vif.resetn === 1'b0) break;
         end while (vif.tb_slave_cb.arvalid !== 1'b1);
+        if (vif.resetn === 1'b0) continue;
+
         current_rid   = vif.tb_slave_cb.arid;
         current_len   = vif.tb_slave_cb.arlen;
         current_addr  = vif.tb_slave_cb.araddr;
@@ -200,6 +244,7 @@ package coralnpu_axi_slave_agent_pkg;
         vif.tb_slave_cb.arready <= 1'b1;
         @(vif.tb_slave_cb);
         vif.tb_slave_cb.arready <= 1'b0;
+        if (vif.resetn === 1'b0) continue;
 
         // Send Read Response (Burst)
         for (int i = 0; i <= current_len; i++) begin
@@ -225,7 +270,7 @@ package coralnpu_axi_slave_agent_pkg;
                                                    aligned_addr, rdata_tmp), UVM_HIGH)
             end
           end else begin
-            vif.tb_slave_cb.rdata <= 'x;
+            vif.tb_slave_cb.rdata <= '0;
           end
 
           vif.tb_slave_cb.rid <= current_rid;
@@ -233,13 +278,18 @@ package coralnpu_axi_slave_agent_pkg;
           if (i == current_len) vif.tb_slave_cb.rlast <= 1'b1;
           else vif.tb_slave_cb.rlast <= 1'b0;
 
-          do @(vif.tb_slave_cb); while (!vif.tb_slave_cb.rready);
+          do begin
+            @(vif.tb_slave_cb);
+            if (vif.resetn === 1'b0) break;
+          end while (!vif.tb_slave_cb.rready);
+          if (vif.resetn === 1'b0) break;
 
           // Update address for next beat
           if (current_burst == 1) begin  // INCR
             current_addr += (1 << current_size);
           end
         end
+        if (vif.resetn === 1'b0) continue;
 
         // Handshake for last beat finished.
         vif.tb_slave_cb.rvalid <= 1'b0;

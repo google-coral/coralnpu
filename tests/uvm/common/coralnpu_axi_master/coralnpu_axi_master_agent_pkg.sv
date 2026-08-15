@@ -45,63 +45,83 @@ package coralnpu_axi_master_agent_pkg;
 
     virtual task run_phase(uvm_phase phase);
       `uvm_info(get_type_name(), "Run phase started", UVM_MEDIUM)
-      // Initialize outputs to idle state before starting
       drive_defaults();
 
-      // Fork off concurrent tasks to handle response channel readiness
       fork
-        handle_b_channel();
-        handle_r_channel();
-      join_none
+        // Response handlers with reset recovery
+        forever begin
+          drive_defaults();
+          if (vif.resetn !== 1'b1) begin
+            @(posedge vif.resetn);
+            @(vif.tb_master_cb);
+          end
 
-      // Main loop: get item, drive item, item done
-      forever begin
-        seq_item_port.get_next_item(req);
-        `uvm_info(get_type_name(), $sformatf("Got transaction: %s", req.sprint()), UVM_LOW)
-        if (req.txn_type == AXI_WRITE) begin
-          do_write(req);
-        end else if (req.txn_type == AXI_READ) begin
-          do_read(req);
-        end else begin
-          `uvm_warning(get_type_name(), $sformatf("Unsupported txn_type: %s", req.txn_type.name()))
+          fork
+            begin
+              handle_b_channel();
+            end
+            begin
+              handle_r_channel();
+            end
+            begin
+              @(negedge vif.resetn);
+            end
+          join_any
+          disable fork;
+          drive_defaults();
         end
-        seq_item_port.item_done();
-        `uvm_info(get_type_name(), "Transaction item_done() called", UVM_LOW)
-        // Note: drive_defaults() is called at the start of the loop now
-      end
+
+        // Main sequence item driver
+        forever begin
+          seq_item_port.get_next_item(req);
+          `uvm_info(get_type_name(), $sformatf("Got transaction: %s", req.sprint()), UVM_LOW)
+          if (vif.resetn === 1'b1) begin
+            if (req.txn_type == AXI_WRITE) begin
+              do_write(req);
+            end else if (req.txn_type == AXI_READ) begin
+              do_read(req);
+            end else begin
+              `uvm_warning(get_type_name(), $sformatf(
+                           "Unsupported txn_type: %s", req.txn_type.name()))
+            end
+          end
+          seq_item_port.item_done();
+          `uvm_info(get_type_name(), "Transaction item_done() called", UVM_LOW)
+        end
+      join
     endtask
 
     // Task to drive default/idle values on outputs
     protected virtual task drive_defaults();
       @(vif.tb_master_cb);
-      vif.tb_master_cb.awvalid <= 1'b0;
-      vif.tb_master_cb.awid    <= 'x;
-      vif.tb_master_cb.awaddr  <= 'x;
-      vif.tb_master_cb.awlen   <= 'x;
-      vif.tb_master_cb.awsize  <= 'x;
-      vif.tb_master_cb.awburst <= 'x;
-      vif.tb_master_cb.awlock  <= 'x;
-      vif.tb_master_cb.awcache <= 'x;
-      vif.tb_master_cb.awprot  <= 'x;
-      vif.tb_master_cb.awqos   <= 'x;
-      vif.tb_master_cb.awregion <= 'x;
-      vif.tb_master_cb.wvalid  <= 1'b0;
-      vif.tb_master_cb.wdata   <= 'x;
-      vif.tb_master_cb.wstrb   <= 'x;
-      vif.tb_master_cb.wlast   <= 1'b0;
-      vif.tb_master_cb.arvalid <= 1'b0;
-      vif.tb_master_cb.arid    <= 'x;
-      vif.tb_master_cb.araddr  <= 'x;
-      vif.tb_master_cb.arlen   <= 'x;
-      vif.tb_master_cb.arsize  <= 'x;
-      vif.tb_master_cb.arburst <= 'x;
-      vif.tb_master_cb.arlock  <= 'x;
-      vif.tb_master_cb.arcache <= 'x;
-      vif.tb_master_cb.arprot  <= 'x;
-      vif.tb_master_cb.arqos   <= 'x;
-      vif.tb_master_cb.arregion <= 'x;
-      vif.tb_master_cb.bready  <= 1'b0; // Initialize ready low
-      vif.tb_master_cb.rready  <= 1'b0; // Initialize ready low
+      vif.tb_master_cb.awvalid  <= 1'b0;
+      vif.tb_master_cb.awid     <= '0;
+      vif.tb_master_cb.awaddr   <= '0;
+      vif.tb_master_cb.awlen    <= '0;
+      vif.tb_master_cb.awsize   <= '0;
+      vif.tb_master_cb.awburst  <= '0;
+      vif.tb_master_cb.awlock   <= '0;
+      vif.tb_master_cb.awcache  <= '0;
+      vif.tb_master_cb.awprot   <= '0;
+      vif.tb_master_cb.awqos    <= '0;
+      vif.tb_master_cb.awregion <= '0;
+      vif.tb_master_cb.wvalid   <= 1'b0;
+      vif.tb_master_cb.wdata    <= '0;
+      vif.tb_master_cb.wstrb    <= '0;
+      vif.tb_master_cb.wlast    <= 1'b0;
+      vif.tb_master_cb.arvalid  <= 1'b0;
+      vif.tb_master_cb.arid     <= '0;
+      vif.tb_master_cb.araddr   <= '0;
+      vif.tb_master_cb.arlen    <= '0;
+      vif.tb_master_cb.arsize   <= '0;
+      vif.tb_master_cb.arburst  <= '0;
+      vif.tb_master_cb.arlock   <= '0;
+      vif.tb_master_cb.arcache  <= '0;
+      vif.tb_master_cb.arprot   <= '0;
+      vif.tb_master_cb.arqos    <= '0;
+      vif.tb_master_cb.arregion <= '0;
+      vif.tb_master_cb.bready   <= 1'b0;  // Initialize ready low
+      vif.tb_master_cb.rready   <= 1'b0;  // Initialize ready low
     endtask
 
     // Task to drive AXI write transaction
@@ -113,6 +133,7 @@ package coralnpu_axi_master_agent_pkg;
 
       // --- 1. Drive Write Address Channel ---
       @(vif.tb_master_cb);
+      if (vif.resetn === 1'b0) return;
       vif.tb_master_cb.awvalid <= 1'b1;
       vif.tb_master_cb.awid    <= req.id;
       vif.tb_master_cb.awaddr  <= req.addr;
@@ -124,13 +145,20 @@ package coralnpu_axi_master_agent_pkg;
       vif.tb_master_cb.awprot  <= req.prot;
       vif.tb_master_cb.awqos   <= req.qos;
       vif.tb_master_cb.awregion <= req.region;
-      do @(vif.tb_master_cb); while (!vif.tb_master_cb.awready);
+      do begin
+        @(vif.tb_master_cb);
+        if (vif.resetn === 1'b0) begin
+          vif.tb_master_cb.awvalid <= 1'b0;
+          return;
+        end
+      end while (!vif.tb_master_cb.awready);
       vif.tb_master_cb.awvalid <= 1'b0;
       `uvm_info(get_type_name(), "AW Handshake complete", UVM_HIGH)
 
       // --- 2. Drive Write Data Channel ---
       for (beat_count = 0; beat_count < num_beats; beat_count++) begin
         @(vif.tb_master_cb);
+        if (vif.resetn === 1'b0) return;
         vif.tb_master_cb.wvalid <= 1'b1;
         if (beat_count < req.data.size()) vif.tb_master_cb.wdata <= req.data[beat_count];
         else
@@ -139,7 +167,14 @@ package coralnpu_axi_master_agent_pkg;
         else
           `uvm_error(get_type_name(), $sformatf("Strobe queue underflow for beat %0d!", beat_count))
         vif.tb_master_cb.wlast <= (beat_count == req.len);
-        do @(vif.tb_master_cb); while (!vif.tb_master_cb.wready);
+        do begin
+          @(vif.tb_master_cb);
+          if (vif.resetn === 1'b0) begin
+            vif.tb_master_cb.wvalid <= 1'b0;
+            vif.tb_master_cb.wlast  <= 1'b0;
+            return;
+          end
+        end while (!vif.tb_master_cb.wready);
         `uvm_info(get_type_name(), $sformatf("W Handshake complete for beat %0d", beat_count),
                   UVM_HIGH)
       end
@@ -158,6 +193,7 @@ package coralnpu_axi_master_agent_pkg;
 
       // --- 1. Drive Read Address Channel ---
       @(vif.tb_master_cb);
+      if (vif.resetn === 1'b0) return;
       vif.tb_master_cb.arvalid <= 1'b1;
       vif.tb_master_cb.arid    <= req.id;
       vif.tb_master_cb.araddr  <= req.addr;
@@ -169,7 +205,13 @@ package coralnpu_axi_master_agent_pkg;
       vif.tb_master_cb.arprot  <= req.prot;
       vif.tb_master_cb.arqos   <= req.qos;
       vif.tb_master_cb.arregion <= req.region;
-      do @(vif.tb_master_cb); while (!vif.tb_master_cb.arready);
+      do begin
+        @(vif.tb_master_cb);
+        if (vif.resetn === 1'b0) begin
+          vif.tb_master_cb.arvalid <= 1'b0;
+          return;
+        end
+      end while (!vif.tb_master_cb.arready);
       vif.tb_master_cb.arvalid <= 1'b0;
       `uvm_info(get_type_name(), "AR Handshake complete", UVM_HIGH)
 
@@ -185,7 +227,10 @@ package coralnpu_axi_master_agent_pkg;
         vif.tb_master_cb.bready <= 1'b0;  // Default to not ready
         do begin
           @(vif.tb_master_cb);
+          if (vif.resetn === 1'b0) break;
         end while (vif.tb_master_cb.bvalid !== 1'b1);
+        if (vif.resetn === 1'b0) continue;
+
         received_bid   = vif.tb_master_cb.bid;
         received_bresp = vif.tb_master_cb.bresp;
         `uvm_info(get_type_name(), $sformatf(
@@ -209,7 +254,10 @@ package coralnpu_axi_master_agent_pkg;
         vif.tb_master_cb.rready <= 1'b0;  // Default to not ready
         do begin
           @(vif.tb_master_cb);
+          if (vif.resetn === 1'b0) break;
         end while (vif.tb_master_cb.rvalid !== 1'b1);
+        if (vif.resetn === 1'b0) continue;
+
         received_rid   = vif.tb_master_cb.rid;
         received_rresp = vif.tb_master_cb.rresp;
         received_rdata = vif.tb_master_cb.rdata;

@@ -241,16 +241,16 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
     dtcmArbiter.io.source(2) <> dm.io.dtcm
 
     // Create AXI Slave interface and connect internal fabric to AXI
-    val axiSlave       = Module(new AxiSlave(p))
-    val axiSlaveEnable = RegInit(false.B)
-    axiSlaveEnable := true.B
+    val axiSlave  = Module(new AxiSlave(p))
+    val axiEnable = RegInit(false.B)
+    axiEnable := true.B
     axiSlave.io.fabric <> fabricMux.io.source
     axiSlave.io.periBusy := fabricMux.io.fabricBusy
-    axiSlave.io.axi.write.addr <> GateDecoupled(io.axi_slave.write.addr, axiSlaveEnable)
-    axiSlave.io.axi.write.data <> GateDecoupled(io.axi_slave.write.data, axiSlaveEnable)
-    io.axi_slave.write.resp <> GateDecoupled(axiSlave.io.axi.write.resp, axiSlaveEnable)
-    axiSlave.io.axi.read.addr <> GateDecoupled(io.axi_slave.read.addr, axiSlaveEnable)
-    io.axi_slave.read.data <> GateDecoupled(axiSlave.io.axi.read.data, axiSlaveEnable)
+    axiSlave.io.axi.write.addr <> GateDecoupled(io.axi_slave.write.addr, axiEnable)
+    axiSlave.io.axi.write.data <> GateDecoupled(io.axi_slave.write.data, axiEnable)
+    io.axi_slave.write.resp <> GateDecoupled(axiSlave.io.axi.write.resp, axiEnable)
+    axiSlave.io.axi.read.addr <> GateDecoupled(io.axi_slave.read.addr, axiEnable)
+    io.axi_slave.read.data <> GateDecoupled(axiSlave.io.axi.read.data, axiEnable)
 
     // Connect ebus to AXI Master
     val ebus2axi = DBus2Axi(p, id = 0)
@@ -259,17 +259,19 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
 
     // AXI Arbitration
     // Write channel: only ebus uses it.
-    io.axi_master.write <> ebus2axi.io.axi.write
+    io.axi_master.write.addr <> GateDecoupled(Queue(ebus2axi.io.axi.write.addr, 2), axiEnable)
+    io.axi_master.write.data <> GateDecoupled(Queue(ebus2axi.io.axi.write.data, 2), axiEnable)
+    ebus2axi.io.axi.write.resp <> Queue(GateDecoupled(io.axi_master.write.resp, axiEnable), 2)
 
     // Read channel: arbitrate between ibus and ebus.
     val readAddrArb =
       Module(new CoralNPURRArbiter(new AxiAddress(p.axi2AddrBits, p.axi2DataBits, p.axi2IdBits), 2))
     readAddrArb.io.in(0) <> ebus2axi.io.axi.read.addr
     readAddrArb.io.in(1) <> ibus2axi.io.axi.addr
-    io.axi_master.read.addr <> readAddrArb.io.out
+    io.axi_master.read.addr <> GateDecoupled(Queue(readAddrArb.io.out, 2), axiEnable)
 
     // Route read data back based on ID.
-    val readDataSkid = Queue(io.axi_master.read.data, 2)
+    val readDataSkid = Queue(GateDecoupled(io.axi_master.read.data, axiEnable), 2)
     readDataSkid.ready := Mux(
       readDataSkid.bits.id === 1.U,
       ibus2axi.io.axi.data.ready,
