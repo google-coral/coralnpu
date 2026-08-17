@@ -3404,7 +3404,7 @@ async def lsu_fault_unit_stride_rs_flush(dut):
         test_fn_symbol='run_unit_stride_fault_rs_flush',
         faulting_insn_symbol='faulting_insn_unit',
         expected_mcause=7,
-        expected_mtval=fixture.symbols['__data_start__'] - 4,
+        expected_mtval=(fixture.symbols['__data_start__'] - 4) & ~0xF,
         expected_vstart=0,
     )
 

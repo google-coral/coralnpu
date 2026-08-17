@@ -1621,6 +1621,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
   // Simplified bus request interface before bookkeeping.
   class BusReq extends Bundle {
     val rowAddr   = UInt(p.dbusRowAddrBits.W)
+    val offset    = UInt(p.dbusOffsetBits.W)
+    val size      = UInt(p.dbusSize.W)
     val write     = Bool()
     val wdata     = UInt(p.lsuDataBits.W)
     val wmask     = UInt(p.lsuDataBytes.W)
@@ -1645,6 +1647,18 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
     val skipWriteback       = Bool()
     val scalarWritebackMode = LsuScalarWritebackMode()
+
+    // Bus transaction sizes precomputed at instruction initialization:
+    // - For scalar ops: a cross-row access requires up to two bus transactions.
+    //   `tx1Size` is the naturally-aligned power-of-2 size for the first transaction
+    //   in row 1 (or the whole access if within a single row).
+    //   `tx2Size` is the size for the second transaction in row 2 (starting at offset 0).
+    // - For vector ops: all bus transactions are full row transfers of size `p.lsuDataBytes`.
+    //   Both `tx1Size` and `tx2Size` are set to `p.lsuDataBytes.U`.
+    // In `maybeStart()`, `cells(0).state === W_START` selects `tx1Size` for the first tx,
+    // and `tx2Size` for any subsequent tx (scalar tx2 or vector rows).
+    val tx1Size = UInt(p.dbusSize.W)
+    val tx2Size = UInt(p.dbusSize.W)
 
     val float = Option.when(p.enableFloat)(new Bundle {
       val writeback = Bool()
@@ -1819,10 +1833,18 @@ class LsuSuperSlot(p: Parameters) extends Module {
       val (reqValidStrict, wDataStrict, wMaskStrict, startedStrict, moveLeadStrict) =
         maybeStartStrict(windowStrict)
 
+      val isFirstTx = cells(0).state === LsuCellState.W_START
+
+      val txSize   = Mux(isFirstTx, tx1Size, tx2Size)
+      val txOffset =
+        Mux(isFirstTx, OHToUInt(cells(0).mask) & ~(tx1Size - 1.U), 0.U(p.dbusOffsetBits.W))
+
       val tx = MakeWireBundle[ValidIO[BusReq]](
         Valid(new BusReq),
         _.valid        -> Mux(strictMode, reqValidStrict, reqValidNormal),
         _.bits.rowAddr -> rowAddr,
+        _.bits.offset  -> txOffset,
+        _.bits.size    -> txSize,
         _.bits.write   -> write,
         // Write signals are junk when we're reading
         _.bits.wdata -> Mux(strictMode, wDataStrict, wDataNormal),
@@ -2272,6 +2294,35 @@ class LsuSuperSlot(p: Parameters) extends Module {
       ret
     }
 
+    def computeScalarTxPlan(offset: UInt, bytes: Int): (UInt, UInt) = {
+      if (bytes == 1) {
+        (1.U, 1.U)
+      } else {
+        val isCrossRow  = offset > (p.lsuDataBytes - bytes).U
+        val bytesInRow1 = p.lsuDataBytes.U - offset
+        val bytesInRow2 = bytes.U - bytesInRow1
+
+        // Cross-row accesses boundary-align: Tx1 ends at row-end, Tx2 starts at row-start.
+        val tx1SizeCross = Mux(bytesInRow1 === 3.U, 4.U, bytesInRow1)
+        val tx2SizeCross = Mux(bytesInRow2 === 3.U, 4.U, bytesInRow2)
+
+        val tx1SizeSameRow = if (bytes == 2) {
+          2.U << PriorityEncoder(~offset)
+        } else { // bytes == 4
+          Mux(
+            offset(1, 0) === 0.U,
+            4.U,
+            8.U << PriorityEncoder(~offset(p.dbusOffsetBits - 1, 2))
+          )
+        }
+
+        val tx1Size = Mux(isCrossRow, tx1SizeCross, tx1SizeSameRow)
+        val tx2Size = tx2SizeCross
+
+        (tx1Size, tx2Size)
+      }
+    }
+
     def fromUop(uop: LsuUOp): State = {
       val isTile    = if (p.enableVme) LsuOp.isTile(uop.op) else false.B
       val isVector  = if (p.enableRvv) LsuOp.isVector(uop.op) || isTile else false.B
@@ -2407,6 +2458,29 @@ class LsuSuperSlot(p: Parameters) extends Module {
         )
       )
 
+      // 6. Bus Transaction Plan (tx1Size, tx2Size)
+      val (tx1_2, tx2_2) = computeScalarTxPlan(baseOffset, 2)
+      val (tx1_4, tx2_4) = computeScalarTxPlan(baseOffset, 4)
+      val is1Byte        = uop.op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.SB)
+      val is2Byte        = uop.op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH, LsuOp.FLOAT_H)
+      val is4Byte        = uop.op.isOneOf(LsuOp.LW, LsuOp.SW, LsuOp.FLOAT)
+      val tx1Size        = MuxUpTo1H(
+        p.lsuDataBytes.U,
+        Seq(
+          is1Byte -> 1.U,
+          is2Byte -> tx1_2,
+          is4Byte -> tx1_4
+        )
+      )
+      val tx2Size = MuxUpTo1H(
+        p.lsuDataBytes.U,
+        Seq(
+          is1Byte -> 1.U,
+          is2Byte -> tx2_2,
+          is4Byte -> tx2_4
+        )
+      )
+
       val ret = MakeWireBundle[State](
         new State(),
         _               -> this,
@@ -2418,6 +2492,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.skipWriteback -> (uop.store && (isScalar || isFloat || (if (p.enableVme) isTile
                                                                   else false.B))),
         _.scalarWritebackMode -> scalarWbMode,
+        _.tx1Size             -> tx1Size,
+        _.tx2Size             -> tx2Size,
         _.cells               -> cellsFromUop,
         _.leadIndex           -> 0.U,
         _.rowAddr             -> baseRowAddr,
@@ -2596,6 +2672,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.rd                  -> 0.U,
         _.skipWriteback       -> false.B,
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
+        _.tx1Size             -> 0.U,
+        _.tx2Size             -> 0.U,
         _.cells               -> VecInit.fill(nCells)(LsuCell(p)),
         _.leadIndex           -> 0.U,
         _.rowAddr             -> 0.U,
@@ -2903,45 +2981,12 @@ class LsuV3(p: Parameters) extends Lsu(p) {
 
   val use_ebus = !(itcm || dtcm)
 
-  // Calculate transaction address offset and size from the byte mask.
-  val ebus_wmask  = slot.io.busReq.bits.wmask
-  val ebus_offset = PriorityEncoder(ebus_wmask)
-  val ebus_last   = PriorityEncoder(Reverse(ebus_wmask))
-  val ebus_span   = p.lsuDataBytes.U(p.dbusSize.W) - ebus_last - ebus_offset
-
-  // Constrain transaction size to 1, 2, 4, or full (p.lsuDataBytes).
-  val ebus_size = MuxUpTo1H(
-    ebus_span,
-    Seq(
-      // vector access, empty or wider than 4 bytes.
-      (ebus_wmask === 0.U || ebus_span > 4.U) -> p.lsuDataBytes.U,
-      // 4 bytes in this row but misaligned.
-      (ebus_span === 4.U && (ebus_offset(1, 0) =/= 0.U)) -> p.lsuDataBytes.U,
-      // 3 bytes in this row, crossing word boundary.
-      (ebus_span === 3.U && (ebus_offset(1))) -> p.lsuDataBytes.U,
-      // 3 bytes in this row, not crossing word boundary.
-      (ebus_span === 3.U && (!ebus_offset(1))) -> 4.U,
-      // 2 bytes in this row but misaligned.
-      (ebus_span === 2.U && ebus_offset(0)) -> 4.U
-      // default: ebus_span (1, 2aligned, 4aligned)
-    )
-  )
-
-  // Align the offset down to the chosen size boundary using MuxLookup.
-  val ebus_offset_aligned = MuxLookup(ebus_size, 0.U)(
-    Seq(
-      1.U -> ebus_offset,
-      2.U -> (ebus_offset & ~1.U(ebus_offset.getWidth.W)),
-      4.U -> (ebus_offset & ~3.U(ebus_offset.getWidth.W))
-    )
-  )
-
   io.ebus.dbus.valid := use_ebus && slot.io.busReq.valid
   io.ebus.dbus.write := slot.io.busReq.bits.write
   io.ebus.dbus.pc    := slot.io.pc
-  io.ebus.dbus.addr  := addr + ebus_offset_aligned
+  io.ebus.dbus.addr  := Cat(slot.io.busReq.bits.rowAddr, slot.io.busReq.bits.offset)
   io.ebus.dbus.adrx  := addr
-  io.ebus.dbus.size  := ebus_size
+  io.ebus.dbus.size  := slot.io.busReq.bits.size
   io.ebus.dbus.wdata := slot.io.busReq.bits.wdata
   io.ebus.dbus.wmask := slot.io.busReq.bits.wmask
   io.ebus.internal   := peri
