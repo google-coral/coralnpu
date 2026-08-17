@@ -1418,9 +1418,11 @@ class LsuCell(p: Parameters) extends Bundle {
     val precondition = noConflict && noBadTransitions && noUnusedInput && noMissingData
     assert(precondition)
 
-    val retBase = MakeWireBundle[LsuCell](
+    val withAddr = applyVectorIndex(vectorIndex)
+
+    val ret = MakeWireBundle[LsuCell](
       new LsuCell(p),
-      _       -> this,
+      _       -> withAddr,
       _.state -> MuxUpTo1H(
         state,
         Seq(
@@ -1443,11 +1445,6 @@ class LsuCell(p: Parameters) extends Bundle {
         )
       )
     )
-    val ret = vectorIndex
-      .map { x =>
-        Mux(x.valid, retBase.setAddr(addr + vectorIndex.get.bits), retBase)
-      }
-      .getOrElse(retBase)
 
     Mux(precondition, ret, LsuCell.unreachable(p))
   }
@@ -1459,6 +1456,14 @@ class LsuCell(p: Parameters) extends Bundle {
       _.rowAddr -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
       _.mask    -> UIntToOH(addr(p.dbusOffsetBits - 1, 0), p.lsuDataBytes)
     )
+  }
+
+  def applyVectorIndex(vectorIndex: Option[ValidIO[UInt]]): LsuCell = {
+    vectorIndex
+      .map { x =>
+        Mux(x.valid, setAddr(addr + x.bits), this)
+      }
+      .getOrElse(this)
   }
 
   def initDone(): LsuCell = {
@@ -1597,15 +1602,13 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val rowAddr   = UInt(p.dbusRowAddrBits.W)
     val isDone    = Bool()
 
+    def leadWindow: Vec[LsuCell] = VecInit.tabulate(windowSizeNormal + 1) { i =>
+      val index = leadIndex + i.U
+      Mux(index < nCells.U(ctrWidth.W), cells(index), LsuCell(p))
+    }
+
     // The second ret val indicates which cells are affected by the new tx
     def maybeStart(): (ValidIO[BusReq], UInt, UInt) = {
-      def windowFn(size: Int): Vec[LsuCell] = {
-        VecInit.tabulate(size) { i =>
-          val index = leadIndex + i.U
-          Mux(index < nCells.U(ctrWidth.W), cells(index), LsuCell(p))
-        }
-      }
-
       def canBundleFn(w: Vec[LsuCell]): UInt = {
         VecInit(w.map { x =>
           x.state === LsuCellState.W_START &&
@@ -1733,10 +1736,13 @@ class LsuSuperSlot(p: Parameters) extends Module {
         (reqValid, wData, wMask, started, moveLead)
       }
 
+      val windowNormal = VecInit(leadWindow.take(windowSizeNormal))
+      val windowStrict = VecInit(leadWindow.take(windowSizeStrict))
+
       val (reqValidNormal, wDataNormal, wMaskNormal, startedNormal, moveLeadNormal) =
-        maybeStartNormal(windowFn(windowSizeNormal))
+        maybeStartNormal(windowNormal)
       val (reqValidStrict, wDataStrict, wMaskStrict, startedStrict, moveLeadStrict) =
-        maybeStartStrict(windowFn(windowSizeStrict))
+        maybeStartStrict(windowStrict)
 
       val tx = MakeWireBundle[ValidIO[BusReq]](
         Valid(new BusReq),
@@ -1990,21 +1996,9 @@ class LsuSuperSlot(p: Parameters) extends Module {
           )
         }
         .asUInt
-      val cellWriteback = Mux(skipWriteback, cellAcceptResp, writebacks)
-      val cellsNext     = VecInit.tabulate(nCells) { i =>
-        val cellRespData = MuxUpTo1H(
-          WireInit(UInt(8.W), DontCare),
-          (0 until p.lsuDataBytes).map { j =>
-            cells(i).mask(j) -> respData(j)
-          }
-        )
-        val acceptVectorData = Option.when(p.enableRvv) {
-          vectorDataValid.get &&
-          vectorDataActive.get.map(_(i)).reduce(_ || _) &&
-          cells(i).state === LsuCellState.W_DATA
-        }
-
-        val cellVectorIndex = Option.when(p.enableRvv) {
+      val cellWriteback     = Mux(skipWriteback, cellAcceptResp, writebacks)
+      val cellVectorIndices = Option.when(p.enableRvv) {
+        VecInit.tabulate(nCells) { i =>
           MuxUpTo1H(
             MakeInvalid(UInt(32.W)),
             (0 until p.rvvVlenb).map { j =>
@@ -2017,6 +2011,22 @@ class LsuSuperSlot(p: Parameters) extends Module {
             }
           )
         }
+      }
+
+      val cellsNext = VecInit.tabulate(nCells) { i =>
+        val cellRespData = MuxUpTo1H(
+          WireInit(UInt(8.W), DontCare),
+          (0 until p.lsuDataBytes).map { j =>
+            cells(i).mask(j) -> respData(j)
+          }
+        )
+        val acceptVectorData = Option.when(p.enableRvv) {
+          vectorDataValid.get &&
+          vectorDataActive.get.map(_(i)).reduce(_ || _) &&
+          cells(i).state === LsuCellState.W_DATA
+        }
+
+        val cellVectorIndex = cellVectorIndices.map(_(i))
         if (p.enableRvv) {
           assert(
             !acceptVectorData.get ||
@@ -2079,13 +2089,26 @@ class LsuSuperSlot(p: Parameters) extends Module {
           // We don't need to worry about invalidate because it doesn't skip WB.
         }
         .reduce(_ && _)
+
+      val nextRowAddrCandidates = VecInit.tabulate(windowSizeNormal + 1) { i =>
+        val idx         = leadIndex +& i.U
+        val vectorIndex = cellVectorIndices.map(v =>
+          Mux(idx < nCells.U(ctrWidth.W), v(idx), MakeInvalid(UInt(32.W)))
+        )
+        val candidate = leadWindow(i).applyVectorIndex(vectorIndex).rowAddr
+        when(idx < nCells.U(ctrWidth.W)) {
+          assert(candidate === cellsNext(idx).rowAddr)
+        }
+        candidate
+      }
+
       val ret = MakeWireBundle[State](
         new State(),
         _           -> this,
         _.faulted   -> (faulted || fault),
         _.cells     -> cellsNext,
         _.leadIndex -> (leadIndex + moveLead),
-        _.rowAddr   -> cellsNext((leadIndex + moveLead)(indexWidth - 1, 0)).rowAddr,
+        _.rowAddr   -> nextRowAddrCandidates(moveLead),
         _.isDone    -> allCellsDone
       )
       ret.vector.foreach { x =>
