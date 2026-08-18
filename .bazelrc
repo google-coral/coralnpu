@@ -41,11 +41,13 @@ run --repo_env BAZEL_JVM_FETCH_SOURCES=false
 test --repo_env BAZEL_JVM_FETCH_SOURCES=false
 
 # Skip VCS by default as most workstations will not have licenses.
-build --build_tag_filters="-vcs,-synthesis,-power"
+build --build_tag_filters="-vcs,-synthesis,-power,-spyglass"
 build --action_env=VCS_HOME
 build --host_action_env=VCS_HOME
 build --action_env=VC_STATIC_HOME
 build --host_action_env=VC_STATIC_HOME
+build --action_env=SPYGLASS_HOME
+build --host_action_env=SPYGLASS_HOME
 build --action_env=VERDI_HOME
 build --host_action_env=VERDI_HOME
 build --action_env=LM_LICENSE_FILE
@@ -54,12 +56,14 @@ build --action_env=LICENSE_SERVER_VCSSIM
 build --host_action_env=LICENSE_SERVER_VCSSIM
 build --action_env=XILINXD_LICENSE_FILE
 build --host_action_env=XILINXD_LICENSE_FILE
-test --build_tag_filters="-vcs,-synthesis,-power"
-test --test_tag_filters="-vcs,-synthesis,-power"
+test --build_tag_filters="-vcs,-synthesis,-power,-spyglass"
+test --test_tag_filters="-vcs,-synthesis,-power,-spyglass"
 test --action_env=VCS_HOME
 test --host_action_env=VCS_HOME
 test --action_env=VC_STATIC_HOME
 test --host_action_env=VC_STATIC_HOME
+test --action_env=SPYGLASS_HOME
+test --host_action_env=SPYGLASS_HOME
 test --action_env=VERDI_HOME
 test --host_action_env=VERDI_HOME
 test --action_env=LM_LICENSE_FILE
@@ -72,6 +76,8 @@ run --action_env=VCS_HOME
 run --host_action_env=VCS_HOME
 run --action_env=VC_STATIC_HOME
 run --host_action_env=VC_STATIC_HOME
+run --action_env=SPYGLASS_HOME
+run --host_action_env=SPYGLASS_HOME
 run --action_env=VERDI_HOME
 run --host_action_env=VERDI_HOME
 run --action_env=LM_LICENSE_FILE
@@ -101,6 +107,13 @@ test:power --build_tag_filters="power"
 test:power --test_tag_filters="power"
 run:power --build_tag_filters="power"
 run:power --test_tag_filters="power"
+
+# Add config to enable spyglass targets.
+build:spyglass --build_tag_filters="spyglass"
+test:spyglass --build_tag_filters="spyglass"
+test:spyglass --test_tag_filters="spyglass"
+run:spyglass --build_tag_filters="spyglass"
+run:spyglass --test_tag_filters="spyglass"
 
 # Set preprocessor defines for tflite-micro.
 build --copt=-DTF_LITE_USE_GLOBAL_CMATH_FUNCTIONS
@@ -135,6 +148,7 @@ build --output_filter="^//(?!(third_party)(/|:|$))"
 build --strategy=DesignCompilerSynthesis=local
 build --strategy=DesignCompilerCheckLink=local
 build --strategy=PrimeTimePower=local
+build --strategy=SpyGlassLint=local
 
 
 
