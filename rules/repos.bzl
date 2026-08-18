@@ -45,9 +45,9 @@ filegroup(
 
     http_archive(
         name = "com_google_absl",
-        urls = ["https://github.com/abseil/abseil-cpp/releases/download/20250127.1/abseil-cpp-20250127.1.tar.gz"],
-        sha256 = "b396401fd29e2e679cace77867481d388c807671dc2acc602a0259eeb79b7811",
-        strip_prefix = "abseil-cpp-20250127.1",
+        urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20260526.0.tar.gz"],
+        sha256 = "6e1aee535473414164bf83e4ebc40240dec71a4701f8a642d906e95bea1aea0c",
+        strip_prefix = "abseil-cpp-20260526.0",
     )
 
     http_archive(
@@ -69,9 +69,22 @@ filegroup(
 
     http_archive(
         name = "com_google_protobuf",
-        strip_prefix = "protobuf-29.6",
-        sha256 = "877bf9f880631aa31daf2c09896276985696728137fcd43cc534a28c5566d9ba",
-        url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protobuf-29.6.tar.gz",
+        strip_prefix = "protobuf-35.1",
+        sha256 = "f0b6838e7522a8da96126d487068c959bc624926368f3024ac8fd03abd0a1ac4",
+        url = "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protobuf-35.1.tar.gz",
+        repo_mapping = {
+            "@abseil-cpp": "@com_google_absl",
+        },
+    )
+
+    http_archive(
+        name = "com_googlesource_code_re2",
+        sha256 = "87f6029d2f6de8aa023654240a03ada90e876ce9a4676e258dd01ea4c26ffd67",
+        strip_prefix = "re2-2025-11-05",
+        url = "https://github.com/google/re2/releases/download/2025-11-05/re2-2025-11-05.tar.gz",
+        repo_mapping = {
+            "@abseil-cpp": "@com_google_absl",
+        },
     )
 
     http_archive(

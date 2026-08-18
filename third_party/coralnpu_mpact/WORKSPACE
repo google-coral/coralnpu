@@ -74,10 +74,30 @@ http_archive(
 )
 
 http_archive(
+    name = "com_google_absl",
+    sha256 = "6e1aee535473414164bf83e4ebc40240dec71a4701f8a642d906e95bea1aea0c",
+    strip_prefix = "abseil-cpp-20260526.0",
+    urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20260526.0.tar.gz"],
+)
+
+http_archive(
     name = "com_google_protobuf",
-    integrity = "sha256-EKDVjzmhqQnpXgDougtbHcZNApl/dBFRlTorNln254w=",
-    strip_prefix = "protobuf-29.0",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v29.0/protobuf-29.0.tar.gz"],
+    repo_mapping = {
+        "@abseil-cpp": "@com_google_absl",
+    },
+    sha256 = "f0b6838e7522a8da96126d487068c959bc624926368f3024ac8fd03abd0a1ac4",
+    strip_prefix = "protobuf-35.1",
+    url = "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protobuf-35.1.tar.gz",
+)
+
+http_archive(
+    name = "com_googlesource_code_re2",
+    repo_mapping = {
+        "@abseil-cpp": "@com_google_absl",
+    },
+    sha256 = "87f6029d2f6de8aa023654240a03ada90e876ce9a4676e258dd01ea4c26ffd67",
+    strip_prefix = "re2-2025-11-05",
+    url = "https://github.com/google/re2/releases/download/2025-11-05/re2-2025-11-05.tar.gz",
 )
 
 http_archive(
@@ -93,6 +113,9 @@ http_archive(
     name = "com_google_mpact-riscv",
     patch_args = ["-p1"],
     patches = ["@coralnpu_hw//third_party/patches:mpact_riscv_vstart_trap.patch"],
+    repo_mapping = {
+        "@abseil-cpp": "@com_google_absl",
+    },
     sha256 = "38faef26745f34a82de0daf3b65a207c8d2ecf825f37484a4a27132512583574",
     strip_prefix = "mpact-riscv-cb68bd4a2cb80dea24d9760dc6397b5854ea41bd",
     url = "https://github.com/google/mpact-riscv/archive/cb68bd4a2cb80dea24d9760dc6397b5854ea41bd.tar.gz",
