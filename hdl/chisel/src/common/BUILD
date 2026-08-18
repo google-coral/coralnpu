@@ -166,6 +166,7 @@ chisel_test(
 
 chisel_test(
     name = "instruction_buffer_test",
+    size = "large",
     srcs = [
         "InstructionBufferTest.scala",
     ],
@@ -272,6 +273,7 @@ chisel_test(
 
 chisel_test(
     name = "index_allocator_test",
+    size = "large",
     srcs = [
         "IndexAllocatorTest.scala",
     ],

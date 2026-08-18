@@ -45,7 +45,7 @@ cocotb_test_suite(
         "data": [
             ":csr_test_program",
         ],
-        "size": "small",
+        "size": "medium",
     },
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [

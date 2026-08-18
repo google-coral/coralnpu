@@ -92,8 +92,12 @@ def chisel_test(
         args = [],
         tags = [],
         size = "medium",
+        timeout = None,
         visibility = None):
     scalatest_name = name + "_scalatest"
+    kwargs = {}
+    if timeout:
+        kwargs["timeout"] = timeout
     scala_test(
         name = scalatest_name,
         srcs = srcs,
@@ -121,6 +125,7 @@ def chisel_test(
         size = size,
         scalacopts = SCALA_COPTS,
         visibility = visibility,
+        **kwargs
     )
 
     native.sh_test(
@@ -138,6 +143,7 @@ def chisel_test(
             "CHISEL_FIRTOOL_PATH": "third_party/llvm-firtool",
         },
         size = size,
+        **kwargs
     )
 
 def chisel_cc_library(

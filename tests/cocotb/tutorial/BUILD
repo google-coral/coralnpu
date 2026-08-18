@@ -52,7 +52,7 @@ cocotb_test_suite(
             "@rules_python//python/runfiles",
         ],
         "data": [":coralnpu_v2_program"],
-        "size": "small",
+        "size": "medium",
     },
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [
@@ -83,7 +83,7 @@ cocotb_test_suite(
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": ["//examples:coralnpu_v2_hello_world_add_floats.elf"],
-        "size": "small",
+        "size": "medium",
     },
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [

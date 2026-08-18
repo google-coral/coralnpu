@@ -220,6 +220,7 @@ chisel_library(
 
 chisel_test(
     name = "coralnpu_rvv_tests",
+    size = "large",
     srcs = [
         "rvv/RvvDecodeTest.scala",
     ],
@@ -289,6 +290,7 @@ chisel_test(
 
 chisel_test(
     name = "coralnpu_fetcher_tests",
+    size = "large",
     srcs = [
         "scalar/FetcherSpec.scala",
     ],
@@ -302,6 +304,7 @@ chisel_test(
 
 chisel_test(
     name = "coralnpu_core_axi_csr_tests",
+    size = "large",
     srcs = [
         "CoreAxiCSRTest.scala",
     ],
@@ -314,6 +317,7 @@ chisel_test(
 
 chisel_test(
     name = "coralnpu_dbus2axi_tests",
+    size = "large",
     srcs = [
         "DBus2AxiTest.scala",
     ],
