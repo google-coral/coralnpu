@@ -16,14 +16,12 @@ package coralnpu
 
 import chisel3._
 
-import java.io.{File, FileOutputStream, PrintWriter}
-import scala.io.Source
+import java.io.{File, FileOutputStream}
 import java.util.zip._
 import java.nio.file.{Files, Paths, StandardOpenOption}
 import java.nio.charset.StandardCharsets
 import coralnpu.rvv.RvvCore
 import _root_.circt.stage.ChiselStage
-import scala.collection.mutable.Stack
 
 object Core {
   def apply(p: Parameters): Core = {
@@ -197,63 +195,105 @@ object EmitCore extends App {
 
   targetDir match {
     case Some(targetDir) => {
-      {
-        lazy val core2 = if (useAxi) {
-          new CoreAxi(p, moduleName)
-        } else {
-          new Core(p, moduleName)
+      // 1. Identify boundary between Chisel-generated modules and embedded FILE sections.
+      val fileSepRegex   = """(?m)^//.*FILE\s*"([^"]+)".*$""".r
+      val fileSepMatches = fileSepRegex.findAllMatchIn(strippedVerilogSource).toList
+
+      val chiselPart = if (fileSepMatches.nonEmpty) {
+        strippedVerilogSource.substring(0, fileSepMatches.head.start)
+      } else {
+        strippedVerilogSource
+      }
+
+      // 2. Extract common header (macros/preamble before the first module).
+      val modDeclRegex = """(?m)^(module|interface|package|primitive|config)\s+(\w+)""".r
+      val modMatches   = modDeclRegex.findAllMatchIn(chiselPart).toList
+      val commonHeader = if (modMatches.nonEmpty) {
+        chiselPart.substring(0, modMatches.head.start)
+      } else {
+        ""
+      }
+
+      // 3. Build multi-file ZIP and filelist.f in topological order.
+      val headers       = collection.mutable.ArrayBuffer[String]()
+      val packages      = collection.mutable.ArrayBuffer[String]()
+      val chiselModules = collection.mutable.ArrayBuffer[String]()
+      val otherModules  = collection.mutable.ArrayBuffer[String]()
+
+      val zipFile = new File(targetDir, s"${coreName}.zip")
+      val zip     = new ZipOutputStream(new FileOutputStream(zipFile))
+
+      try {
+        // A. Chisel-generated modules
+        for (i <- modMatches.indices) {
+          val m       = modMatches(i)
+          val modName = m.group(2)
+          val start   = m.start
+          val end = if (i + 1 < modMatches.length) modMatches(i + 1).start else chiselPart.length
+          val modBody     = chiselPart.substring(start, end)
+          val fileName    = s"${modName}.sv"
+          val fileContent = commonHeader + modBody
+
+          zip.putNextEntry(new ZipEntry(fileName))
+          zip.write(fileContent.getBytes(StandardCharsets.UTF_8))
+          zip.closeEntry()
+
+          chiselModules += fileName
         }
 
-        ChiselStage.emitSystemVerilogFile(
-          core2,
-          chiselArgs.toArray ++ Array("--split-verilog", "--target-dir", targetDir),
-          firtoolOpts
-        )
+        // B. Embedded file sections (verification layers, blackbox resources, headers)
+        for (i <- fileSepMatches.indices) {
+          val m              = fileSepMatches(i)
+          val rawPath        = m.group(1)
+          val normalizedPath = if (rawPath.startsWith("./")) rawPath.substring(2) else rawPath
+          val lineEnd        = strippedVerilogSource.indexOf('\n', m.start)
+          val start          = if (lineEnd != -1) lineEnd + 1 else m.end
+          val end            =
+            if (i + 1 < fileSepMatches.length) fileSepMatches(i + 1).start
+            else strippedVerilogSource.length
+          val rawBody = if (start <= end) strippedVerilogSource.substring(start, end) else ""
 
-        // Post-process split files to wrap verification code in ifndef SYNTHESIS
-        def wrapFileInIfndef(file: File): Unit = {
-          if (file.isFile && file.getName.endsWith(".sv")) {
-            val source  = Source.fromFile(file)
-            val content = try {
-              source.getLines().mkString("\n")
-            } finally {
-              source.close()
-            }
-            val wrappedContent =
-              s"`ifndef SYNTHESIS // Added by Core.scala Verification Wrapper\n\n${content}\n\n`endif // Added by Core.scala Verification Wrapper\n"
-            val writer = new PrintWriter(file)
-            writer.write(wrappedContent)
-            writer.close()
-          } else if (file.isDirectory) {
-            Option(file.listFiles()).foreach(_.foreach(wrapFileInIfndef))
+          val body = if (normalizedPath.startsWith("verification/")) {
+            s"`ifndef SYNTHESIS // Added by Core.scala Verification Wrapper\n\n${rawBody.trim}\n\n`endif // Added by Core.scala Verification Wrapper\n"
+          } else {
+            rawBody
+          }
+
+          zip.putNextEntry(new ZipEntry(normalizedPath))
+          zip.write(body.getBytes(StandardCharsets.UTF_8))
+          zip.closeEntry()
+
+          if (normalizedPath.endsWith(".svh") || normalizedPath.endsWith(".h")) {
+            headers += normalizedPath
+          } else if (
+            normalizedPath
+              .endsWith("_pkg.sv") || normalizedPath.startsWith("defs_") || normalizedPath.contains(
+              "defs"
+            )
+          ) {
+            packages += normalizedPath
+          } else if (!normalizedPath.endsWith(".f")) {
+            otherModules += normalizedPath
           }
         }
-        val verificationDir = new File(targetDir + "/verification")
-        if (verificationDir.exists()) {
-          wrapFileInIfndef(verificationDir)
-        }
 
-        val zip = new ZipOutputStream(new FileOutputStream(targetDir + "/" + coreName + ".zip"))
-        val dirStack = new Stack[File](1)
-        dirStack.push(new File(targetDir))
-        println(s"target: ${targetDir}")
-        while (!dirStack.isEmpty) {
-          val dir   = dirStack.pop()
-          val files = dir.listFiles
-          files.foreach { name =>
-            if (name.isDirectory()) {
-              dirStack.push(name)
-            } else {
-              val zipName = name.getPath().replace(targetDir + "/", "")
-              zip.putNextEntry(new ZipEntry(zipName))
-              zip.write(Files.readAllBytes(Paths.get(name.getPath())))
-              zip.closeEntry()
-            }
-          }
-        }
+        // C. filelist.f (+incdir+., packages, headers, then modules in topological order)
+        val filelist = collection.mutable.ArrayBuffer[String]()
+        filelist += "+incdir+."
+        filelist ++= packages
+        filelist ++= headers
+        filelist ++= chiselModules
+        filelist ++= otherModules
+
+        val filelistContent = filelist.mkString("\n") + "\n"
+        zip.putNextEntry(new ZipEntry("filelist.f"))
+        zip.write(filelistContent.getBytes(StandardCharsets.UTF_8))
+        zip.closeEntry()
+      } finally {
         zip.close()
       }
 
+      // 4. Verification wrapper for monolithic Verilog output
       // Regex to match verification blocks in the concatenated Verilog output.
       // - (^//.*FILE\s*"verification/[^"]+".*$\n) matches the header line of a verification file.
       // - (?:[\s\S]*?) lazily captures all content up to the next file block.
@@ -273,14 +313,16 @@ object EmitCore extends App {
       Files.write(
         Paths.get(targetDir + "/V" + core.name + "_parameters.h"),
         header_str.getBytes(StandardCharsets.UTF_8),
-        StandardOpenOption.CREATE
+        StandardOpenOption.CREATE,
+        StandardOpenOption.TRUNCATE_EXISTING
       )
       Files.write(
         Paths.get(targetDir + "/" + core.name + ".sv"),
         wrappedVerilogSource
           .replace("exclude_file", "exclude_module")
           .getBytes(StandardCharsets.UTF_8),
-        StandardOpenOption.CREATE
+        StandardOpenOption.CREATE,
+        StandardOpenOption.TRUNCATE_EXISTING
       )
 
       ()

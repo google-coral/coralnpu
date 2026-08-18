@@ -717,7 +717,6 @@ template_rule(
                 "--moduleName=RvvCoreMini",
                 "--itcmSizeKBytes=8",
                 "--dtcmSizeKBytes=32",
-                "--enableVerification=True",
             ] + RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS,
             "module_name": "RvvCoreMiniAxi",
         },
