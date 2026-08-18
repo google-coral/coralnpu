@@ -1047,7 +1047,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     def act(
       initCellsData: Vec[ValidIO[UInt]],
       starts: UInt,
-      moveLeadOH: UInt,
+      moveLeadOH: Valid[UInt],
       resp: Bool,
       fault: Bool,
       respRowAddr: UInt,
@@ -1277,15 +1277,19 @@ class LsuSuperSlot(p: Parameters) extends Module {
         candidate
       }
 
-      val moveLead = OHToUInt(moveLeadOH).pad(ctrWidth)
+      val moveLead = OHToUInt(moveLeadOH.bits).pad(ctrWidth)
       val ret      = MakeWireBundle[State](
         new State(),
         _           -> this,
         _.faulted   -> (faulted || fault),
         _.cells     -> cellsNext,
-        _.leadIndex -> (leadIndex + moveLead),
-        _.rowAddr   -> Mux1H(moveLeadOH, nextRowAddrCandidates),
-        _.isDone    -> allCellsDone
+        _.leadIndex -> Mux(moveLeadOH.valid, leadIndex + moveLead, leadIndex),
+        _.rowAddr   -> Mux(
+          moveLeadOH.valid,
+          Mux1H(moveLeadOH.bits, nextRowAddrCandidates),
+          nextRowAddrCandidates(0)
+        ),
+        _.isDone -> allCellsDone
       )
       ret.vector.foreach { x =>
         val curr = vector.get
@@ -1857,15 +1861,14 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val canMoveLead = !state.isDone && (
     !io.busReq.valid || io.busReq.ready
   )
-  val effectiveMoveLeadOH = Mux(canMoveLead, moveLeadOH, 1.U((windowSizeNormal + 1).W))
-  val initCellsData       = VecInit.tabulate(nCells) { i =>
+  val initCellsData = VecInit.tabulate(nCells) { i =>
     if (i < 4) MakeValid(io.uop.fire, stateFromUop.cells(i).data)
     else MakeInvalid(UInt(8.W))
   }
   val stateFromAction = state.act(
     initCellsData = initCellsData,
     starts = Mux(io.busReq.ready || state.faulted || newFault, starts, 0.U),
-    moveLeadOH = effectiveMoveLeadOH,
+    moveLeadOH = MakeValid(canMoveLead, moveLeadOH),
     resp = io.busResp.valid || faultRespValid,
     fault = newFault, // state will latch the fault
     respRowAddr = busRespRowAddr,
