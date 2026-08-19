@@ -96,7 +96,7 @@ struct AxiWData {
 };
 
 // A driver to control interactions of the write channels in an AXI4 slave.
-class AxiSlaveWriteDriver : Clock::Observer {
+class AxiSlaveWriteDriver final : Clock::Observer {
  public:
   AxiSlaveWriteDriver(
       Clock* clock, uint8_t* write_addr_valid, uint32_t* write_addr_bits_addr,
@@ -513,7 +513,7 @@ struct AxiWResp {
 };
 
 // A driver to control interactions of the write channels in an AXI4 slave.
-class AxiMasterWriteDriver : Clock::Observer {
+class AxiMasterWriteDriver final : Clock::Observer {
  public:
   AxiMasterWriteDriver(
       Clock* clock, const uint8_t* write_addr_valid,

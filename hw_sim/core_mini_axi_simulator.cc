@@ -19,7 +19,7 @@
 #include "hw_sim/coralnpu_simulator.h"
 #include "hw_sim/core_mini_axi_wrapper.h"
 
-class CoreMiniAxiSimulator : public CoralNPUSimulator {
+class CoreMiniAxiSimulator final : public CoralNPUSimulator {
  public:
   explicit CoreMiniAxiSimulator(const CoralNPUSimulatorOptions &options = {})
       : context_(), wrapper_(&context_, options) {
