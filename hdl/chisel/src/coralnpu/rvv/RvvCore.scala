@@ -769,8 +769,8 @@ class RvvCoreShim(p: Parameters) extends Module {
   val vstart_wdata = MuxCase(
     vstart,
     Seq(
-      rvvCoreWrapper.io.vcsr_valid -> rvvCoreWrapper.io.vcsr_vstart,
-      io.csr.vstart_write.valid    -> io.csr.vstart_write.bits
+      io.csr.vstart_write.valid    -> io.csr.vstart_write.bits,
+      rvvCoreWrapper.io.vcsr_valid -> rvvCoreWrapper.io.vcsr_vstart
     )
   )
   vstart := vstart_wdata
@@ -778,8 +778,8 @@ class RvvCoreShim(p: Parameters) extends Module {
   val vxrm_wdata = MuxCase(
     vxrm,
     Seq(
-      rvvCoreWrapper.io.vcsr_valid -> rvvCoreWrapper.io.vcsr_xrm,
-      io.csr.vxrm_write.valid      -> io.csr.vxrm_write.bits
+      io.csr.vxrm_write.valid      -> io.csr.vxrm_write.bits,
+      rvvCoreWrapper.io.vcsr_valid -> rvvCoreWrapper.io.vcsr_xrm
     )
   )
   vxrm := vxrm_wdata
@@ -787,9 +787,9 @@ class RvvCoreShim(p: Parameters) extends Module {
   val vxsat_wdata = MuxCase(
     vxsat,
     Seq(
+      io.csr.vxsat_write.valid           -> io.csr.vxsat_write.bits,
       rvvCoreWrapper.io.wr_vxsat_valid_o -> (vxsat | rvvCoreWrapper.io.wr_vxsat_o),
-      rvvCoreWrapper.io.vcsr_valid       -> rvvCoreWrapper.io.vcsr_vxsat,
-      io.csr.vxsat_write.valid           -> io.csr.vxsat_write.bits
+      rvvCoreWrapper.io.vcsr_valid       -> rvvCoreWrapper.io.vcsr_vxsat
     )
   )
   vxsat := vxsat_wdata
