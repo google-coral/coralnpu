@@ -171,14 +171,35 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     opcode === RvvCompressedOpcode.RVVALU && funct3() === "b001".U && funct6() === "b010000".U
   }
 
+  // VME (Zvt) operations that write only matrix tile state: the matrix
+  // multiplies (funct6 111100, OPIVV/OPFVV), vtzero (funct6 010000, OPMVX,
+  // vs2 field 11110), and vtmv.t.v (funct6 010111, OPMVX). vtmv.v.t (funct6
+  // 010000, OPMVX, vs2 field 11111) does write vector registers and is
+  // excluded. These must not be reported as vector-register writers: the
+  // retirement buffer would wait forever for a writeback that never comes.
+  def writesTileStateOnly(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      val vs2Field = bits(17, 13)
+      val isMatmul = (funct6() === "b111100".U) &&
+        (funct3() === "b000".U || funct3() === "b001".U)
+      val isVtzero = (funct3() === "b110".U) &&
+        (funct6() === "b010000".U) && (vs2Field === "b11110".U)
+      val isVtmvTv = (funct3() === "b110".U) && (funct6() === "b010111".U)
+      (opcode === RvvCompressedOpcode.RVVALU) &&
+      (isMatmul || isVtzero || isVtmvTv)
+    }
+  }
+
   def writesVectorRegister(): Bool = {
     // A vector instruction writes to a vector register if it's an ALU operation
     // or a load operation. Store operations do not write to a vector register.
     // vset* instructions write to a scalar register (rd), not a vector register.
     // Scalar-write instructions (vmv.x.s, vcpop, vfirst, vfmv.f.s) also do not
-    // write vector registers.
+    // write vector registers, and neither do the VME tile-state-only ops.
     opcode === RvvCompressedOpcode.RVVLOAD ||
-    (opcode === RvvCompressedOpcode.RVVALU && !writesRd() && !writesFrd())
+    (opcode === RvvCompressedOpcode.RVVALU && !writesRd() && !writesFrd() &&
+      !writesTileStateOnly())
   }
 
   override def toPrintable: Printable = {
