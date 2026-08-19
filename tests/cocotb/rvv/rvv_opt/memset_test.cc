@@ -23,7 +23,7 @@ int val_in __attribute__((section(".data")));
 uint8_t out_buf[512] __attribute__((section(".data"))) __attribute__((aligned(16)));
 size_t size_n __attribute__((section(".data")));
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   coralnpu_v2::opt::Memset(out_buf, val_in, size_n);
   return 0;
 }

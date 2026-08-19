@@ -17,7 +17,7 @@
 
 #include "sw/utils/utils.h"
 
-#define MAX_INPUT_SIZE 16384
+#define MAX_INPUT_SIZE  16384
 #define MAX_WEIGHT_SIZE 4096
 
 extern "C" {
@@ -33,9 +33,8 @@ float active_epsilon __attribute__((section(".data"), used, retain))        = 1e
 uint32_t cycle_count __attribute__((section(".data"), used, retain)) = 0;
 }
 
-extern "C" void RmsNormF(size_t seq_len, size_t hidden_size, float epsilon,
-                         const float* input, const float* weight,
-                         float* output);
+extern "C" void RmsNormF(size_t seq_len, size_t hidden_size, float epsilon, const float *input,
+                         const float *weight, float *output);
 
 extern "C" int main() {
   if ((active_seq_len * active_hidden_size) > MAX_INPUT_SIZE ||
@@ -45,11 +44,10 @@ extern "C" int main() {
 
   uint32_t start_cycles = mcycle_read();
 
-  RmsNormF(active_seq_len, active_hidden_size, active_epsilon, rms_input,
-           rms_weight, rms_output);
+  RmsNormF(active_seq_len, active_hidden_size, active_epsilon, rms_input, rms_weight, rms_output);
 
   uint32_t end_cycles = mcycle_read();
-  cycle_count = end_cycles - start_cycles;
+  cycle_count         = end_cycles - start_cycles;
 
   return 0;
 }

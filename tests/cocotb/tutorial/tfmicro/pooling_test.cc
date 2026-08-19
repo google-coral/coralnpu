@@ -26,13 +26,13 @@ constexpr size_t kMaxOutDepth = 256;
 static tflite::PoolParams params = {
     .padding_values =
         {
-            .width = 0,
+            .width  = 0,
             .height = 0,
         },
-    .stride_height = 2,
-    .stride_width = 2,
-    .filter_height = 2,
-    .filter_width = 2,
+    .stride_height            = 2,
+    .stride_width             = 2,
+    .filter_height            = 2,
+    .filter_width             = 2,
     .quantized_activation_min = -128,
     .quantized_activation_max = 127,
 };
@@ -40,10 +40,10 @@ static tflite::PoolParams params = {
 static tflite::RuntimeShape input_shape_;
 static tflite::RuntimeShape output_shape_;
 
-int32_t input_shape[4] __attribute__((section(".data"))) = {1, 8, 8, 16};
+int32_t input_shape[4] __attribute__((section(".data")))  = {1, 8, 8, 16};
 int32_t output_shape[4] __attribute__((section(".data"))) = {1, 4, 4, 16};
-int stride __attribute__((section(".data"))) = 2;
-int filter_size __attribute__((section(".data"))) = 2;
+int stride __attribute__((section(".data")))              = 2;
+int filter_size __attribute__((section(".data")))         = 2;
 
 int8_t input_data[131072] __attribute__((section(".data"), aligned(16)));
 int8_t output_data[131072] __attribute__((section(".data"), aligned(16)));
@@ -55,23 +55,23 @@ void prep() {
   input_shape_.ReplaceWith(4, input_shape);
   output_shape_.ReplaceWith(4, output_shape);
   params.stride_height = stride;
-  params.stride_width = stride;
+  params.stride_width  = stride;
   params.filter_height = filter_size;
-  params.filter_width = filter_size;
+  params.filter_width  = filter_size;
 }
 
 extern "C" {
 __attribute__((used, retain)) void run_ref() {
   uint64_t start = mcycle_read();
-  tflite::reference_integer_ops::MaxPool(params, input_shape_, input_data,
-                                         output_shape_, output_data);
+  tflite::reference_integer_ops::MaxPool(params, input_shape_, input_data, output_shape_,
+                                         output_data);
   ref_cycles = mcycle_read() - start;
 }
 
 __attribute__((used, retain)) void run_optimized() {
   uint64_t start = mcycle_read();
-  coralnpu_v2::opt::litert_micro::MaxPool(params, input_shape_, input_data,
-                                          output_shape_, output_data);
+  coralnpu_v2::opt::litert_micro::MaxPool(params, input_shape_, input_data, output_shape_,
+                                          output_data);
   opt_cycles = mcycle_read() - start;
 }
 }

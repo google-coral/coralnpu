@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-int32_t iaf_count = 0;
+int32_t iaf_count   = 0;
 int32_t other_count = 0;
 
 extern "C" {
@@ -137,7 +137,7 @@ __attribute__((used, retain, noreturn)) void wfi() {
 __attribute__((used, retain, noreturn)) void load() {
   asm volatile(
       "lb a0, %[addr];"
-      "j -0x1000;" ::[addr] "m"(*(const uint8_t*)0xFFFFFFFF)
+      "j -0x1000;" ::[addr] "m"(*(const uint8_t *)0xFFFFFFFF)
       : "a0");
   while (true) {
   }
@@ -146,7 +146,7 @@ __attribute__((used, retain, noreturn)) void load() {
 __attribute__((used, retain, noreturn)) void store() {
   asm volatile(
       "sb a0, %[addr];"
-      "j -0x1000;" ::[addr] "m"(*(const uint8_t*)0xFFFFFFFF));
+      "j -0x1000;" ::[addr] "m"(*(const uint8_t *)0xFFFFFFFF));
   while (true) {
   }
 }
@@ -171,7 +171,7 @@ __attribute__((used, retain, noreturn)) void csrw() {
 
 void (*impl)() __attribute__((section(".data"))) = mpause;
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   impl();
 
   return 0;

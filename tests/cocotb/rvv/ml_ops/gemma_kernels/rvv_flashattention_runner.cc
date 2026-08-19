@@ -40,7 +40,7 @@ extern "C" void FlashAttentionRVV(size_t q_heads, size_t kv_heads, size_t q_seq_
                                   size_t kv_seq_len, size_t dim, const float *Q, const float *K,
                                   const float *V, float *O);
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   uint32_t start_cycles = mcycle_read();
 
   FlashAttentionRVV(active_num_heads, active_num_kv_heads, active_q_seq_len, active_kv_seq_len,

@@ -164,10 +164,10 @@ __attribute__((used, retain)) void vnclip_vxsat_check() {
 
   // Use MAX_INT32 with shift=0 to guarantee saturation to int16.
   // 0x7FFFFFFF (2147483647) >> 0 = 2147483647, which saturates to 32767 (0x7FFF).
-  buf32[0] = 0x7FFFFFFF;
+  buf32[0]       = 0x7FFFFFFF;
   buf_shift16[0] = 0;  // No shift - guaranteed to saturate
 
-  const auto in_v = __riscv_vle32_v_i32m1(buf32, 1);
+  const auto in_v  = __riscv_vle32_v_i32m1(buf32, 1);
   const auto shift = __riscv_vle16_v_u16mf2(buf_shift16, 1);
   const auto out_v = __riscv_vnclip_wv_i16mf2(in_v, shift, vxrm, 1);
   __riscv_vse16_v_i16mf2(buf16, out_v, 1);

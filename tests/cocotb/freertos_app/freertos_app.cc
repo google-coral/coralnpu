@@ -17,8 +17,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define UART1_BASE 0x40010000u
-#define UART1_PUT(c) (*(volatile uint32_t*)UART1_BASE = (c))
+#define UART1_BASE   0x40010000u
+#define UART1_PUT(c) (*(volatile uint32_t *)UART1_BASE = (c))
 
 extern "C" {
 void freertos_risc_v_trap_handler(void);
@@ -29,18 +29,20 @@ void vApplicationMallocFailedHook(void) {
   UART1_PUT('R');
   UART1_PUT('R');
   UART1_PUT('\n');
-  while (1);
+  while (1)
+    ;
 }
 
 void vApplicationIdleHook(void) {}
 
-void vApplicationStackOverflowHook(TaskHandle_t pxTask, char* pcTaskName) {
+void vApplicationStackOverflowHook(TaskHandle_t pxTask, char *pcTaskName) {
   UART1_PUT('S');
   UART1_PUT('O');
   UART1_PUT('V');
   UART1_PUT('F');
   UART1_PUT('\n');
-  while (1);
+  while (1)
+    ;
 }
 
 // Required when configSUPPORT_STATIC_ALLOCATION is 0 (default) but some ports
@@ -50,14 +52,14 @@ void vApplicationStackOverflowHook(TaskHandle_t pxTask, char* pcTaskName) {
 
 void print_char(char c) { UART1_PUT(c); }
 
-void Task1(void* pvParameters) {
+void Task1(void *pvParameters) {
   for (;;) {
     print_char('1');
     vTaskDelay(1);  // 1 tick = 1000 cycles
   }
 }
 
-void Task2(void* pvParameters) {
+void Task2(void *pvParameters) {
   for (;;) {
     print_char('2');
     vTaskDelay(2);  // 2 ticks = 2000 cycles

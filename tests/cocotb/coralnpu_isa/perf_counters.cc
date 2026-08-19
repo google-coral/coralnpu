@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 
 inline uint64_t mcycle_read(void) {
-  uint32_t cycle_low = 0;
-  uint32_t cycle_high = 0;
+  uint32_t cycle_low    = 0;
+  uint32_t cycle_high   = 0;
   uint32_t cycle_high_2 = 0;
   asm volatile(
       "1:"
@@ -34,8 +34,8 @@ inline uint64_t mcycle_read(void) {
 }
 
 inline uint64_t minstret_read(void) {
-  uint32_t instret_low = 0;
-  uint32_t instret_high = 0;
+  uint32_t instret_low    = 0;
+  uint32_t instret_high   = 0;
   uint32_t instret_high_2 = 0;
   asm volatile(
       "1:"
@@ -49,62 +49,69 @@ inline uint64_t minstret_read(void) {
 }
 
 int main(void) {
-    // Set the cycle counter to 0x1fffffff0.
-    asm volatile (" \
+  // Set the cycle counter to 0x1fffffff0.
+  asm volatile(
+      " \
         csrwi mcycleh, 1; \
         li a0, 0xfffffff0; \
-        csrrw a0, mcycle, a0;" : /* no outputs*/ : /* no inputs */ : /* clobbers */"a0");
-    uint64_t cycle = mcycle_read();
-    for (int i = 0; i < 16; ++i) {
-        asm volatile("nop");
-    }
-    uint64_t cycle2 = mcycle_read();
-    uint32_t cycle_lo, cycle_hi, cycle2_lo, cycle2_hi;
-    cycle_lo = cycle & 0xFFFFFFFF;
-    cycle2_lo = cycle2 & 0xFFFFFFFF;
-    cycle_hi = cycle >> 32;
-    cycle2_hi = cycle2 >> 32;
-    if (cycle2_hi == cycle_hi) {
+        csrrw a0, mcycle, a0;"
+      : /* no outputs*/
+      : /* no inputs */
+      : /* clobbers */ "a0");
+  uint64_t cycle = mcycle_read();
+  for (int i = 0; i < 16; ++i) {
+    asm volatile("nop");
+  }
+  uint64_t cycle2 = mcycle_read();
+  uint32_t cycle_lo, cycle_hi, cycle2_lo, cycle2_hi;
+  cycle_lo  = cycle & 0xFFFFFFFF;
+  cycle2_lo = cycle2 & 0xFFFFFFFF;
+  cycle_hi  = cycle >> 32;
+  cycle2_hi = cycle2 >> 32;
+  if (cycle2_hi == cycle_hi) {
 #if !defined(LINK_TCM)
-        printf("mcycleh did not increment\r\n");
+    printf("mcycleh did not increment\r\n");
 #endif
-        exit(-1);
-    }
-    if (cycle2_lo > cycle_lo) {
+    exit(-1);
+  }
+  if (cycle2_lo > cycle_lo) {
 #if !defined(LINK_TCM)
-        printf("mcycle did not wrap\r\n");
+    printf("mcycle did not wrap\r\n");
 #endif
-        exit(-1);
-    }
+    exit(-1);
+  }
 
-    asm volatile (" \
+  asm volatile(
+      " \
         csrwi minstreth, 1; \
         li a0, 0xfffffff0; \
-        csrrw a0, minstret, a0; " : : : "a0");
-    uint64_t instret = minstret_read();
+        csrrw a0, minstret, a0; "
+      :
+      :
+      : "a0");
+  uint64_t instret = minstret_read();
 #pragma GCC unroll 16
-    for (int i = 0; i < 16; ++i) {
-        asm volatile("nop");
-    }
-    uint64_t instret2 = minstret_read();
-    uint32_t instret_lo, instret_hi, instret2_lo, instret2_hi;
-    instret_lo = instret & 0xFFFFFFFF;
-    instret2_lo = instret2 & 0xFFFFFFFF;
-    instret_hi = instret >> 32;
-    instret2_hi = instret2 >> 32;
-    if (instret2_hi == instret_hi) {
+  for (int i = 0; i < 16; ++i) {
+    asm volatile("nop");
+  }
+  uint64_t instret2 = minstret_read();
+  uint32_t instret_lo, instret_hi, instret2_lo, instret2_hi;
+  instret_lo  = instret & 0xFFFFFFFF;
+  instret2_lo = instret2 & 0xFFFFFFFF;
+  instret_hi  = instret >> 32;
+  instret2_hi = instret2 >> 32;
+  if (instret2_hi == instret_hi) {
 #if !defined(LINK_TCM)
-        printf("minstreth did not increment\r\n");
+    printf("minstreth did not increment\r\n");
 #endif
-        exit(-1);
-    }
-    if (instret2_lo > instret_lo) {
+    exit(-1);
+  }
+  if (instret2_lo > instret_lo) {
 #if !defined(LINK_TCM)
-        printf("minstret did not wrap\r\n");
+    printf("minstret did not wrap\r\n");
 #endif
-        exit(-1);
-    }
+    exit(-1);
+  }
 
-    return 0;
+  return 0;
 }
-

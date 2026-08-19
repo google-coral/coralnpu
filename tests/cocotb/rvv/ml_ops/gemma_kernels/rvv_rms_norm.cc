@@ -29,9 +29,8 @@ template <typename T>
 inline void rvv_rms_norm_impl(size_t seq_len, size_t hidden_size, float epsilon,
                               const T *__restrict__ input, const T *__restrict__ weight,
                               T *__restrict__ output) {
-  vfloat32m1_t vzero_m1 =
-      __riscv_vfmv_v_f_f32m1(0.0f, __riscv_vsetvlmax_e32m1());
-  size_t vlmax_f32 = __riscv_vsetvlmax_e32m8();
+  vfloat32m1_t vzero_m1 = __riscv_vfmv_v_f_f32m1(0.0f, __riscv_vsetvlmax_e32m1());
+  size_t vlmax_f32      = __riscv_vsetvlmax_e32m8();
 
   for (size_t s = 0; s < seq_len; ++s) {
     const T *token_in = input + (s * hidden_size);
@@ -42,7 +41,7 @@ inline void rvv_rms_norm_impl(size_t seq_len, size_t hidden_size, float epsilon,
     // -------------------------------------------------------------
     vfloat32m8_t vacc = __riscv_vfmv_v_f_f32m8(0.0f, vlmax_f32);
 
-    size_t k = hidden_size;
+    size_t k       = hidden_size;
     const T *x_ptr = token_in;
 
     while (k > 0) {
@@ -56,14 +55,14 @@ inline void rvv_rms_norm_impl(size_t seq_len, size_t hidden_size, float epsilon,
     vfloat32m1_t vred = __riscv_vfredusum_vs_f32m8_f32m1(vacc, vzero_m1, vlmax_f32);
     float sum_squares = __riscv_vfmv_f_s_f32m1_f32(vred);
     float rms         = sum_squares / static_cast<float>(hidden_size);
-    float sqrt_val = std::sqrt(rms + epsilon);
-    float inv_rms = 1.0f / sqrt_val;
+    float sqrt_val    = std::sqrt(rms + epsilon);
+    float inv_rms     = 1.0f / sqrt_val;
 
     // -------------------------------------------------------------
     // PASS 2: Normalize and Scale with Weights
     // -------------------------------------------------------------
-    k = hidden_size;
-    x_ptr = token_in;
+    k              = hidden_size;
+    x_ptr          = token_in;
     const T *w_ptr = weight;
     T *out_ptr     = token_out;
 

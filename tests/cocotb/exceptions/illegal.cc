@@ -28,15 +28,14 @@ __attribute__((naked)) void isr_wrapper(void) {
       "la t1, 0x02007043 \n"
       "beq t0, t1, 0f \n"
       "ebreak \n"
-      "0: .word 0x08000073  \n"
-  );
+      "0: .word 0x08000073  \n");
 }
 
 }  // extern "C"
 
-int main(int argc, char** argv) {
-  asm volatile("csrw mtvec, %0" :: "rK"((uint32_t)(&isr_wrapper)));
-  asm volatile(".word 0x02007043"); // fmadd.d f0, f0, f0, f0
+int main(int argc, char **argv) {
+  asm volatile("csrw mtvec, %0" ::"rK"((uint32_t)(&isr_wrapper)));
+  asm volatile(".word 0x02007043");  // fmadd.d f0, f0, f0, f0
 
   return 0;
 }

@@ -1,10 +1,10 @@
 #include <stdint.h>
 
-#define DDR_BASE 0x81000000
+#define DDR_BASE   0x81000000
 #define TEST_WORDS 16
 
 // volatile to ensure the compiler doesn't optimize away our "redundant" writes
-static volatile uint32_t* ddr = (uint32_t*)DDR_BASE;
+static volatile uint32_t *ddr = (uint32_t *)DDR_BASE;
 
 int main() {
   // Write unique ID to each word in the first 64 bytes of our DDR range

@@ -25,14 +25,13 @@ __attribute__((naked)) void isr_wrapper(void) {
       "li t1, 1 \n"
       "beq t0, t1, 0f \n"
       "ebreak \n"
-      "0: .word 0x08000073 \n"
-  );
+      "0: .word 0x08000073 \n");
 }
 
 }  // extern "C"
 
-int main(int argc, char** argv) {
-  asm volatile("csrw mtvec, %0" :: "rK"((uint32_t)(&isr_wrapper)));
+int main(int argc, char **argv) {
+  asm volatile("csrw mtvec, %0" ::"rK"((uint32_t)(&isr_wrapper)));
   asm volatile("la ra, 0x40000000; jalr ra, ra");
   asm volatile("ebreak");
   return 0;

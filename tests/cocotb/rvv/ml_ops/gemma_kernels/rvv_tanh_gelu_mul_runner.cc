@@ -16,8 +16,8 @@
 
 #include "sw/utils/utils.h"
 
-extern "C" void rvv_tanh_gelu_mul_f32(const float* gate, const float* up,
-                                      float* output, size_t total_elements);
+extern "C" void rvv_tanh_gelu_mul_f32(const float *gate, const float *up, float *output,
+                                      size_t total_elements);
 
 #define MAX_ELEMENTS (256 * 2048)
 

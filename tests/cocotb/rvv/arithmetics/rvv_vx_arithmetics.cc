@@ -9,24 +9,20 @@
 #endif
 
 size_t vl __attribute__((section(".data"))) = 16;
-uint8_t vs1[MAX_VREG_GROUP_BYTES] __attribute__((section(".data")))
-    __attribute__((aligned(16)));
-uint8_t vs2[MAX_VREG_GROUP_BYTES] __attribute__((section(".data")))
-    __attribute__((aligned(16)));
+uint8_t vs1[MAX_VREG_GROUP_BYTES] __attribute__((section(".data"))) __attribute__((aligned(16)));
+uint8_t vs2[MAX_VREG_GROUP_BYTES] __attribute__((section(".data"))) __attribute__((aligned(16)));
 uint64_t xs2 __attribute__((section(".data"))) __attribute__((aligned(16)));
 
 template <typename U>
 inline U get_xs2_as() {
-  static_assert(sizeof(U) <= sizeof(xs2),
-                "Type U exceeds the size of xs2 buffer");
+  static_assert(sizeof(U) <= sizeof(xs2), "Type U exceeds the size of xs2 buffer");
   U val;
   std::memcpy(&val, &xs2, sizeof(U));
   return val;
 }
 uint8_t v0_buf[MAX_VREG_GROUP_BYTES / 8] __attribute__((section(".data")))
-    __attribute__((aligned(16)));
-uint8_t vd[MAX_VREG_GROUP_BYTES] __attribute__((section(".data")))
-    __attribute__((aligned(16)));
+__attribute__((aligned(16)));
+uint8_t vd[MAX_VREG_GROUP_BYTES] __attribute__((section(".data"))) __attribute__((aligned(16)));
 
 #ifndef VX_FUNCTION
 #define VX_FUNCTION Vadd
@@ -34,8 +30,7 @@ uint8_t vd[MAX_VREG_GROUP_BYTES] __attribute__((section(".data")))
 
 // Define a safe trait that degrades gracefully for floats
 template <typename T>
-using safe_make_unsigned_t =
-    std::conditional_t<std::is_integral_v<T>, std::make_unsigned_t<T>, T>;
+using safe_make_unsigned_t = std::conditional_t<std::is_integral_v<T>, std::make_unsigned_t<T>, T>;
 
 // Helper to determine if we should call _vx or _vf
 template <typename T, Lmul lmul>
@@ -46,7 +41,7 @@ inline auto call_vx_or_vf(RvvType<T, lmul> v1, T s2, size_t vl) {
   } else {
     // Some functions need vxrm
     auto fn = [](auto v1, auto s2, size_t vl) {
-#define STR(x) #x
+#define STR(x)  #x
 #define XSTR(x) STR(x)
       if constexpr (std::string_view(XSTR(VX_FUNCTION)) == "Vaadd" ||
                     std::string_view(XSTR(VX_FUNCTION)) == "Vasub" ||
@@ -67,60 +62,60 @@ inline auto call_vx_or_vf(RvvType<T, lmul> v1, T s2, size_t vl) {
 #if defined(TEST_VI)
 template <typename T, Lmul lmul>
 inline void test_vi_op() {
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
   const auto result = VI_FUNCTION<T, lmul>(v1, vl);
   (void)v1;
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_TERNARY)
 template <typename T, Lmul lmul>
 inline void test_ternary_op() {
-  const auto vd_orig = Vle<T, lmul>(reinterpret_cast<const T*>(vd), vl);
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
-  const auto result = VX_FUNCTION<T, lmul>(vd_orig, get_xs2_as<T>(), v1, vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  const auto vd_orig = Vle<T, lmul>(reinterpret_cast<const T *>(vd), vl);
+  const auto v1      = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
+  const auto result  = VX_FUNCTION<T, lmul>(vd_orig, get_xs2_as<T>(), v1, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_BINARY_VV)
 template <typename T, Lmul lmul>
 inline void test_binary_vv_op() {
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
   const auto result = VV_FUNCTION<T, lmul>(v1, v2, vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_CARRY)
 template <typename T, Lmul lmul>
 inline void test_carry_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
-  const auto v0 = Vlm<T, lmul>(v0_buf, vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
+  const auto v0     = Vlm<T, lmul>(v0_buf, vl);
   const auto result = CARRY_FUNCTION<T, lmul>(v2, v1, v0, vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_CARRY_VX)
 template <typename T, Lmul lmul>
 inline void test_carry_vx_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto v0 = Vlm<T, lmul>(v0_buf, vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto v0     = Vlm<T, lmul>(v0_buf, vl);
   const auto result = CARRY_FUNCTION<T, lmul>(v2, get_xs2_as<T>(), v0, vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_MADV)
 template <typename T, Lmul lmul>
 inline void test_madv_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
-  const auto v0 = Vlm<T, lmul>(v0_buf, vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
+  const auto v0     = Vlm<T, lmul>(v0_buf, vl);
   const auto result = CARRY_FUNCTION<T, lmul>(v2, v1, v0, vl);
   Vsm<T, lmul>(vd, result, vl);
 }
@@ -129,8 +124,8 @@ inline void test_madv_op() {
 #if defined(TEST_MADV_VX)
 template <typename T, Lmul lmul>
 inline void test_madv_vx_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto v0 = Vlm<T, lmul>(v0_buf, vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto v0     = Vlm<T, lmul>(v0_buf, vl);
   const auto result = CARRY_FUNCTION<T, lmul>(v2, get_xs2_as<T>(), v0, vl);
   Vsm<T, lmul>(vd, result, vl);
 }
@@ -139,8 +134,8 @@ inline void test_madv_vx_op() {
 #if defined(TEST_MADV_NO_M)
 template <typename T, Lmul lmul>
 inline void test_madv_no_m_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
   const auto result = CARRY_FUNCTION<T, lmul>(v2, v1, vl);
   Vsm<T, lmul>(vd, result, vl);
 }
@@ -149,7 +144,7 @@ inline void test_madv_no_m_op() {
 #if defined(TEST_MADV_NO_M_VX)
 template <typename T, Lmul lmul>
 inline void test_madv_no_m_vx_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
   const auto result = CARRY_FUNCTION<T, lmul>(v2, get_xs2_as<T>(), vl);
   Vsm<T, lmul>(vd, result, vl);
 }
@@ -158,28 +153,28 @@ inline void test_madv_no_m_vx_op() {
 #if defined(TEST_MERGE)
 template <typename T, Lmul lmul>
 inline void test_merge_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
-  const auto v0 = Vlm<T, lmul>(v0_buf, vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
+  const auto v0     = Vlm<T, lmul>(v0_buf, vl);
   const auto result = Vmerge<T, lmul>(v2, v1, v0, vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_VMV)
 template <typename T, Lmul lmul>
 inline void test_vmv_op() {
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
   const auto result = Vmv<T, lmul>(v1, vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_COMP_VV)
 template <typename T, Lmul lmul>
 inline void test_comp_vv_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
   const auto result = COMP_FUNCTION<T, lmul>(v2, v1, vl);
   Vsm<T, lmul>(vd, result, vl);
 }
@@ -188,7 +183,7 @@ inline void test_comp_vv_op() {
 #if defined(TEST_COMP_VX)
 template <typename T, Lmul lmul>
 inline void test_comp_vx_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
   const auto result = COMP_FUNCTION<T, lmul>(v2, get_xs2_as<T>(), vl);
   Vsm<T, lmul>(vd, result, vl);
 }
@@ -197,143 +192,141 @@ inline void test_comp_vx_op() {
 #if defined(TEST_EXT)
 template <typename T, Lmul lmul>
 inline void test_ext_op() {
-  if constexpr (WidenFactor(lmul, EXT_FACTOR) != Lmul::INVALID &&
-                sizeof(T) * 8 / EXT_FACTOR >= 8) {
+  if constexpr (WidenFactor(lmul, EXT_FACTOR) != Lmul::INVALID && sizeof(T) * 8 / EXT_FACTOR >= 8) {
     const auto v2 = Vle<NarrowScalarType<T, EXT_FACTOR>, Narrow(lmul, EXT_FACTOR)>(
-        reinterpret_cast<const NarrowScalarType<T, EXT_FACTOR>*>(vs1), vl);
+        reinterpret_cast<const NarrowScalarType<T, EXT_FACTOR> *>(vs1), vl);
     const auto result = EXT_FUNCTION<T, lmul>(v2, vl);
-    Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+    Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
   }
 }
 #endif
 
 #if defined(TEST_FCOMP_VV)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_fcomp_vv_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
   const auto result = COMP_FUNCTION<T, lmul>(v2, v1, vl);
   Vsm<T, lmul>(vd, result, vl);
 }
 #endif
 
 #if defined(TEST_FCOMP_VF)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_fcomp_vf_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
   const auto result = COMP_FUNCTION<T, lmul>(v2, get_xs2_as<T>(), vl);
   Vsm<T, lmul>(vd, result, vl);
 }
 #endif
 
 #if defined(TEST_VFCLASS)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_vfclass_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
   const auto result = Vfclass<T, lmul>(v2, vl);
-  Vse<uint32_t, lmul>(reinterpret_cast<uint32_t*>(vd), result, vl);
+  Vse<uint32_t, lmul>(reinterpret_cast<uint32_t *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_VFMERGE)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_vfmerge_op() {
-  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto v0 = Vlm<T, lmul>(v0_buf, vl);
+  const auto v2     = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto v0     = Vlm<T, lmul>(v0_buf, vl);
   const auto result = Vfmerge<T, lmul>(v2, get_xs2_as<T>(), v0, vl);
   Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_VFMV)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_vfmv_op() {
   const auto result = Vfmv<T, lmul>(get_xs2_as<T>(), vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_FSGNJ_VF)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_fsgnj_vf_op() {
-  const auto vs2_v = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto vs2_v  = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
   const auto result = Vfsgnj<T, lmul>(vs2_v, get_xs2_as<T>(), vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_FSGNJN_VF)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_fsgnjn_vf_op() {
-  const auto vs2_v = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto vs2_v  = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
   const auto result = Vfsgnjn<T, lmul>(vs2_v, get_xs2_as<T>(), vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_FSGNJX_VF)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_fsgnjx_vf_op() {
-  const auto vs2_v = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto vs2_v  = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
   const auto result = Vfsgnjx<T, lmul>(vs2_v, get_xs2_as<T>(), vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_VFCVT_F_X)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_vfcvt_f_x_op() {
-  const auto vs2_int = Vle<int32_t, lmul>(reinterpret_cast<const int32_t*>(vs2), vl);
-  const auto result = VfcvtFX<T, lmul>(vs2_int, vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  const auto vs2_int = Vle<int32_t, lmul>(reinterpret_cast<const int32_t *>(vs2), vl);
+  const auto result  = VfcvtFX<T, lmul>(vs2_int, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_VFCVT_F_XU)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_vfcvt_f_xu_op() {
-  const auto vs2_uint = Vle<uint32_t, lmul>(reinterpret_cast<const uint32_t*>(vs2), vl);
-  const auto result = VfcvtFXu<T, lmul>(vs2_uint, vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  const auto vs2_uint = Vle<uint32_t, lmul>(reinterpret_cast<const uint32_t *>(vs2), vl);
+  const auto result   = VfcvtFXu<T, lmul>(vs2_uint, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_VFCVT_X_F)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_vfcvt_x_f_op() {
-  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto result = VfcvtXF<T, lmul>(vs2_float, vl);
-  Vse<int32_t, lmul>(reinterpret_cast<int32_t*>(vd), result, vl);
+  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto result    = VfcvtXF<T, lmul>(vs2_float, vl);
+  Vse<int32_t, lmul>(reinterpret_cast<int32_t *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_VFCVT_XU_F)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_vfcvt_xu_f_op() {
-  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto result = VfcvtXuF<T, lmul>(vs2_float, vl);
-  Vse<uint32_t, lmul>(reinterpret_cast<uint32_t*>(vd), result, vl);
+  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto result    = VfcvtXuF<T, lmul>(vs2_float, vl);
+  Vse<uint32_t, lmul>(reinterpret_cast<uint32_t *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_VFCVT_RTZ_X_F)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_vfcvt_rtz_x_f_op() {
-  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto result = VfcvtRtzXF<T, lmul>(vs2_float, vl);
-  Vse<int32_t, lmul>(reinterpret_cast<int32_t*>(vd), result, vl);
+  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto result    = VfcvtRtzXF<T, lmul>(vs2_float, vl);
+  Vse<int32_t, lmul>(reinterpret_cast<int32_t *>(vd), result, vl);
 }
 #endif
 
 #if defined(TEST_VFCVT_RTZ_XU_F)
-template<typename T, Lmul lmul>
+template <typename T, Lmul lmul>
 inline void test_vfcvt_rtz_xu_f_op() {
-  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
-  const auto result = VfcvtRtzXuF<T, lmul>(vs2_float, vl);
-  Vse<uint32_t, lmul>(reinterpret_cast<uint32_t*>(vd), result, vl);
+  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T *>(vs2), vl);
+  const auto result    = VfcvtRtzXuF<T, lmul>(vs2_float, vl);
+  Vse<uint32_t, lmul>(reinterpret_cast<uint32_t *>(vd), result, vl);
 }
 #endif
-
 
 template <typename T, Lmul lmul>
 inline void test_op() {
@@ -397,15 +390,15 @@ inline void test_op() {
 #if defined(TEST_WIDEN_VX)
   if constexpr (!std::is_same_v<T, int32_t> && !std::is_same_v<T, uint32_t> &&
                 Widen(lmul) != Lmul::INVALID) {
-    const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
+    const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
     const auto result = call_vx_or_vf<T, lmul>(v1, get_xs2_as<T>(), vl);
-    using W = WidenType<T>;
-    Vse<W, Widen(lmul)>(reinterpret_cast<W*>(vd), result, vl);
+    using W           = WidenType<T>;
+    Vse<W, Widen(lmul)>(reinterpret_cast<W *>(vd), result, vl);
   }
 #else
-  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
+  const auto v1     = Vle<T, lmul>(reinterpret_cast<const T *>(vs1), vl);
   const auto result = call_vx_or_vf<T, lmul>(v1, get_xs2_as<T>(), vl);
-  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+  Vse<T, lmul>(reinterpret_cast<T *>(vd), result, vl);
 #endif
 #endif
 }
@@ -467,7 +460,6 @@ void (*impl)() __attribute__((section(".data"))) = &test_u8_m1;
 void (*impl)() __attribute__((section(".data"))) = &test_i8_m1;
 #endif
 #endif
-
 
 int main() {
 #ifdef TEST_RM

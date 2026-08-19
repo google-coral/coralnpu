@@ -16,8 +16,8 @@
 #include <stdint.h>
 
 // Assume rhs is column major.
-extern "C" void MatMul(size_t lhs_rows, size_t inner, size_t rhs_cols, const int8_t* lhs,
-                       const int8_t* rhs, int32_t* result) {
+extern "C" void MatMul(size_t lhs_rows, size_t inner, size_t rhs_cols, const int8_t *lhs,
+                       const int8_t *rhs, int32_t *result) {
   size_t vlmax;
   asm volatile("vsetvli %0, %1, e8, m2, ta, ma" : "=r"(vlmax) : "r"(inner));
 
@@ -25,9 +25,9 @@ extern "C" void MatMul(size_t lhs_rows, size_t inner, size_t rhs_cols, const int
     int32_t* result_row = result + (r * rhs_cols);
 
     for (size_t c = 0; c < rhs_cols; c++) {
-      const int8_t* lhs_row = lhs + (r * inner);
-      const int8_t* rhs_col = rhs + (c * inner);
-      size_t k = inner;
+      const int8_t *lhs_row = lhs + (r * inner);
+      const int8_t *rhs_col = rhs + (c * inner);
+      size_t k              = inner;
 
       // Initialize v16 accumulator (e32m8) and v1 scalar reduction source to
       // zero

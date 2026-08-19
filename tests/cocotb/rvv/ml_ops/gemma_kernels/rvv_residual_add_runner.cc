@@ -18,8 +18,7 @@
 #include "sw/utils/utils.h"
 
 extern "C" {
-void rvv_residual_add_f32(const float* A, const float* B, float* Y,
-                          size_t total_elements);
+void rvv_residual_add_f32(const float *A, const float *B, float *Y, size_t total_elements);
 
 #define MAX_ELEMENTS (256 * 640)
 
@@ -37,7 +36,7 @@ int main() {
   rvv_residual_add_f32(A, B, Y, active_elements);
 
   uint32_t end_cycles = mcycle_read();
-  cycle_count = end_cycles - start_cycles;
+  cycle_count         = end_cycles - start_cycles;
 
   return 0;
 }

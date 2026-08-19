@@ -14,17 +14,17 @@
 
 #include <cstdint>
 
-#define PLIC_BASE 0x0C000000u
-#define PLIC_PRIO(i) (*(volatile uint32_t*)(PLIC_BASE + 0x000000 + (i) * 4))
-#define PLIC_PENDING (*(volatile uint32_t*)(PLIC_BASE + 0x001000))
-#define PLIC_LE (*(volatile uint32_t*)(PLIC_BASE + 0x001080))
-#define PLIC_ENABLE (*(volatile uint32_t*)(PLIC_BASE + 0x002000))
-#define PLIC_THRESHOLD (*(volatile uint32_t*)(PLIC_BASE + 0x200000))
-#define PLIC_CLAIM (*(volatile uint32_t*)(PLIC_BASE + 0x200004))
-#define PLIC_COMPLETE (*(volatile uint32_t*)(PLIC_BASE + 0x200004))
+#define PLIC_BASE      0x0C000000u
+#define PLIC_PRIO(i)   (*(volatile uint32_t *)(PLIC_BASE + 0x000000 + (i) * 4))
+#define PLIC_PENDING   (*(volatile uint32_t *)(PLIC_BASE + 0x001000))
+#define PLIC_LE        (*(volatile uint32_t *)(PLIC_BASE + 0x001080))
+#define PLIC_ENABLE    (*(volatile uint32_t *)(PLIC_BASE + 0x002000))
+#define PLIC_THRESHOLD (*(volatile uint32_t *)(PLIC_BASE + 0x200000))
+#define PLIC_CLAIM     (*(volatile uint32_t *)(PLIC_BASE + 0x200004))
+#define PLIC_COMPLETE  (*(volatile uint32_t *)(PLIC_BASE + 0x200004))
 
-#define UART1_BASE 0x40010000u
-#define UART1_PUT(c) (*(volatile uint32_t*)UART1_BASE = (c))
+#define UART1_BASE   0x40010000u
+#define UART1_PUT(c) (*(volatile uint32_t *)UART1_BASE = (c))
 
 extern "C" {
 void print_hex(uint32_t val) {
@@ -37,7 +37,7 @@ void print_hex(uint32_t val) {
 }
 
 volatile int last_claimed_id = 0;
-volatile int intr_count = 0;
+volatile int intr_count      = 0;
 
 extern "C" {
 
@@ -96,10 +96,10 @@ __attribute__((naked)) void plic_isr_wrapper(void) {
 int main() {
   asm volatile("csrw mtvec, %0" ::"r"((uint32_t)(&plic_isr_wrapper)));
 
-  PLIC_PRIO(1) = 5;
-  PLIC_PRIO(2) = 10;
-  PLIC_LE = (1u << 2);  // bit 2 set = edge
-  PLIC_ENABLE = (1u << 1) | (1u << 2);
+  PLIC_PRIO(1)   = 5;
+  PLIC_PRIO(2)   = 10;
+  PLIC_LE        = (1u << 2);  // bit 2 set = edge
+  PLIC_ENABLE    = (1u << 1) | (1u << 2);
   PLIC_THRESHOLD = 0;
 
   asm volatile("csrs mie, %0" ::"r"(1u << 11));

@@ -45,7 +45,7 @@ inline void rvv_residual_add_impl(const T *__restrict__ A, const T *__restrict__
 
   // Tail loop for remaining elements
   while (i < total_elements) {
-    size_t vl = __riscv_vsetvl_e32m8(total_elements - i);
+    size_t vl       = __riscv_vsetvl_e32m8(total_elements - i);
     vfloat32m8_t va = rvv_load_vec(&A[i], vl);
     vfloat32m8_t vb = rvv_load_vec(&B[i], vl);
 

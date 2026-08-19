@@ -5,6 +5,6 @@
 volatile uint32_t minstret_val;
 
 int main() {
-    asm volatile("csrr %0, minstret" : "=r"(minstret_val) :: "memory");
-    return 0;
+  asm volatile("csrr %0, minstret" : "=r"(minstret_val)::"memory");
+  return 0;
 }

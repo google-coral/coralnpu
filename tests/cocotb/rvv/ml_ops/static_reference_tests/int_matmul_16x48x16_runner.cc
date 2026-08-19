@@ -12,33 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+
 #include "sw/utils/utils.h"
 
 // Fully frozen dimensions
 constexpr size_t kLhsRows = 16;
 constexpr size_t kRhsCols = 16;
-constexpr size_t kInner = 48;
+constexpr size_t kInner   = 48;
 
 extern "C" {
 // Statically compiled dimensions (not writable or configurable at runtime)
-const uint32_t lhs_rows = kLhsRows;
-const uint32_t rhs_cols = kRhsCols;
-const uint32_t inner = kInner;
+const uint32_t lhs_rows           = kLhsRows;
+const uint32_t rhs_cols           = kRhsCols;
+const uint32_t inner              = kInner;
 volatile uint32_t csr_cycle_count = 0;
 }
 
 // Statically allocated and padded buffers
-int8_t lhs_input[kLhsRows * kInner]
-    __attribute__((section(".data"), used, retain)) __attribute__((aligned(16)));
-int8_t rhs_input[kInner * kRhsCols]
-    __attribute__((section(".data"), used, retain)) __attribute__((aligned(16)));
-int32_t result_output[kLhsRows * kRhsCols]
-    __attribute__((section(".data"), used, retain)) __attribute__((aligned(16)));
+int8_t lhs_input[kLhsRows * kInner] __attribute__((section(".data"), used, retain))
+__attribute__((aligned(16)));
+int8_t rhs_input[kInner * kRhsCols] __attribute__((section(".data"), used, retain))
+__attribute__((aligned(16)));
+int32_t result_output[kLhsRows * kRhsCols] __attribute__((section(".data"), used, retain))
+__attribute__((aligned(16)));
 
-extern "C" void MatMul(size_t lhs_rows, size_t inner, size_t rhs_cols, const int8_t* lhs,
-                       const int8_t* rhs, int32_t* result);
+extern "C" void MatMul(size_t lhs_rows, size_t inner, size_t rhs_cols, const int8_t *lhs,
+                       const int8_t *rhs, int32_t *result);
 
 int main() {
   // Flag start of power-critical section (write to mcontext0)
@@ -51,7 +52,7 @@ int main() {
   MatMul(lhs_rows, inner, rhs_cols, lhs_input, rhs_input, result_output);
 
   uint64_t end_cycles = mcycle_read();
-  csr_cycle_count = static_cast<uint32_t>(end_cycles - start_cycles);
+  csr_cycle_count     = static_cast<uint32_t>(end_cycles - start_cycles);
 
   // Flag end of power-critical section (write to mcontext0)
   mcontext0_write_value = 0;

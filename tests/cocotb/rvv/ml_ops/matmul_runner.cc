@@ -13,16 +13,17 @@
 // limitations under the License.
 
 #include <cstdint>
+
 #include "sw/utils/utils.h"
 
 constexpr size_t kMaxLhsRows = 32;
 constexpr size_t kMaxRhsCols = 32;
-constexpr size_t kMaxInner = 128;
+constexpr size_t kMaxInner   = 128;
 
 extern "C" {
-volatile uint32_t lhs_rows = 32;
-volatile uint32_t rhs_cols = 32;
-volatile uint32_t inner = 128;
+volatile uint32_t lhs_rows        = 32;
+volatile uint32_t rhs_cols        = 32;
+volatile uint32_t inner           = 128;
 volatile uint32_t csr_cycle_count = 0;
 }
 
@@ -33,11 +34,11 @@ int8_t lhs_input[kMaxLhsRows * kMaxInner] __attribute__((section(".data")))
 __attribute__((aligned(16)));
 int8_t rhs_input[kMaxInner * kMaxRhsCols] __attribute__((section(".data")))
 __attribute__((aligned(16)));
-int32_t result_output[kMaxLhsRows * kMaxRhsCols]
-    __attribute__((section(".data"))) __attribute__((aligned(16)));
+int32_t result_output[kMaxLhsRows * kMaxRhsCols] __attribute__((section(".data")))
+__attribute__((aligned(16)));
 
-extern "C" void MatMul(size_t lhs_rows, size_t inner, size_t rhs_cols, const int8_t* lhs,
-                       const int8_t* rhs, int32_t* result);
+extern "C" void MatMul(size_t lhs_rows, size_t inner, size_t rhs_cols, const int8_t *lhs,
+                       const int8_t *rhs, int32_t *result);
 
 int main() {
   mcontext0_write_value = 0x01;
@@ -45,8 +46,8 @@ int main() {
   cycle_counter_reset();
   uint64_t start_cycles = mcycle_read();
   MatMul(lhs_rows, inner, rhs_cols, lhs_input, rhs_input, result_output);
-  uint64_t end_cycles = mcycle_read();
-  csr_cycle_count = static_cast<uint32_t>(end_cycles - start_cycles);
+  uint64_t end_cycles   = mcycle_read();
+  csr_cycle_count       = static_cast<uint32_t>(end_cycles - start_cycles);
   mcontext0_write_value = 0x00;
   asm volatile("csrw 0x7C0, %0" : : "r"(mcontext0_write_value));
   return 0;

@@ -32,17 +32,16 @@ __attribute__((naked)) void isr_wrapper(void) {
       "li t1, 0x4 \n"
       "beq t0, t1, 0f \n"
       "ebreak \n"
-      "0: .word 0x08000073 \n"
-  );
+      "0: .word 0x08000073 \n");
 }
 
 }  // extern "C"
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   // Store Fault (internal)
-  asm volatile("csrw mtvec, %0" :: "rK"((uint32_t)(&isr_wrapper)));
-  volatile uint32_t* store_bad_addr = (uint32_t*)4L;
-  *store_bad_addr = 0xdeadbeef;
+  asm volatile("csrw mtvec, %0" ::"rK"((uint32_t)(&isr_wrapper)));
+  volatile uint32_t *store_bad_addr = (uint32_t *)4L;
+  *store_bad_addr                   = 0xdeadbeef;
   asm volatile("ebreak");
 
   return 0;

@@ -29,7 +29,7 @@ inline void rvv_tanh_gelu_mul_impl(const T *__restrict__ gate, const T *__restri
   const float CB = 0.035677408f;  // sqrt(2/pi) * 0.044715
   const float CC = 0.5f;
 
-  size_t k = total_elements;
+  size_t k          = total_elements;
   const T *gate_ptr = gate;
   const T *up_ptr   = up;
   T *out_ptr        = output;

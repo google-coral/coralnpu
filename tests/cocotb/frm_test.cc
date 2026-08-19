@@ -16,10 +16,10 @@
 #include <cstdint>
 
 uint32_t faulted __attribute__((section(".data"))) = 0;
-uint32_t mcause __attribute__((section(".data"))) = 0;
-uint32_t mtval __attribute__((section(".data"))) = 0;
-uint32_t frm __attribute__((section(".data"))) = 0;
-uint32_t result __attribute__((section(".data"))) = 0;
+uint32_t mcause __attribute__((section(".data")))  = 0;
+uint32_t mtval __attribute__((section(".data")))   = 0;
+uint32_t frm __attribute__((section(".data")))     = 0;
+uint32_t result __attribute__((section(".data")))  = 0;
 
 // Fault handler to log fault
 extern "C" {
@@ -33,24 +33,26 @@ void coralnpu_exception_handler() {
   mtval = local_mtval;
 
   asm volatile("ebreak");
-  while (1) {}
+  while (1) {
+  }
 }
 }
 
 int main() {
-    float a = 2.0f;
-    float pi = 3.14159265359f;
-    float res;
+  float a  = 2.0f;
+  float pi = 3.14159265359f;
+  float res;
 
-    // Set FRM CSR from the global variable
-    // Multiply using dynamic rounding mode (dyn = 7 in rm field)
-    asm volatile("csrw frm, %[frm];"
-                 "fmul.s %[res], %[a], %[pi], dyn;"
-        : [res] "=f"(res)
-        : [frm] "r"(frm), [a] "f"(a), [pi] "f"(pi));
+  // Set FRM CSR from the global variable
+  // Multiply using dynamic rounding mode (dyn = 7 in rm field)
+  asm volatile(
+      "csrw frm, %[frm];"
+      "fmul.s %[res], %[a], %[pi], dyn;"
+      : [res] "=f"(res)
+      : [frm] "r"(frm), [a] "f"(a), [pi] "f"(pi));
 
-    // Store result
-    result = std::bit_cast<std::uint32_t>(res);
+  // Store result
+  result = std::bit_cast<std::uint32_t>(res);
 
-    return 0;
+  return 0;
 }

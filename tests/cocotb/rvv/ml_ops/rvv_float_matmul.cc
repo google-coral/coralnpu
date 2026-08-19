@@ -13,25 +13,26 @@
 // limitations under the License.
 
 #include <riscv_vector.h>
+
 #include <cstdint>
 
 // LHS is row-major, RHS is col-major.
-extern "C" void MatMulF(size_t lhs_rows, size_t inner, size_t rhs_cols, const float* lhs,
-                        const float* rhs, float* result) {
+extern "C" void MatMulF(size_t lhs_rows, size_t inner, size_t rhs_cols, const float *lhs,
+                        const float *rhs, float *result) {
   size_t vlmax = __riscv_vsetvlmax_e32m1();
 
   for (size_t r = 0; r < lhs_rows; ++r) {
-    float* result_row = result + (r * rhs_cols);
+    float *result_row = result + (r * rhs_cols);
     for (size_t c = 0; c < rhs_cols; ++c) {
-      const float* lhs_data = lhs + (r * inner);
-      const float* rhs_data = rhs + (c * inner);
+      const float *lhs_data = lhs + (r * inner);
+      const float *rhs_data = rhs + (c * inner);
 
       vfloat32m1_t vzero = __riscv_vfmv_v_f_f32m1(0.0f, vlmax);
-      vfloat32m1_t vacc = __riscv_vfmv_v_f_f32m1(0.0f, vlmax);
+      vfloat32m1_t vacc  = __riscv_vfmv_v_f_f32m1(0.0f, vlmax);
 
       size_t k = inner;
       while (k) {
-        size_t vl = __riscv_vsetvl_e32m1(k);
+        size_t vl              = __riscv_vsetvl_e32m1(k);
         vfloat32m1_t vlhs_data = __riscv_vle32_v_f32m1(lhs_data, vl);
         lhs_data += vl;
         vfloat32m1_t vrhs_data = __riscv_vle32_v_f32m1(rhs_data, vl);

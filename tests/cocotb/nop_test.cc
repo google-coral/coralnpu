@@ -26,10 +26,9 @@ void run_nops() {
   // Loop 100 times, each time running 512 nops
   for (int i = 0; i < 100; ++i) {
     asm volatile(
-      ".rept 512 \n\t"
-      "nop \n\t"
-      ".endr"
-    );
+        ".rept 512 \n\t"
+        "nop \n\t"
+        ".endr");
   }
 
   mcontext0_write_value = 0;

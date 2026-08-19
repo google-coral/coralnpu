@@ -37,23 +37,21 @@ int8_t debug_lut[256] __attribute__((section(".data")));
 
 __attribute__((used, retain)) void run_ref() {
   uint64_t start = mcycle_read();
-  tflite::reference_integer_ops::Logistic(input_zero_point, input_range_radius,
-                                          input_multiplier, input_left_shift,
-                                          input_size, input_data, output_data);
+  tflite::reference_integer_ops::Logistic(input_zero_point, input_range_radius, input_multiplier,
+                                          input_left_shift, input_size, input_data, output_data);
   ref_cycles = mcycle_read() - start;
 }
 
 __attribute__((used, retain)) void run_optimized() {
   uint64_t start = mcycle_read();
-  coralnpu_v2::opt::litert_micro::Logistic(input_zero_point, input_range_radius,
-                                           input_multiplier, input_left_shift,
-                                           input_size, input_data, output_data);
+  coralnpu_v2::opt::litert_micro::Logistic(input_zero_point, input_range_radius, input_multiplier,
+                                           input_left_shift, input_size, input_data, output_data);
   opt_cycles = mcycle_read() - start;
 }
 
 __attribute__((used, retain)) void run_init() {
-  coralnpu_v2::opt::litert_micro::LogisticInit(
-      input_zero_point, input_range_radius, input_multiplier, input_left_shift);
+  coralnpu_v2::opt::litert_micro::LogisticInit(input_zero_point, input_range_radius,
+                                               input_multiplier, input_left_shift);
 }
 
 void (*impl)() __attribute__((section(".data"))) = run_optimized;

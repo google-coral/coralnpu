@@ -74,7 +74,7 @@ __attribute__((naked, aligned(256))) void isr_vector_table() {
       "j bad_isr \n");
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   asm volatile("csrw mtvec, %0" ::"rK"((uint32_t)(&isr_vector_table)));
   asm volatile("ecall");
   if (isr_ok == 0) {
@@ -84,4 +84,3 @@ int main(int argc, char** argv) {
   return 0;
 }
 }
-

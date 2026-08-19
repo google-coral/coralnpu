@@ -18,11 +18,11 @@
 
 #include <cstdint>
 
-#define CLINT_BASE 0x02000000u
-#define MTIMECMP_LO (*(volatile uint32_t*)(CLINT_BASE + 0x4000))
-#define MTIMECMP_HI (*(volatile uint32_t*)(CLINT_BASE + 0x4004))
-#define MTIME_LO (*(volatile uint32_t*)(CLINT_BASE + 0xBFF8))
-#define MTIME_HI (*(volatile uint32_t*)(CLINT_BASE + 0xBFFC))
+#define CLINT_BASE  0x02000000u
+#define MTIMECMP_LO (*(volatile uint32_t *)(CLINT_BASE + 0x4000))
+#define MTIMECMP_HI (*(volatile uint32_t *)(CLINT_BASE + 0x4004))
+#define MTIME_LO    (*(volatile uint32_t *)(CLINT_BASE + 0xBFF8))
+#define MTIME_HI    (*(volatile uint32_t *)(CLINT_BASE + 0xBFFC))
 
 volatile int timer_fired = 0;
 
@@ -108,8 +108,8 @@ int main() {
   asm volatile("csrs mie, %0" ::"r"(1u << 7));
 
   // 3. Read current mtime and set mtimecmp = mtime + 100
-  uint32_t mtime_lo = MTIME_LO;
-  uint32_t mtime_hi = MTIME_HI;
+  uint32_t mtime_lo  = MTIME_LO;
+  uint32_t mtime_hi  = MTIME_HI;
   uint32_t target_lo = mtime_lo + 100;
   uint32_t target_hi = mtime_hi;
   if (target_lo < mtime_lo) {
@@ -125,7 +125,8 @@ int main() {
 
   // 5. Spin-wait for the ISR to set timer_fired
   for (volatile int i = 0; i < 10000; i = i + 1) {
-    if (timer_fired) break;
+    if (timer_fired)
+      break;
   }
 
   return !(timer_fired == 1);

@@ -24,11 +24,11 @@ constexpr size_t kMaxDepth = 1024;
 }  // namespace
 
 static tflite::FullyConnectedParams params = {
-    .input_offset = 0,
-    .weights_offset = 0,
-    .output_offset = 0,
-    .output_multiplier = 1073741824,  // 0.5 in Q31
-    .output_shift = -1,
+    .input_offset             = 0,
+    .weights_offset           = 0,
+    .output_offset            = 0,
+    .output_multiplier        = 1073741824,  // 0.5 in Q31
+    .output_shift             = -1,
     .quantized_activation_min = -128,
     .quantized_activation_max = 127,
 };
@@ -61,11 +61,11 @@ uint64_t ref_cycles __attribute__((section(".data")));
 uint64_t opt_cycles __attribute__((section(".data")));
 
 void prep() {
-  params.input_offset = input_offset;
-  params.weights_offset = filter_offset;
-  params.output_offset = output_offset;
-  params.output_multiplier = output_multiplier;
-  params.output_shift = output_shift;
+  params.input_offset             = input_offset;
+  params.weights_offset           = filter_offset;
+  params.output_offset            = output_offset;
+  params.output_multiplier        = output_multiplier;
+  params.output_shift             = output_shift;
   params.quantized_activation_min = activation_min;
   params.quantized_activation_max = activation_max;
 
@@ -77,17 +77,17 @@ void prep() {
 
 __attribute__((used, retain)) void run_ref() {
   uint64_t start = mcycle_read();
-  tflite::reference_integer_ops::FullyConnected(
-      params, input_shape_, input_data, filter_shape_, filter_data, bias_shape_,
-      bias_data, output_shape_, output_data);
+  tflite::reference_integer_ops::FullyConnected(params, input_shape_, input_data, filter_shape_,
+                                                filter_data, bias_shape_, bias_data, output_shape_,
+                                                output_data);
   ref_cycles = mcycle_read() - start;
 }
 
 __attribute__((used, retain)) void run_optimized() {
   uint64_t start = mcycle_read();
-  coralnpu_v2::opt::litert_micro::FullyConnected(
-      params, input_shape_, input_data, filter_shape_, filter_data, bias_shape_,
-      bias_data, output_shape_, output_data);
+  coralnpu_v2::opt::litert_micro::FullyConnected(params, input_shape_, input_data, filter_shape_,
+                                                 filter_data, bias_shape_, bias_data, output_shape_,
+                                                 output_data);
   opt_cycles = mcycle_read() - start;
 }
 void (*impl)() __attribute__((section(".data"))) = run_optimized;

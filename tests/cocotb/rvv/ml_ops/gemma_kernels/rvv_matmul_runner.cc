@@ -17,11 +17,10 @@
 
 #include "sw/utils/utils.h"
 extern "C" {
-void rvv_tiled_matmul_2d_f32(const float* __restrict__ A,
-                             const float* __restrict__ B, float* __restrict__ C,
-                             int M, int K, int N);
-void rvv_gemv_1d_f32(const float* __restrict__ A, const float* __restrict__ B,
-                     float* __restrict__ C, int K, int N);
+void rvv_tiled_matmul_2d_f32(const float *__restrict__ A, const float *__restrict__ B,
+                             float *__restrict__ C, int M, int K, int N);
+void rvv_gemv_1d_f32(const float *__restrict__ A, const float *__restrict__ B,
+                     float *__restrict__ C, int K, int N);
 }
 
 // Max sizes for allocation
@@ -50,12 +49,11 @@ int main() {
   if (active_m == 1) {
     rvv_gemv_1d_f32(lhs_input, rhs_input, result_output, active_k, active_n);
   } else {
-    rvv_tiled_matmul_2d_f32(lhs_input, rhs_input, result_output, active_m,
-                            active_k, active_n);
+    rvv_tiled_matmul_2d_f32(lhs_input, rhs_input, result_output, active_m, active_k, active_n);
   }
 
   uint32_t end_cycles = mcycle_read();
-  cycle_count = end_cycles - start_cycles;
+  cycle_count         = end_cycles - start_cycles;
 
   return 0;
 }

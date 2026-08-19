@@ -13,22 +13,22 @@
 // limitations under the License.
 
 #include <riscv_vector.h>
+
 #include <cstdint>
 
-extern "C" void MatMulF(size_t lhs_rows, size_t inner, size_t rhs_cols, const float* lhs,
-                        const float* rhs, float* result) {
+extern "C" void MatMulF(size_t lhs_rows, size_t inner, size_t rhs_cols, const float *lhs,
+                        const float *rhs, float *result) {
   // Use an intrinsic to initialize the reduction zero scalar.
   vfloat32m1_t vzero = __riscv_vfmv_v_f_f32m1(0.0f, 1);
 
   for (size_t r = 0; r < lhs_rows; r++) {
-    const float* lhs_data = lhs + (r * inner);
-    float* result_row = result + (r * rhs_cols);
+    const float *lhs_data = lhs + (r * inner);
+    float *result_row     = result + (r * rhs_cols);
     for (size_t c = 0; c < rhs_cols; c++) {
-      const float* rhs_data = rhs + (c * inner);
+      const float *rhs_data = rhs + (c * inner);
 
       // Reset accumulator using intrinsic.
-      vfloat32m4_t vacc =
-          __riscv_vfmv_v_f_f32m4(0.0f, __riscv_vsetvlmax_e32m4());
+      vfloat32m4_t vacc = __riscv_vfmv_v_f_f32m4(0.0f, __riscv_vsetvlmax_e32m4());
 
       // Inner dot product loop
       size_t k = 0;
@@ -39,10 +39,9 @@ extern "C" void MatMulF(size_t lhs_rows, size_t inner, size_t rhs_cols, const fl
             "vle32.v  v16, %[rhs_ptr] \n\t"
             "vfmacc.vv %[vacc], v12, v16 \n\t"
             : [vacc] "+vd"(vacc)
-            : [vl] "r"(vl), [lhs_ptr] "A"(*(const float (*)[vl])(lhs_data + k)),
-              [rhs_ptr] "A"(*(const float (*)[vl])(rhs_data + k))
-            : "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19", "vtype",
-              "vl");
+            : [vl] "r"(vl), [lhs_ptr] "A"(*(const float(*)[vl])(lhs_data + k)),
+              [rhs_ptr] "A"(*(const float(*)[vl])(rhs_data + k))
+            : "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19", "vtype", "vl");
 
         k += vl;
       }

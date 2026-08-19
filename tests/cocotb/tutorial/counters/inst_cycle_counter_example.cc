@@ -26,7 +26,7 @@ int main(void) {
   for (int i = 0; i <= 100; i++) {
     asm volatile("nop");
   }
-  uint64_t cycle_end = mcycle_read();
+  uint64_t cycle_end   = mcycle_read();
   uint64_t cycle_count = cycle_end - cycle_start;
 
   cycle_count_lo = cycle_count & 0xFFFFFFFF;
@@ -39,8 +39,8 @@ int main(void) {
   }
 
   uint64_t inst_count_end = minstret_read();
-  uint64_t inst_count = inst_count_end - inst_count_start;
-  inst_count_lo = inst_count & 0xFFFFFFFF;
-  inst_count_hi = inst_count >> 32;
+  uint64_t inst_count     = inst_count_end - inst_count_start;
+  inst_count_lo           = inst_count & 0xFFFFFFFF;
+  inst_count_hi           = inst_count >> 32;
   return 0;
 }

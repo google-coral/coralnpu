@@ -33,11 +33,11 @@ inline vfloat32m8_t rvv_exp_f32m8(vfloat32m8_t x, size_t vl) {
   vfloat32m8_t i_ln2   = __riscv_vfmul_vf_f32m8(i_float, 0.6931471805599453f, vl);
   vfloat32m8_t f       = __riscv_vfsub_vv_f32m8(x, i_ln2, vl);
 
-  vfloat32m8_t v_one   = __riscv_vfmv_v_f_f32m8(1.0f, vl);
-  vfloat32m8_t p       = __riscv_vfmul_vf_f32m8(f, 0.16666667f, vl);
-  p                    = __riscv_vfadd_vf_f32m8(p, 0.5f, vl);
-  p                    = __riscv_vfmacc_vv_f32m8(v_one, f, p, vl);
-  p                    = __riscv_vfmacc_vv_f32m8(v_one, f, p, vl);
+  vfloat32m8_t v_one = __riscv_vfmv_v_f_f32m8(1.0f, vl);
+  vfloat32m8_t p     = __riscv_vfmul_vf_f32m8(f, 0.16666667f, vl);
+  p                  = __riscv_vfadd_vf_f32m8(p, 0.5f, vl);
+  p                  = __riscv_vfmacc_vv_f32m8(v_one, f, p, vl);
+  p                  = __riscv_vfmacc_vv_f32m8(v_one, f, p, vl);
 
   vint32m8_t exp_bits  = __riscv_vadd_vx_i32m8(i_int, 127, vl);
   exp_bits             = __riscv_vsll_vx_i32m8(exp_bits, 23, vl);
