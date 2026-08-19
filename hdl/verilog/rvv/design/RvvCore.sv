@@ -324,7 +324,7 @@ module RvvCore #(parameter N = 4,
       .vme_lsuflush_rdy(),
       .vmeRtVld(),
       .vmeRt(),
-      .vmeRtRdy(1'b0)
+      .vmeRtRdy(1'b1)
 `endif
   );
 

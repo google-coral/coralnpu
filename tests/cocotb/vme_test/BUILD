@@ -23,6 +23,8 @@ load(
 
 VME_TEST_TESTCASES = [
     "vme_mset_csr_test",
+    "vme_matmul_int8_test",
+    "vme_matmul_fp32_test",
 ]
 
 cocotb_test_suite(
@@ -40,15 +42,18 @@ cocotb_test_suite(
         "test_module": ["vme_test_bench.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
+            "//coralnpu_test_utils:sim_test_fixture",
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
+            ":vme_matmul_test_program",
             ":vme_test_program",
         ],
         "size": "medium",
     },
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [
+        ":vme_matmul_test_program",
         ":vme_test_program",
         "//tests/cocotb:coverage_exclude.cfg",
         "//hdl/verilog:dpi_files",
@@ -67,4 +72,11 @@ cocotb_test_suite(
 coralnpu_v2_binary(
     name = "vme_test_program",
     srcs = ["vme_test_program.cc"],
+    hdrs = ["vme_test_utils.h"],
+)
+
+coralnpu_v2_binary(
+    name = "vme_matmul_test_program",
+    srcs = ["vme_matmul_test_program.cc"],
+    hdrs = ["vme_test_utils.h"],
 )

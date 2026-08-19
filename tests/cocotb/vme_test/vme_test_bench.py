@@ -27,6 +27,7 @@ single hard-coded variant and the harness verifies the readback separately.
 import cocotb
 import numpy as np
 from coralnpu_test_utils.core_mini_axi_interface import CoreMiniAxiInterface
+from coralnpu_test_utils.sim_test_fixture import Fixture
 from bazel_tools.tools.python.runfiles import runfiles
 
 # struct VmeMsetCase   = 5 x uint32  (mtype, vtype, msettn_avl, msettm, msettk)
@@ -180,3 +181,167 @@ async def vme_mset_csr_test(dut):
     cocotb.log.info(
         f"[VME] ✓ All {num_cases} parameterized cases + msetmtypei passed"
     )
+
+
+# -----------------------------------------------------------------------------
+# Matrix arithmetic tests (vtmmu/vtmms/vtfmm + vtzero + vtmv moves).
+#
+# The companion ELF (`vme_matmul_test_program.cc`) runs one case per
+# run_to_halt: it initializes an accumulator tile (vtzero, or a preload of
+# `mm_c_init` through vtmv.t.v), loads A/B operand rows into vector registers
+# with ordinary vle, executes one matmul, and reads the 16x16 tile back into
+# `mm_out` via vtmv.v.t + vse32. All tile accesses are register-to-register.
+# -----------------------------------------------------------------------------
+
+MM_DIM = 16  # TE at VLEN=128
+MM_ROWS = 4  # A/B row slots in the program's operand buffers
+
+_MM_IMPLS = ["vtmmu_mt0", "vtmmu_mt4", "vtmms_mt0", "vtfmm_mt0", "vtfmm_mt8"]
+_MM_SYMBOLS = [
+    "mm_a",
+    "mm_b",
+    "mm_c_init",
+    "mm_out",
+    "mm_tm",
+    "mm_tn",
+    "mm_tk",
+    "mm_init_mode",
+    "mm_impl",
+] + _MM_IMPLS
+
+
+async def _load_matmul_fixture(dut):
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_matmul_test_program.elf"
+    )
+    if not elf_path:
+        raise ValueError("Could not find ELF file. Build the target first.")
+    await fixture.load_elf_and_lookup_symbols(elf_path, _MM_SYMBOLS)
+    return fixture
+
+
+async def _run_matmul_case(fixture, case, a, b, c_init):
+    """Write one case's inputs, run to halt, and return mm_out as uint32."""
+    await fixture.write("mm_a", a)
+    await fixture.write("mm_b", b)
+    await fixture.write("mm_c_init", c_init)
+    await fixture.write_word("mm_tm", case["tm"])
+    await fixture.write_word("mm_tn", case["tn"])
+    await fixture.write_word("mm_tk", case.get("tk", 1))
+    await fixture.write_word("mm_init_mode", case["init"])
+    # Clear the output buffer so stale data from a previous case can't pass.
+    await fixture.write("mm_out", np.zeros(MM_DIM * MM_DIM, dtype=np.uint32))
+    await fixture.write_ptr("mm_impl", case["impl"])
+    await fixture.run_to_halt(timeout_cycles=100000)
+    raw = await fixture.read("mm_out", MM_DIM * MM_DIM * 4)
+    return np.frombuffer(raw, dtype=np.uint32).reshape(MM_DIM, MM_DIM)
+
+
+def _check_matmul_result(name, case, actual, expected):
+    mism = np.argwhere(actual != expected)
+    if mism.size:
+        rows = "\n".join(
+            f"  [{m},{n}] expected=0x{expected[m, n]:08x} actual=0x{actual[m, n]:08x}"
+            for m, n in mism[:16]
+        )
+        raise AssertionError(
+            f"{name} case {case}: {len(mism)} mismatching tile elements "
+            f"(first {min(len(mism), 16)}):\n{rows}"
+        )
+    cocotb.log.info(f"[VME matmul] ✓ {name} {case}")
+
+
+def _int_matmul_ref(a, b, c_init, tm, tn, tk, signed_a):
+    """C[:tm,:tn] += castA(A[:tk,:tm]).T @ uint8(B[:tk,:tn]), int32 wraparound.
+
+    B is always unsigned here: vtype.altfmt (which would make B signed) is not
+    settable in the current RTL.
+    """
+    a_rows = a.reshape(MM_ROWS, MM_DIM)
+    b_rows = b.reshape(MM_ROWS, MM_DIM)
+    a_cast = (a_rows.astype(np.int8) if signed_a else a_rows).astype(np.int64)
+    b_cast = b_rows.astype(np.int64)
+    ref = c_init.astype(np.int64).reshape(MM_DIM, MM_DIM).copy()
+    ref[:tm, :tn] += a_cast[:tk, :tm].T @ b_cast[:tk, :tn]
+    return (ref & 0xFFFFFFFF).astype(np.uint32)
+
+
+def _fp_matmul_ref(a, b, c_init, tm, tn):
+    """C[:tm,:tn] += outer(A[:tm], B[:tn]) in fp32 (tk=1 for SEW32)."""
+    a_row = a.view(np.float32)[:MM_DIM]
+    b_row = b.view(np.float32)[:MM_DIM]
+    ref = c_init.view(np.float32).reshape(MM_DIM, MM_DIM).copy()
+    ref[:tm, :tn] += np.outer(a_row[:tm], b_row[:tn]).astype(np.float32)
+    return ref.view(np.uint32)
+
+
+@cocotb.test()
+async def vme_matmul_int8_test(dut):
+    """vtmmu/vtmms int8 outer-product accumulate into an int32 tile."""
+    fixture = await _load_matmul_fixture(dut)
+    rng = np.random.default_rng(42)
+
+    cases = [
+        # vtzero-initialized full-tile multiply, max configurable tk.
+        dict(impl="vtmmu_mt0", signed_a=False, init=0, tm=16, tn=16, tk=3),
+        # Accumulate onto a preloaded tile (exercises vtmv.t.v), tile mt4.
+        dict(impl="vtmmu_mt4", signed_a=False, init=1, tm=16, tn=16, tk=2),
+        # Signed A operand.
+        dict(impl="vtmms_mt0", signed_a=True, init=1, tm=16, tn=16, tk=3),
+        # Tail case: elements outside [0,tm)x[0,tn) must keep their preload.
+        dict(impl="vtmms_mt0", signed_a=True, init=1, tm=5, tn=7, tk=3),
+        # tk=1 single-row dot product.
+        dict(impl="vtmmu_mt0", signed_a=False, init=1, tm=16, tn=16, tk=1),
+    ]
+
+    for case in cases:
+        # Full random operand buffers: row slots >= tk and elements >= tm/tn
+        # carry garbage the hardware must mask off.
+        a = rng.integers(0, 256, MM_ROWS * MM_DIM, dtype=np.uint8)
+        b = rng.integers(0, 256, MM_ROWS * MM_DIM, dtype=np.uint8)
+        c_init = rng.integers(0, 1 << 32, MM_DIM * MM_DIM, dtype=np.uint32)
+        expected = _int_matmul_ref(
+            a,
+            b,
+            c_init if case["init"] else np.zeros_like(c_init),
+            case["tm"],
+            case["tn"],
+            case["tk"],
+            case["signed_a"],
+        )
+        actual = await _run_matmul_case(fixture, case, a, b, c_init)
+        _check_matmul_result("int8", case, actual, expected)
+
+
+@cocotb.test()
+async def vme_matmul_fp32_test(dut):
+    """vtfmm fp32 outer-product accumulate into an fp32 tile."""
+    fixture = await _load_matmul_fixture(dut)
+    rng = np.random.default_rng(1234)
+
+    cases = [
+        dict(impl="vtfmm_mt0", init=0, tm=16, tn=16),
+        # Accumulate + tail on tile mt8.
+        dict(impl="vtfmm_mt8", init=1, tm=9, tn=11),
+    ]
+
+    for case in cases:
+        # Small integer-valued floats: products and sums are exact in fp32,
+        # so the numpy reference matches bit-for-bit regardless of rounding.
+        a = (rng.integers(-8, 9, MM_DIM).astype(np.float32).view(np.uint8))
+        b = (rng.integers(-8, 9, MM_DIM).astype(np.float32).view(np.uint8))
+        c_init = (
+            rng.integers(-100, 101,
+                         MM_DIM * MM_DIM).astype(np.float32).view(np.uint32)
+        )
+        expected = _fp_matmul_ref(
+            a,
+            b,
+            c_init if case["init"] else np.zeros_like(c_init),
+            case["tm"],
+            case["tn"],
+        )
+        actual = await _run_matmul_case(fixture, case, a, b, c_init)
+        _check_matmul_result("fp32", case, actual, expected)

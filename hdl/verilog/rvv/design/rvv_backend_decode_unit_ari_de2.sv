@@ -1229,11 +1229,17 @@ module rvv_backend_decode_unit_ari_de2
             VASUBU,
             VASUB,
             VSLIDE1UP,
-            VSLIDE1DOWN,
-            VCOMPRESS_VTMVTV: begin
+            VSLIDE1DOWN: begin
               vd_offset[i] = uop_index_current[i][`UOP_INDEX_WIDTH_ALU-1:0];
               vd_valid[i]  = 1'b1;
             end   
+
+            VCOMPRESS_VTMVTV: begin
+              if(inst_funct3==OPMVV) begin
+                vd_offset[i] = uop_index_current[i][`UOP_INDEX_WIDTH_ALU-1:0];
+                vd_valid[i]  = 1'b1;
+              end
+            end
 
             VREDSUM,
             VREDMAXU,
