@@ -101,6 +101,10 @@ object LsuOp extends ChiselEnum {
   val VSTORE_OINDEXED = Value
   val VSTORE_UINDEXED = Value
 
+  // VME instructions.
+  val VTLOAD  = Value
+  val VTSTORE = Value
+
   def isVector(op: LsuOp.Type): Bool = {
     op.isOneOf(
       LsuOp.VLOAD_UNIT,
@@ -112,6 +116,10 @@ object LsuOp extends ChiselEnum {
       LsuOp.VSTORE_OINDEXED,
       LsuOp.VSTORE_UINDEXED
     )
+  }
+
+  def isTile(op: LsuOp.Type): Bool = {
+    op.isOneOf(LsuOp.VTLOAD, LsuOp.VTSTORE)
   }
 
   def isIndexedVector(op: LsuOp.Type): Bool = {
@@ -147,8 +155,8 @@ object LsuOp extends ChiselEnum {
         op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH, LsuOp.FLOAT_H) -> Mux(halfAligned, 2.U, 16.U),
         op.isOneOf(LsuOp.LW, LsuOp.SW, LsuOp.FLOAT)              ->
           Mux(wordAligned, 4.U, 16.U),
-        op.isOneOf(LsuOp.LD, LsuOp.SD) -> Mux(dwordAligned, 8.U, 16.U),
-        LsuOp.isVector(op)             -> 16.U
+        op.isOneOf(LsuOp.LD, LsuOp.SD)           -> Mux(dwordAligned, 8.U, 16.U),
+        (LsuOp.isVector(op) || LsuOp.isTile(op)) -> 16.U
       )
     )
 

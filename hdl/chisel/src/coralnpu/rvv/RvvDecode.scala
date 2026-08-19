@@ -206,6 +206,10 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     isLoadStore() && !bits(21) && (bits(20, 19) === 0.U) && (bits(17, 13) === "b01000".U)
   }
 
+  def isVmeLdSt(): Bool = {
+    isLoadStore() && (bits(21, 18) === "b1001".U) && (funct3() === "b111".U) && (bits(4, 0) === 0.U)
+  }
+
   def readsRs1(): Bool = {
     isLoadStore() ||
     (funct3() === "b100".U) ||                                 // OPIVX
@@ -220,7 +224,8 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
   def readsRs2(): Bool = {
     (isLoadStore() && (mop === RvvAddressingMode.STRIDED)) ||
     ((funct3() === "b111".U) && (bits(24, 18) === "b1000000".U)) ||
-    isMsetmtype()
+    isMsetmtype() ||
+    isVmeLdSt()
   }
 
   def readsFloatRs1(): Bool = {
@@ -239,35 +244,31 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     opcode === RvvCompressedOpcode.RVVALU && funct3() === "b001".U && funct6() === "b010000".U
   }
 
-  // VME (Zvt) operations that write only matrix tile state: the matrix
-  // multiplies (funct6 111100, OPIVV/OPFVV), vtzero (funct6 010000, OPMVX,
-  // vs2 field 11110), and vtmv.t.v (funct6 010111, OPMVX). vtmv.v.t (funct6
-  // 010000, OPMVX, vs2 field 11111) does write vector registers and is
-  // excluded. These must not be reported as vector-register writers: the
-  // retirement buffer would wait forever for a writeback that never comes.
-  def writesTileStateOnly(): Bool = {
+  def writesTile(): Bool = {
     if (!p.enableVme) { false.B }
     else {
-      val vs2Field = bits(17, 13)
-      val isMatmul = (funct6() === "b111100".U) &&
-        (funct3() === "b000".U || funct3() === "b001".U)
-      val isVtzero = (funct3() === "b110".U) &&
-        (funct6() === "b010000".U) && (vs2Field === "b11110".U)
-      val isVtmvTv = (funct3() === "b110".U) && (funct6() === "b010111".U)
-      (opcode === RvvCompressedOpcode.RVVALU) &&
-      (isMatmul || isVtzero || isVtmvTv)
+      // VME tile loads write to tile memory:
+      (isVmeLdSt() && opcode === RvvCompressedOpcode.RVVLOAD) ||
+      // VME ALU instructions that write to tile memory rather than a vector register:
+      // - Matrix ops (VTXMMXTVV): funct6 === "b111100".U
+      // - vtzero: funct3 === "b110".U && funct6 === "b010000".U && bits(17, 13) === "b11110".U
+      // - vtmv.t.v: funct3 === "b110".U && funct6 === "b010111".U
+      ((opcode === RvvCompressedOpcode.RVVALU) && (
+        (funct6() === "b111100".U) ||
+          ((funct3() === "b110".U) && (
+            (funct6() === "b010111".U) ||
+              (funct6() === "b010000".U && bits(17, 13) === "b11110".U)
+          ))
+      ))
     }
   }
 
   def writesVectorRegister(): Bool = {
     // A vector instruction writes to a vector register if it's an ALU operation
-    // or a load operation. Store operations do not write to a vector register.
-    // vset* instructions write to a scalar register (rd), not a vector register.
-    // Scalar-write instructions (vmv.x.s, vcpop, vfirst, vfmv.f.s) also do not
-    // write vector registers, and neither do the VME tile-state-only ops.
-    opcode === RvvCompressedOpcode.RVVLOAD ||
-    (opcode === RvvCompressedOpcode.RVVALU && !writesRd() && !writesFrd() &&
-      !writesTileStateOnly())
+    // or a load operation, unless it writes to a scalar register (rd/frd) or tile memory.
+    // Store operations do not write to a vector register.
+    (opcode.isOneOf(RvvCompressedOpcode.RVVLOAD, RvvCompressedOpcode.RVVALU)) &&
+    !writesRd() && !writesFrd() && !writesTile()
   }
 
   override def toPrintable: Printable = {
@@ -280,12 +281,12 @@ object RvvCompressedInstruction {
     val old_opcode = inst(6, 0)
     val bits       = inst(31, 7)
 
-    // mew must be 0 for valid load/stores
+    // mew must be 0 for valid standard RVV load/stores, or 1 for VME tile loads/stores
     val mew = inst(28)
     // RVVLOAD and RVVSTORE op codes are shared with "f" extension. Use "width"
     // to discriminate between the two.
-    val width      = inst(14, 12)
-    val validWidth = !mew && MuxLookup(width, false.B)(
+    val width     = inst(14, 12)
+    val isRvvLdSt = !mew && MuxLookup(width, false.B)(
       Seq(
         "b000".U -> true.B, // 8b
         "b101".U -> true.B, // 16b
@@ -293,6 +294,21 @@ object RvvCompressedInstruction {
         // "b111".U -> true.B,  // 64b, unused for coralnpu
       )
     )
+
+    val isVmeLdSt = if (p.enableVme) {
+      mew && (width === "b111".U) && (inst(11, 7) === 0.U) && inst(25) && (inst(27, 26) === 0.U) &&
+      MuxLookup(inst(31, 29), false.B)(
+        Seq(
+          "b000".U -> true.B, // 8b
+          "b001".U -> true.B, // 16b
+          "b010".U -> true.B  // 32b
+        )
+      )
+    } else {
+      false.B
+    }
+
+    val validWidth = isRvvLdSt || isVmeLdSt
 
     val temp_inst = Wire(new RvvCompressedInstruction(p))
     temp_inst.bits    := bits

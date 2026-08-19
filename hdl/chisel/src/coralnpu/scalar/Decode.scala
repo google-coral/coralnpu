@@ -779,10 +779,11 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
         }
         .getOrElse(Seq()) ++ Option
         .when(p.enableRvv) {
+          val isVme     = if (p.enableVme) d.rvv.get.bits.isVmeLdSt() else false.B
           val isRvvLoad = d.rvv.get.valid &&
-            (d.rvv.get.bits.opcode === RvvCompressedOpcode.RVVLOAD)
+            (d.rvv.get.bits.opcode === RvvCompressedOpcode.RVVLOAD) && !isVme
           val isRvvStore = d.rvv.get.valid &&
-            (d.rvv.get.bits.opcode === RvvCompressedOpcode.RVVSTORE)
+            (d.rvv.get.bits.opcode === RvvCompressedOpcode.RVVSTORE) && !isVme
           val mop = d.rvv.get.bits.mop
           Seq(
             (isRvvLoad && (mop === RvvAddressingMode.UNIT_STRIDE)) -> MakeValid(
@@ -816,6 +817,25 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
             (isRvvStore && (mop === RvvAddressingMode.INDEXED_ORDERED)) -> MakeValid(
               true.B,
               LsuOp.VSTORE_OINDEXED
+            )
+          )
+        }
+        .getOrElse(Seq()) ++ Option
+        .when(p.enableVme) {
+          val isVmeLoad = d.rvv.get.valid &&
+            (d.rvv.get.bits.opcode === RvvCompressedOpcode.RVVLOAD) &&
+            d.rvv.get.bits.isVmeLdSt()
+          val isVmeStore = d.rvv.get.valid &&
+            (d.rvv.get.bits.opcode === RvvCompressedOpcode.RVVSTORE) &&
+            d.rvv.get.bits.isVmeLdSt()
+          Seq(
+            isVmeLoad -> MakeValid(
+              true.B,
+              LsuOp.VTLOAD
+            ),
+            isVmeStore -> MakeValid(
+              true.B,
+              LsuOp.VTSTORE
             )
           )
         }

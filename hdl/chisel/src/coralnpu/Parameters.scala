@@ -105,7 +105,9 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   def rvvRetireLanes: Int = if (enableVerification) instructionLanes + 2 else instructionLanes
 
   // Enable VME (Zvt) non-tile state and mset* instructions. Requires enableRvv.
-  var enableVme = false
+  var enableVme  = false
+  val vmeTeRatio = 8
+  def vmeTe: Int = { rvvVlen / vmeTeRatio }
 
   def useRetirementBuffer: Boolean = { enableVerification }
 
