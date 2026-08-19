@@ -26,10 +26,11 @@ genrule(
 filegroup(
     name = "tlul2ahblite_files",
     srcs = glob([
+        "*.core",
+        "lint/*.vlt",
         "rtl/*.v",
         "rtl/*.sv",
         "rtl/*.svh",
-        "rtl/*.core",
     ]),
 )
 
@@ -43,7 +44,10 @@ filegroup(
 
 filegroup(
     name = "tlul2ahblite_verilog_files",
-    srcs = glob(["rtl/*.v"]),
+    srcs = glob([
+        "rtl/*.v",
+        "rtl/*.sv",
+    ]),
 )
 
 filegroup(
@@ -57,8 +61,8 @@ filegroup(
 filegroup(
     name = "ispyocto_core",
     srcs = [
-        "ispyocto.core",
-        "lint/ispyocto.vlt",
+        ":tlul2ahblite_files",
+        "@ispyocto//:ispyocto_core",
     ],
 )
 
@@ -81,9 +85,9 @@ fusesoc_build(
         "@lowrisc_opentitan_gh//hw:check_tool_requirements.core",
     ],
     output_groups = {
-        "binary": ["vsi_ip_ispyocto_0.1/sim-verilator/Visp_wrapper_tb"],
+        "binary": ["google_ip_ispyocto_0.1/sim-verilator/Visp_wrapper_tb"],
     },
-    systems = ["vsi:ip:ispyocto:0.1"],
+    systems = ["google:ip:ispyocto:0.1"],
     target = "sim",
 )
 
@@ -98,6 +102,7 @@ sh_test(
     srcs = ["run_wrapper_sim.sh"],
     args = ["$(location :isp_wrapper_sim_binary)"],
     data = [
+        ":grey_bars_320x240.raw",
         ":isp_wrapper_sim_binary",
     ],
 )

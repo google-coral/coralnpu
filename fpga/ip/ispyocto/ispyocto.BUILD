@@ -29,13 +29,16 @@ filegroup(
 filegroup(
     name = "ispyocto_core",
     srcs = [
-        "ispyocto.core",
+        "ispyocto/isp_includes.core",
+        "ispyocto/ispyocto.core",
+        "ispyocto/lint/ispyocto.vlt",
     ],
 )
 
 filegroup(
     name = "rtl_files",
     srcs = [
+        ":ispyocto_core",
         ":ispyocto_rtl_files",
     ],
 )

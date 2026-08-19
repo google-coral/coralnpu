@@ -4,8 +4,8 @@ CAPI=2:
 # Copyright lowRISC contributors.
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
-name: "vsi:ip:ispyocto:0.1"
-description: "ispyocto"
+name: "google:ip:ispyocto:0.1"
+description: "ispyocto wrapper"
 filesets:
   files_rtl:
     depend:
@@ -13,159 +13,8 @@ filesets:
       - lowrisc:prim:subreg
       - com.google.coralnpu:fpga:coralnpu_soc_pkg:0.1
       - coralnpuv2:ip:coralnpu_tlul:0.1
+      - vsi:ip:ispyocto:0.1
     files:
-      # From isp_includes.core
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_AQ_timescale.vh : {is_include_file : true}
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_f_sqrt_8bit.vh : {is_include_file : true}
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_gc_allDefinesForBench.vh : {is_include_file : true}
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_isp.vh : {is_include_file : true}
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_jpeg_r2b.vh : {is_include_file : true}
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_marvin_ctrl.vh : {is_include_file : true}
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_marvin_id.vh : {is_include_file : true}
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_marvin_mi.vh : {is_include_file : true}
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_ram_sizes.vh : {is_include_file : true}
-      - ../../../external/ispyocto/ispyocto/rtl/inc/vsisp_self_resize.vh : {is_include_file : true}
-      # From ispyocto.core
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_add_h_end.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_ahb2pvci.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_AQSync.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_bvci2axi_wr.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_CLOCKGATER.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_conv_422to444.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_conv_dpsbe.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_conv_dpsfe.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_conv_dpsfifo.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_conv_gen_streaming_interface.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_conv.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_conv_yuv2rgb.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_dreg_en_1d.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_dreg_en_2d.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_fifo4fe.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_fifo.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_GC_CG_MOD.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_gc_den_reg.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_gc_dr_reg.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_422_conv.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_awb_acc.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_awb_div.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_awb_meas.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_awb_th.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_awb_wnd.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_bls_regs.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_bls_subtr.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_bls_v2.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_cac_ctrl.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_cac_delay.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_cac_hor_buf.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_cac_hor.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_cac_ver.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_cross_talk.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_crt_tri_mul_add.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_csm_fix.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_csm_tri_mul_add.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_csm.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_demosaic_3x2.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_demosaic_3x3_crcb.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_demosaic5x.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_demosaic_buf_5lines.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_demosaic_dpsbe.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_digi_gain.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_dpsfe.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_exp_ctrl.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_exp_regs.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_exp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_filt_chr_buf.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_filt_chr_core.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_filt_ctrl.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_filt_hp_core.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_filt_lp_core.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_filt_out_mux.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_filt_regs.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_filt_txtdet.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_filt.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_gamma_channel_fix.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_gamma_out.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_inform.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_irq_handler.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_isp_fifo_wrapper.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_isp_ram_wrapper.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_line_mem_if.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_miv1_mp_sramy_wrapper.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_outform.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_pseudo_random_gen.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_regs.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_rgb_yuv_sel.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_srsz_c_wrapper.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_srsz_y_wrapper.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp_tpg_cfg.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_isp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_m4_clock_gating.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_ctrl_pvcidis.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_ctrl_pvci.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_ctrl_reset_gen.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_ctrl.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_dpsfe.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_dpsfifo.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_irq_handler.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_2to3.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_bp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_dpsbe.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_fifo_bp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_fifo.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_handshake.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_in_distrib.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_in.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_addrgen_mp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_addrgen_sp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_arbit_mp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_arbit_sp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_bp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_ctrl_mp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_ctrl_sp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_mp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_sp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_updlogic_mp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out_updlogic_sp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_out.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_regs.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi_swap.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_mi.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_pvci_reg_stage.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_marvin_top_a.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/VSISP_MARVIN_TOP_X.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_mi_bayer_split.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_mi_dp_outstage.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_mi_dp_raw.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_mi_fifo_core.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_mi_fifo_ram.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_mi_jpeg_ctrl.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_pvci_mux.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_pvci_sync.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_resize_conv_ctrl.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_resize_conv.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_resize_to_conv_2to3.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_self_hor_c_scale.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_self_hor_mult.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_self_hor_scale.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_self_resize_c_scale.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_self_resize_scale.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_self_resize.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_self_rsz_dpsbe.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_self_vert_mult.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_self_vert_scale.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_sensor_fifo.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_sync_fifo_core.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_sync_fifo_outp.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_sync_fifo_reset_gen_rd.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_sync_fifo_reset_gen_wr.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_vs_marvin_ramshell.v
-      - ../../../external/ispyocto/ispyocto/rtl/ispyocto/vsisp_yc_split.v
-      - ../../../external/ispyocto/ispyocto/rtl/rams/vsisp_RAM1P128W28B_SS.v
-      - ../../../external/ispyocto/ispyocto/rtl/rams/vsisp_RAM1P320W168B_SS.v
-      - ../../../external/ispyocto/ispyocto/rtl/rams/vsisp_RAM1P320W32B_SS.v
-      - ../../../external/ispyocto/ispyocto/rtl/rams/vsisp_RAM1P80W66B_SS.v
-      - rtl/isp_config.svh:
-          is_include_file: true
       - rtl/ahb_pkg.sv
       - rtl/axi_pkg.sv
       - rtl/isp_wrapper_reg_pkg.sv
@@ -174,6 +23,19 @@ filesets:
       - rtl/tlul2ahblite.v
       - rtl/ahblite_enc.v
       - rtl/tlul_dec.v
+      # Included in files_rtl because top-level SoC simulation wrappers (chip_verilator.sv) instantiate it.
+      - rtl/cam_signal_generator.sv
+    file_type: systemVerilogSource
+
+  files_tb:
+    depend:
+      - lowrisc:tlul:headers
+      - lowrisc:tlul:trans_intg
+      - lowrisc:prim:subreg
+      - com.google.coralnpu:fpga:coralnpu_soc_pkg:0.1
+    files:
+      - rtl/isp_config.svh: {is_include_file: true}
+      - rtl/isp_wrapper_tb.sv
     file_type: systemVerilogSource
 
   files_verilator_waiver:
@@ -183,34 +45,23 @@ filesets:
       - lint/ispyocto.vlt
     file_type: vlt
 
-  files_tb:
-    depend:
-      - lowrisc:tlul:headers
-      - lowrisc:tlul:trans_intg
-      - lowrisc:prim:subreg
-      - com.google.coralnpu:fpga:coralnpu_soc_pkg:0.1
-    files:
-      - rtl/isp_wrapper_tb.sv
-      - rtl/cam_signal_generator.sv
-    file_type: systemVerilogSource
-
-
 parameters:
   SYNTHESIS:
     datatype: bool
+    default: false
     paramtype: vlogdefine
 
   CAM_MODEL:
     datatype: bool
+    default: false
     paramtype: vlogdefine
-
 
 targets:
   default: &default_target
     filesets:
       - tool_verilator ? (files_verilator_waiver)
       - files_rtl
-    toplevel: vsisp
+    toplevel: isp_wrapper
 
   lint:
     <<: *default_target
@@ -225,7 +76,7 @@ targets:
 
   # Simulation target using the internal Test Pattern Generator (TPG).
   # This is the default mode.
-  sim:
+  sim: &sim_target
     default_tool: verilator
     filesets:
       - tool_verilator ? (files_verilator_waiver)
@@ -244,19 +95,6 @@ targets:
   # Simulation target using the DPI Camera Model.
   # This mode defines CAM_MODEL=true to switch the testbench and ISP config.
   sim_cam:
-    default_tool: verilator
-    filesets:
-      - tool_verilator ? (files_verilator_waiver)
-      - files_rtl
-      - files_tb
-    toplevel: isp_wrapper_tb
+    <<: *sim_target
     parameters:
       - CAM_MODEL=true
-    tools:
-      verilator:
-        mode: binary
-        verilator_options:
-          - '--timing'
-          - '--trace-fst'
-          - '-Wall'
-          - '-Wno-fatal'

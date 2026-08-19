@@ -14,8 +14,7 @@ filesets:
       - lowrisc:tlul:adapter_sram
       - coralnpuv2:ip:coralnpu_tlul:0.1
       - coralnpuv2:ip:i2c_master:0.1
-      - vsi:ip:ispyocto:0.1
-      - google:ip:tlul2ahblite:0.1
+      - google:ip:ispyocto:0.1
     files:
       - rtl/coralnpu_soc.sv
       - rtl/clk_table.sv

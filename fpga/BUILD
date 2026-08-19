@@ -492,7 +492,6 @@ VERILATOR_COMMON_CORES = [
     "@lowrisc_opentitan_gh//hw/dv:dpi/uartdpi/uartdpi_sv.core",
     "@lowrisc_opentitan_gh//hw/dv:dpi/jtagdpi/jtagdpi.core",
     "@lowrisc_opentitan_gh//hw/dv:dpi/jtagdpi/jtagdpi_sv.core",
-    "//fpga/ip/ispyocto:tlul2ahblite_files",
     "//fpga/ip/ispyocto:ispyocto_core",
 ]
 
@@ -560,7 +559,6 @@ NEXUS_COMMON_CORES = [
     ":chip_nexus.core",
     "//fpga/ip/i2c_master:i2c_master.core",
     "//fpga/ip/ispyocto:ispyocto_core",
-    "//fpga/ip/ispyocto:tlul2ahblite_files",
 ] + DDR_CORES
 
 # Generate Nexus build targets (bitstream and synth_only)
