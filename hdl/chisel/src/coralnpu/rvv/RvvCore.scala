@@ -122,6 +122,16 @@ object GenerateCoreShimSource {
             |""".stripMargin.replaceAll("GENI", i.toString).replaceAll("VLEN", vlen.toString)
     }
 
+    if (p.enableVme) {
+      moduleInterface += """    output vme2lsu_valid,
+            |    output [VLEN-1:0] vme2lsu_bits_data,
+            |    input  vme2lsu_ready,
+            |    input  lsu2vme_valid,
+            |    input  [VLEN-1:0] lsu2vme_bits_data,
+            |    output lsu2vme_ready,
+            |""".stripMargin.replaceAll("VLEN", vlen.toString)
+    }
+
     // Add CSR output
     moduleInterface += """    output vcsr_valid,
         |    output [VSTART_LEN:0] vcsr_vstart,
@@ -331,6 +341,16 @@ object GenerateCoreShimSource {
           |""".stripMargin.replaceAll("GENI", i.toString)
     }
 
+    if (p.enableVme) {
+      coreInstantiation +=
+        """`ifndef ZVT_ON
+          |  assign vme2lsu_valid = 1'b0;
+          |  assign vme2lsu_bits_data = '0;
+          |  assign lsu2vme_ready = 1'b0;
+          |`endif
+          |""".stripMargin
+    }
+
     // Scalar regfile write temp output
     coreInstantiation += """  logic [GENN-1:0] reg_write_valid;
         |  logic [GENN-1:0][4:0] reg_write_addr;
@@ -414,6 +434,18 @@ object GenerateCoreShimSource {
         |""".stripMargin
       .replaceAll("GENN", instructionLanes.toString)
       .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
+    if (p.enableVme) {
+      coreInstantiation +=
+        """`ifdef ZVT_ON
+          |      ,.uop_vme2lsu_valid(vme2lsu_valid),
+          |      .uop_vme2lsu_data(vme2lsu_bits_data),
+          |      .uop_vme2lsu_ready(vme2lsu_ready),
+          |      .uop_lsu2vme_valid(lsu2vme_valid),
+          |      .uop_lsu2vme_data(lsu2vme_bits_data),
+          |      .uop_lsu2vme_ready(lsu2vme_ready)
+          |`endif
+          |""".stripMargin
+    }
     coreInstantiation += "  );\n"
 
     for (i <- 0 until numRetireLanes) {
@@ -571,6 +603,9 @@ class RvvCoreWrapper(p: Parameters)
     // TODO(derekjchow): Parameterize
     val rvv2lsu = Vec(2, Decoupled(new Rvv2Lsu(p)))
     val lsu2rvv = Vec(2, Flipped(Decoupled(new Lsu2Rvv(p))))
+
+    val vme2lsu = Option.when(p.enableVme)(Decoupled(new Vme2Lsu(p)))
+    val lsu2vme = Option.when(p.enableVme)(Flipped(Decoupled(new Lsu2Vme(p))))
 
     // Config state
     val configStateValid = Output(Bool())
@@ -796,6 +831,10 @@ class RvvCoreShim(p: Parameters) extends Module {
 
   io.rvv2lsu <> rvvCoreWrapper.io.rvv2lsu
   io.lsu2rvv <> rvvCoreWrapper.io.lsu2rvv
+  if (p.enableVme) {
+    io.vme2lsu.get <> rvvCoreWrapper.io.vme2lsu.get
+    io.lsu2vme.get <> rvvCoreWrapper.io.lsu2vme.get
+  }
 
   // Conservatively mark config state as invalid the cycle when CSR instruction
   // updates vstart, vxrm or vxsat.

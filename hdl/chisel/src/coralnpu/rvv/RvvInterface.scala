@@ -66,6 +66,14 @@ class Rvv2Lsu(p: Parameters) extends Bundle {
   val mask = Valid(UInt(p.rvvVlenb.W))
 }
 
+class Vme2Lsu(p: Parameters) extends Bundle {
+  val data = UInt(p.rvvVlen.W)
+}
+
+class Lsu2Vme(p: Parameters) extends Bundle {
+  val data = UInt(p.rvvVlen.W)
+}
+
 class RvvCoreIO(p: Parameters) extends Bundle {
   // Decode Cycle.
   val inst = Vec(p.instructionLanes, Flipped(Decoupled(new RvvCompressedInstruction(p))))
@@ -77,6 +85,9 @@ class RvvCoreIO(p: Parameters) extends Bundle {
 
   val rvv2lsu = Vec(2, Decoupled(new Rvv2Lsu(p)))
   val lsu2rvv = Vec(2, Flipped(Decoupled(new Lsu2Rvv(p))))
+
+  val vme2lsu = Option.when(p.enableVme)(Decoupled(new Vme2Lsu(p)))
+  val lsu2vme = Option.when(p.enableVme)(Flipped(Decoupled(new Lsu2Vme(p))))
 
   // Config state.
   val configState = Output(Valid(new RvvConfigState(p)))

@@ -110,6 +110,18 @@ module RvvCore #(parameter N = 4,
   // Floating point fflags update from backend
   output logic                            wr_fflags_valid_o,
   output logic    [4:0]                   wr_fflags_o
+`ifdef ZVT_ON
+  ,
+  // VME to LSU (store data)
+  output logic uop_vme2lsu_valid,
+  output VRegDataT uop_vme2lsu_data,
+  input logic uop_vme2lsu_ready,
+
+  // LSU to VME (load data)
+  input logic uop_lsu2vme_valid,
+  input VRegDataT uop_lsu2vme_data,
+  output logic uop_lsu2vme_ready
+`endif
 );
   logic [N-1:0] frontend_cmd_valid;
   RVVCmd [N-1:0] frontend_cmd_data;
@@ -252,14 +264,26 @@ module RvvCore #(parameter N = 4,
   logic  trap_ready_rvv2rvs;
   assign trap_valid_rvs2rvv = flush;
 
-  // Tie-off VME LSU interfaces
-  // TODO: Support these
+  // Tie-off unused VME interfaces
 `ifdef ZVT_ON
-  // logic                 uop_vme2lsu_vld_dummy;
-  // UOP_VME2LSU_t         uop_vme2lsu_dummy;
-  // logic                 uop_lsu2vme_rdy_dummy;
-  // logic                 vme_lsuflush_vld_dummy;
-  // logic                 vme_lsuflush_rdy_dummy;
+  logic                 uop_vme2lsu_vld;
+  UOP_VME2LSU_t         uop_vme2lsu;
+  logic                 uop_vme2lsu_rdy;
+  logic                 uop_lsu2vme_vld;
+  UOP_LSU2VME_t         uop_lsu2vme;
+  logic                 uop_lsu2vme_rdy;
+
+  assign uop_vme2lsu_valid = uop_vme2lsu_vld;
+  assign uop_vme2lsu_data  = uop_vme2lsu.r_data;
+  assign uop_vme2lsu_rdy   = uop_vme2lsu_ready;
+
+  assign uop_lsu2vme_vld    = uop_lsu2vme_valid;
+  assign uop_lsu2vme.w_data = uop_lsu2vme_data;
+`ifdef TB_SUPPORT
+  assign uop_lsu2vme.uop_pc    = 0;
+  assign uop_lsu2vme.uop_index = 0;
+`endif
+  assign uop_lsu2vme_ready = uop_lsu2vme_rdy;
 `endif
 
   logic   [`ISSUE_LANE-1:0] insts_ready_cq2rvs;
@@ -314,12 +338,12 @@ module RvvCore #(parameter N = 4,
       .rvv_idle(rvv_backend_idle),
       .rd_rob2rt_o(rd_rob2rt_o)
 `ifdef ZVT_ON
-      ,.uop_vme2lsu_vld(),
-      .uop_vme2lsu(),
-      .uop_vme2lsu_rdy(1'b0),
-      .uop_lsu2vme_vld(1'b0),
-      .uop_lsu2vme('0),
-      .uop_lsu2vme_rdy(),
+      ,.uop_vme2lsu_vld(uop_vme2lsu_vld),
+      .uop_vme2lsu(uop_vme2lsu),
+      .uop_vme2lsu_rdy(uop_vme2lsu_rdy),
+      .uop_lsu2vme_vld(uop_lsu2vme_vld),
+      .uop_lsu2vme(uop_lsu2vme),
+      .uop_lsu2vme_rdy(uop_lsu2vme_rdy),
       .vme_lsuflush_vld(1'b0),
       .vme_lsuflush_rdy(),
       .vmeRtVld(),

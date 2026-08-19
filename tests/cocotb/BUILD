@@ -751,6 +751,40 @@ cocotb_test_suite(
 )
 
 cocotb_test_suite(
+    name = "vme_rvv_load_store_test",
+    simulators = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_LOAD_STORE_TESTCASES,
+    testcases_vname = "RVV_LOAD_STORE_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "VmeCoreMiniAxi",
+        "waves": False,
+        "seed": "42",
+        "test_module": ["rvv_load_store_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:rvv_type_util",
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+            requirement("tqdm"),
+        ],
+        "data": ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"],
+        "default_testcase_size": "medium",
+        "size": "enormous",
+    },
+    vcs_build_args = VCS_BUILD_ARGS,
+    vcs_data = ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"] + VCS_COMMON_DATA,
+    vcs_defines = dict(
+        VCS_DEFINES,
+        ZVT_ON = "",
+    ),
+    vcs_test_args = VCS_TEST_ARGS,
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:vme_core_mini_axi_cc_library_verilog"],
+    verilator_model = ":vme_core_mini_axi_model",
+)
+
+cocotb_test_suite(
     name = "rvv_arithmetic_cocotb_test",
     simulators = [
         "verilator",

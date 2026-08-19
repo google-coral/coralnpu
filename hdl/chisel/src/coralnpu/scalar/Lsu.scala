@@ -52,6 +52,9 @@ class Lsu(p: Parameters) extends Module {
     val rvv2lsu = Option.when(p.enableRvv)(Vec(2, Flipped(Decoupled(new Rvv2Lsu(p)))))
     val lsu2rvv = Option.when(p.enableRvv)(Vec(2, Decoupled(new Lsu2Rvv(p))))
 
+    val vme2lsu = Option.when(p.enableVme)(Flipped(Decoupled(new Vme2Lsu(p))))
+    val lsu2vme = Option.when(p.enableVme)(Decoupled(new Lsu2Vme(p)))
+
     // RVV config state
     val rvvState = Option.when(p.enableRvv)(Input(Valid(new RvvConfigState(p))))
 
@@ -3295,6 +3298,11 @@ class LsuV3(p: Parameters) extends Lsu(p) {
   if (p.enableRvv) {
     slot.io.vectorData.get <> io.rvv2lsu.get(0)
     io.rvv2lsu.get(1).ready := false.B
+  }
+  if (p.enableVme) {
+    io.vme2lsu.get.ready := false.B
+    io.lsu2vme.get.valid := false.B
+    io.lsu2vme.get.bits  := DontCare
   }
 
   // TODO: refactor out into a bus adapter

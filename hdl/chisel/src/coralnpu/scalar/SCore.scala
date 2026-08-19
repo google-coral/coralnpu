@@ -251,6 +251,10 @@ class SCore(p: Parameters) extends Module {
     lsu.io.rvvState.get := io.rvvcore.get.configState
     lsu.io.lsu2rvv.get <> io.rvvcore.get.lsu2rvv
     io.rvvcore.get.rvv2lsu <> lsu.io.rvv2lsu.get
+    if (p.enableVme) {
+      lsu.io.lsu2vme.get <> io.rvvcore.get.lsu2vme.get
+      io.rvvcore.get.vme2lsu.get <> lsu.io.vme2lsu.get
+    }
   }
 
   // ---------------------------------------------------------------------------
