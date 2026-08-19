@@ -494,6 +494,7 @@ class SCore(p: Parameters) extends Module {
     csr.io.rvv.get.vtype   := io.rvvcore.get.configState.bits.vtype
     csr.io.rvv.get.vxrm    := io.rvvcore.get.csr.vxrm
     csr.io.rvv.get.vxsat   := io.rvvcore.get.csr.vxsat
+    csr.io.rvv.get.fflags  := io.rvvcore.get.csr.fflags
     if (p.enableVme) {
       csr.io.rvv.get.mtype := io.rvvcore.get.configState.bits.mtype.get
     } else {

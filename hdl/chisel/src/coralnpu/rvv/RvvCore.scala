@@ -169,10 +169,12 @@ object GenerateCoreShimSource {
         |    output [1:0] trap_bits_opcode,
         |    output [24:0] trap_bits_bits,""".stripMargin
 
-    // Add vxsat backend update outputs
+    // Add vxsat and fflags backend update outputs
     moduleInterface += """
         |    output wr_vxsat_valid_o,
-        |    output wr_vxsat_o,""".stripMargin
+        |    output wr_vxsat_o,
+        |    output wr_fflags_valid_o,
+        |    output [4:0] wr_fflags_o,""".stripMargin
 
     // Remove last comma/linebreak
     moduleInterface = moduleInterface.dropRight(1)
@@ -358,7 +360,9 @@ object GenerateCoreShimSource {
         |      .trap_valid_o(trap_valid),
         |      .trap_data_o(trap_data),
         |      .wr_vxsat_valid_o(wr_vxsat_valid_o),
-        |      .wr_vxsat_o(wr_vxsat_o)
+        |      .wr_vxsat_o(wr_vxsat_o),
+        |      .wr_fflags_valid_o(wr_fflags_valid_o),
+        |      .wr_fflags_o(wr_fflags_o)
         |""".stripMargin.replaceAll("GENN", instructionLanes.toString)
     coreInstantiation += "  );\n"
 
@@ -504,6 +508,10 @@ class RvvCoreWrapper(p: Parameters)
     // VXSAT update from backend
     val wr_vxsat_valid_o = Output(Bool())
     val wr_vxsat_o       = Output(Bool())
+
+    // FFLAGS update from backend
+    val wr_fflags_valid_o = Output(Bool())
+    val wr_fflags_o       = Output(UInt(5.W))
 
     // TODO(derekjchow): Parameterize
     val rvv2lsu = Vec(2, Decoupled(new Rvv2Lsu(p)))
@@ -786,7 +794,9 @@ class RvvCoreShim(p: Parameters) extends Module {
   )
   vxsat := vxsat_wdata
 
-  io.csr.vstart := vstart
-  io.csr.vxrm   := vxrm
-  io.csr.vxsat  := vxsat
+  io.csr.vstart       := vstart
+  io.csr.vxrm         := vxrm
+  io.csr.vxsat        := vxsat
+  io.csr.fflags.valid := rvvCoreWrapper.io.wr_fflags_valid_o
+  io.csr.fflags.bits  := rvvCoreWrapper.io.wr_fflags_o
 }

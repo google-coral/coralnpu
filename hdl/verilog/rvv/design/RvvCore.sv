@@ -99,7 +99,11 @@ module RvvCore #(parameter N = 4,
 
   // VXSAT update from backend (fixes C3 bug: previously dead-end wires)
   output logic                            wr_vxsat_valid_o,
-  output logic    [`VCSR_VXSAT_WIDTH-1:0] wr_vxsat_o
+  output logic    [`VCSR_VXSAT_WIDTH-1:0] wr_vxsat_o,
+
+  // Floating point fflags update from backend
+  output logic                            wr_fflags_valid_o,
+  output logic    [4:0]                   wr_fflags_o
 );
   logic [N-1:0] frontend_cmd_valid;
   RVVCmd [N-1:0] frontend_cmd_data;
@@ -314,5 +318,14 @@ module RvvCore #(parameter N = 4,
   // Connect vxsat signals to outputs (fixes C3 bug)
   assign wr_vxsat_valid_o = wr_vxsat_valid;
   assign wr_vxsat_o = wr_vxsat;
+
+  // Connect fflags signals to outputs
+`ifdef ZVE32F_ON
+  assign wr_fflags_valid_o = rt2fcsr_write_valid;
+  assign wr_fflags_o = rt2fcsr_write_data;
+`else
+  assign wr_fflags_valid_o = 1'b0;
+  assign wr_fflags_o = 5'b0;
+`endif
 
 endmodule

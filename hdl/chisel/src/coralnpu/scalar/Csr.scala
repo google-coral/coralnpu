@@ -27,7 +27,8 @@ class CsrRvvIO(p: Parameters) extends Bundle {
   val vxrm   = Input(UInt(2.W))
   val vxsat  = Input(Bool())
   // VME (Zvt). Tied to 0 when enableVme=false.
-  val mtype = Input(UInt(p.xlen.W))
+  val mtype  = Input(UInt(p.xlen.W))
+  val fflags = Input(Valid(UInt(5.W)))
   // From Csr to RvvCore
   val vstart_write = Output(Valid(UInt(log2Ceil(p.rvvVlen).W)))
   val vxrm_write   = Output(Valid(UInt(2.W)))
@@ -538,13 +539,14 @@ class Csr(p: Parameters) extends Module {
     )
   )
 
+  val fflags_base = WireDefault(fflags)
   when(req.valid) {
-    when(fflagsEn) { fflags := wdata }
+    when(fflagsEn) { fflags_base := wdata(4, 0) }
     when(frmEn) { frm := localWdata(frm)(2, 0) }
     when(fcsrEn) {
       val fcsr_w = localWdata(Cat(frm, fflags))
-      fflags := fcsr_w(4, 0)
-      frm    := fcsr_w(7, 5)
+      fflags_base := fcsr_w(4, 0)
+      frm         := fcsr_w(7, 5)
     }
     when(mstatusEn) { mstatus_mie := wdata(3); mstatus_mpie := wdata(7) }
     when(mieEn) { mie := wdata & "h888".U }
@@ -678,10 +680,21 @@ class Csr(p: Parameters) extends Module {
     mepc := io.bru.in.mepc.bits
   }
 
-  if (p.enableFloat) {
-    when(io.float.get.in.fflags.valid) {
-      fflags := io.float.get.in.fflags.bits | fflags
+  if (p.enableFloat || p.enableRvv) {
+    val float_fflags_valid = if (p.enableFloat) io.float.get.in.fflags.valid else false.B
+    val float_fflags_bits  = if (p.enableFloat) io.float.get.in.fflags.bits else 0.U
+    val rvv_fflags_valid   = if (p.enableRvv) io.rvv.get.fflags.valid else false.B
+    val rvv_fflags_bits    = if (p.enableRvv) io.rvv.get.fflags.bits else 0.U
+
+    when(float_fflags_valid || rvv_fflags_valid) {
+      val incoming_fflags = Mux(float_fflags_valid, float_fflags_bits, 0.U) |
+        Mux(rvv_fflags_valid, rvv_fflags_bits, 0.U)
+      fflags := fflags_base | incoming_fflags
+    }.otherwise {
+      fflags := fflags_base
     }
+  } else {
+    fflags := fflags_base
   }
 
   // Interrupt generation
