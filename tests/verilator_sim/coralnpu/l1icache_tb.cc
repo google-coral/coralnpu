@@ -158,7 +158,7 @@ struct L1ICache_tb : Sysc_tb {
 
   const int ibusb_ = kL1IAxiBits / 8;
   const int ibusw_ = kL1IAxiBits / 32;
-  const int axib_ = kL1IAxiBits / 8;
+  [[maybe_unused]] const int axib_ = kL1IAxiBits / 8;
   const int axiw_ = kL1IAxiBits / 32;
 
   int timeout_ = 0;

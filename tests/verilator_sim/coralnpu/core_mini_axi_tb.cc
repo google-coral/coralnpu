@@ -308,13 +308,13 @@ void CoreMiniAxi_tb::Connect() {
 
 absl::Status CoreMiniAxi_tb::LoadElfSync(const std::string& file_name) {
   CHECK_OK(LoadElfAsync(file_name));
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   transfer_queue_cv_.Wait(&transfer_queue_mtx_);
   return absl::OkStatus();
 }
 
 absl::Status CoreMiniAxi_tb::LoadElfAsync(const std::string& file_name) {
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   int fd = open(file_name.c_str(), 0);
   CHECK(fd > 0);
   struct stat sb;
@@ -391,13 +391,13 @@ absl::Status CoreMiniAxi_tb::LoadElfAsync(const std::string& file_name) {
 
 absl::Status CoreMiniAxi_tb::ClockGateSync(bool enable) {
   CHECK_OK(ClockGateAsync(enable));
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   transfer_queue_cv_.Wait(&transfer_queue_mtx_);
   return absl::OkStatus();
 }
 
 absl::Status CoreMiniAxi_tb::ClockGateAsync(bool enable) {
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   uint8_t enable8 = enable ? 3 : 1;
   uint8_t enable_[4] = { enable8, 0, 0, 0 };;
   transfer_queue_.push(
@@ -410,13 +410,13 @@ absl::Status CoreMiniAxi_tb::ClockGateAsync(bool enable) {
 
 absl::Status CoreMiniAxi_tb::ResetSync(bool enable) {
   CHECK_OK(ResetAsync(enable));
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   transfer_queue_cv_.Wait(&transfer_queue_mtx_);
   return absl::OkStatus();
 }
 
 absl::Status CoreMiniAxi_tb::ResetAsync(bool enable) {
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   uint8_t enable8 = enable ? 1 : 0;
   uint8_t enable_[4] = { enable8, 0, 0, 0 };;
   transfer_queue_.push(
@@ -429,13 +429,13 @@ absl::Status CoreMiniAxi_tb::ResetAsync(bool enable) {
 
 absl::Status CoreMiniAxi_tb::CheckStatusSync() {
   CHECK_OK(CheckStatusAsync());
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   transfer_queue_cv_.Wait(&transfer_queue_mtx_);
   return absl::OkStatus();
 }
 
 absl::Status CoreMiniAxi_tb::CheckStatusAsync() {
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   transfer_queue_.push(std::make_unique<TrafficDesc>(utils::merge(
       std::vector<DataTransfer>({utils::Read(csr_addr_ + 0x8, 4),
                                  utils::Expect(DATA(1, 0, 0, 0), 4)}))));
@@ -895,7 +895,7 @@ void CoreMiniAxi_tb::posedge() {
 
 
   if (!transfer_in_progress_) {
-    absl::MutexLock lock(&transfer_queue_mtx_);
+    absl::MutexLock lock(transfer_queue_mtx_);
     if (!transfer_queue_.empty()) {
       ITrafficDesc* transfer = transfer_queue_.front().get();
       tg_.addTransfers(transfer, 0, CoreMiniAxi_tb::axi_transaction_done_cb);
@@ -907,13 +907,13 @@ void CoreMiniAxi_tb::posedge() {
 void CoreMiniAxi_tb::EnqueueTransactionSync(
     std::vector<DataTransfer> transfers) {
   EnqueueTransactionAsync(transfers);
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   transfer_queue_cv_.Wait(&transfer_queue_mtx_);
 }
 
 void CoreMiniAxi_tb::EnqueueTransactionAsync(
     std::vector<DataTransfer> transfers) {
-  absl::MutexLock lock_(&transfer_queue_mtx_);
+  absl::MutexLock lock_(transfer_queue_mtx_);
   transfer_queue_.push(std::make_unique<TrafficDesc>(utils::merge(transfers)));
 }
 
@@ -924,7 +924,7 @@ void CoreMiniAxi_tb::axi_transaction_done_cb(TLMTrafficGenerator* gen,
 
 void CoreMiniAxi_tb::axi_transaction_done_cb_(TLMTrafficGenerator* gen,
                                               int threadId) {
-  absl::MutexLock lock(&transfer_queue_mtx_);
+  absl::MutexLock lock(transfer_queue_mtx_);
   CHECK(!transfer_queue_.empty());
   transfer_queue_.pop();
   transfer_in_progress_ = false;

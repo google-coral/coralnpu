@@ -56,29 +56,29 @@ struct Debug_if : Sysc_module {
 
  private:
 #ifndef TIME_DISABLE
-  const char* KNRM = "\x1B[0m";
-  const char* KRED = "\x1B[31m";
-  const char* KGRN = "\x1B[32m";
-  const char* KYEL = "\x1B[33m";
-  const char* KBLU = "\x1B[34m";
-  const char* KMAG = "\x1B[35m";
-  const char* KCYN = "\x1B[36m";
-  const char* KWHT = "\x1B[37m";
-  const char* KRST = "\033[0m";
+  [[maybe_unused]] const char *KNRM = "\x1B[0m";
+  [[maybe_unused]] const char *KRED = "\x1B[31m";
+  [[maybe_unused]] const char *KGRN = "\x1B[32m";
+  [[maybe_unused]] const char *KYEL = "\x1B[33m";
+  [[maybe_unused]] const char *KBLU = "\x1B[34m";
+  [[maybe_unused]] const char *KMAG = "\x1B[35m";
+  [[maybe_unused]] const char *KCYN = "\x1B[36m";
+  [[maybe_unused]] const char *KWHT = "\x1B[37m";
+  [[maybe_unused]] const char *KRST = "\033[0m";
 #endif  // TIME_DISABLE
 
-  static const int ARGMAX = 16;
-  static const int BUFFERLIMIT = 100;
-  int argpos_;
-  uint64_t arg_[ARGMAX];
-  uint8_t str_[ARGMAX][BUFFERLIMIT];
-  uint8_t pos_[ARGMAX] = {0};
+  [[maybe_unused]] static const int ARGMAX      = 16;
+  [[maybe_unused]] static const int BUFFERLIMIT = 100;
+  [[maybe_unused]] int argpos_;
+  [[maybe_unused]] uint64_t arg_[ARGMAX];
+  [[maybe_unused]] uint8_t str_[ARGMAX][BUFFERLIMIT];
+  [[maybe_unused]] uint8_t pos_[ARGMAX] = {0};
 
   struct timeval stop_, start_;
 
-  Memory_if* mm_;
+  [[maybe_unused]] Memory_if *mm_;
 
-  bool newline_ = false;
+  [[maybe_unused]] bool newline_ = false;
   int cycle_ = 0;
 };
 

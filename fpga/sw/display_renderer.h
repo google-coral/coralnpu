@@ -52,7 +52,7 @@ class DisplayRenderer {
  private:
   void SetupFrameDma(const uint16_t* frame_buffer);
 
-  PAINT paint_;
+  [[maybe_unused]] PAINT paint_;
   uint32_t dc_0_val_ = 2;  // RST=1, DC=0
   uint32_t dc_1_val_ = 3;  // RST=1, DC=1
 };

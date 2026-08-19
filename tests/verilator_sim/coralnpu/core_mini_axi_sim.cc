@@ -49,7 +49,7 @@ static bool run(const char* name, const std::string binary, const int cycles,
                     instr_trace, backdoor_load,
                     /*wfi_cb=*/std::nullopt,
                     /*halted_cb=*/[&halted_mtx, &halted_cv]() {
-                      absl::MutexLock lock_(&halted_mtx);
+                      absl::MutexLock lock_(halted_mtx);
                       halted_cv.SignalAll();
                     });
   // Ensure we call sc_start @0 time, before we startup anything else.
@@ -68,7 +68,7 @@ static bool run(const char* name, const std::string binary, const int cycles,
   CHECK_OK(tb.ResetAsync(false));
 
   {
-    absl::MutexLock lock_(&halted_mtx);
+    absl::MutexLock lock_(halted_mtx);
     halted_cv.Wait(&halted_mtx);
   }
 
