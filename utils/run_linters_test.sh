@@ -78,6 +78,7 @@ mock_linter "verible-verilog-format"
 mock_linter "verible-verilog-syntax"
 mock_linter "clang-tidy"
 mock_linter "clang-format"
+mock_linter "clang-format-19"
 mock_linter "git-clang-format-19"
 mock_linter "scalafmt"
 mock_linter "shellcheck"
@@ -127,7 +128,7 @@ setup_repo
 echo "print('hello')" > test.py
 echo "int main() {}" > test.cc
 git add test.py test.cc
-run_test "Local Staged Changes" "" "" "/dev/null" 0 "MOCK: git-clang-format-19 running on --diff origin/main.*test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
+run_test "Local Staged Changes" "" "" "/dev/null" 0 "MOCK: git-clang-format-19 running on --binary clang-format-19 --diff origin/main.*test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
 
 # 2. --all flag
 setup_repo
@@ -135,14 +136,14 @@ echo "print('hello')" > test.py
 echo "int main() {}" > test.cc
 git add test.py test.cc
 git commit -q -m "add files"
-run_test "Manual --all" "" "--all" "/dev/null" 0 "MOCK: clang-format running on --dry-run --Werror.*test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
+run_test "Manual --all" "" "--all" "/dev/null" 0 "MOCK: clang-format-19 running on --dry-run --Werror.*test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
 
 # 3. Specific targets
 setup_repo
 mkdir subdir
 echo "echo hi" > subdir/test.sh
 echo "int main() {}" > subdir/test.cc
-run_test "Specific Directory" "" "subdir" "/dev/null" 0 "MOCK: clang-format running on --dry-run --Werror.*subdir/test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
+run_test "Specific Directory" "" "subdir" "/dev/null" 0 "MOCK: clang-format-19 running on --dry-run --Werror.*subdir/test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
 
 # 4. GitHub Actions Emulation (PR)
 setup_repo
@@ -151,7 +152,7 @@ echo "echo hi" > feat.sh
 echo "int main() {}" > feat.cc
 git add feat.sh feat.cc
 git commit -q -m "feat"
-run_test "GitHub Actions PR" "GITHUB_ACTIONS=true GITHUB_EVENT_NAME=pull_request GITHUB_BASE_REF=main" "" "/dev/null" 0 "MOCK: git-clang-format-19 running on --diff origin/main.*feat.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
+run_test "GitHub Actions PR" "GITHUB_ACTIONS=true GITHUB_EVENT_NAME=pull_request GITHUB_BASE_REF=main" "" "/dev/null" 0 "MOCK: git-clang-format-19 running on --binary clang-format-19 --diff origin/main.*feat.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
 
 # 5. Pre-push Hook Emulation
 setup_repo
@@ -163,7 +164,7 @@ git commit -q -m "hook commit"
 LOCAL_SHA=$(git rev-parse HEAD)
 REMOTE_SHA=$(git rev-parse main)
 echo "refs/heads/hook-test ${LOCAL_SHA} refs/heads/hook-test ${REMOTE_SHA}" > "${TEST_DIR}/stdin_mock"
-run_test "Pre-push Hook" "" "" "${TEST_DIR}/stdin_mock" 0 "MOCK: git-clang-format-19 running on --diff ${REMOTE_SHA}.*hook.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
+run_test "Pre-push Hook" "" "" "${TEST_DIR}/stdin_mock" 0 "MOCK: git-clang-format-19 running on --binary clang-format-19 --diff ${REMOTE_SHA}.*hook.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
 
 # 6. Deduplication Check
 setup_repo
@@ -238,14 +239,14 @@ run_test "Fix mode buildifier" "" "--fix BUILD" "/dev/null" 0 "MOCK: buildifier 
 setup_repo
 echo "int main() {}" > test.cc
 git add test.cc
-run_test "Fix mode diff git-clang-format" "" "--fix" "/dev/null" 0 "MOCK: git-clang-format-19 running on origin/main.*test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
+run_test "Fix mode diff git-clang-format" "" "--fix" "/dev/null" 0 "MOCK: git-clang-format-19 running on --binary clang-format-19 origin/main.*test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
 
 # 15. --fix --all flags (clang-format -i)
 setup_repo
 echo "int main() {}" > test.cc
 git add test.cc
 git commit -q -m "add test.cc"
-run_test "Fix mode --all clang-format" "" "--fix --all" "/dev/null" 0 "MOCK: clang-format running on -i.*test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
+run_test "Fix mode --all clang-format" "" "--fix --all" "/dev/null" 0 "MOCK: clang-format-19 running on -i.*test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
 
 # --- Summary ---
 

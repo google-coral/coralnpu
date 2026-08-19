@@ -20,7 +20,7 @@ declare -A LINTER_COMMANDS=(
     ["verible-verilog-lint"]="true" #  "verible-verilog-lint"
     ["verible-verilog-format"]="verible-verilog-format --verify --inplace"
     # ["clang-tidy"]="clang-tidy" # Pending compilation database
-    ["clang-format"]="clang-format --dry-run --Werror"
+    ["clang-format"]="clang-format-19 --dry-run --Werror"
     ["scalafmt"]="scalafmt --config .scalafmt --test"
     ["shellcheck"]="shellcheck -x"
     ["markdownlint"]="mdl --no-verbose"
@@ -32,21 +32,21 @@ declare -A LINTER_FIX_COMMANDS=(
     ["buildifier"]="buildifier -mode=fix"
     ["verible-verilog-format"]="verible-verilog-format --inplace"
     # ["clang-tidy"]="clang-tidy -fix" # Pending compilation database
-    ["clang-format"]="clang-format -i"
+    ["clang-format"]="clang-format-19 -i"
     ["scalafmt"]="scalafmt --config .scalafmt"
 )
 
 # Define diff-aware linters: [name]="command and flags"
 # Use %BASE% as placeholder for the base commit/branch
 declare -A LINTER_DIFF_COMMANDS=(
-    ["clang-format"]="git-clang-format-19 --diff %BASE%"
+    ["clang-format"]="git-clang-format-19 --binary clang-format-19 --diff %BASE%"
     # ["clang-tidy"]="git diff -U0 %BASE% -- | clang-tidy-diff.py -p1"
 )
 
 # Define diff-aware fix commands: [name]="command and flags"
 # Use %BASE% as placeholder for the base commit/branch
 declare -A LINTER_DIFF_FIX_COMMANDS=(
-    ["clang-format"]="git-clang-format-19 %BASE%"
+    ["clang-format"]="git-clang-format-19 --binary clang-format-19 %BASE%"
     # ["clang-tidy"]="git diff -U0 %BASE% -- | clang-tidy-diff.py -fix -p1"
 )
 

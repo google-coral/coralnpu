@@ -5,5 +5,17 @@ AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
 DerivePointerAlignment: false
 PointerAlignment: Right
-AlignConsecutiveAssignments: true
-AlignConsecutiveMacros: true
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+SpacesInParens: Custom
+SpacesInParensOptions:
+  InCStyleCasts: false
+  InConditionalStatements: false
+  InEmptyParentheses: false
+  Other: false
