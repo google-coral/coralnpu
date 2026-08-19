@@ -1997,7 +1997,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.faulted   -> (faulted || fault),
         _.cells     -> cellsNext,
         _.leadIndex -> (leadIndex + moveLead),
-        _.rowAddr   -> cellsNext(leadIndex + moveLead).rowAddr,
+        _.rowAddr   -> cellsNext((leadIndex + moveLead)(indexWidth - 1, 0)).rowAddr,
         _.isDone    -> allCellsDone
       )
       ret.vector.foreach { x =>
