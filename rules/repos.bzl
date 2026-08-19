@@ -250,10 +250,10 @@ filegroup(
 def cvfpu_repos():
     http_archive(
         name = "cvfpu",
-        urls = ["https://github.com/openhwgroup/cvfpu/archive/58ca3c376beb914b2b80b811d4b270c063d4e6f7.zip"],
-        sha256 = "1c31ca538f7624fe0abf082d784553ed5afe0cf209f34c26209fa2f9c4878521",
+        urls = ["https://github.com/openhwgroup/cvfpu/archive/bb65bdedd07711dfd41c621382f940a5cbb93046.zip"],
+        sha256 = "0723e6a6feb8e033679d2f9145f99ee4fb26c80e67b3662a8eec9b61bd30f6cc",
         build_file = "@coralnpu_hw//third_party/cvfpu:BUILD.bazel",
-        strip_prefix = "cvfpu-58ca3c376beb914b2b80b811d4b270c063d4e6f7",
+        strip_prefix = "cvfpu-bb65bdedd07711dfd41c621382f940a5cbb93046",
         patches = [
             "@coralnpu_hw//third_party/cvfpu:0001-Fix-max_num_lanes-issue-in-DC.patch",
             "@coralnpu_hw//third_party/cvfpu:0002-Remove-SVH-includes.patch",
@@ -261,6 +261,7 @@ def cvfpu_repos():
             "@coralnpu_hw//third_party/cvfpu:0004-Remove-ternary-operator-from-pkg-causing-dc-crash.patch",
             "@coralnpu_hw//third_party/cvfpu:0005-Fix-fsm-complete.patch",
             "@coralnpu_hw//third_party/cvfpu:0006-Fix-syn-tool-compatibility-issues.patch",
+            "@coralnpu_hw//third_party/cvfpu:0007-Fix-nan-boxing-divsqrt.patch",
         ],
         patch_args = ["-p1"],
     )

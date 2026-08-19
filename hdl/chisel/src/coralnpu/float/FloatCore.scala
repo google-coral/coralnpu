@@ -248,6 +248,7 @@ class FloatCoreWrapper(p: Parameters)
     addResource("external/fpu_div_sqrt_mvp/hdl/div_sqrt_mvp_wrapper.sv")
     addResource("external/cvfpu/src/fpnew_divsqrt_multi.sv")
   }
+  addResource("external/cvfpu/vendor/cvw/fma/fmalza.sv")
   addResource("external/cvfpu/src/fpnew_fma.sv")
   addResource("external/cvfpu/src/fpnew_fma_multi.sv")
   addResource("external/cvfpu/src/fpnew_noncomp.sv")

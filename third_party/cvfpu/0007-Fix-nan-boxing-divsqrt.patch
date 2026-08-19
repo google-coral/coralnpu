@@ -1,0 +1,14 @@
+diff -ur a/src/fpnew_divsqrt_th_64_multi.sv b/src/fpnew_divsqrt_th_64_multi.sv
+--- a/src/fpnew_divsqrt_th_64_multi.sv
++++ b/src/fpnew_divsqrt_th_64_multi.sv
+@@ -350,8 +350,8 @@
+     .dp_vfdsu_ex1_pipex_iid         ( '0                        ), // Don't care, used in C910
+     .dp_vfdsu_ex1_pipex_imm0        ( 3'b111                    ), // Round mode, set to 3'b111 to select vfpu_yy_xx_rm signal
+     .dp_vfdsu_ex1_pipex_sel         ( op_sel                    ), // 3. Select operands, start operation
+-    .dp_vfdsu_ex1_pipex_srcf0       ( {{(64-WIDTH){1'b0}}, srcf0_q} ), // Input for operand 0
+-    .dp_vfdsu_ex1_pipex_srcf1       ( {{(64-WIDTH){1'b0}}, srcf1_q} ), // Input for operand 1
++    .dp_vfdsu_ex1_pipex_srcf0       ( {{(64-WIDTH){1'b1}}, srcf0_q} ), // Input for operand 0
++    .dp_vfdsu_ex1_pipex_srcf1       ( {{(64-WIDTH){1'b1}}, srcf1_q} ), // Input for operand 1
+     .dp_vfdsu_fdiv_gateclk_issue    ( 1'b1                      ), // Local clock enable (same as above)
+     .dp_vfdsu_idu_fdiv_issue        ( op_starting               ), // 1. Issue fdiv (FSM in ctrl)
+     .forever_cpuclk                 ( clk_i                     ), // Clock input
