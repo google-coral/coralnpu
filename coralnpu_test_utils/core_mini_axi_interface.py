@@ -139,6 +139,24 @@ class ReadyValidInterface:
             self.bits_signals[k].value = v
 
 
+class _SafeClock:
+    """Wrapper around cocotb.clock.Clock that is safe to start multiple times."""
+
+    def __init__(self, signal, period, unit="ns"):
+        self._clock = Clock(signal, period, unit=unit)
+        self._started = False
+
+    def start(self, *args, **kwargs):
+        if not self._started:
+            self._started = True
+            return self._clock.start(*args, **kwargs)
+
+        async def _noop():
+            pass
+
+        return _noop()
+
+
 # This class simulates a memory-mapped AXI interface. Programs compiled with
 # the `coralnpu_v2_binary` rule will have access to TCM (Tightly-Coupled Memory)
 # and simulated external memory (`EXTMEM`).
@@ -206,7 +224,7 @@ class CoreMiniAxiInterface:
         )
         self.axi_master_write_resp.clear_valid()
         self.clock_ns = clock_ns
-        self.clock = Clock(dut.io_aclk, clock_ns, unit="ns")
+        self.clock = _SafeClock(dut.io_aclk, clock_ns, unit="ns")
         self.csr_base_addr = csr_base_addr
         self.memory_base_addr = ext_mem_base_addr
         self.memory = np.zeros([ext_mem_size], dtype=np.uint8)
@@ -222,6 +240,7 @@ class CoreMiniAxiInterface:
         self.slave_bfifo = Queue()
 
     async def init(self):
+        cocotb.start_soon(self.clock.start())
         cocotb.start_soon(self._monitor_agent())
         cocotb.start_soon(self.master_ragent())
         cocotb.start_soon(self.master_bagent())
@@ -509,13 +528,18 @@ class CoreMiniAxiInterface:
                 await RisingEdge(self.dut.io_aclk)
                 self.axi_master_write_resp.clear_valid()
 
-    async def reset(self):
-        self.dut.io_aresetn.set(Immediate(1))
-        await Timer(self.clock_ns, unit="ns")
-        self.dut.io_aresetn.set(Immediate(0))
-        await Timer(self.clock_ns, unit="ns")
-        self.dut.io_aresetn.set(Immediate(1))
-        await Timer(self.clock_ns, unit="ns")
+    async def reset(self, cycles: int = 10):
+        await FallingEdge(self.dut.io_aclk)
+        self.dut.io_aresetn.value = 0
+        self.axi_slave_read_addr.clear_valid()
+        self.axi_slave_write_addr.clear_valid()
+        self.axi_slave_write_data.clear_valid()
+        self.axi_master_read_data.clear_valid()
+        self.axi_master_write_resp.clear_valid()
+        await ClockCycles(self.dut.io_aclk, cycles)
+        await FallingEdge(self.dut.io_aclk)
+        self.dut.io_aresetn.value = 1
+        await ClockCycles(self.dut.io_aclk, 2)
 
     async def halt(self):
         coralnpu_reset_csr_addr = self.csr_base_addr
