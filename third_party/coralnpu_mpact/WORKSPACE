@@ -112,7 +112,10 @@ http_archive(
 http_archive(
     name = "com_google_mpact-riscv",
     patch_args = ["-p1"],
-    patches = ["@coralnpu_hw//third_party/patches:mpact_riscv_vstart_trap.patch"],
+    patches = [
+        "@coralnpu_hw//third_party/patches:mpact_riscv_vstart_trap.patch",
+        "@coralnpu_hw//third_party/patches:mpact_riscv_vrgather.patch",
+    ],
     repo_mapping = {
         "@abseil-cpp": "@com_google_absl",
     },

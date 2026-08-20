@@ -44,6 +44,9 @@ template_rule(
         "vgather": {
             "srcs": ["vgather.cc"],
         },
+        "vrgather_test": {
+            "srcs": ["vrgather_test.cc"],
+        },
         "vill_test": {
             "srcs": ["vill_test.cc"],
         },
@@ -93,6 +96,7 @@ filegroup(
         "vmsbf_test.elf",
         "vmsif_test.elf",
         "vmsof_test.elf",
+        "vrgather_test.elf",
         "vsetvl_test.elf",
         "vslide.elf",
         "vslide_boundary_test.elf",

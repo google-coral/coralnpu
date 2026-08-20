@@ -56,6 +56,7 @@ py_test(
     name = "coralnpu_v2_sim_test",
     srcs = ["coralnpu_v2_sim_test.py"],
     data = [
+        "//tests/cocotb/rvv:vrgather_test",
         "//tests/cocotb/rvv/arithmetics:rvv_add_int8_m1",
         "//tests/verilator_sim:htif_semihosting_test",
     ],
