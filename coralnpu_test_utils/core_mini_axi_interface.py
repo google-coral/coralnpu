@@ -238,17 +238,23 @@ class CoreMiniAxiInterface:
         self.slave_rfifo = Queue()
         self.slave_wfifo = Queue()
         self.slave_bfifo = Queue()
+        self._agents = []
+
+    def _start_agents(self):
+        self._agents = [
+            cocotb.start_soon(self._monitor_agent()),
+            cocotb.start_soon(self.master_ragent()),
+            cocotb.start_soon(self.master_bagent()),
+            cocotb.start_soon(self.slave_awagent()),
+            cocotb.start_soon(self.slave_wagent()),
+            cocotb.start_soon(self.slave_aragent()),
+            cocotb.start_soon(self.memory_write_agent()),
+            cocotb.start_soon(self.memory_read_agent()),
+        ]
 
     async def init(self):
         cocotb.start_soon(self.clock.start())
-        cocotb.start_soon(self._monitor_agent())
-        cocotb.start_soon(self.master_ragent())
-        cocotb.start_soon(self.master_bagent())
-        cocotb.start_soon(self.slave_awagent())
-        cocotb.start_soon(self.slave_wagent())
-        cocotb.start_soon(self.slave_aragent())
-        cocotb.start_soon(self.memory_write_agent())
-        cocotb.start_soon(self.memory_read_agent())
+        self._start_agents()
 
     async def read_csr(self, addr):
         val = await self.read_word(self.csr_base_addr + addr)
@@ -529,17 +535,44 @@ class CoreMiniAxiInterface:
                 self.axi_master_write_resp.clear_valid()
 
     async def reset(self, cycles: int = 10):
-        await FallingEdge(self.dut.io_aclk)
-        self.dut.io_aresetn.value = 0
+        # 1. Terminate all running agent tasks to abort any in-flight transactions
+        for task in self._agents:
+            task.kill()
+        self._agents = []
+
+        # 2. Purge all Python AXI FIFO queues across the reset boundary
+        for q in [
+                self.master_arfifo,
+                self.master_awfifo,
+                self.master_rfifo,
+                self.master_wfifo,
+                self.master_bfifo,
+                self.slave_arfifo,
+                self.slave_awfifo,
+                self.slave_rfifo,
+                self.slave_wfifo,
+                self.slave_bfifo,
+        ]:
+            while not q.empty():
+                q.get_nowait()
+
+        # 3. Clear driver valid signals
         self.axi_slave_read_addr.clear_valid()
         self.axi_slave_write_addr.clear_valid()
         self.axi_slave_write_data.clear_valid()
         self.axi_master_read_data.clear_valid()
         self.axi_master_write_resp.clear_valid()
+
+        # 4. Assert hardware reset synchronously on falling edge
+        await FallingEdge(self.dut.io_aclk)
+        self.dut.io_aresetn.value = 0
         await ClockCycles(self.dut.io_aclk, cycles)
         await FallingEdge(self.dut.io_aclk)
         self.dut.io_aresetn.value = 1
-        await ClockCycles(self.dut.io_aclk, 2)
+        await ClockCycles(self.dut.io_aclk, 5)
+
+        # 5. Restart fresh agent tasks
+        self._start_agents()
 
     async def halt(self):
         coralnpu_reset_csr_addr = self.csr_base_addr
