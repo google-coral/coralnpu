@@ -215,7 +215,7 @@ async def core_mini_axi_riscv_tests(dut):
     riscv_test_elfs = [
         os.path.join(riscv_test_path, f)
         for riscv_test_path in riscv_test_paths
-        for f in os.listdir(riscv_test_path)
+        for f in sorted(os.listdir(riscv_test_path))
         if not f.endswith(".dump")
     ]
     with tqdm.tqdm(riscv_test_elfs) as t:
@@ -243,7 +243,7 @@ async def core_mini_axi_riscv_dv(dut):
     riscv_dv_path = r.Rlocation("coralnpu_hw/tests/cocotb/riscv-dv")
     riscv_dv_elfs = [
         os.path.join(riscv_dv_path, f)
-        for f in os.listdir(riscv_dv_path)
+        for f in sorted(os.listdir(riscv_dv_path))
         if f.endswith(".o")
     ]
     with tqdm.tqdm(riscv_dv_elfs) as t:
@@ -313,7 +313,7 @@ async def core_mini_axi_exceptions_test(dut):
     exceptions_path = r.Rlocation("coralnpu_hw/tests/cocotb/exceptions")
     exceptions_elfs = [
         os.path.join(exceptions_path, f)
-        for f in os.listdir(exceptions_path)
+        for f in sorted(os.listdir(exceptions_path))
         if f.endswith(".elf")
     ]
     with tqdm.tqdm(exceptions_elfs) as t:
@@ -359,7 +359,7 @@ async def core_mini_axi_coralnpu_isa_test(dut):
     coralnpu_isa_path = r.Rlocation("coralnpu_hw/tests/cocotb/coralnpu_isa")
     coralnpu_isa_elfs = [
         os.path.join(coralnpu_isa_path, f)
-        for f in os.listdir(coralnpu_isa_path)
+        for f in sorted(os.listdir(coralnpu_isa_path))
         if f.endswith(".elf")
     ]
     for elf in tqdm.tqdm(coralnpu_isa_elfs):
