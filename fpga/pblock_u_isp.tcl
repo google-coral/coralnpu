@@ -55,8 +55,8 @@ if {[llength $macros_to_prune] > 0} {
 }
 
 
-# Re-aligned to physical camera I/O Bank 63 (CLOCKREGION_X4Y3) on the right edge
-resize_pblock [get_pblocks pblock_u_isp] -add {CLOCKREGION_X3Y2:CLOCKREGION_X4Y4}
+# Re-aligned to physical camera I/O Bank 63 in SLR0 (CLOCKREGION_X3Y0 to X4Y3)
+resize_pblock [get_pblocks pblock_u_isp] -add {CLOCKREGION_X3Y0:CLOCKREGION_X4Y3}
 set_property IS_SOFT TRUE [get_pblocks pblock_u_isp]
 set_property EXCLUDE_PLACEMENT FALSE [get_pblocks pblock_u_isp]
 
