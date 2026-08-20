@@ -1,0 +1,8 @@
+diff -ur a/src/fpnew_opgroup_multifmt_slice.sv b/src/fpnew_opgroup_multifmt_slice.sv
+--- a/src/fpnew_opgroup_multifmt_slice.sv
++++ b/src/fpnew_opgroup_multifmt_slice.sv
+@@ -83,2 +83,2 @@
+-  localparam int unsigned NUM_LANES = fpnew_pkg::max_num_lanes(Width, FpFmtConfig, 1'b1);
+-  localparam int unsigned NUM_DIVSQRT_LANES = fpnew_pkg::num_divsqrt_lanes(Width, FpFmtConfig, 1'b1, DivSqrtSel);
++  localparam int unsigned NUM_LANES = fpnew_pkg::max_num_lanes(Width, FpFmtConfig, EnableVectors);
++  localparam int unsigned NUM_DIVSQRT_LANES = fpnew_pkg::num_divsqrt_lanes(Width, FpFmtConfig, EnableVectors, DivSqrtSel);
