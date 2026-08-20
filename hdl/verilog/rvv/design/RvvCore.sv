@@ -171,6 +171,8 @@ module RvvCore #(parameter N = 4,
             uop_lsu_valid_lsu2rvv[i] && !uop_lsu_last_lsu2rvv[i]);
         uop_lsu_lsu2rvv[i].vregfile_write_addr = uop_lsu_addr_lsu2rvv[i];
         uop_lsu_lsu2rvv[i].vregfile_write_data = uop_lsu_wdata_lsu2rvv[i];
+        // TODO: Handle ff_tail_index properly for fault-only-first loads
+        uop_lsu_lsu2rvv[i].ff_tail_index = '0;
         uop_lsu_lsu2rvv[i].lsu_vstore_last = (
             uop_lsu_valid_lsu2rvv[i] && uop_lsu_last_lsu2rvv[i]);
         `ifdef TB_SUPPORT
@@ -198,6 +200,8 @@ module RvvCore #(parameter N = 4,
   end
 
   // Floating point regfile write-back
+  // TODO(derekjchow): Properly arbitrate write-back tie-offs by extending
+  // interface. For time being, only accept from slot 0.
   logic [`NUM_RT_UOP-1:0]                           rvv2rvs_frd_valid;
 `ifdef TB_SUPPORT
   logic [`NUM_RT_UOP-1:0][`PC_WIDTH-1:0]            rvv2rvs_frd_pc;
@@ -207,7 +211,9 @@ module RvvCore #(parameter N = 4,
   logic [`NUM_RT_UOP-1:0]                           rvv2rvs_frd_ready;
   always_comb begin
     rvv2rvs_frd_ready[0] = async_frd_ready;
-    rvv2rvs_frd_ready[1] = 0;
+    for (int i = 1; i < `NUM_RT_UOP; i++) begin
+      rvv2rvs_frd_ready[i] = 0;
+    end
   end
   assign async_frd_valid = rvv2rvs_frd_valid[0];
   assign async_frd_addr = rvv2rvs_frd_addr[0];
