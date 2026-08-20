@@ -98,6 +98,7 @@ def rvv_core_mini_axi_netlist_test_suite(
         vcs_build_args_extra = [],
         vcs_data_extra = [],
         vcs_netlist_defines = VCS_NETLIST_DEFINES,  # Allow overriding netlist defines for technology-specific needs
+        vcs_netlist_test_args = VCS_NETLIST_TEST_ARGS,
         **kwargs):
     """A generic template for creating netlist tests for RvvCoreMiniAxi."""
     cocotb_test_suite(
@@ -144,7 +145,7 @@ def rvv_core_mini_axi_netlist_test_suite(
         ] + vcs_data_extra,
         vcs_netlist_defines = vcs_netlist_defines,
         vcs_netlist_split_build_test = True,
-        vcs_netlist_test_args = VCS_NETLIST_TEST_ARGS,
+        vcs_netlist_test_args = vcs_netlist_test_args,
         vcs_netlist_verilog_sources = vcs_verilog_sources,
         **kwargs
     )
