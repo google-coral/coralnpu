@@ -65,6 +65,9 @@ template_rule(
         "vslide": {
             "srcs": ["vslide.cc"],
         },
+        "vslide_boundary_test": {
+            "srcs": ["vslide_boundary_test.cc"],
+        },
         "vstart_store": {
             "srcs": ["vstart_store.S"],
         },
@@ -92,6 +95,7 @@ filegroup(
         "vmsof_test.elf",
         "vsetvl_test.elf",
         "vslide.elf",
+        "vslide_boundary_test.elf",
         "vstart_store.elf",
         "vstart_test.elf",
     ],

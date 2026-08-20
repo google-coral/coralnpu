@@ -720,7 +720,7 @@ async def vsetvl_test(dut):
             assert (actual_vtype == vtype)
 
 
-async def vslide_test(dut, cases, expfunc, ignore_tail=False):
+async def vslide_test(dut, cases, expfunc):
     """Test slide[1]{up,down} usage accessible from intrinsics."""
     # mask is not accessible from here.
     fixture = await Fixture.Create(dut)
@@ -748,17 +748,18 @@ async def vslide_test(dut, cases, expfunc, ignore_tail=False):
         vl = c['vl']
         offset = c['offset']
         dtype = c['dtype']
+        vlmax = c.get('vlmax', vl)
 
         src_data = rng.integers(
             low=np.iinfo(dtype).min,
             high=np.iinfo(dtype).max + 1,
-            size=vl,
+            size=vlmax,
             dtype=dtype
         )
         dest_data = rng.integers(
             low=np.iinfo(dtype).min,
             high=np.iinfo(dtype).max + 1,
-            size=vl,
+            size=vlmax,
             dtype=dtype
         )
         scalar = rng.integers(
@@ -767,7 +768,9 @@ async def vslide_test(dut, cases, expfunc, ignore_tail=False):
             size=1,
             dtype=dtype
         )
-        expected_output = expfunc(dest_data, src_data, scalar, vl, offset)
+        expected_output = expfunc(
+            dest_data, src_data, scalar, vl, offset, vlmax
+        )
 
         if dtype == np.int8:
             dest_buf = 'buf_dest8'
@@ -796,12 +799,10 @@ async def vslide_test(dut, cases, expfunc, ignore_tail=False):
                                vl * np.dtype(dtype).itemsize)
         ).view(dtype)
 
-        if ignore_tail:
-            expected_output = expected_output[0:max(vl - offset, 0)]
-            actual_output = actual_output[0:max(vl - offset, 0)]
         debug_msg = str({
             'impl': impl,
             'vl': vl,
+            'vlmax': vlmax,
             'offset': offset,
             'src': src_data,
             'dest': dest_data,
@@ -815,85 +816,110 @@ async def vslide_test(dut, cases, expfunc, ignore_tail=False):
 async def vslideup_test(dut):
     """Test slideup usage accessible from intrinsics."""
 
-    def expfunc(dest, src, scalar, vl, offset):
-        return np.concat((dest[0:offset], src[0:max(vl - offset, 0)]))
+    def expfunc(dest, src, scalar, vl, offset, vlmax):
+        return np.concat((dest[0:min(vl, offset)], src[0:max(vl - offset, 0)]))
 
     cases = [{
         'impl': 'vslideup_i8mf4',
         'dtype': np.int8,
+        'vlmax': 4,
         'vl': vl,
         'offset': offset
-    } for vl in [4, 3] for offset in [0, 1, 2, 4]] + [{
+    } for vl in [4, 3, 2, 1] for offset in [0, 1, 2, 4]] + [{
         'impl': 'vslideup_i8mf2',
         'dtype': np.int8,
+        'vlmax': 8,
         'vl': vl,
         'offset': offset
-    } for vl in [8, 7] for offset in [0, 2, 6, 8]] + [{
+    } for vl in [8, 7, 4, 2, 1] for offset in [0, 2, 6, 8]] + [{
         'impl': 'vslideup_i8m1',
         'dtype': np.int8,
+        'vlmax': 16,
         'vl': vl,
         'offset': offset
-    } for vl in [16, 15] for offset in [0, 3, 14, 16]] + [{
-        'impl': 'vslideup_i8m2',
-        'dtype': np.int8,
-        'vl': vl,
-        'offset': offset
-    } for vl in [32, 31] for offset in [0, 4, 30, 32]] + [{
+    } for vl in [16, 15, 8, 4, 2, 1] for offset in [0, 3, 8, 14, 16]] + [
+        {
+            'impl': 'vslideup_i8m2',
+            'dtype': np.int8,
+            'vlmax': 32,
+            'vl': vl,
+            'offset': offset
+        } for vl in [32, 31, 16, 8, 4] for offset in [0, 4, 16, 30, 32]
+    ] + [{
         'impl': 'vslideup_i8m4',
         'dtype': np.int8,
+        'vlmax': 64,
         'vl': vl,
         'offset': offset
-    } for vl in [64, 63] for offset in [0, 5, 62, 64]] + [{
-        'impl': 'vslideup_i8m8',
-        'dtype': np.int8,
-        'vl': vl,
-        'offset': offset
-    } for vl in [128, 127] for offset in [0, 6, 126, 128]] + [{
+    } for vl in [64, 63, 32, 16, 4] for offset in [0, 5, 32, 62, 64]] + [
+        {
+            'impl': 'vslideup_i8m8',
+            'dtype': np.int8,
+            'vlmax': 128,
+            'vl': vl,
+            'offset': offset
+        } for vl in [128, 127, 64, 32, 8] for offset in [0, 6, 64, 126, 128]
+    ] + [{
         'impl': 'vslideup_i16mf2',
         'dtype': np.int16,
+        'vlmax': 4,
         'vl': vl,
         'offset': offset
-    } for vl in [4, 3] for offset in [0, 1, 2, 4]] + [{
+    } for vl in [4, 3, 2, 1] for offset in [0, 1, 2, 4]] + [{
         'impl': 'vslideup_i16m1',
         'dtype': np.int16,
+        'vlmax': 8,
         'vl': vl,
         'offset': offset
-    } for vl in [8, 7] for offset in [0, 2, 6, 8]] + [{
-        'impl': 'vslideup_i16m2',
-        'dtype': np.int16,
-        'vl': vl,
-        'offset': offset
-    } for vl in [16, 15] for offset in [0, 3, 14, 16]] + [{
+    } for vl in [8, 7, 4, 2, 1] for offset in [0, 2, 4, 6, 8]] + [
+        {
+            'impl': 'vslideup_i16m2',
+            'dtype': np.int16,
+            'vlmax': 16,
+            'vl': vl,
+            'offset': offset
+        } for vl in [16, 15, 8, 4, 2] for offset in [0, 3, 8, 14, 16]
+    ] + [{
         'impl': 'vslideup_i16m4',
         'dtype': np.int16,
+        'vlmax': 32,
         'vl': vl,
         'offset': offset
-    } for vl in [32, 31] for offset in [0, 4, 30, 32]] + [{
-        'impl': 'vslideup_i16m8',
-        'dtype': np.int16,
-        'vl': vl,
-        'offset': offset
-    } for vl in [64, 63] for offset in [0, 5, 62, 64]] + [{
+    } for vl in [32, 31, 16, 8, 4] for offset in [0, 4, 16, 30, 32]] + [
+        {
+            'impl': 'vslideup_i16m8',
+            'dtype': np.int16,
+            'vlmax': 64,
+            'vl': vl,
+            'offset': offset
+        } for vl in [64, 63, 32, 16, 8] for offset in [0, 5, 32, 62, 64]
+    ] + [{
         'impl': 'vslideup_i32m1',
         'dtype': np.int32,
+        'vlmax': 4,
         'vl': vl,
         'offset': offset
-    } for vl in [4, 3] for offset in [0, 1, 2, 4]] + [{
+    } for vl in [4, 3, 2, 1] for offset in [0, 1, 2, 4]] + [{
         'impl': 'vslideup_i32m2',
         'dtype': np.int32,
+        'vlmax': 8,
         'vl': vl,
         'offset': offset
-    } for vl in [8, 7] for offset in [0, 2, 6, 8]] + [{
-        'impl': 'vslideup_i32m4',
-        'dtype': np.int32,
-        'vl': vl,
-        'offset': offset
-    } for vl in [16, 15] for offset in [0, 3, 14, 16]] + [{
+    } for vl in [8, 7, 4, 2, 1] for offset in [0, 2, 4, 6, 8]] + [
+        {
+            'impl': 'vslideup_i32m4',
+            'dtype': np.int32,
+            'vlmax': 16,
+            'vl': vl,
+            'offset': offset
+        } for vl in [16, 15, 8, 4, 2] for offset in [0, 3, 8, 14, 16]
+    ] + [{
         'impl': 'vslideup_i32m8',
         'dtype': np.int32,
+        'vlmax': 32,
         'vl': vl,
         'offset': offset
-    } for vl in [32, 31] for offset in [0, 4, 30, 32]]
+    } for vl in [32, 31, 16, 8, 4] for offset in [0, 4, 16, 30, 32]]
     await vslide_test(dut, cases, expfunc)
 
 
@@ -901,174 +927,231 @@ async def vslideup_test(dut):
 async def vslidedown_test(dut):
     """Test slidedown usage accessible from intrinsics."""
 
-    def expfunc(dest, src, scalar, vl, offset):
-        return np.concat((
-            src[offset:max(vl, offset)],
-            np.zeros(max(offset, 0), dtype=src.dtype)
-        ))
+    def expfunc(dest, src, scalar, vl, offset, vlmax):
+        res = np.zeros(vl, dtype=src.dtype)
+        for i in range(vl):
+            if i + offset < vlmax:
+                res[i] = src[i + offset]
+            else:
+                res[i] = 0
+        return res
 
     cases = [{
         'impl': 'vslidedown_i8mf4',
         'dtype': np.int8,
+        'vlmax': 4,
         'vl': vl,
         'offset': offset
-    } for vl in [4, 3] for offset in [1, 2]] + [{
+    } for vl in [4, 3, 2, 1] for offset in [0, 1, 2, 4, 5]] + [{
         'impl': 'vslidedown_i8mf2',
         'dtype': np.int8,
+        'vlmax': 8,
         'vl': vl,
         'offset': offset
-    } for vl in [8, 7] for offset in [0, 2, 6, 8]] + [{
-        'impl': 'vslidedown_i8m1',
-        'dtype': np.int8,
-        'vl': vl,
-        'offset': offset
-    } for vl in [16, 15] for offset in [0, 3, 14, 16]] + [{
+    } for vl in [8, 7, 4, 2, 1] for offset in [0, 2, 6, 8, 9]] + [
+        {
+            'impl': 'vslidedown_i8m1',
+            'dtype': np.int8,
+            'vlmax': 16,
+            'vl': vl,
+            'offset': offset
+        } for vl in [16, 15, 8, 4, 2, 1] for offset in [0, 2, 7, 14, 16, 17]
+    ] + [{
         'impl': 'vslidedown_i8m2',
         'dtype': np.int8,
+        'vlmax': 32,
         'vl': vl,
         'offset': offset
-    } for vl in [32, 31] for offset in [0, 4, 30, 32]] + [{
-        'impl': 'vslidedown_i8m4',
-        'dtype': np.int8,
-        'vl': vl,
-        'offset': offset
-    } for vl in [64, 63] for offset in [0, 5, 62, 64]] + [{
+    } for vl in [32, 31, 16, 8, 4] for offset in [0, 4, 16, 30, 32, 33]] + [
+        {
+            'impl': 'vslidedown_i8m4',
+            'dtype': np.int8,
+            'vlmax': 64,
+            'vl': vl,
+            'offset': offset
+        } for vl in [64, 63, 32, 16, 4] for offset in [0, 5, 32, 62, 64, 65]
+    ] + [{
         'impl': 'vslidedown_i8m8',
         'dtype': np.int8,
+        'vlmax': 128,
         'vl': vl,
         'offset': offset
-    } for vl in [128, 127] for offset in [0, 6, 126, 128]] + [{
-        'impl': 'vslidedown_i16mf2',
-        'dtype': np.int16,
-        'vl': vl,
-        'offset': offset
-    } for vl in [4, 3] for offset in [0, 1, 2, 4]] + [{
-        'impl': 'vslidedown_i16m1',
-        'dtype': np.int16,
-        'vl': vl,
-        'offset': offset
-    } for vl in [8, 7] for offset in [0, 2, 6, 8]] + [{
-        'impl': 'vslidedown_i16m2',
-        'dtype': np.int16,
-        'vl': vl,
-        'offset': offset
-    } for vl in [16, 15] for offset in [0, 3, 14, 16]] + [{
-        'impl': 'vslidedown_i16m4',
-        'dtype': np.int16,
-        'vl': vl,
-        'offset': offset
-    } for vl in [32, 31] for offset in [0, 4, 30, 32]] + [{
-        'impl': 'vslidedown_i16m8',
-        'dtype': np.int16,
-        'vl': vl,
-        'offset': offset
-    } for vl in [64, 63] for offset in [0, 5, 62, 64]] + [{
-        'impl': 'vslidedown_i32m1',
-        'dtype': np.int32,
-        'vl': vl,
-        'offset': offset
-    } for vl in [4, 3] for offset in [0, 1, 2, 4]] + [{
-        'impl': 'vslidedown_i32m2',
-        'dtype': np.int32,
-        'vl': vl,
-        'offset': offset
-    } for vl in [8, 7] for offset in [0, 2, 6, 8]] + [{
-        'impl': 'vslidedown_i32m4',
-        'dtype': np.int32,
-        'vl': vl,
-        'offset': offset
-    } for vl in [16, 15] for offset in [0, 3, 14, 16]] + [{
-        'impl': 'vslidedown_i32m8',
-        'dtype': np.int32,
-        'vl': vl,
-        'offset': offset
-    } for vl in [32, 31] for offset in [0, 4, 30, 32]]
-    await vslide_test(dut, cases, expfunc, ignore_tail=True)
+    }
+         for vl in [128, 127, 64, 32, 8]
+         for offset in [0, 6, 64, 126, 128, 129]] + [{
+             'impl': 'vslidedown_i16mf2',
+             'dtype': np.int16,
+             'vlmax': 4,
+             'vl': vl,
+             'offset': offset
+         } for vl in [4, 3, 2, 1] for offset in [0, 1, 2, 4, 5]] + [
+             {
+                 'impl': 'vslidedown_i16m1',
+                 'dtype': np.int16,
+                 'vlmax': 8,
+                 'vl': vl,
+                 'offset': offset
+             } for vl in [8, 7, 4, 3, 2, 1] for offset in [0, 2, 4, 6, 8, 9]
+         ] + [{
+             'impl': 'vslidedown_i16m2',
+             'dtype': np.int16,
+             'vlmax': 16,
+             'vl': vl,
+             'offset': offset
+         } for vl in [16, 15, 8, 4, 2] for offset in [0, 3, 8, 14, 16, 17]] + [
+             {
+                 'impl': 'vslidedown_i16m4',
+                 'dtype': np.int16,
+                 'vlmax': 32,
+                 'vl': vl,
+                 'offset': offset
+             }
+             for vl in [32, 31, 16, 8, 4]
+             for offset in [0, 4, 16, 30, 32, 33]
+         ] + [{
+             'impl': 'vslidedown_i16m8',
+             'dtype': np.int16,
+             'vlmax': 64,
+             'vl': vl,
+             'offset': offset
+         }
+              for vl in [64, 63, 32, 16, 8]
+              for offset in [0, 5, 32, 62, 64, 65]] + [{
+                  'impl': 'vslidedown_i32m1',
+                  'dtype': np.int32,
+                  'vlmax': 4,
+                  'vl': vl,
+                  'offset': offset
+              } for vl in [4, 3, 2, 1] for offset in [0, 1, 2, 4, 5]] + [
+                  {
+                      'impl': 'vslidedown_i32m2',
+                      'dtype': np.int32,
+                      'vlmax': 8,
+                      'vl': vl,
+                      'offset': offset
+                  } for vl in [8, 7, 4, 2, 1] for offset in [0, 2, 4, 6, 8, 9]
+              ] + [{
+                  'impl': 'vslidedown_i32m4',
+                  'dtype': np.int32,
+                  'vlmax': 16,
+                  'vl': vl,
+                  'offset': offset
+              }
+                   for vl in [16, 15, 8, 4, 2]
+                   for offset in [0, 3, 8, 14, 16, 17]] + [
+                       {
+                           'impl': 'vslidedown_i32m8',
+                           'dtype': np.int32,
+                           'vlmax': 32,
+                           'vl': vl,
+                           'offset': offset
+                       }
+                       for vl in [32, 31, 16, 8, 4]
+                       for offset in [0, 4, 16, 30, 32, 33]
+                   ]
+    await vslide_test(dut, cases, expfunc)
 
 
 @cocotb.test()
 async def vslide1up_test(dut):
     """Test slide1up usage accessible from intrinsics."""
 
-    def expfunc(dest, src, scalar, vl, offset):
+    def expfunc(dest, src, scalar, vl, offset, vlmax):
+        if vl == 0:
+            return np.array([], dtype=src.dtype)
         return np.concat((scalar, src[0:max(vl - 1, 0)]))
 
     cases = [{
         'impl': 'vslide1up_i8mf4',
         'dtype': np.int8,
+        'vlmax': 4,
         'vl': vl,
         'offset': 0
-    } for vl in [4, 3]] + [{
+    } for vl in [4, 3, 2, 1]] + [{
         'impl': 'vslide1up_i8mf2',
         'dtype': np.int8,
+        'vlmax': 8,
         'vl': vl,
         'offset': 0
-    } for vl in [8, 7]] + [{
+    } for vl in [8, 7, 4, 2, 1]] + [{
         'impl': 'vslide1up_i8m1',
         'dtype': np.int8,
+        'vlmax': 16,
         'vl': vl,
         'offset': 0
-    } for vl in [16, 15]] + [{
+    } for vl in [16, 15, 8, 4, 2, 1]] + [{
         'impl': 'vslide1up_i8m2',
         'dtype': np.int8,
+        'vlmax': 32,
         'vl': vl,
         'offset': 0
-    } for vl in [32, 31]] + [{
+    } for vl in [32, 31, 16, 8, 4]] + [{
         'impl': 'vslide1up_i8m4',
         'dtype': np.int8,
+        'vlmax': 64,
         'vl': vl,
         'offset': 0
-    } for vl in [64, 63]] + [{
+    } for vl in [64, 63, 32, 16, 4]] + [{
         'impl': 'vslide1up_i8m8',
         'dtype': np.int8,
+        'vlmax': 128,
         'vl': vl,
         'offset': 0
-    } for vl in [128, 127]] + [{
+    } for vl in [128, 127, 64, 32, 8]] + [{
         'impl': 'vslide1up_i16mf2',
         'dtype': np.int16,
+        'vlmax': 4,
         'vl': vl,
         'offset': 0
-    } for vl in [4, 3]] + [{
+    } for vl in [4, 3, 2, 1]] + [{
         'impl': 'vslide1up_i16m1',
         'dtype': np.int16,
+        'vlmax': 8,
         'vl': vl,
         'offset': 0
-    } for vl in [8, 7]] + [{
+    } for vl in [8, 7, 4, 2, 1]] + [{
         'impl': 'vslide1up_i16m2',
         'dtype': np.int16,
+        'vlmax': 16,
         'vl': vl,
         'offset': 0
-    } for vl in [16, 15]] + [{
+    } for vl in [16, 15, 8, 4, 2]] + [{
         'impl': 'vslide1up_i16m4',
         'dtype': np.int16,
+        'vlmax': 32,
         'vl': vl,
         'offset': 0
-    } for vl in [32, 31]] + [{
+    } for vl in [32, 31, 16, 8, 4]] + [{
         'impl': 'vslide1up_i16m8',
         'dtype': np.int16,
+        'vlmax': 64,
         'vl': vl,
         'offset': 0
-    } for vl in [64, 63]] + [{
+    } for vl in [64, 63, 32, 16, 8]] + [{
         'impl': 'vslide1up_i32m1',
         'dtype': np.int32,
+        'vlmax': 4,
         'vl': vl,
         'offset': 0
-    } for vl in [4, 3]] + [{
+    } for vl in [4, 3, 2, 1]] + [{
         'impl': 'vslide1up_i32m2',
         'dtype': np.int32,
+        'vlmax': 8,
         'vl': vl,
         'offset': 0
-    } for vl in [8, 7]] + [{
+    } for vl in [8, 7, 4, 2, 1]] + [{
         'impl': 'vslide1up_i32m4',
         'dtype': np.int32,
+        'vlmax': 16,
         'vl': vl,
         'offset': 0
-    } for vl in [16, 15]] + [{
+    } for vl in [16, 15, 8, 4, 2]] + [{
         'impl': 'vslide1up_i32m8',
         'dtype': np.int32,
+        'vlmax': 32,
         'vl': vl,
         'offset': 0
-    } for vl in [32, 31]]
+    } for vl in [32, 31, 16, 8, 4]]
     await vslide_test(dut, cases, expfunc)
 
 
@@ -1076,86 +1159,325 @@ async def vslide1up_test(dut):
 async def vslide1down_test(dut):
     """Test slide1down usage accessible from intrinsics."""
 
-    def expfunc(dest, src, scalar, vl, offset):
-        return np.concat((src[1:max(vl, 1)], scalar))
+    def expfunc(dest, src, scalar, vl, offset, vlmax):
+        res = np.zeros(vl, dtype=src.dtype)
+        for i in range(vl):
+            if i == vl - 1:
+                res[i] = scalar[0]
+            elif i + 1 < vlmax:
+                res[i] = src[i + 1]
+            else:
+                res[i] = 0
+        return res
 
     cases = [{
         'impl': 'vslide1down_i8mf4',
         'dtype': np.int8,
+        'vlmax': 4,
         'vl': vl,
         'offset': 0
-    } for vl in [4, 3]] + [{
+    } for vl in [4, 3, 2, 1]] + [{
         'impl': 'vslide1down_i8mf2',
         'dtype': np.int8,
+        'vlmax': 8,
         'vl': vl,
         'offset': 0
-    } for vl in [8, 7]] + [{
+    } for vl in [8, 7, 4, 2, 1]] + [{
         'impl': 'vslide1down_i8m1',
         'dtype': np.int8,
+        'vlmax': 16,
         'vl': vl,
         'offset': 0
-    } for vl in [16, 15]] + [{
+    } for vl in [16, 15, 8, 4, 2, 1]] + [{
         'impl': 'vslide1down_i8m2',
         'dtype': np.int8,
+        'vlmax': 32,
         'vl': vl,
         'offset': 0
-    } for vl in [32, 31]] + [{
+    } for vl in [32, 31, 16, 8, 4]] + [{
         'impl': 'vslide1down_i8m4',
         'dtype': np.int8,
+        'vlmax': 64,
         'vl': vl,
         'offset': 0
-    } for vl in [64, 63]] + [{
+    } for vl in [64, 63, 32, 16, 4]] + [{
         'impl': 'vslide1down_i8m8',
         'dtype': np.int8,
+        'vlmax': 128,
         'vl': vl,
         'offset': 0
-    } for vl in [128, 127]] + [{
+    } for vl in [128, 127, 64, 32, 8]] + [{
         'impl': 'vslide1down_i16mf2',
         'dtype': np.int16,
+        'vlmax': 4,
         'vl': vl,
         'offset': 0
-    } for vl in [4, 3]] + [{
+    } for vl in [4, 3, 2, 1]] + [{
         'impl': 'vslide1down_i16m1',
         'dtype': np.int16,
+        'vlmax': 8,
         'vl': vl,
         'offset': 0
-    } for vl in [8, 7]] + [{
+    } for vl in [8, 7, 4, 2, 1]] + [{
         'impl': 'vslide1down_i16m2',
         'dtype': np.int16,
+        'vlmax': 16,
         'vl': vl,
         'offset': 0
-    } for vl in [16, 15]] + [{
+    } for vl in [16, 15, 8, 4, 2]] + [{
         'impl': 'vslide1down_i16m4',
         'dtype': np.int16,
+        'vlmax': 32,
         'vl': vl,
         'offset': 0
-    } for vl in [32, 31]] + [{
+    } for vl in [32, 31, 16, 8, 4]] + [{
         'impl': 'vslide1down_i16m8',
         'dtype': np.int16,
+        'vlmax': 64,
         'vl': vl,
         'offset': 0
-    } for vl in [64, 63]] + [{
+    } for vl in [64, 63, 32, 16, 8]] + [{
         'impl': 'vslide1down_i32m1',
         'dtype': np.int32,
+        'vlmax': 4,
         'vl': vl,
         'offset': 0
-    } for vl in [4, 3]] + [{
+    } for vl in [4, 3, 2, 1]] + [{
         'impl': 'vslide1down_i32m2',
         'dtype': np.int32,
+        'vlmax': 8,
         'vl': vl,
         'offset': 0
-    } for vl in [8, 7]] + [{
+    } for vl in [8, 7, 4, 2, 1]] + [{
         'impl': 'vslide1down_i32m4',
         'dtype': np.int32,
+        'vlmax': 16,
         'vl': vl,
         'offset': 0
-    } for vl in [16, 15]] + [{
+    } for vl in [16, 15, 8, 4, 2]] + [{
         'impl': 'vslide1down_i32m8',
         'dtype': np.int32,
+        'vlmax': 32,
         'vl': vl,
         'offset': 0
-    } for vl in [32, 31]]
+    } for vl in [32, 31, 16, 8, 4]]
     await vslide_test(dut, cases, expfunc)
+
+
+@cocotb.test()
+async def vslide_boundary_test(dut):
+    """Test vslide boundary, dynamic LMUL reduction, and masked operations."""
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vslide_boundary_test.elf'),
+        [
+            'op_type',
+            'use_mask',
+            'vma',
+            'vta',
+            'sew',
+            'lmul',
+            'vl',
+            'offset',
+            'scalar',
+            'mask_data',
+            'vs2_data',
+            'vd_orig_data',
+            'result_data',
+        ],
+    )
+    rng = np.random.default_rng(42)
+
+    # --------------------------------------------------------------------------
+    # Explicit Reproduction Case for Bug (e16, m1, avl=4, offset=2, mask=4'b0101)
+    # --------------------------------------------------------------------------
+    repro_sew = 1  # e16
+    repro_lmul = 0  # m1
+    repro_vl = 4  # AVL=4, VLMAX=8
+    repro_offset = 2
+    repro_vma = 0  # mu (mask undisturbed)
+    repro_vta = 1  # ta
+    repro_use_mask = 1
+    repro_mask = np.zeros(16, dtype=np.uint8)
+    repro_mask[
+        0] = 0x05  # 4'b0101 -> elements 0 and 2 enabled, 1 and 3 masked out
+
+    repro_vs2 = np.zeros(64, dtype=np.int16)
+    repro_vd_orig = np.zeros(64, dtype=np.int16)
+    for k in range(64):
+        repro_vs2[k] = np.int16((0x1000 + k) & 0xFFFF)
+        repro_vd_orig[k] = np.int16((0x2000 + k) & 0xFFFF)
+    repro_vs2[2] = np.int16(-2)  # 0xFFFE
+    repro_vs2[4] = np.int16(0x4BC1)  # 0x4BC1
+
+    await fixture.write_word('op_type', 1)  # vslidedown.vi 2
+    await fixture.write_word('use_mask', repro_use_mask)
+    await fixture.write_word('vma', repro_vma)
+    await fixture.write_word('vta', repro_vta)
+    await fixture.write_word('sew', repro_sew)
+    await fixture.write_word('lmul', repro_lmul)
+    await fixture.write_word('vl', repro_vl)
+    await fixture.write_word('offset', repro_offset)
+    await fixture.write_word('scalar', 0)
+    await fixture.write('mask_data', repro_mask)
+    await fixture.write('vs2_data', repro_vs2)
+    await fixture.write('vd_orig_data', repro_vd_orig)
+
+    await fixture.run_to_halt()
+
+    repro_actual = (await fixture.read('result_data',
+                                       128)).view(np.int16)[:repro_vl]
+    assert repro_actual[0] == np.int16(
+        -2
+    ), f"Repro failed at vd[0]: {hex(int(repro_actual[0]))}"
+    assert repro_actual[1] == np.int16(
+        0x2001
+    ), f"Repro failed at vd[1]: {hex(int(repro_actual[1]))}"
+    assert repro_actual[2] == np.int16(
+        0x4BC1
+    ), f"Repro failed at vd[2]: {hex(int(repro_actual[2]))}"
+    assert repro_actual[3] == np.int16(
+        0x2003
+    ), f"Repro failed at vd[3]: {hex(int(repro_actual[3]))}"
+
+    # --------------------------------------------------------------------------
+    # Parameterized Sweep over SEW, LMUL, VL, Offset, and Masking Policies
+    # --------------------------------------------------------------------------
+    configs = [
+        # (sew_val, lmul_val, lmul_factor, dtype)
+        (0, 7, 0.5, np.int8),  # e8, mf2 -> VLMAX = 8
+        (0, 0, 1.0, np.int8),  # e8, m1  -> VLMAX = 16
+        (0, 2, 4.0, np.int8),  # e8, m4  -> VLMAX = 64
+        (1, 7, 0.5, np.int16),  # e16, mf2 -> VLMAX = 4
+        (1, 0, 1.0,
+         np.int16),  # e16, m1  -> VLMAX = 8 (Exact bug configuration)
+        (1, 1, 2.0, np.int16),  # e16, m2  -> VLMAX = 16
+        (1, 3, 8.0, np.int16),  # e16, m8  -> VLMAX = 64
+        (2, 0, 1.0, np.int32),  # e32, m1  -> VLMAX = 4
+        (2, 2, 4.0, np.int32),  # e32, m4  -> VLMAX = 16
+    ]
+
+    mask_modes = [
+        (0, 0),  # unmasked
+        (1, 0),  # masked (mu - undisturbed)
+        (1, 1),  # masked (ma - agnostic)
+    ]
+
+    for sew_val, lmul_val, lmul_factor, dtype in tqdm.tqdm(configs):
+        itemsize = np.dtype(dtype).itemsize
+        vlmax = int(lmul_factor * 128 / (itemsize * 8))
+
+        vl_list = sorted(list(set([1, max(1, vlmax // 2), vlmax])))
+        offset_list = sorted(
+            list(set([0, 2, max(1, vlmax // 2), vlmax, vlmax + 1]))
+        )
+
+        for vl in vl_list:
+            for offset in offset_list:
+                for use_mask, vma in mask_modes:
+                    num_elements = 128 // itemsize
+                    vs2_data = rng.integers(
+                        low=np.iinfo(dtype).min,
+                        high=np.iinfo(dtype).max + 1,
+                        size=num_elements,
+                        dtype=dtype
+                    )
+                    vd_orig_data = rng.integers(
+                        low=np.iinfo(dtype).min,
+                        high=np.iinfo(dtype).max + 1,
+                        size=num_elements,
+                        dtype=dtype
+                    )
+                    scalar_val = int(
+                        rng.integers(
+                            low=np.iinfo(dtype).min,
+                            high=np.iinfo(dtype).max + 1,
+                            size=1,
+                            dtype=dtype
+                        )[0]
+                    )
+
+                    mask_bytes = np.array(
+                        [0x55] * 16, dtype=np.uint8
+                    ) if use_mask else np.array([0xFF] * 16, dtype=np.uint8)
+
+                    ops_to_test = [0]
+                    if offset == 2:
+                        ops_to_test.append(1)
+                    if offset <= vl:
+                        ops_to_test.append(2)
+                    if offset == 0:
+                        ops_to_test.append(3)
+                        ops_to_test.append(4)
+
+                    for op in ops_to_test:
+                        expected_vl = np.zeros(vl, dtype=dtype)
+                        for i in range(vl):
+                            mask_bit = 1 if not use_mask else (
+                                (mask_bytes[i // 8] >> (i % 8)) & 1
+                            )
+                            if mask_bit == 0 and vma == 0:  # mu
+                                expected_vl[i] = vd_orig_data[i]
+                            elif mask_bit == 0 and vma == 1:  # ma
+                                expected_vl[i] = vd_orig_data[i]
+                            else:
+                                if op in (0, 1):  # vslidedown
+                                    eff_offset = 2 if op == 1 else offset
+                                    if i + eff_offset < vlmax:
+                                        expected_vl[i] = vs2_data[i +
+                                                                  eff_offset]
+                                    else:
+                                        expected_vl[i] = 0
+                                elif op == 2:  # vslideup
+                                    if i < offset:
+                                        expected_vl[i] = vd_orig_data[i]
+                                    else:
+                                        expected_vl[i] = vs2_data[i - offset]
+                                elif op == 3:  # vslide1down
+                                    if i == vl - 1:
+                                        expected_vl[i] = scalar_val
+                                    elif i + 1 < vlmax:
+                                        expected_vl[i] = vs2_data[i + 1]
+                                    else:
+                                        expected_vl[i] = 0
+                                elif op == 4:  # vslide1up
+                                    if i == 0:
+                                        expected_vl[i] = scalar_val
+                                    else:
+                                        expected_vl[i] = vs2_data[i - 1]
+
+                        await fixture.write_word('op_type', op)
+                        await fixture.write_word('use_mask', use_mask)
+                        await fixture.write_word('vma', vma)
+                        await fixture.write_word('vta', 1)
+                        await fixture.write_word('sew', sew_val)
+                        await fixture.write_word('lmul', lmul_val)
+                        await fixture.write_word('vl', vl)
+                        await fixture.write_word('offset', offset)
+                        await fixture.write_word(
+                            'scalar', scalar_val & 0xFFFFFFFF
+                        )
+                        await fixture.write('mask_data', mask_bytes)
+                        await fixture.write('vs2_data', vs2_data)
+                        await fixture.write('vd_orig_data', vd_orig_data)
+
+                        await fixture.run_to_halt()
+
+                        actual_data = (await
+                                       fixture.read('result_data',
+                                                    128)).view(dtype)[:vl]
+
+                        for i in range(vl):
+                            mask_bit = 1 if not use_mask else (
+                                (mask_bytes[i // 8] >> (i % 8)) & 1
+                            )
+                            if mask_bit == 1 or vma == 0:
+                                assert actual_data[i] == expected_vl[i], (
+                                    f"Mismatch at element {i}: actual={hex(int(actual_data[i]))}, "
+                                    f"expected={hex(int(expected_vl[i]))}, op={op}, use_mask={use_mask}, "
+                                    f"sew={sew_val}, lmul={lmul_val}, vl={vl}, offset={offset}, vlmax={vlmax}"
+                                )
 
 
 async def vgather1_test(dut, cases):

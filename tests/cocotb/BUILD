@@ -258,6 +258,7 @@ RVV_ASSEMBLY_TESTCASES = [
     "vslidedown_test",
     "vslide1up_test",
     "vslide1down_test",
+    "vslide_boundary_test",
     "vstart_test",
 ]
 # END_TESTCASES_FOR_rvv_assembly_cocotb_test

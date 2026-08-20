@@ -30,33 +30,37 @@ int32_t scalar32 __attribute__((section(".data")));
 size_t offset = 1;
 size_t vl     = 16;
 
-#define CREATE_VSLIDEUP_FN(bits, lmul)                                         \
-  __attribute__((used, retain)) void vslideup_i##bits##lmul() {                \
-    const auto src = __riscv_vle##bits##_v_i##bits##lmul(buf_src##bits, vl);   \
-    auto dest      = __riscv_vle##bits##_v_i##bits##lmul(buf_dest##bits, vl);  \
-    dest           = __riscv_vslideup_vx_i##bits##lmul(dest, src, offset, vl); \
-    __riscv_vse##bits##_v_i##bits##lmul(buf_dest##bits, dest, vl);             \
-  }
-
-#define CREATE_VSLIDEDOWN_FN(bits, lmul)                                      \
-  __attribute__((used, retain)) void vslidedown_i##bits##lmul() {             \
-    const auto src  = __riscv_vle##bits##_v_i##bits##lmul(buf_src##bits, vl); \
-    const auto dest = __riscv_vslidedown_vx_i##bits##lmul(src, offset, vl);   \
-    __riscv_vse##bits##_v_i##bits##lmul(buf_dest##bits, dest, vl);            \
-  }
-
-#define CREATE_VSLIDE1UP_FN(bits, lmul)                                          \
-  __attribute__((used, retain)) void vslide1up_i##bits##lmul() {                 \
-    const auto src  = __riscv_vle##bits##_v_i##bits##lmul(buf_src##bits, vl);    \
-    const auto dest = __riscv_vslide1up_vx_i##bits##lmul(src, scalar##bits, vl); \
-    __riscv_vse##bits##_v_i##bits##lmul(buf_dest##bits, dest, vl);               \
-  }
-
-#define CREATE_VSLIDE1DOWN_FN(bits, lmul)                                          \
-  __attribute__((used, retain)) void vslide1down_i##bits##lmul() {                 \
-    const auto src  = __riscv_vle##bits##_v_i##bits##lmul(buf_src##bits, vl);      \
-    const auto dest = __riscv_vslide1down_vx_i##bits##lmul(src, scalar##bits, vl); \
+#define CREATE_VSLIDEUP_FN(bits, lmul)                                             \
+  __attribute__((used, retain)) void vslideup_i##bits##lmul() {                    \
+    const auto vlmax = __riscv_vsetvlmax_e##bits##lmul();                          \
+    const auto src   = __riscv_vle##bits##_v_i##bits##lmul(buf_src##bits, vlmax);  \
+    auto dest        = __riscv_vle##bits##_v_i##bits##lmul(buf_dest##bits, vlmax); \
+    dest             = __riscv_vslideup_vx_i##bits##lmul(dest, src, offset, vl);   \
     __riscv_vse##bits##_v_i##bits##lmul(buf_dest##bits, dest, vl);                 \
+  }
+
+#define CREATE_VSLIDEDOWN_FN(bits, lmul)                                          \
+  __attribute__((used, retain)) void vslidedown_i##bits##lmul() {                 \
+    const auto vlmax = __riscv_vsetvlmax_e##bits##lmul();                         \
+    const auto src   = __riscv_vle##bits##_v_i##bits##lmul(buf_src##bits, vlmax); \
+    const auto dest  = __riscv_vslidedown_vx_i##bits##lmul(src, offset, vl);      \
+    __riscv_vse##bits##_v_i##bits##lmul(buf_dest##bits, dest, vl);                \
+  }
+
+#define CREATE_VSLIDE1UP_FN(bits, lmul)                                           \
+  __attribute__((used, retain)) void vslide1up_i##bits##lmul() {                  \
+    const auto vlmax = __riscv_vsetvlmax_e##bits##lmul();                         \
+    const auto src   = __riscv_vle##bits##_v_i##bits##lmul(buf_src##bits, vlmax); \
+    const auto dest  = __riscv_vslide1up_vx_i##bits##lmul(src, scalar##bits, vl); \
+    __riscv_vse##bits##_v_i##bits##lmul(buf_dest##bits, dest, vl);                \
+  }
+
+#define CREATE_VSLIDE1DOWN_FN(bits, lmul)                                           \
+  __attribute__((used, retain)) void vslide1down_i##bits##lmul() {                  \
+    const auto vlmax = __riscv_vsetvlmax_e##bits##lmul();                           \
+    const auto src   = __riscv_vle##bits##_v_i##bits##lmul(buf_src##bits, vlmax);   \
+    const auto dest  = __riscv_vslide1down_vx_i##bits##lmul(src, scalar##bits, vl); \
+    __riscv_vse##bits##_v_i##bits##lmul(buf_dest##bits, dest, vl);                  \
   }
 
 extern "C" {
