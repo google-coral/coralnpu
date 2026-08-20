@@ -317,13 +317,13 @@ module rvv_backend_alu_unit_other
             if(vs1_opcode==VMV_X_S) begin
               case(vs2_eew)
                 EEW8: begin
-                  src2_data[0 +: `BYTE_WIDTH] = vs2_data[0 +: `BYTE_WIDTH];
+                  src2_data[0 +: `XLEN] = {{(`XLEN-`BYTE_WIDTH){vs2_data[`BYTE_WIDTH-1]}}, vs2_data[0 +: `BYTE_WIDTH]};
                 end
                 EEW16: begin
-                  src2_data[0 +: `HWORD_WIDTH] = vs2_data[0 +: `HWORD_WIDTH];
+                  src2_data[0 +: `XLEN] = {{(`XLEN-`HWORD_WIDTH){vs2_data[`HWORD_WIDTH-1]}}, vs2_data[0 +: `HWORD_WIDTH]};
                 end
                 EEW32: begin
-                  src2_data[0 +: `WORD_WIDTH] = vs2_data[0 +: `WORD_WIDTH];
+                  src2_data[0 +: `XLEN] = {{(`XLEN-`WORD_WIDTH){vs2_data[`WORD_WIDTH-1]}}, vs2_data[0 +: `WORD_WIDTH]};
                 end
               endcase
             end

@@ -148,10 +148,20 @@ module rvv_backend
     output  RVVConfigState                        vector_csr;
     input   logic                                 vcsr_ready;
 
-// retire information
-    output  logic     [`NUM_RT_UOP-1:0]           rd_valid_rob2rt_o;
-    output  ROB2RT_t  [`NUM_RT_UOP-1:0]           rd_rob2rt_o;
-
+// Retire information:
+// In verification testbenches, the port is widened to include both execution
+// retirement (NUM_RT_UOP) and decode bypass retirement for reserved instructions
+// (NUM_DE_INST).
+// For synthesis, fallback to the base NUM_RT_UOP lanes required by the scalar
+// RetirementBuffer.
+  `ifdef TB_SUPPORT
+    output  logic     [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_valid_rob2rt_o;
+    output  ROB2RT_t  [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_rob2rt_o;
+  `else
+    output  logic     [`NUM_RT_UOP-1:0]               rd_valid_rob2rt_o;
+    output  ROB2RT_t  [`NUM_RT_UOP-1:0]               rd_rob2rt_o;
+  `endif
+    
 // rvv_backend is not active.(IDLE)
     output  logic                                 rvv_idle;
 
@@ -168,6 +178,10 @@ module rvv_backend
 
     logic         [`NUM_DE_INST-1:0]      lcmd_valid_de2lcq;
     LCMD_t        [`NUM_DE_INST-1:0]      lcmd_de2lcq;
+  `ifdef TB_SUPPORT
+    logic         [`NUM_DE_INST-1:0]      de2rvvi_valid;
+    ROB2RT_t      [`NUM_DE_INST-1:0]      de2rvvi_data;
+  `endif
   // Legal command queue to Decode in DE2 stage
     logic         [`NUM_DE_INST-1:0]      lcmd_valid_lcq2de;
     LCMD_t        [`NUM_DE_INST-1:0]      lcmd_lcq2de;
@@ -355,6 +369,10 @@ module rvv_backend
     ROB2RT_t      [`NUM_RT_UOP-1:0]       rd_rob2rt;
     logic         [`NUM_RT_UOP-1:0]       rd_ready_rt2rob;
     logic         [`ROB_DEPTH_WIDTH-1:0]  rob_entry_rob2rt;
+  `ifdef TB_SUPPORT
+    logic         [`NUM_RT_UOP-1:0]       rt2rvvi_valid;
+    ROB2RT_t      [`NUM_RT_UOP-1:0]       rt2rvvi_data;
+  `endif
   // RT to VRF
     logic         [`NUM_RT_UOP-1:0]       wr_valid_rt2vrf;
     RT2VRF_t      [`NUM_RT_UOP-1:0]       wr_data_rt2vrf;
@@ -424,6 +442,10 @@ module rvv_backend
       .inst               (inst_cq2de),
       .lcmd_valid         (lcmd_valid_de2lcq),
       .lcmd               (lcmd_de2lcq)
+     `ifdef TB_SUPPORT
+      ,.de2rvvi_valid     (de2rvvi_valid),
+      .de2rvvi_data       (de2rvvi_data)
+     `endif
     );
   
   // Legal Command Queue
@@ -1266,8 +1288,8 @@ module rvv_backend
       // Retire information for RVVI.
       `ifdef TB_SUPPORT
         ,.vrf_data              (vrf_data),
-        .rt2rvvi_valid          (rd_valid_rob2rt_o),
-        .rt2rvvi_data           (rd_rob2rt_o)
+        .rt2rvvi_valid          (rt2rvvi_valid),
+        .rt2rvvi_data           (rt2rvvi_data)
       `endif
     );
     
@@ -1306,7 +1328,20 @@ module rvv_backend
         .rt2vrf_wr_valid  (wr_valid_rt2vrf),
         .rt2vrf_wr_data   (wr_data_rt2vrf)
     );
-
+  
+  // Retire information:
+  // In testbenches, concatenate decode bypass packets ({de2rvvi}) with
+  // execution retirement ({rt2rvvi}) for RVVI tracers.
+  // For synthesis, directly wire base ROB retirement signals to maintain
+  // hardware compatibility with the scalar RetirementBuffer.
+  `ifdef TB_SUPPORT
+    assign rd_valid_rob2rt_o = {de2rvvi_valid, rt2rvvi_valid};
+    assign rd_rob2rt_o       = {de2rvvi_data, rt2rvvi_data};
+  `else
+    assign rd_valid_rob2rt_o = rd_valid_rob2rt;
+    assign rd_rob2rt_o       = rd_rob2rt;
+  `endif
+  
   // rvv_backend IDLE 
   assign rvv_idle = fifo_empty_cq2de&fifo_empty_lcq2de&uq_empty&rob_empty
                   `ifdef ZVT_ON

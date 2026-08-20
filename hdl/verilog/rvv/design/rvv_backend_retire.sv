@@ -339,13 +339,16 @@ generate
 endgenerate
 
 `ifdef TB_SUPPORT
-// retire infomation for RVVI
-  assign rt2rvvi_valid = rob2rt_write_valid&rt2rob_write_ready;
-
+// retire information for RVVI
   always_comb begin
     for(int j=0;j<`NUM_RT_UOP;j++) begin
+      rt2rvvi_valid[j]        = rob2rt_write_valid[j] &
+                                rt2rob_write_ready[j] &
+                                rob2rt_write_data[j].w_valid & 
+                                rob2rt_write_data[j].res_updating_end;
+
       rt2rvvi_data[j]         = rob2rt_write_data[j];
-      rt2rvvi_data[j].w_valid = rob2rt_write_data[j].w_valid&rt2rvvi_valid[j];  // coral.scalar core use w_valid instead of rt2rvvi_valid
+      rt2rvvi_data[j].w_valid = rt2rvvi_valid[j];
 
       if(rob2rt_write_data[j].w_type==VRF) begin
         for(int i=0;i<`VLENB;i++) begin
