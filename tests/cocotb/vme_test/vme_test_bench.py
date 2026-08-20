@@ -397,7 +397,7 @@ async def vme_decode_test(dut):
         assert last_mcause_val == 2, f"[{name}] Expected mcause=2 (illegal), got {last_mcause_val}"
 
 
-@cocotb.test(expect_fail=True)
+@cocotb.test()
 async def vme_load_store_test(dut):
     """Load and run valid vtle and vtse instructions, verifying memory."""
     vlen = 128

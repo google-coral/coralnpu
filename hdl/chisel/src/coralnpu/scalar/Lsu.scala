@@ -270,7 +270,19 @@ object LsuUOp {
       result.data := sbus.data(i)
     }
     if (p.enableRvv) {
-      val eew       = cmd.elemWidth.get     // From instruction encoding
+      val isTile  = if (p.enableVme) LsuOp.isTile(cmd.op) else false.B
+      val tileEew = Option
+        .when(p.enableVme) {
+          MuxLookup(cmd.nfields.get, "b000".U)(
+            Seq(
+              "b000".U -> "b000".U, // 8-bit
+              "b001".U -> "b101".U, // 16-bit
+              "b010".U -> "b110".U  // 32-bit
+            )
+          )
+        }
+        .getOrElse("b000".U)
+      val eew       = Mux(isTile, tileEew, cmd.elemWidth.get)
       val sew       = rvvState.get.bits.sew // From vtype
       val lmul_eff  = rvvState.get.bits.lmul
       val lmul_orig = rvvState.get.bits.lmul_orig
@@ -308,7 +320,7 @@ object LsuUOp {
                 (cmd.nfields.get === 7.U) -> 3.U  // NF8 -> LMUL8
               )
             ),
-            LsuOp.isNonindexedVector(cmd.op) -> emul_data
+            (LsuOp.isNonindexedVector(cmd.op) || isTile) -> emul_data
             // default: indexed vector and scalar
           )
         )
@@ -329,17 +341,19 @@ object LsuUOp {
               (cmd.nfields.get === 3.U) -> (p.rvvVlenb * 4).U, // NF4 -> LMUL4
               (cmd.nfields.get === 7.U) -> (p.rvvVlenb * 8).U  // NF8 -> LMUL8
             )
-          )
+          ),
+          isTile -> Mux(rvvState.get.bits.vl < p.vmeTe.U, rvvState.get.bits.vl, p.vmeTe.U)
         )
       )
       result.vstart.get := rvvState.get.bits.vstart
 
-      // If mask operation, force fields to zero
+      // If mask operation or tile operation, force fields to zero
       result.nfields.get := MuxUpTo1H(
         cmd.nfields.get,
         Seq(
           cmd.isMaskOperation() -> 0.U,
-          cmd.isWholeRegister() -> 0.U
+          cmd.isWholeRegister() -> 0.U,
+          isTile                -> 0.U
         )
       )
       result.sew.get := rvvState.get.bits.sew
@@ -350,7 +364,7 @@ object LsuUOp {
           cmd.rs2.get =/= 0.U &&
           sbus.data(i) === 0.U
       )
-      result.masked.get := !cmd.vm.get
+      result.masked.get := !cmd.vm.get && !isTile
     }
 
     result
@@ -1547,6 +1561,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     })
 
     val vector = Option.when(p.enableRvv)(new Bundle {
+      val isVme                     = Option.when(p.enableVme)(Bool())
       val dataEew                   = LsuVectorElementWidth()
       val indexEew                  = LsuVectorElementWidth()
       val segmentStep               = UInt(3.W)
@@ -1836,12 +1851,34 @@ class LsuSuperSlot(p: Parameters) extends Module {
       respData: Vec[UInt],
       respMask: UInt,
       writebacks: UInt,
-      vectorData: Option[ValidIO[Rvv2Lsu]]
+      vectorData: Option[ValidIO[Rvv2Lsu]],
+      vmeData: Option[ValidIO[Vme2Lsu]]
     ): State = {
+      val isVmeInst       = vector.map(_.isVme.getOrElse(false.B)).getOrElse(false.B)
       val vectorDataBytes = Option.when(p.enableRvv) {
-        VecInit.tabulate(p.rvvVlenb) { i =>
+        val rvvBytes = VecInit.tabulate(p.rvvVlenb) { i =>
           vectorData.get.bits.vregfile.bits.data(i * 8 + 7, i * 8)
         }
+        val vmeBytes = vmeData
+          .map { v =>
+            VecInit.tabulate(p.rvvVlenb) { i =>
+              v.bits.data(i * 8 + 7, i * 8)
+            }
+          }
+          .getOrElse(rvvBytes)
+        Mux(isVmeInst, vmeBytes, rvvBytes)
+      }
+      val vectorDataValid = Option.when(p.enableRvv) {
+        val vmeValid = vmeData.map(_.valid).getOrElse(false.B)
+        Mux(isVmeInst, vmeValid, vectorData.get.valid)
+      }
+      val vectorDataPayloadValid = Option.when(p.enableRvv) {
+        val vmeValid = vmeData.map(_.valid).getOrElse(false.B)
+        Mux(isVmeInst, vmeValid, vectorData.get.valid && vectorData.get.bits.vregfile.valid)
+      }
+      val vectorMaskValid = Option.when(p.enableRvv) {
+        val vmeValid = vmeData.map(_.valid).getOrElse(false.B)
+        Mux(isVmeInst, vmeValid, vectorData.get.valid && vectorData.get.bits.mask.valid)
       }
       val vectorDataActive = Option.when(p.enableRvv) {
         val enableLane = MuxLookup(
@@ -1945,7 +1982,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
           }
         )
         val acceptVectorData = Option.when(p.enableRvv) {
-          vectorData.get.valid &&
+          vectorDataValid.get &&
           vectorDataActive.get.map(_(i)).reduce(_ || _) &&
           cells(i).state === LsuCellState.W_DATA
         }
@@ -1967,6 +2004,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
           assert(
             !acceptVectorData.get ||
               !write ||
+              isVmeInst ||
               vectorData.get.bits.vregfile.valid
           )
         }
@@ -1975,8 +2013,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
             MakeInvalid(UInt(8.W)),
             (0 until p.rvvVlenb).map { j =>
               (
-                vectorData.get.valid &&
-                  vectorData.get.bits.vregfile.valid &&
+                vectorDataPayloadValid.get &&
                   vectorDataActive.get(j)(i) &&
                   cells(i).state === LsuCellState.W_DATA
               ) -> MakeValid(vectorDataBytes.get(j))
@@ -1986,6 +2023,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         if (p.enableRvv) {
           assert(
             !acceptVectorData.get ||
+              isVmeInst ||
               vectorData.get.bits.mask.valid
           )
         }
@@ -1994,11 +2032,16 @@ class LsuSuperSlot(p: Parameters) extends Module {
             MakeInvalid(Bool()),
             (0 until p.rvvVlenb).map { j =>
               (
-                vectorData.get.valid &&
-                  vectorData.get.bits.mask.valid &&
+                vectorMaskValid.get &&
                   vectorDataActive.get(j)(i) &&
                   cells(i).state === LsuCellState.W_DATA
-              ) -> MakeValid(vectorData.get.bits.mask.bits(j))
+              ) -> MakeValid(
+                Mux(
+                  isVmeInst,
+                  true.B,
+                  vectorData.get.bits.mask.bits(j)
+                )
+              )
             }
           )
         }
@@ -2031,11 +2074,11 @@ class LsuSuperSlot(p: Parameters) extends Module {
       ret.vector.foreach { x =>
         val curr = vector.get
         x.dataSubvector := Mux(
-          vectorData.get.valid,
+          vectorDataValid.get,
           curr.dataSubvector.next(),
           curr.dataSubvector
         )
-        val nextDataSegment = vectorData.get.valid && curr.dataSubvector.isFull()
+        val nextDataSegment = vectorDataValid.get && curr.dataSubvector.isFull()
         val nextDataEmul    = nextDataSegment && curr.dataSegment.isFull()
         x.dataSegment := Mux(
           nextDataSegment,
@@ -2105,6 +2148,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         x.writeback := false.B
       }
       ret.vector.foreach { x =>
+        x.isVme.foreach(_ := false.B)
         x.segmentStep                := 0.U
         x.emulStep                   := 0.U
         x.dataSubvector              := LoopingCounter(0.U)
@@ -2182,6 +2226,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.isDone    -> false.B
       )
       ret.vector.foreach { x =>
+        x.isVme.foreach(_ := false.B)
         x.segmentStep                := 0.U
         x.emulStep                   := 0.U
         x.dataSubvector              := LoopingCounter(0.U)
@@ -2256,7 +2301,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
       maxVectorPerSegment: UInt,
       maxVectorPerSegmentOrig: UInt,
       elemWidth: UInt,
-      write: Boolean
+      write: Boolean,
+      isVme: Bool
     ): State = {
       val ret = MakeWireBundle[State](
         new State(),
@@ -2266,7 +2312,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.faulted             -> false.B,
         _.strictMode          -> false.B,
         _.rd                  -> vd,
-        _.skipWriteback       -> false.B,
+        _.skipWriteback       -> (write.B && isVme),
         _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
         // cells to be filled by caller
         _.leadIndex -> 0.U,
@@ -2277,6 +2323,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         x.writeback := false.B
       }
       ret.vector.foreach { x =>
+        x.isVme.foreach(_ := isVme)
         // TODO: assert
         x.segmentStep := MuxLookup(elemWidth, WireInit(UInt(3.W), DontCare))(
           Seq(
@@ -2307,6 +2354,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         x.writebackSegment     := LoopingCounter(nfields)
         x.writebackEmul        := LoopingCounter(maxVectorPerSegment)
         x.writebackActiveCells := MakeValid(
+          !write.B || !isVme,
           State.makeVectorStartingActiveCells(
             nfields = nfields,
             elemWidth = elemWidth,
@@ -2328,7 +2376,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
       elemWidth: UInt,
       vl: UInt,
       vstart: UInt,
-      masked: Bool
+      masked: Bool,
+      isVme: Bool
     ): State = {
       // From lmul and nfields, inclusive
       val maxActiveReg = maxVectorPerSegment * nfields + nfields + maxVectorPerSegment
@@ -2360,7 +2409,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
           maxVectorPerSegment,
           maxVectorPerSegmentOrig,
           elemWidth,
-          write = false
+          write = false,
+          isVme = isVme
         ),
         _.cells -> VecInit.tabulate(nCells) { i =>
           MuxUpTo1H(
@@ -2388,8 +2438,28 @@ class LsuSuperSlot(p: Parameters) extends Module {
       nfields: UInt,
       maxVectorPerSegment: UInt,
       maxVectorPerSegmentOrig: UInt,
-      elemWidth: UInt
+      elemWidth: UInt,
+      vl: UInt,
+      vstart: UInt,
+      isVme: Bool
     ): State = {
+      val maxActiveReg = maxVectorPerSegment * nfields + nfields + maxVectorPerSegment
+      val startElem    = vstart * nfields + vstart
+      val startCell    = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
+        Seq(
+          "b000".U -> Cat(0.U(2.W), startElem),
+          "b101".U -> Cat(0.U(1.W), startElem, 0.U(1.W)),
+          "b110".U -> Cat(startElem, 0.U(2.W))
+        )
+      )
+      val endElem = vl * nfields + vl
+      val endCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
+        Seq(
+          "b000".U -> Cat(0.U(2.W), endElem),
+          "b101".U -> Cat(0.U(1.W), endElem, 0.U(1.W)),
+          "b110".U -> Cat(endElem, 0.U(2.W))
+        )
+      )
       MakeWireBundle[State](
         new State(),
         _ -> initVectorUS(
@@ -2400,15 +2470,27 @@ class LsuSuperSlot(p: Parameters) extends Module {
           maxVectorPerSegment,
           maxVectorPerSegmentOrig,
           elemWidth,
-          write = true
+          write = true,
+          isVme = isVme
         ),
         _.cells -> VecInit.tabulate(nCells) { i =>
-          Mux(
-            (i / p.rvvVlenb).U <= maxVectorPerSegment * nfields + nfields + maxVectorPerSegment,
+          val rvvCell = Mux(
+            // TODO: consider vl/vstart
+            (i / p.rvvVlenb).U <= maxActiveReg,
             cells(i).initVectorStore(addr + i.U),
             // unreachable cells
             cells(i).initDone()
           )
+          val vmeCell = MuxUpTo1H(
+            cells(i).initDone(),
+            Seq(
+              (i.U < startCell) -> cells(i).initDone(),
+              (i.U >= startCell && i.U < endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
+                .initVectorStore(addr + i.U),
+              (i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i).initDone()
+            )
+          )
+          Mux(isVme, vmeCell, rvvCell)
         }
       )
     }
@@ -2444,6 +2526,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         x.writeback := false.B
       }
       ret.vector.foreach { x =>
+        x.isVme.foreach(_ := false.B)
         // TODO: assert
         x.segmentStep := MuxLookup(elemWidth, WireInit(UInt(3.W), DontCare))(
           Seq(
@@ -2711,6 +2794,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         x.writeback := false.B
       }
       ret.vector.foreach { x =>
+        x.isVme.foreach(_ := false.B)
         x.dataEew := elemWidthEnum
         // TODO: assert
         x.indexEew := MuxLookup(indexWidth, WireInit(LsuVectorElementWidth(), DontCare))(
@@ -2761,7 +2845,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
     }
 
     def fromUop(uop: LsuUOp) = {
-      val nfields             = uop.nfields.getOrElse(0.U)
+      val isTile              = if (p.enableVme) LsuOp.isTile(uop.op) else false.B
+      val nfields             = Mux(isTile, 0.U, uop.nfields.getOrElse(0.U))
       val maxVectorPerSegment = uop.emul_data
         .map { x =>
           MuxLookup(x, 0.U(3.W))(
@@ -2930,7 +3015,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
             elemWidth = elemWidth,
             vl = uop.vl.get,
             vstart = uop.vstart.get,
-            masked = uop.masked.get
+            masked = uop.masked.get,
+            isVme = false.B
           ),
           LsuOp.VLOAD_STRIDED -> initVectorLoadCS(
             pc = uop.pc,
@@ -2955,13 +3041,16 @@ class LsuSuperSlot(p: Parameters) extends Module {
             write = false.B
           ),
           LsuOp.VSTORE_UNIT -> initVectorStoreUS(
-            uop.pc,
-            uop.addr,
-            uop.rd,
+            pc = uop.pc,
+            addr = uop.addr,
+            vd = uop.rd,
             nfields = nfields,
             maxVectorPerSegment = maxVectorPerSegment,
             maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
-            elemWidth = elemWidth
+            elemWidth = elemWidth,
+            vl = uop.vl.get,
+            vstart = uop.vstart.get,
+            isVme = false.B
           ),
           LsuOp.VSTORE_STRIDED -> initVectorStoreCS(
             pc = uop.pc,
@@ -2982,7 +3071,37 @@ class LsuSuperSlot(p: Parameters) extends Module {
             strict = false.B,
             write = true.B
           )
-        )
+        ) ++ Option
+          .when(p.enableVme) {
+            Seq(
+              LsuOp.VTLOAD -> initVectorLoadUS(
+                pc = uop.pc,
+                addr = uop.addr,
+                vd = uop.rd,
+                nfields = nfields,
+                maxVectorPerSegment = maxVectorPerSegment,
+                maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
+                elemWidth = elemWidth,
+                vl = uop.vl.get,
+                vstart = uop.vstart.get,
+                masked = false.B,
+                isVme = true.B
+              ),
+              LsuOp.VTSTORE -> initVectorStoreUS(
+                pc = uop.pc,
+                addr = uop.addr,
+                vd = uop.rd,
+                nfields = nfields,
+                maxVectorPerSegment = maxVectorPerSegment,
+                maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
+                elemWidth = elemWidth,
+                vl = uop.vl.get,
+                vstart = uop.vstart.get,
+                isVme = true.B
+              )
+            )
+          }
+          .getOrElse(Seq())
       } else Seq()
       // TODO: default value?
       // TODO: assert vector elemWidth legal
@@ -3012,6 +3131,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         x.writeback := false.B
       }
       ret.vector.foreach { x =>
+        x.isVme.foreach(_ := false.B)
         x.dataEew                   := LsuVectorElementWidth.E8
         x.indexEew                  := LsuVectorElementWidth.E8
         x.segmentStep               := 0.U
@@ -3141,6 +3261,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val intWriteback    = Valid(Flipped(new RegfileWriteDataIO(p)))
     val floatWriteback  = Option.when(p.enableFloat)(Valid(Flipped(new FloatRegfileWriteDataIO(p))))
     val vectorWriteback = Option.when(p.enableRvv)(Decoupled(new Lsu2Rvv(p)))
+    val vmeData         = Option.when(p.enableVme)(Flipped(Decoupled(new Vme2Lsu(p))))
+    val vmeWriteback    = Option.when(p.enableVme)(Decoupled(new Lsu2Vme(p)))
     val pc              = UInt(p.programCounterBits.W)
     val active          = Bool()
     val storeComplete   = Bool()
@@ -3193,8 +3315,15 @@ class LsuSuperSlot(p: Parameters) extends Module {
   }
 
   io.vectorWriteback.foreach { x =>
-    x.valid := writebackReq.vector.get.valid
-    x.bits  := writebackReq.vector.get.bits
+    x.valid := writebackReq.vector.get.valid && !state.vector
+      .map(_.isVme.getOrElse(false.B))
+      .getOrElse(false.B)
+    x.bits := writebackReq.vector.get.bits
+  }
+
+  io.vmeWriteback.foreach { x =>
+    x.valid     := writebackReq.vector.get.valid && state.vector.get.isVme.get
+    x.bits.data := writebackReq.vector.get.bits.data
   }
 
   val canMoveLead = !state.isDone && (
@@ -3212,12 +3341,16 @@ class LsuSuperSlot(p: Parameters) extends Module {
       (
         io.intWriteback.valid ||
           io.floatWriteback.map(_.valid).getOrElse(false.B) ||
-          io.vectorWriteback.map(_.fire).getOrElse(false.B)
+          io.vectorWriteback.map(_.fire).getOrElse(false.B) ||
+          io.vmeWriteback.map(_.fire).getOrElse(false.B)
       ),
       writebacks,
       0.U
     ),
     vectorData = io.vectorData.map { x =>
+      MakeValid(x.valid, x.bits)
+    },
+    vmeData = io.vmeData.map { x =>
       MakeValid(x.valid, x.bits)
     }
   )
@@ -3236,7 +3369,12 @@ class LsuSuperSlot(p: Parameters) extends Module {
   io.pc := state.pc
 
   io.vectorData.map { x =>
-    x.ready := state.cells.map(_.state === LsuCellState.W_DATA).reduce(_ || _)
+    x.ready := state.cells.map(_.state === LsuCellState.W_DATA).reduce(_ || _) &&
+      !state.vector.map(_.isVme.getOrElse(false.B)).getOrElse(false.B)
+  }
+  io.vmeData.map { x =>
+    x.ready := state.cells.map(_.state === LsuCellState.W_DATA).reduce(_ || _) &&
+      state.vector.get.isVme.get
   }
 
   io.faultingVstart.foreach { vstartOut =>
@@ -3308,9 +3446,7 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     io.rvv2lsu.get(1).ready := false.B
   }
   if (p.enableVme) {
-    io.vme2lsu.get.ready := false.B
-    io.lsu2vme.get.valid := false.B
-    io.lsu2vme.get.bits  := DontCare
+    slot.io.vmeData.get <> io.vme2lsu.get
   }
 
   // TODO: refactor out into a bus adapter
@@ -3453,6 +3589,9 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     io.lsu2rvv.get(0) <> slot.io.vectorWriteback.get
     io.lsu2rvv.get(1).valid := false.B
     io.lsu2rvv.get(1).bits  := DontCare
+  }
+  if (p.enableVme) {
+    io.lsu2vme.get <> slot.io.vmeWriteback.get
   }
 
   // fault handling
