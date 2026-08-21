@@ -174,7 +174,7 @@ jobs:
               --test_tag_filters=exclusive,-vcs,-synthesis,-power \
               --verbose_failures \
               --noshow_progress \
-              --test_summary=detailed \
+              --test_summary=terse \
               //...
 
   bazel-test-parallel:
@@ -230,5 +230,5 @@ jobs:
               --test_tag_filters=-exclusive,-vcs,-synthesis,-power \
               --verbose_failures \
               --noshow_progress \
-              --test_summary=detailed \
+              --test_summary=terse \
               //...
