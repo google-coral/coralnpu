@@ -277,9 +277,20 @@ object EmitCore extends App {
           }
         }
 
-        // C. filelist.f (+incdir+., packages, headers, then modules in topological order)
+        // C. filelist.f (+incdir+., defines, packages, headers, then modules in topological order)
         val filelist = collection.mutable.ArrayBuffer[String]()
         filelist += "+incdir+."
+        filelist += "+define+USE_GENERIC"
+        if (p.enableRvv) {
+          filelist += s"+define+VLEN_${p.rvvVlen}"
+          filelist += "+define+TB_SUPPORT"
+          if (p.enableFloat) {
+            filelist += "+define+ZVE32F_ON"
+          }
+        }
+        if (p.enableVme) {
+          filelist += "+define+ZVT_ON"
+        }
         filelist ++= packages
         filelist ++= headers
         filelist ++= chiselModules
