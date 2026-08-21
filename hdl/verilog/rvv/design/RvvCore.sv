@@ -249,11 +249,11 @@ module RvvCore #(parameter N = 4,
   // Tie-off VME LSU interfaces
   // TODO: Support these
 `ifdef ZVT_ON
-  logic                 uop_vme2lsu_vld_dummy;
-  UOP_VME2LSU_t         uop_vme2lsu_dummy;
-  logic                 uop_lsu2vme_rdy_dummy;
-  logic                 vme_lsuflush_vld_dummy;
-  logic                 vme_lsuflush_rdy_dummy;
+  // logic                 uop_vme2lsu_vld_dummy;
+  // UOP_VME2LSU_t         uop_vme2lsu_dummy;
+  // logic                 uop_lsu2vme_rdy_dummy;
+  // logic                 vme_lsuflush_vld_dummy;
+  // logic                 vme_lsuflush_rdy_dummy;
 `endif
 
   logic   [`ISSUE_LANE-1:0] insts_ready_cq2rvs;
@@ -307,14 +307,14 @@ module RvvCore #(parameter N = 4,
       .rvv_idle(rvv_backend_idle),
       .rd_rob2rt_o(rd_rob2rt_o)
 `ifdef ZVT_ON
-      ,.uop_vme2lsu_vld(uop_vme2lsu_vld_dummy),
-      .uop_vme2lsu(uop_vme2lsu_dummy),
+      ,.uop_vme2lsu_vld(),
+      .uop_vme2lsu(),
       .uop_vme2lsu_rdy(1'b0),
       .uop_lsu2vme_vld(1'b0),
       .uop_lsu2vme('0),
-      .uop_lsu2vme_rdy(uop_lsu2vme_rdy_dummy),
-      .vme_lsuflush_vld(vme_lsuflush_vld_dummy),
-      .vme_lsuflush_rdy(vme_lsuflush_rdy_dummy),
+      .uop_lsu2vme_rdy(),
+      .vme_lsuflush_vld(1'b0),
+      .vme_lsuflush_rdy(),
       .vmeRtVld(),
       .vmeRt(),
       .vmeRtRdy(1'b0)
