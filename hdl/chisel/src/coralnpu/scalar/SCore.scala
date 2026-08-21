@@ -181,7 +181,7 @@ class SCore(p: Parameters) extends Module {
     bru(i).io.target          := regfile.io.target(i)
     dispatch.io.jalrTarget(i) := regfile.io.target(i)
     rob_io.targets(i)         := dispatch.io.bruTarget(i)
-    rob_io.jalrTargets(i)     := regfile.io.target(i).data
+    rob_io.jalrTargets(i) := Cat(regfile.io.target(i).data(p.programCounterBits - 1, 1), 0.U(1.W))
   }
 
   bru(0).io.csr.get <> csr.io.bru

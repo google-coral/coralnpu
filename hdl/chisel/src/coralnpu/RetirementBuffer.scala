@@ -210,6 +210,23 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     instr
   }
 
+  def calculateTarget(
+    inst: UInt,
+    addr: UInt,
+    isBranch: Bool,
+    jalrTarget: UInt,
+    target: UInt
+  ): UInt = {
+    val isJalr            = (inst(6, 0) === "b1100111".U)
+    val isJal             = (inst(6, 0) === "b1101111".U)
+    val jalrTargetAligned = Cat(jalrTarget(p.programCounterBits - 1, 1), 0.U(1.W))
+    Mux(
+      isJalr,
+      jalrTargetAligned,
+      Mux(isJal || isBranch, target, addr + 4.U)
+    )
+  }
+
   val insts = (0 until p.instructionLanes).map(i => {
     val isDecodeFault = decodeFaultValid && (faultPc === io.inst(i).bits.addr)
     val isNoFireFault = (i == 0).B && noFire0Fault
@@ -220,10 +237,14 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         .bits
         .addr === regLastTarget) || (regLastIsBranch && io.inst(0).bits.addr === regLastAddr + 4.U)
     } else {
-      val prevIsJalr   = (io.inst(i - 1).bits.inst(6, 0) === "b1100111".U)
-      val prevTarget   = Mux(prevIsJalr, io.jalrTargets(i - 1), io.targets(i - 1))
-      val prevIsBranch = io.branch(i - 1)
-      (io.inst(i).bits.addr === prevTarget) || (prevIsBranch && io
+      val prevTarget = calculateTarget(
+        io.inst(i - 1).bits.inst,
+        io.inst(i - 1).bits.addr,
+        io.branch(i - 1),
+        io.jalrTargets(i - 1),
+        io.targets(i - 1)
+      )
+      (io.inst(i).bits.addr === prevTarget) || (io.branch(i - 1) && io
         .inst(i)
         .bits
         .addr === io.inst(i - 1).bits.addr + 4.U)
@@ -250,8 +271,13 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   // Update regLast state based on the last fired instruction
   val hasFire     = instFires.reduce(_ | _)
   val targetsList = (0 until p.instructionLanes).map(i => {
-    val isJalr = (io.inst(i).bits.inst(6, 0) === "b1100111".U)
-    Mux(isJalr, io.jalrTargets(i), io.targets(i))
+    calculateTarget(
+      io.inst(i).bits.inst,
+      io.inst(i).bits.addr,
+      io.branch(i),
+      io.jalrTargets(i),
+      io.targets(i)
+    )
   })
   val addrList   = io.inst.map(_.bits.addr)
   val branchList = io.branch
