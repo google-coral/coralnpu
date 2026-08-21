@@ -101,6 +101,8 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   def rvvVlenb: Int = { rvvVlen / 8 }
   // indexing a single byte within one vector register
   def rvvByteIndexWidth: Int = log2Ceil(rvvVlenb)
+  // Number of retirement lanes from RVV core (4 in synthesis, 6 in verification with decoder retirement)
+  def rvvRetireLanes: Int = if (enableVerification) instructionLanes + 2 else instructionLanes
 
   // Enable VME (Zvt) non-tile state and mset* instructions. Requires enableRvv.
   var enableVme = false

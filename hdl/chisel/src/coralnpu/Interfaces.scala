@@ -262,8 +262,8 @@ class FloatRegfileWriteDataIO(p: Parameters) extends Bundle {
 
 class VectorWriteDataIO(p: Parameters) extends Bundle {
   val addr           = Input(UInt(5.W))
-  val data           = Input(UInt(p.lsuDataBits.W))
-  val uop_pc         = Input(UInt(32.W))
+  val data           = Option.when(p.enableVerification)(Input(UInt(p.lsuDataBits.W)))
+  val uop_pc         = Option.when(p.enableVerification)(Input(UInt(32.W)))
   val last_uop_valid = Input(Bool())
   val rob_tag        = Input(UInt(log2Ceil(p.retirementBufferSize).W))
 }

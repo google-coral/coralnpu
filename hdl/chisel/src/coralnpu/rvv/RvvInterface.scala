@@ -97,20 +97,20 @@ class RvvCoreIO(p: Parameters) extends Bundle {
   val clear_vstart   = Input(Bool())
 
   // ROB to RT stage writes.
-  val rd_rob2rt_o = Vec(4, new Rob2Rt(p))
+  val rd_rob2rt_o = Vec(p.rvvRetireLanes, new Rob2Rt(p))
 }
 
 class Rob2Rt(p: Parameters) extends Bundle {
   val valid          = Bool()
   val w_valid        = Bool()
   val w_index        = UInt(5.W)
-  val w_data         = UInt(p.rvvVlen.W)
+  val w_data         = Option.when(p.enableVerification)(UInt(p.rvvVlen.W))
   val w_type         = Bool() // 0 for VRF, 1 for XRF
   val vd_type        = UInt(p.rvvVlenb.W)
   val trap_flag      = Bool()
   val vector_csr     = new RvvConfigState(p)
   val vxsaturate     = UInt(p.rvvVlenb.W)
-  val uop_pc         = UInt(32.W)
+  val uop_pc         = Option.when(p.enableVerification)(UInt(32.W))
   val last_uop_valid = Bool()
   val rob_tag        = UInt(4.W)
 }

@@ -26,10 +26,13 @@ object RvvCore {
 
 object GenerateCoreShimSource {
   def apply(p: Parameters): String = {
-    val instructionLanes = p.instructionLanes
-    val vlen             = p.rvvVlen
-    val xlen             = p.xlen
-    val xlenMinus1       = xlen - 1
+    val instructionLanes   = p.instructionLanes
+    val numRetireLanes     = p.rvvRetireLanes
+    val vlen               = p.rvvVlen
+    val xlen               = p.xlen
+    val xlenMinus1         = xlen - 1
+    val enableVme          = p.enableVme
+    val enableVerification = p.enableVerification
 
     var moduleInterface = (if (xlen == 64) "`define XLEN_64 1\n" else "") +
       """module RvvCoreWrapper(
@@ -144,13 +147,19 @@ object GenerateCoreShimSource {
         |""".stripMargin.replaceAll("VSTART_LEN", (log2Ceil(vlen) - 1).toString)
 
     // Add rd_rob2rt_o interface outputs
-    for (i <- 0 until instructionLanes) {
+    for (i <- 0 until numRetireLanes) {
       moduleInterface += """
             |    output rd_rob2rt_o_GENI_valid,
             |    output rd_rob2rt_o_GENI_w_valid,
             |    output [4:0] rd_rob2rt_o_GENI_w_index,
-            |    output [127:0] rd_rob2rt_o_GENI_w_data,
-            |    output rd_rob2rt_o_GENI_w_type,
+            |""".stripMargin.replaceAll("GENI", i.toString)
+      if (enableVerification) {
+        moduleInterface += "    output [127:0] rd_rob2rt_o_GENI_w_data,\n".replaceAll(
+          "GENI",
+          i.toString
+        )
+      }
+      moduleInterface += """    output rd_rob2rt_o_GENI_w_type,
             |    output [15:0] rd_rob2rt_o_GENI_vd_type,
             |    output rd_rob2rt_o_GENI_trap_flag,
             |    output rd_rob2rt_o_GENI_vector_csr_vl,
@@ -170,11 +179,19 @@ object GenerateCoreShimSource {
             |    output [1:0]  rd_rob2rt_o_GENI_vector_csr_tk,
             |""".stripMargin.replaceAll("GENI", i.toString)
       }
-      moduleInterface += """    output [15:0] rd_rob2rt_o_GENI_vxsaturate,
-            |    output [31:0] rd_rob2rt_o_GENI_uop_pc,
-            |    output rd_rob2rt_o_GENI_last_uop_valid,
+      moduleInterface += "    output [15:0] rd_rob2rt_o_GENI_vxsaturate,\n".replaceAll(
+        "GENI",
+        i.toString
+      )
+      if (enableVerification) {
+        moduleInterface += "    output [31:0] rd_rob2rt_o_GENI_uop_pc,\n".replaceAll(
+          "GENI",
+          i.toString
+        )
+      }
+      moduleInterface += """    output rd_rob2rt_o_GENI_last_uop_valid,
             |    output [3:0]  rd_rob2rt_o_GENI_rob_tag,
-            """.stripMargin.replaceAll("GENI", i.toString)
+            |""".stripMargin.replaceAll("GENI", i.toString)
     }
 
     // Add trap interface outputs
@@ -332,8 +349,8 @@ object GenerateCoreShimSource {
     coreInstantiation += """  RVVConfigState config_state;
         |""".stripMargin
 
-    coreInstantiation += "  ROB2RT_t [3:0] rd_rob2rt_o;\n"
-    coreInstantiation += "  logic [3:0] rd_valid_rob2rt_o;\n"
+    coreInstantiation += s"  ROB2RT_t [${numRetireLanes - 1}:0] rd_rob2rt_o;\n"
+    coreInstantiation += s"  logic [${numRetireLanes - 1}:0] rd_valid_rob2rt_o;\n"
     coreInstantiation += "  RVVInstruction trap_data;\n"
 
     coreInstantiation += """  RvvCore#(
@@ -399,12 +416,16 @@ object GenerateCoreShimSource {
       .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
     coreInstantiation += "  );\n"
 
-    for (i <- 0 until instructionLanes) {
+    for (i <- 0 until numRetireLanes) {
       coreInstantiation += """  assign rd_rob2rt_o_GENI_valid = rd_valid_rob2rt_o[GENI];
       |  assign rd_rob2rt_o_GENI_w_valid = rd_rob2rt_o[GENI].w_valid;
       |  assign rd_rob2rt_o_GENI_w_index = rd_rob2rt_o[GENI].w_index;
-      |  assign rd_rob2rt_o_GENI_w_data = rd_rob2rt_o[GENI].w_data;
-      |  assign rd_rob2rt_o_GENI_w_type = rd_rob2rt_o[GENI].w_type;
+      |""".stripMargin.replaceAll("GENI", i.toString)
+      if (enableVerification) {
+        coreInstantiation += "  assign rd_rob2rt_o_GENI_w_data = rd_rob2rt_o[GENI].w_data;\n"
+          .replaceAll("GENI", i.toString)
+      }
+      coreInstantiation += """  assign rd_rob2rt_o_GENI_w_type = rd_rob2rt_o[GENI].w_type;
       |  assign rd_rob2rt_o_GENI_vd_type = rd_rob2rt_o[GENI].vd_type;
       |  assign rd_rob2rt_o_GENI_trap_flag = rd_rob2rt_o[GENI].trap_flag;
       |  assign rd_rob2rt_o_GENI_vector_csr_vl = rd_rob2rt_o[GENI].vector_csr.vl;
@@ -419,13 +440,12 @@ object GenerateCoreShimSource {
       |  assign rd_rob2rt_o_GENI_vxsaturate = rd_rob2rt_o[GENI].vxsaturate;
       |  assign rd_rob2rt_o_GENI_rob_tag = rd_rob2rt_o[GENI].rob_tag;
       |  assign rd_rob2rt_o_GENI_last_uop_valid = rd_rob2rt_o[GENI].last_uop_valid;
-      |`ifdef TB_SUPPORT
-      |  assign rd_rob2rt_o_GENI_uop_pc = rd_rob2rt_o[GENI].uop_pc;
-      |`else
-      |  assign rd_rob2rt_o_GENI_uop_pc = 32'b0;
-      |`endif
       |""".stripMargin.replaceAll("GENI", i.toString)
-      if (p.enableVme) {
+      if (enableVerification) {
+        coreInstantiation += "  assign rd_rob2rt_o_GENI_uop_pc = rd_rob2rt_o[GENI].uop_pc;\n"
+          .replaceAll("GENI", i.toString)
+      }
+      if (enableVme) {
         // Rob2Rt does not carry the VME mtype state; tie off to 0.
         coreInstantiation +=
           ("  assign rd_rob2rt_o_GENI_vector_csr_mtype   = 32'd0;\n" +
@@ -531,7 +551,7 @@ class RvvCoreWrapper(p: Parameters)
     val async_rd  = Decoupled(new RegfileWriteDataIO(p))
     val async_frd = Decoupled(new RegfileWriteDataIO(p))
 
-    val rd_rob2rt_o = Vec(4, new Rob2Rt(p))
+    val rd_rob2rt_o = Vec(p.rvvRetireLanes, new Rob2Rt(p))
     val trap        = Output(Valid(new RvvCompressedInstruction(p)))
 
     val vcsr_valid  = Output(Bool())

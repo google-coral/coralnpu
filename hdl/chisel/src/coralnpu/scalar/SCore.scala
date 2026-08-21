@@ -77,12 +77,14 @@ class SCore(p: Parameters) extends Module {
   if (p.enableRvv) {
     rob_io.isVector.get        := dispatch.io.isVector.get
     rob_io.writeAddrVector.get := dispatch.io.rvvRdMark.get
-    (0 until p.instructionLanes).foreach(i => {
-      rob_io.writeDataVector.get(i).valid               := io.rvvcore.get.rd_rob2rt_o(i).valid
-      rob_io.writeDataVector.get(i).bits.addr           := io.rvvcore.get.rd_rob2rt_o(i).w_index
-      rob_io.writeDataVector.get(i).bits.data           := io.rvvcore.get.rd_rob2rt_o(i).w_data
-      rob_io.writeDataVector.get(i).bits.uop_pc         := io.rvvcore.get.rd_rob2rt_o(i).uop_pc
-      rob_io.writeDataVector.get(i).bits.rob_tag        := io.rvvcore.get.rd_rob2rt_o(i).rob_tag
+    (0 until p.rvvRetireLanes).foreach(i => {
+      rob_io.writeDataVector.get(i).valid        := io.rvvcore.get.rd_rob2rt_o(i).valid
+      rob_io.writeDataVector.get(i).bits.addr    := io.rvvcore.get.rd_rob2rt_o(i).w_index
+      rob_io.writeDataVector.get(i).bits.rob_tag := io.rvvcore.get.rd_rob2rt_o(i).rob_tag
+      if (p.enableVerification) {
+        rob_io.writeDataVector.get(i).bits.data.get   := io.rvvcore.get.rd_rob2rt_o(i).w_data.get
+        rob_io.writeDataVector.get(i).bits.uop_pc.get := io.rvvcore.get.rd_rob2rt_o(i).uop_pc.get
+      }
       rob_io.writeDataVector.get(i).bits.last_uop_valid := io.rvvcore.get
         .rd_rob2rt_o(i)
         .last_uop_valid

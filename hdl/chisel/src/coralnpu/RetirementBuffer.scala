@@ -32,7 +32,9 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
   val writeAddrVector =
     Option.when(p.enableRvv)(Input(Vec(p.instructionLanes, new RegfileWriteAddrIO(p))))
   val writeDataVector =
-    Option.when(p.enableRvv)(Input(Vec(p.instructionLanes, Valid(new VectorWriteDataIO(p)))))
+    Option.when(p.enableRvv)(
+      Input(Vec(p.rvvRetireLanes, Valid(new VectorWriteDataIO(p))))
+    )
   val enqPtr      = Output(UInt(log2Ceil(p.retirementBufferSize).W))
   val fault       = Input(Valid(new FaultManagerOutput(p)))
   val nSpace      = Output(UInt(log2Ceil(p.retirementBufferSize + 1).W))
@@ -409,10 +411,10 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     if (!mini && p.enableRvv) {
       val nextEntry = Wire(Vec(8, Valid(new VectorWrite)))
 
-      val portMatches = Wire(Vec(p.instructionLanes, Bool()))
-      val portTargets = Wire(Vec(p.instructionLanes, UInt(3.W)))
+      val portMatches = Wire(Vec(p.rvvRetireLanes, Bool()))
+      val portTargets = Wire(Vec(p.rvvRetireLanes, UInt(3.W)))
 
-      for (j <- 0 until p.instructionLanes) {
+      for (j <- 0 until p.rvvRetireLanes) {
         val port = io.writeDataVector.get(j)
         portMatches(j) := vectorWriteIdxMap(j)
         val absAddr = port.bits.addr +& p.rvvRegfileBaseAddr.U
@@ -421,14 +423,14 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       }
 
       for (k <- 0 until 8) {
-        val hits  = Wire(Vec(p.instructionLanes, Bool()))
-        val datas = Wire(Vec(p.instructionLanes, UInt(p.rvvVlen.W)))
-        val idxs  = Wire(Vec(p.instructionLanes, UInt(5.W)))
+        val hits  = Wire(Vec(p.rvvRetireLanes, Bool()))
+        val datas = Wire(Vec(p.rvvRetireLanes, UInt(p.rvvVlen.W)))
+        val idxs  = Wire(Vec(p.rvvRetireLanes, UInt(5.W)))
 
-        for (j <- 0 until p.instructionLanes) {
+        for (j <- 0 until p.rvvRetireLanes) {
           val port = io.writeDataVector.get(j)
           hits(j)  := portMatches(j) && (portTargets(j) === k.U)
-          datas(j) := port.bits.data
+          datas(j) := port.bits.data.getOrElse(0.U)
           idxs(j)  := port.bits.addr
         }
 
@@ -528,7 +530,8 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       // Select the actual data from the winning write port.
       val writeDataScalar = io.writeDataScalar(scalarWriteIdx).bits.data
       val writeDataFloat  = io.writeDataFloat.map(x => x(floatWriteIdx).bits.data).getOrElse(0.U)
-      val writeDataVector = io.writeDataVector.map(x => x(vectorWriteIdx).bits.data).getOrElse(0.U)
+      val writeDataVector =
+        io.writeDataVector.map(x => x(vectorWriteIdx).bits.data.getOrElse(0.U)).getOrElse(0.U)
 
       // Select the correct write-back data to store, if updated (FP has priority).
       val sdata =
