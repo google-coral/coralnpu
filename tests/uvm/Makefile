@@ -154,6 +154,7 @@ ifdef CORALNPU_MPACT_RISCV
 endif
 
 MPACT_COMMIT ?= 430a8d1
+MPACT_BAZEL_FLAGS ?= --linkopt=-fuse-ld=gold --host_linkopt=-fuse-ld=gold
 
 # Targets
 

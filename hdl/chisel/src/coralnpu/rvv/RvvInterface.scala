@@ -93,6 +93,7 @@ class RvvCoreIO(p: Parameters) extends Bundle {
 
   val rvv_idle       = Output(Bool())
   val queue_capacity = Output(UInt(4.W))
+  val flush          = Input(Bool())
 
   // ROB to RT stage writes.
   val rd_rob2rt_o = Vec(4, new Rob2Rt(p))
@@ -110,6 +111,7 @@ class Rob2Rt(p: Parameters) extends Bundle {
   val vxsaturate     = UInt(p.rvvVlenb.W)
   val uop_pc         = UInt(32.W)
   val last_uop_valid = Bool()
+  val rob_tag        = UInt(4.W)
 }
 
 class RvvCsrIO(p: Parameters) extends Bundle {

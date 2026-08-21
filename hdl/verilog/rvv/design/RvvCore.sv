@@ -27,6 +27,7 @@ module RvvCore #(parameter N = 4,
   input logic [1:0] vxrm,
   input logic vxsat,
   input logic [2:0] frm,
+  input logic flush,
 
   // Instruction input.
   input logic [N-1:0] inst_valid,
@@ -115,6 +116,7 @@ module RvvCore #(parameter N = 4,
       .vxrm_i(vxrm),
       .vxsat_i(vxsat),
       .frm_i(frm),
+      .flush_i(flush),
       .inst_valid_i(inst_valid),
       .inst_data_i(inst_data),
       .inst_ready_o(inst_ready),
@@ -239,12 +241,10 @@ module RvvCore #(parameter N = 4,
     fcsr2rt_write_ready = 1;
   end
 
-  // Trap handling tie-off
+  // Trap handling
   logic  trap_valid_rvs2rvv;
   logic  trap_ready_rvv2rvs;
-  always_comb begin
-    trap_valid_rvs2rvv = 0;
-  end
+  assign trap_valid_rvs2rvv = flush;
 
   // Tie-off VME LSU interfaces
   // TODO: Support these

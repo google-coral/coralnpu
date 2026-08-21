@@ -39,6 +39,7 @@ object GenerateCoreShimSource {
         |    input logic [1:0] vxrm,
         |    input logic vxsat,
         |    input logic [2:0] frm,
+        |    input logic flush,
         |""".stripMargin.replaceAll("VSTART_LEN", (log2Ceil(vlen) - 1).toString)
 
     // Add instruction interface inputs
@@ -47,6 +48,7 @@ object GenerateCoreShimSource {
             |    input [XLEN_MINUS_1:0] inst_GENI_bits_pc,
             |    input [1:0] inst_GENI_bits_opcode,
             |    input [24:0] inst_GENI_bits_bits,
+            |    input [3:0] inst_GENI_bits_rob_tag,
             |""".stripMargin
         .replaceAll("GENI", i.toString)
         .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
@@ -171,6 +173,7 @@ object GenerateCoreShimSource {
       moduleInterface += """    output [15:0] rd_rob2rt_o_GENI_vxsaturate,
             |    output [31:0] rd_rob2rt_o_GENI_uop_pc,
             |    output rd_rob2rt_o_GENI_last_uop_valid,
+            |    output [3:0]  rd_rob2rt_o_GENI_rob_tag,
             """.stripMargin.replaceAll("GENI", i.toString)
     }
 
@@ -179,7 +182,8 @@ object GenerateCoreShimSource {
         |    output trap_valid,
         |    output [XLEN_MINUS_1:0] trap_bits_pc,
         |    output [1:0] trap_bits_opcode,
-        |    output [24:0] trap_bits_bits,""".stripMargin.replaceAll(
+        |    output [24:0] trap_bits_bits,
+        |    output [3:0] trap_bits_rob_tag,""".stripMargin.replaceAll(
       "XLEN_MINUS_1",
       xlenMinus1.toString
     )
@@ -210,6 +214,7 @@ object GenerateCoreShimSource {
       instructionLanes.toString
     )
     for (i <- 0 until instructionLanes) {
+      coreInstantiation += s"  assign inst_data[$i].rob_tag = inst_${i}_bits_rob_tag;\n"
       coreInstantiation += s"  assign inst_data[$i].pc = inst_${i}_bits_pc;\n"
       coreInstantiation += "  assign inst_data[GENI].opcode = RVVOpCode'(inst_GENI_bits_opcode);\n"
         .replaceAll(
@@ -341,6 +346,7 @@ object GenerateCoreShimSource {
         |      .vxrm(vxrm),
         |      .vxsat(vxsat),
         |      .frm(frm),
+        |      .flush(flush),
         |      .inst_valid(inst_valid),
         |      .inst_data(inst_data),
         |      .inst_ready(inst_ready),
@@ -411,12 +417,12 @@ object GenerateCoreShimSource {
       |  assign rd_rob2rt_o_GENI_vector_csr_lmul_orig = rd_rob2rt_o[GENI].vector_csr.lmul_orig;
       |  assign rd_rob2rt_o_GENI_vector_csr_vill = rd_rob2rt_o[GENI].vector_csr.vill;
       |  assign rd_rob2rt_o_GENI_vxsaturate = rd_rob2rt_o[GENI].vxsaturate;
+      |  assign rd_rob2rt_o_GENI_rob_tag = rd_rob2rt_o[GENI].rob_tag;
+      |  assign rd_rob2rt_o_GENI_last_uop_valid = rd_rob2rt_o[GENI].last_uop_valid;
       |`ifdef TB_SUPPORT
       |  assign rd_rob2rt_o_GENI_uop_pc = rd_rob2rt_o[GENI].uop_pc;
-      |  assign rd_rob2rt_o_GENI_last_uop_valid = rd_rob2rt_o[GENI].last_uop_valid;
       |`else
       |  assign rd_rob2rt_o_GENI_uop_pc = 32'b0;
-      |  assign rd_rob2rt_o_GENI_last_uop_valid = 1'b0;
       |`endif
       |""".stripMargin.replaceAll("GENI", i.toString)
       if (p.enableVme) {
@@ -428,8 +434,9 @@ object GenerateCoreShimSource {
             "  assign rd_rob2rt_o_GENI_vector_csr_tk     = 2'd0;\n").replaceAll("GENI", i.toString)
       }
     }
-    coreInstantiation += "  assign trap_bits_pc = trap_data.pc;\n"
-    coreInstantiation += """  assign trap_bits_opcode = trap_data.opcode;
+    coreInstantiation += """  assign trap_bits_rob_tag = trap_data.rob_tag;
+      |  assign trap_bits_pc = trap_data.pc;
+      |  assign trap_bits_opcode = trap_data.opcode;
       |  assign trap_bits_bits = trap_data.bits;
       |""".stripMargin
     for (i <- 0 until instructionLanes) {
@@ -513,6 +520,7 @@ class RvvCoreWrapper(p: Parameters)
     val vxrm   = Input(UInt(2.W))
     val vxsat  = Input(UInt(1.W))
     val frm    = Input(UInt(3.W))
+    val flush  = Input(Bool())
 
     val inst = Vec(p.instructionLanes, Flipped(Decoupled(new RvvCompressedInstruction(p))))
 
@@ -748,8 +756,9 @@ class RvvCoreShim(p: Parameters) extends Module {
 
   val rstn           = (!reset.asBool).asAsyncReset
   val rvvCoreWrapper = Module(new RvvCoreWrapper(p))
-  rvvCoreWrapper.io.clk  := clock
-  rvvCoreWrapper.io.rstn := rstn
+  rvvCoreWrapper.io.clk   := clock
+  rvvCoreWrapper.io.rstn  := rstn
+  rvvCoreWrapper.io.flush := io.flush
   rvvCoreWrapper.io.inst <> io.inst
   rvvCoreWrapper.io.rs <> io.rs
   rvvCoreWrapper.io.rd <> io.rd
@@ -794,11 +803,15 @@ class RvvCoreShim(p: Parameters) extends Module {
   io.rvv_idle       := rvvCoreWrapper.io.rvv_idle
   io.queue_capacity := rvvCoreWrapper.io.queue_capacity
 
+  val inst_fires    = io.inst.map(_.fire).reduce(_ || _)
+  val inst_consumed = RegNext(inst_fires, false.B)
+
   val vstart_wdata = MuxCase(
     vstart,
     Seq(
       io.csr.vstart_write.valid    -> io.csr.vstart_write.bits,
-      rvvCoreWrapper.io.vcsr_valid -> rvvCoreWrapper.io.vcsr_vstart
+      rvvCoreWrapper.io.vcsr_valid -> rvvCoreWrapper.io.vcsr_vstart,
+      inst_consumed                -> 0.U
     )
   )
   vstart := vstart_wdata

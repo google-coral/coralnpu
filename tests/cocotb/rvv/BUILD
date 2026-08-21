@@ -77,6 +77,15 @@ template_rule(
         "vstart_test": {
             "srcs": ["vstart_test.cc"],
         },
+        "rvv_small_loop_test": {
+            "srcs": ["rvv_small_loop_test.S"],
+        },
+        "rvv_flush_race_test": {
+            "srcs": ["rvv_flush_race_test.S"],
+        },
+        "rvv_vill_loop_trap_test": {
+            "srcs": ["rvv_vill_loop_trap_test.S"],
+        },
     },
 )
 
@@ -84,7 +93,10 @@ filegroup(
     name = "rvv_assem_tests",
     srcs = [
         "rvv_add.elf",
+        "rvv_flush_race_test.elf",
         "rvv_load.elf",
+        "rvv_small_loop_test.elf",
+        "rvv_vill_loop_trap_test.elf",
         "vcompress_test.elf",
         "vcpop_exception_test.elf",
         "vcpop_test.elf",

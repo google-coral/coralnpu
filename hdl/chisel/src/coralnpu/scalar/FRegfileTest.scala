@@ -185,4 +185,24 @@ class FRegfileSpec extends AnyFreeSpec with ChiselSim {
       dut.io.exception.expect(1)
     }
   }
+
+  "Pipeline Flush with writeback" in {
+    simulate(new FRegfile(p, 1, 2)) { dut =>
+      dut.io.scoreboard_set.poke(31)
+      dut.clock.step()
+      dut.io.scoreboard.expect(31)
+
+      // Flush pipeline - scoreboard resets to 0
+      dut.io.pipelineFlush.poke(true.B)
+      dut.io.scoreboard_set.poke(0)
+      dut.clock.step()
+      dut.io.scoreboard.expect(0)
+      dut.io.pipelineFlush.poke(false.B)
+
+      // An in-flight instruction arrives and writes back to f2
+      dut.io.write_ports(0).valid.poke(true.B)
+      dut.io.write_ports(0).addr.poke(2)
+      dut.clock.step()
+    }
+  }
 }

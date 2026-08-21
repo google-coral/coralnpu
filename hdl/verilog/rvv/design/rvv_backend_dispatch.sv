@@ -536,6 +536,7 @@ module rvv_backend_dispatch
             assign mapinfo_dp2lsu[i].vregfile_write_addr = uop_uop2dp[i].dst_index;
 
           // ROB
+          assign uop_dp2rob[i].rob_tag          = uop_uop2dp[i].rob_tag;
           `ifdef TB_SUPPORT
             assign uop_dp2rob[i].uop_pc           = uop_uop2dp[i].uop_pc; 
             assign uop_dp2rob[i].res_updating_end = uop_uop2dp[i].res_updating_end; 

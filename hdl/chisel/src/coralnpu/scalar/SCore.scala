@@ -81,6 +81,7 @@ class SCore(p: Parameters) extends Module {
       rob_io.writeDataVector.get(i).bits.addr           := io.rvvcore.get.rd_rob2rt_o(i).w_index
       rob_io.writeDataVector.get(i).bits.data           := io.rvvcore.get.rd_rob2rt_o(i).w_data
       rob_io.writeDataVector.get(i).bits.uop_pc         := io.rvvcore.get.rd_rob2rt_o(i).uop_pc
+      rob_io.writeDataVector.get(i).bits.rob_tag        := io.rvvcore.get.rd_rob2rt_o(i).rob_tag
       rob_io.writeDataVector.get(i).bits.last_uop_valid := io.rvvcore.get
         .rd_rob2rt_o(i)
         .last_uop_valid
@@ -160,7 +161,9 @@ class SCore(p: Parameters) extends Module {
     fault_manager.io.in.rvv_fault.get.bits.mcause := 2.U(32.W)
     fault_manager.io.in.rvv_fault.get.bits.mtval  :=
       io.rvvcore.get.trap.bits.originalEncoding()
-    fault_manager.io.in.rvv_fault.get.bits.decode := false.B
+    fault_manager.io.in.rvv_fault.get.bits.decode      := false.B
+    fault_manager.io.in.rvv_fault.get.bits.is_rvv.get  := true.B
+    fault_manager.io.in.rvv_fault.get.bits.rob_tag.get := io.rvvcore.get.trap.bits.rob_tag
   }
   bru(0).io.fault_manager.get := fault_manager.io.out
 
@@ -239,6 +242,7 @@ class SCore(p: Parameters) extends Module {
   // Load/Store Unit
   lsu.io.busPort := regfile.io.busPort
   lsu.io.req <> dispatch.io.lsu
+  lsu.io.pipelineFlush := rob_io.trapRetired
   if (p.enableRvv) {
     lsu.io.rvvState.get := io.rvvcore.get.configState
     lsu.io.lsu2rvv.get <> io.rvvcore.get.lsu2rvv
@@ -450,12 +454,25 @@ class SCore(p: Parameters) extends Module {
     regfile.io.writeMask(i).valid := writeMask(i)
   }
   regfile.io.debugWriteValid := io.dm.scalar_rd.valid
+  regfile.io.pipelineFlush   := rob_io.trapRetired
+  fRegfile.foreach(_.io.pipelineFlush := rob_io.trapRetired)
 
   // ---------------------------------------------------------------------------
   // Rvv Extension
   if (p.enableRvv) {
-    // Connect dispatch
-    dispatch.io.rvv.get <> io.rvvcore.get.inst
+    // Connect dispatch with dedicated ROB tag metadata
+    val tagWidth = log2Ceil(p.retirementBufferSize)
+    for (i <- 0 until p.instructionLanes) {
+      val prevFires = PopCount((0 until i).map(j => dispatch.io.inst(j).fire))
+      val tag       =
+        if (p.retirementBufferSize > 1) (rob_io.enqPtr + prevFires)(tagWidth - 1, 0) else 0.U
+
+      io.rvvcore.get.inst(i).valid        := dispatch.io.rvv.get(i).valid
+      io.rvvcore.get.inst(i).bits         := dispatch.io.rvv.get(i).bits
+      io.rvvcore.get.inst(i).bits.pc      := dispatch.io.rvv.get(i).bits.pc
+      io.rvvcore.get.inst(i).bits.rob_tag := tag
+      dispatch.io.rvv.get(i).ready        := io.rvvcore.get.inst(i).ready
+    }
     dispatch.io.rvvState.get         := io.rvvcore.get.configState
     dispatch.io.rvvIdle.get          := io.rvvcore.get.rvv_idle
     dispatch.io.rvvQueueCapacity.get := io.rvvcore.get.queue_capacity
@@ -495,6 +512,7 @@ class SCore(p: Parameters) extends Module {
     csr.io.rvv.get.vxrm    := io.rvvcore.get.csr.vxrm
     csr.io.rvv.get.vxsat   := io.rvvcore.get.csr.vxsat
     csr.io.rvv.get.fflags  := io.rvvcore.get.csr.fflags
+    io.rvvcore.get.flush   := rob_io.trapRetired
     if (p.enableVme) {
       csr.io.rvv.get.mtype := io.rvvcore.get.configState.bits.mtype.get
     } else {

@@ -160,4 +160,8 @@ class FaultManager(p: Parameters) extends Module {
       first_fault_is_rvv_dispatch -> true.B
     )
   )
+  if (p.enableRvv) {
+    io.out.bits.is_rvv.get  := rvv_fault
+    io.out.bits.rob_tag.get := io.in.rvv_fault.get.bits.rob_tag.getOrElse(0.U)
+  }
 }

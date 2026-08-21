@@ -33,9 +33,10 @@ object RvvAddressingMode extends ChiselEnum {
 }
 
 class RvvCompressedInstruction(p: Parameters) extends Bundle {
-  val pc     = UInt(p.programCounterBits.W)
-  val opcode = RvvCompressedOpcode()
-  val bits   = UInt(25.W)
+  val pc      = UInt(p.programCounterBits.W)
+  val opcode  = RvvCompressedOpcode()
+  val bits    = UInt(25.W)
+  val rob_tag = UInt(4.W)
 
   def originalEncoding(): UInt = {
     val lower7bits = MuxLookup(opcode, 0.U)(
@@ -237,10 +238,11 @@ object RvvCompressedInstruction {
     // Fancy way to MakeValid.
     MakeWireBundle[ValidIO[RvvCompressedInstruction]](
       Valid(new RvvCompressedInstruction(p)),
-      _.valid       -> new_opcode.valid,
-      _.bits.opcode -> new_opcode.bits,
-      _.bits.pc     -> pc,
-      _.bits.bits   -> bits
+      _.valid        -> new_opcode.valid,
+      _.bits.opcode  -> new_opcode.bits,
+      _.bits.pc      -> pc,
+      _.bits.bits    -> bits,
+      _.bits.rob_tag -> 0.U
     )
   }
 }

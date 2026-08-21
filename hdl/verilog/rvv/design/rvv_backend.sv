@@ -425,10 +425,10 @@ module rvv_backend
         .entry_count  (used_count_cq)
     );
 
-    assign insts_ready_cq2rvs = is_trapping ? 'b0 : insts_ready;
+    assign insts_ready_cq2rvs = trap_flush_rvv ? 'b0 : insts_ready;
     
     // output the remaining count in CQ
-    assign remaining_count_cq2rvs = is_trapping ? 'b0 : `CQ_DEPTH - used_count_cq;
+    assign remaining_count_cq2rvs = trap_flush_rvv ? 'b0 : `CQ_DEPTH - used_count_cq;
 
   // Decode unit in DE1 stage
     assign inst_valid_cq2de = ~(fifo_almost_empty_cq2de | fifo_almost_full_lcq2de);
@@ -898,29 +898,11 @@ module rvv_backend
         .entry_count  ()
     );
 
-  // trap handler
-    // make sure all lsu uops before the trapping uop have been pushed into LSU_RES_FIFO 
-    assign trap_en = trap_valid_rvs2rvv & (uop_lsu_valid_lsu2rvv=='b0) & (!lsu_res_almost_full[0]) & (!is_trapping);
-
-    cdffr
-    trap_valid
-    (
-      .clk            (clk),
-      .rst_n          (rst_n),
-      .e              (trap_en),
-      .c              (trap_ready_rvv2rvs),
-      .d              (1'b1),
-      .q              (is_trapping)
-    );
-
   // LSU feedback result
-    assign uop_lsu_valid = trap_en ? 'b1 : uop_lsu_valid_lsu2rvv;
+    assign uop_lsu_valid = uop_lsu_valid_lsu2rvv;
     
     generate
-      assign uop_lsu[0].trap_valid = trap_en;
-      assign uop_lsu[0].uop_lsu2rvv = trap_en ? 'b0 : uop_lsu_lsu2rvv[0];
-      
-      for (i=1;i<`NUM_LSU;i++) begin: get_uop_lsu
+      for (i=0;i<`NUM_LSU;i++) begin: get_uop_lsu
         assign uop_lsu[i].trap_valid = 'b0;
         assign uop_lsu[i].uop_lsu2rvv = uop_lsu_lsu2rvv[i];
       end
@@ -955,7 +937,7 @@ module rvv_backend
         .entry_count  ()
     );
     // ready signal for LSU
-    assign uop_lsu_ready_rvv2lsu = is_trapping ? 'b0 : uop_lsu_ready;
+    assign uop_lsu_ready_rvv2lsu = trap_flush_rvv ? 'b0 : uop_lsu_ready;
 
   // PU, Process unit
     // ALU
@@ -1240,6 +1222,7 @@ module rvv_backend
         .trap_valid_rmp2rob     (trap_valid_rmp2rob),
         .trap_rob_entry_rmp2rob (trap_rob_entry_rmp2rob),
         .trap_ready_rob2rmp     (trap_ready_rob2rmp),
+        .trap_valid_rvs2rvv     (trap_valid_rvs2rvv),
         .trap_ready_rvv2rvs     (trap_ready_rvv2rvs),
         .trap_flush_rvv         (trap_flush_rvv)
     );

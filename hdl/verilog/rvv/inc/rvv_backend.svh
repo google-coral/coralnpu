@@ -103,22 +103,24 @@ typedef enum logic [1:0] {
 
 // A decoded instruction forwarded to the RVVCore from the scalar core.
 typedef struct packed {
-  logic [`PC_WIDTH-1:0] pc;
-  RVVOpCode             opcode;   // effectively bits [6:0] from instruction
-  logic [24:0]          bits;     // bits [31:7] from instruction
+  logic [`ROB_TAG_WIDTH-1:0] rob_tag;
+  logic [`PC_WIDTH-1:0]      pc;
+  RVVOpCode                  opcode;   // effectively bits [6:0] from instruction
+  logic [24:0]               bits;     // bits [31:7] from instruction
 } RVVInstruction;
 
 // An command internal to the RVVCore. The immediate value of this command has
 // been read from the scalar register file if necessary. It also contains
 // additional data to track configuration register state (ie: SEW, LMUL, etc).
 typedef struct packed {
+  logic [`ROB_TAG_WIDTH-1:0] rob_tag;
 `ifdef TB_SUPPORT
-  logic [`PC_WIDTH-1:0] inst_pc;
+  logic [`PC_WIDTH-1:0]      inst_pc;
 `endif
-  RVVOpCode             opcode;
-  logic [24:0]          bits;
-  logic [`XLEN-1:0]     rs1;
-  RVVConfigState        arch_state;
+  RVVOpCode                  opcode;
+  logic [24:0]               bits;
+  logic [`XLEN-1:0]          rs1;
+  RVVConfigState             arch_state;
 } RVVCmd;
 
 //
@@ -256,6 +258,7 @@ typedef enum logic [1:0] {
 
 // the uop struct stored in Uops Queue
 typedef struct packed {
+  logic   [`ROB_TAG_WIDTH-1:0]    rob_tag;
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]         uop_pc;
   logic                           res_updating_end; 
@@ -549,6 +552,7 @@ typedef struct packed {
 
 // send uop to ROB
 typedef struct packed {
+  logic   [`ROB_TAG_WIDTH-1:0]        rob_tag;
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]             uop_pc;
   logic                               res_updating_end; 
@@ -576,9 +580,10 @@ typedef struct packed {
 } ROB2DP_t;
 
 typedef struct packed {
+  logic   [`ROB_TAG_WIDTH-1:0]        rob_tag;
+  logic                               last_uop_valid;
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]             uop_pc;
-  logic                               last_uop_valid;
   logic                               res_updating_end; 
 `endif
   logic                               w_valid;            //entry valid

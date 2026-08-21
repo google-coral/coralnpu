@@ -33,11 +33,13 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
     Option.when(p.enableRvv)(Input(Vec(p.instructionLanes, new RegfileWriteAddrIO(p))))
   val writeDataVector =
     Option.when(p.enableRvv)(Input(Vec(p.instructionLanes, Valid(new VectorWriteDataIO(p)))))
+  val enqPtr      = Output(UInt(log2Ceil(p.retirementBufferSize).W))
   val fault       = Input(Valid(new FaultManagerOutput(p)))
   val nSpace      = Output(UInt(log2Ceil(p.retirementBufferSize + 1).W))
   val nRetired    = Output(UInt(log2Ceil(p.retirementLanes + 1).W))
   val empty       = Output(Bool())
   val trapPending = Output(Bool())
+  val trapRetired = Output(Bool())
   val debug       = Option.when(p.shouldExposeDebugPorts)(Output(new RetirementBufferDebugIO(p)))
 }
 
@@ -106,6 +108,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   val regLastTarget   = RegInit(0.U(p.programCounterBits.W))
   val regLastAddr     = RegInit(0.U(p.programCounterBits.W))
   val regLastIsBranch = RegInit(false.B)
+  val regAfterFlush   = RegInit(true.B)
 
   // Create Instruction wires out of io.inst + io.writeAddrScalar, and align.
   def dispatch(
@@ -232,7 +235,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     val isNoFireFault = (i == 0).B && noFire0Fault
 
     val linkOk = if (i == 0) {
-      (io
+      regAfterFlush || (io
         .inst(0)
         .bits
         .addr === regLastTarget) || (regLastIsBranch && io.inst(0).bits.addr === regLastAddr + 4.U)
@@ -318,8 +321,9 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   val dataWidth    = if (mini) 0 else (if (p.enableRvv) p.lsuDataBits else 32)
   val resultBuffer = RegInit(VecInit(Seq.fill(bufferSize)(MakeInvalid(new InstructionUpdate))))
 
-  val accEnqPtr              = RegInit(0.U(log2Ceil(bufferSize).W))
-  val accDeqPtr              = RegInit(0.U(log2Ceil(bufferSize).W))
+  val accEnqPtr = RegInit(0.U(log2Ceil(bufferSize).W))
+  val accDeqPtr = RegInit(0.U(log2Ceil(bufferSize).W))
+  io.enqPtr := accEnqPtr
   val vectorWriteAccumulator = Option.when(!mini && p.enableRvv)(
     RegInit(VecInit.fill(bufferSize)(VecInit.fill(8)(0.U.asTypeOf(Valid(new VectorWrite)))))
   )
@@ -356,18 +360,25 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         )
       )
       .getOrElse(Seq(false.B))
+    val tagWidth = log2Ceil(bufferSize)
+    val pIdx     = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
+
     val vectorWriteIdxMap = io.writeDataVector
       .map(y =>
         y.map(x =>
           x.valid && (
-            (bufferEntry.isVector && !storeInstr && (x.bits.uop_pc === bufferEntry.addr)) ||
+            (bufferEntry.isVector && !storeInstr && (x.bits.rob_tag === pIdx)) ||
               (!bufferEntry.isVector && ((x.bits.addr +& p.rvvRegfileBaseAddr.U) === bufferEntry.idx))
           )
         )
       )
       .getOrElse(Seq(false.B))
     // Check if this entry is the faulting instruction
-    val faultingInstr = io.fault.valid && (bufferEntry.addr === faultPc)
+    val isRvvFault =
+      if (p.enableRvv) io.fault.valid && io.fault.bits.is_rvv.getOrElse(false.B) else false.B
+    val rvvTagMatch =
+      if (p.enableRvv) (io.fault.bits.rob_tag.getOrElse(0.U) === pIdx) else false.B
+    val faultingInstr = io.fault.valid && Mux(isRvvFault, rvvTagMatch, bufferEntry.addr === faultPc)
     // The entry is active if it's validly enqueued.
     val validBufferEntry = (i.U < instBuffer.io.nEnqueued)
 
@@ -387,8 +398,6 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       .getOrElse(false.B)
 
     if (!mini && p.enableRvv) {
-      val pIdx = accDeqPtr + i.U
-
       val nextEntry = Wire(Vec(8, Valid(new VectorWrite)))
 
       val portMatches = Wire(Vec(p.instructionLanes, Bool()))
@@ -447,11 +456,11 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     val nextAddr  = if (i < bufferSize - 1) instBuffer.io.dataOut(i + 1).addr else 0.U
     val nextAddrValid = nextValid || noFire0Fault || io.inst(0).valid
 
-    val lane0LinkOk = (io
+    val lane0LinkOk = regAfterFlush || (io
       .inst(0)
       .bits
       .addr === regLastTarget) || (regLastIsBranch && io.inst(0).bits.addr === regLastAddr + 4.U)
-    val faultLinkOk =
+    val faultLinkOk = regAfterFlush ||
       (io.fault.bits.mepc === regLastTarget) || (regLastIsBranch && io.fault.bits.mepc === regLastAddr + 4.U)
     val fallthrough = bufferEntry.addr + 4.U
 
@@ -569,20 +578,31 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   }
 
   instBuffer.io.flush := trapRetired
+  when(trapRetired) {
+    regAfterFlush := true.B
+  }.elsewhen(hasFire) {
+    regAfterFlush := false.B
+  }
 
-  if (!mini && p.enableRvv) {
+  if (p.enableRvv) {
     accEnqPtr := Mux(trapRetired, 0.U, accEnqPtr + instBuffer.io.enqValid)
     accDeqPtr := Mux(trapRetired, 0.U, accDeqPtr + deqReady)
 
-    for (x <- 0 until bufferSize) {
-      val isEnqueuing = (0 until p.instructionLanes)
-        .map(k => (k.U < instBuffer.io.enqValid) && (x.U === accEnqPtr + k.U))
-        .reduce(_ || _)
-      vectorWriteAccumulator.get(x) := Mux(
-        trapRetired || isEnqueuing,
-        0.U.asTypeOf(vectorWriteAccumulator.get(0)),
-        vectorAccumulatorNext.get(x)
-      )
+    if (!mini) {
+      val tagWidth = log2Ceil(bufferSize)
+      for (x <- 0 until bufferSize) {
+        val isEnqueuing = (0 until p.instructionLanes)
+          .map { k =>
+            val slotIdx = if (bufferSize > 1) (accEnqPtr +& k.U)(tagWidth - 1, 0) else 0.U
+            (k.U < instBuffer.io.enqValid) && (x.U === slotIdx)
+          }
+          .reduce(_ || _)
+        vectorWriteAccumulator.get(x) := Mux(
+          trapRetired || isEnqueuing,
+          0.U.asTypeOf(vectorWriteAccumulator.get(0)),
+          vectorAccumulatorNext.get(x)
+        )
+      }
     }
   }
 
@@ -603,6 +623,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   val retiredEcalls_reg = RegNext(retiredEcalls, 0.U)
   io.nRetired    := deqReady_reg - retiredEcalls_reg
   io.trapPending := RegNext(hasTrap && !trapRetired, false.B)
+  io.trapRetired := trapRetired
 
   io.debug.foreach { debug =>
     for (i <- 0 until p.retirementLanes) {
@@ -619,9 +640,17 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       )
       debug.inst(i).bits.trap := MuxOR(valid, resultUpdate(i).bits.trap)
       if (p.enableRvv) {
-        val pIdx = accDeqPtr + i.U
+        val tagWidth = log2Ceil(bufferSize)
+        val pIdx     = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
         if (!mini) {
-          debug.inst(i).bits.vecWrites.get := debugVectorWrites.get(pIdx)
+          val maskedVecWrites = Wire(Vec(8, Valid(new VectorWrite)))
+          for (k <- 0 until 8) {
+            maskedVecWrites(k).valid := debugVectorWrites.get(pIdx)(k).valid && !resultUpdate(
+              i
+            ).bits.trap
+            maskedVecWrites(k).bits := debugVectorWrites.get(pIdx)(k).bits
+          }
+          debug.inst(i).bits.vecWrites.get := maskedVecWrites
         } else {
           debug.inst(i).bits.vecWrites.get := 0.U.asTypeOf(debug.inst(i).bits.vecWrites.get)
         }

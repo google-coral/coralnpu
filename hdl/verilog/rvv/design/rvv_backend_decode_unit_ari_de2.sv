@@ -2347,6 +2347,7 @@ module rvv_backend_decode_unit_ari_de2
   // assign result to output
   generate
     for(j=0;j<`NUM_DE_UOP;j++) begin: ASSIGN_RES
+      assign uop[j].rob_tag               = lcmd.cmd.rob_tag;
     `ifdef TB_SUPPORT
       assign uop[j].uop_pc                = lcmd.cmd.inst_pc;
       assign uop[j].res_updating_end      = res_updating_end[j];

@@ -80,7 +80,8 @@ class Regfile(p: Parameters) extends Module {
     )
     val writeMask =
       Vec(p.instructionLanes + extraWritePorts, new Bundle { val valid = Input(Bool()) })
-    val scoreboard = new Bundle {
+    val pipelineFlush = Input(Bool())
+    val scoreboard    = new Bundle {
       val regd = Output(UInt(p.scalarRegCount.W))
       val comb = Output(UInt(p.scalarRegCount.W))
     }
@@ -92,7 +93,8 @@ class Regfile(p: Parameters) extends Module {
   // ***************************************************************************
   // The scoreboard.
   // ***************************************************************************
-  val scoreboard = RegInit(0.U(p.scalarRegCount.W))
+  val scoreboard         = RegInit(0.U(p.scalarRegCount.W))
+  val flushed_scoreboard = RegInit(0.U(p.scalarRegCount.W))
 
   // The write Addr:Data contract is against speculated opcodes. If an opcode
   // is in the shadow of a taken branch it will still Set:Clr the scoreboard,
@@ -107,9 +109,24 @@ class Regfile(p: Parameters) extends Module {
 
   val scoreboard_clr = Cat(scoreboard_clr0(p.scalarRegCount - 1, 1), 0.U(1.W))
 
-  when(scoreboard_set =/= 0.U || scoreboard_clr =/= 0.U) {
+  when(io.pipelineFlush) {
+    scoreboard         := Cat(scoreboard_set(p.scalarRegCount - 1, 1), 0.U(1.W))
+    flushed_scoreboard := Cat(
+      ((scoreboard | flushed_scoreboard) & ~scoreboard_clr)(p.scalarRegCount - 1, 1),
+      0.U(1.W)
+    )
+  }.elsewhen(scoreboard_set =/= 0.U || scoreboard_clr =/= 0.U) {
     val nxtScoreboard = (scoreboard & ~scoreboard_clr) | scoreboard_set
-    scoreboard := Cat(nxtScoreboard(p.scalarRegCount - 1, 1), 0.U(1.W))
+    scoreboard         := Cat(nxtScoreboard(p.scalarRegCount - 1, 1), 0.U(1.W))
+    flushed_scoreboard := Cat(
+      (flushed_scoreboard & ~scoreboard_clr)(p.scalarRegCount - 1, 1),
+      0.U(1.W)
+    )
+  }.otherwise {
+    flushed_scoreboard := Cat(
+      (flushed_scoreboard & ~scoreboard_clr)(p.scalarRegCount - 1, 1),
+      0.U(1.W)
+    )
   }
 
   io.scoreboard.regd := scoreboard
@@ -238,7 +255,8 @@ class Regfile(p: Parameters) extends Module {
 
   val scoreboard_error = RegInit(false.B)
   val dm_write_valid   = io.debugWriteValid
-  scoreboard_error := ((scoreboard & scoreboard_clr) =/= scoreboard_clr) && !dm_write_valid
+  val valid_clr_mask   = scoreboard | flushed_scoreboard
+  scoreboard_error := ((valid_clr_mask & scoreboard_clr) =/= scoreboard_clr) && !dm_write_valid
   assert(!scoreboard_error)
 }
 

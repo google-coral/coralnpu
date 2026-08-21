@@ -58,6 +58,7 @@ class Lsu(p: Parameters) extends Module {
     val queueCapacity = Output(UInt(3.W))
     val active        = Output(Bool())
     val storeComplete = Output(Valid(UInt(p.programCounterBits.W)))
+    val pipelineFlush = Input(Bool())
   })
 }
 
@@ -999,7 +1000,7 @@ class LsuV2(p: Parameters) extends Lsu(p) {
   io.vldst := 0.U
 
   val opQueue = Module(new CircularBufferMulti(new LsuUOp(p), p.instructionLanes, 4))
-  opQueue.io.flush := false.B
+  opQueue.io.flush := io.pipelineFlush
   io.queueCapacity := opQueue.io.nSpace
 
   // Flush state
@@ -3129,6 +3130,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val pc              = UInt(p.programCounterBits.W)
     val active          = Bool()
     val storeComplete   = Bool()
+    val flush           = Input(Bool())
   })
 
   val state    = RegInit(State())
@@ -3139,7 +3141,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val txPending              = RegInit(MakeInvalid(new BusReq))
   val txOutgoing             = Mux(txPending.valid, txPending, tx)
   txPending := Mux(
-    io.busReq.ready || state.faulted || newFault,
+    io.busReq.ready || state.faulted || newFault || io.flush,
     MakeInvalid(txPending.bits),
     txOutgoing
   )
@@ -3204,7 +3206,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     }
   )
   io.uop.ready := stateFromAction.isDone
-  state        := Mux(io.uop.fire, stateFromUop, stateFromAction)
+  state        := Mux(io.flush, State(), Mux(io.uop.fire, stateFromUop, stateFromAction))
 
   io.active := state.cells.forall { x =>
     x.state === LsuCellState.DONE
@@ -3292,9 +3294,8 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     MakeInvalid(new FaultInfo(p))
   )
 
-  // TODO(davidgao): flush RS upon fault.
-  rs.io.flush := false.B
-  // rs.io.flush := faultReg.valid
+  rs.io.flush   := io.pipelineFlush || faultReg.valid
+  slot.io.flush := io.pipelineFlush || faultReg.valid
 
   io.ibus.valid := itcm && slot.io.busReq.valid && !slot.io.busReq.bits.write
   io.ibus.addr  := addr

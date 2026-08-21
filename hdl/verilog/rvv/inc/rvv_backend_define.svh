@@ -101,6 +101,8 @@
 `endif
 
 `define ROB_DEPTH_WIDTH         $clog2(`ROB_DEPTH)
+// Matches log2(p.retirementBufferSize) for retirementBufferSize = 16 in CoralNPU
+`define ROB_TAG_WIDTH           4
 `define NUM_RT_UOP              4
 `ifdef XLEN_64
 `define XLEN                    64

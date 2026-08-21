@@ -265,6 +265,7 @@ class VectorWriteDataIO(p: Parameters) extends Bundle {
   val data           = Input(UInt(p.lsuDataBits.W))
   val uop_pc         = Input(UInt(32.W))
   val last_uop_valid = Input(Bool())
+  val rob_tag        = Input(UInt(log2Ceil(p.retirementBufferSize).W))
 }
 
 class FabricIO(p: Parameters) extends Bundle {
@@ -324,8 +325,10 @@ class CsrTraceIO(p: Parameters) extends Bundle {
 }
 
 class FaultManagerOutput(p: Parameters) extends Bundle {
-  val mepc   = UInt(p.programCounterBits.W)
-  val mtval  = UInt(p.xlen.W)
-  val mcause = UInt(p.xlen.W)
-  val decode = Bool()
+  val mepc    = UInt(p.programCounterBits.W)
+  val mtval   = UInt(p.xlen.W)
+  val mcause  = UInt(p.xlen.W)
+  val decode  = Bool()
+  val is_rvv  = Option.when(p.enableRvv)(Bool())
+  val rob_tag = Option.when(p.enableRvv)(UInt(4.W))
 }

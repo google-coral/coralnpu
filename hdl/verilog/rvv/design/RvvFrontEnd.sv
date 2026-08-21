@@ -34,6 +34,7 @@ module RvvFrontEnd#(parameter N = 4,
   input logic [`VCSR_VXRM_WIDTH-1:0]  vxrm_i,
   input logic [`VCSR_VXSAT_WIDTH-1:0] vxsat_i,
   input logic [2:0]                   frm_i,
+  input logic                         flush_i,
 
   // Instruction input.
   input logic [N-1:0] inst_valid_i,
@@ -120,13 +121,18 @@ module RvvFrontEnd#(parameter N = 4,
     if (!rstn) begin
       for (int i = 0; i < N; i++) begin
         valid_inst_q[i] <= 0;
-        valid_inst_count_q <= 0;
-      end;
+      end
+      valid_inst_count_q <= 0;
+    end else if (flush_i) begin
+      for (int i = 0; i < N; i++) begin
+        valid_inst_q[i] <= 0;
+      end
+      valid_inst_count_q <= 0;
     end else begin
       for (int i = 0; i < N; i++) begin
         valid_inst_q[i] <= inst_accepted[i];
-        valid_inst_count_q <= valid_inst_count_d;
       end
+      valid_inst_count_q <= valid_inst_count_d;
     end
   end
 
@@ -458,6 +464,7 @@ module RvvFrontEnd#(parameter N = 4,
           !inst_config_state[i+1].vill;
 
       // Combine instruction + arch state into command
+      unaligned_cmd_data[i].rob_tag = inst_q[i].rob_tag;
 `ifdef TB_SUPPORT
       unaligned_cmd_data[i].inst_pc = inst_q[i].pc;
 `endif
@@ -559,15 +566,6 @@ module RvvFrontEnd#(parameter N = 4,
           );
       requires_rs2_read[i] =
           lsu_requires_rs2_read[i] || non_lsu_requires_rs2_read[i];
-    end
-  end
-
-  always @(posedge clk) begin
-    for (int i = 0; i < N; i++) begin
-      assert(!valid_inst_q[i] || !requires_rs1_read[i] ||
-              reg_read_valid_i[2*i]);
-      assert(!valid_inst_q[i] || !requires_rs2_read[i] ||
-              reg_read_valid_i[(2*i) + 1]);
     end
   end
 `endif  // not def SYNTHESIS

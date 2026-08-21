@@ -24,6 +24,7 @@ class FRegfile(p: Parameters, n_read: Int, n_write: Int) extends Module {
     val write_ports    = Vec(n_write, new FRegfileWrite(p))
     val dm_write_valid = Input(Bool())
 
+    val pipelineFlush  = Input(Bool())
     val scoreboard_set = Input(UInt(p.floatRegCount.W))
     val scoreboard     = Output(UInt(p.floatRegCount.W))
     val exception      = Output(Bool())
@@ -34,17 +35,26 @@ class FRegfile(p: Parameters, n_read: Int, n_write: Int) extends Module {
 
   val fregfile   = RegInit(VecInit.fill(p.floatRegCount)(Fp32.fromWord("x00000000".U(32.W))))
   val scoreboard = RegInit(0.U(p.floatRegCount.W))
+  val flushed_scoreboard = RegInit(0.U(p.floatRegCount.W))
 
   // Update scoreboard
   val scoreboard_clr = io.write_ports
     .map(x => Mux(x.valid, UIntToOH(x.addr, p.floatRegCount), 0.U(p.floatRegCount.W)))
     .reduce(_ | _)
-  scoreboard    := (scoreboard & ~scoreboard_clr) | io.scoreboard_set
+
+  when(io.pipelineFlush) {
+    scoreboard         := io.scoreboard_set
+    flushed_scoreboard := (scoreboard | flushed_scoreboard) & ~scoreboard_clr
+  }.otherwise {
+    scoreboard         := (scoreboard & ~scoreboard_clr) | io.scoreboard_set
+    flushed_scoreboard := flushed_scoreboard & ~scoreboard_clr
+  }
   io.scoreboard := scoreboard
 
   val scoreboard_error = RegInit(false.B)
   val dm_write_valid   = io.dm_write_valid
-  scoreboard_error := ((scoreboard & scoreboard_clr) =/= scoreboard_clr) && !dm_write_valid
+  val valid_clr_mask   = scoreboard | flushed_scoreboard
+  scoreboard_error := ((valid_clr_mask & scoreboard_clr) =/= scoreboard_clr) && !dm_write_valid
   assert(!scoreboard_error)
 
   // Writes

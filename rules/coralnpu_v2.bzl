@@ -345,6 +345,7 @@ DENYLIST = [
     "//tests/cocotb:plic_test",
     # RVV exceptions, not supported by MPACT (yet)
     "//tests/cocotb/rvv:vill_test",
+    "//tests/cocotb/rvv:rvv_vill_loop_trap_test",
     "//tests/cocotb:vector_store",
     "//tests/cocotb:vector_store_fault",
     # Jump to dtcm (also disabled in cocotb)
