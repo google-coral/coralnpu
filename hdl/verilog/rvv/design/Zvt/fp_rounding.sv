@@ -119,7 +119,7 @@ module fp_rounding#(
       else
         assign fmt_postround_overflow[i] = 1'b1;
   end
-  assign postround_overflow = fmt_postround_overflow[rnd_mode];
+  assign postround_overflow = fmt_postround_overflow[dst_fmt];
   assign postround_underflow = round_exponent == 0
     || ((preround_exponent == 0) && (round_exponent == 1) &&
         (!(result_round_bit & result_sticky_bit) || (!result_sticky_msb && (rnd_mode == fpnew_pkg::RNE || rnd_mode == fpnew_pkg::RMM))));

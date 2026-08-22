@@ -35,7 +35,7 @@ module rvv_backend_falu_unit(
   //rob ready 2 unit
   falu_result_rdy
 );
-  parameter PIPEREGS  = 3; 
+  parameter int unsigned PIPEREGS  = 32'd3; 
   //global
   input   logic         clk;
   input   logic         rst_n;

@@ -130,7 +130,7 @@ module zvt_pe_mulbulk_fp_lane#(
           // select max exponent as align input
           // if all are within subnormal range, use subnormal pattern
           // In scalar mode, this is always subnormal pattern
-          if (max_exp_tree[EXP_TREE_STAGE][0] > 1) begin
+          if (max_exp_tree[EXP_TREE_STAGE][0] > (EXP_BITS+2)'($signed(1))) begin
             align_minimum_exponent = max_exp_tree[EXP_TREE_STAGE][0];
             align_trimmed_exponent = max_exp_tree[EXP_TREE_STAGE][0];
           end else begin
@@ -197,14 +197,15 @@ module zvt_pe_mulbulk_fp_lane#(
           assign component_inf_sign[j] = fmt_products[i][j].sign;
 
           `ifdef ASSERT_ON
-            `rvv_forbid(up_valid && reg_enable[0] &&
+            `rvv_forbid(up_valid && reg_enable[0] && src_fmt == i &&
                 ((!fmt_products[i][j].significand[PROD_SIG_BITS-1]) ^ (!(|fmt_products[i][j].exponent))))
               else $warning("Significand and exponent argue on multiply stage is a subnormal");
             if (j != 0) begin
-              `rvv_forbid(up_valid && reg_enable[0] && fmt_products[i][j].exponent != fmt_products[i][0].exponent)
+              `rvv_forbid(up_valid && reg_enable[0] && src_fmt == i &&
+                fmt_products[i][j].exponent != fmt_products[i][0].exponent)
                 else $warning("Batch normalize failed on multiply stage");
             end
-            `rvv_forbid(up_valid && reg_enable[0] && align_overflow)
+            `rvv_forbid(up_valid && reg_enable[0] && src_fmt == i && align_overflow)
               else $warning("Mul-bulk should not overflow at mul-stage. Is SUPER_EXP_BITS too narrow?");
           `endif
         end

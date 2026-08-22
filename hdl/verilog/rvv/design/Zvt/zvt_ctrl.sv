@@ -22,6 +22,10 @@ module zvt_ctrl (
   peBusy,
   peReadMtIdx,
   peReadSubIdx,
+`ifdef TB_SUPPORT
+  peReadPc,
+  peWritePc,
+`endif
   peWriteEn,  
   peWriteMtIdx,
   peWriteSubIdx,
@@ -67,6 +71,10 @@ module zvt_ctrl (
   input  logic                      peBusy;
   input  logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_MT)-1:0]      peReadMtIdx;
   input  logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_SUBTILE)-1:0] peReadSubIdx;
+`ifdef TB_SUPPORT
+  input  logic [`NUM_BLK-1:0][`PC_WIDTH-1:0]                              peReadPc;
+  input  logic [`NUM_BLK-1:0][`PC_WIDTH-1:0]                              peWritePc;
+`endif
   input  logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][`SUBTILE_SIZE-1:0]        peWriteEn;  
   input  logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_MT)-1:0]      peWriteMtIdx;
   input  logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_SUBTILE)-1:0] peWriteSubIdx;
@@ -157,7 +165,9 @@ module zvt_ctrl (
   logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_SUBTILE)-1:0] mvlsuWriteSubIdx;
   logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][`SUBTILE_SIZE*8-1:0]      mvlsuWriteData;  
   
-  assign tile      = uop[0].tss.tile;
+  // vtzero encodes its destination tile in rd (dst_index[4:1]); TSS ops
+  // encode it in rs1 (tss.tile).
+  assign tile      = isZero ? uop[0].dst_index[4:1] : uop[0].tss.tile;
   assign pattern   = uop[0].tss.pattern;
   assign index     = uop[0].tss.index;
   assign vstart    = uop[0].vstart;
@@ -214,11 +224,12 @@ module zvt_ctrl (
   end
 
   // Move and LSU access MT
+  assign mvlsuWriteMtIdx  = mvlsuReadMtIdx;
+    
   always_comb begin
     mvlsuReadMtIdx   = 'b0;
     mvlsuReadSubIdx  = 'b0;
     mvlsuWriteEn     = 'b0;
-    mvlsuWriteMtIdx  = 'b0;
     mvlsuWriteSubIdx = 'b0;
     mvlsuWriteData   = 'b0;
 
@@ -236,7 +247,6 @@ module zvt_ctrl (
                                                 readData[0][i][({2'b0,index[1:0]}+4'd4 )*`BYTE_WIDTH+:`BYTE_WIDTH],
                                                 readData[0][i][({2'b0,index[1:0]}      )*`BYTE_WIDTH+:`BYTE_WIDTH]};
             // write
-            mvlsuWriteMtIdx[0][i]  = mvlsuReadSubIdx[0][i];
             mvlsuWriteSubIdx[0][i] = mvlsuReadSubIdx[0][i];
 
             {mvlsuWriteEn[0][i][({2'b0,index[1:0]}+4'd12)],
@@ -257,7 +267,6 @@ module zvt_ctrl (
 
             vdst[i*`WORD_WIDTH+:`WORD_WIDTH] = readData[0][i][{index[1:0],2'b0}*`BYTE_WIDTH+:`WORD_WIDTH];
             // write
-            mvlsuWriteMtIdx[0][i]  = mvlsuReadSubIdx[0][i];
             mvlsuWriteSubIdx[0][i] = mvlsuReadSubIdx[0][i];
 
             mvlsuWriteEn[0][i][{index[1:0],2'b0}+:4] = bodyTn[4*i+:4];
@@ -274,7 +283,7 @@ module zvt_ctrl (
             mvlsuReadMtIdx[0][2*i+1]  = {tile[$clog2(`NUM_MT)-1:1], 1'b1};
             mvlsuReadSubIdx[0][2*i  ] = ($clog2(`NUM_SUBTILE))'(index/4) + 
                                         ($clog2(`NUM_SUBTILE))'({uop_index[0], i[$clog2(`TE/8)-1:0]}*`TE/4);
-            mvlsuReadSubIdx[0][2*i+1] = mvlsuReadSubIdx[0][i];
+            mvlsuReadSubIdx[0][2*i+1] = mvlsuReadSubIdx[0][2*i];
                                  
 
             vdst[i*2*`WORD_WIDTH+:2*`WORD_WIDTH] = {readData[0][2*i  ][({index[1],1'b0,index[0],1'b0}+4'd4)*`BYTE_WIDTH+:`HWORD_WIDTH],
@@ -282,10 +291,8 @@ module zvt_ctrl (
                                                     readData[0][2*i  ][({index[1],1'b0,index[0],1'b0}+4'd4)*`BYTE_WIDTH+:`HWORD_WIDTH],
                                                     readData[0][2*i+1][({index[1],1'b0,index[0],1'b0}     )*`BYTE_WIDTH+:`HWORD_WIDTH]};
             // write
-            mvlsuWriteMtIdx[0][2*i  ]  = mvlsuReadSubIdx[0][i];
-            mvlsuWriteMtIdx[0][2*i+1]  = mvlsuReadSubIdx[0][i];
-            mvlsuWriteSubIdx[0][2*i  ] = mvlsuReadSubIdx[0][i];
-            mvlsuWriteSubIdx[0][2*i+1] = mvlsuReadSubIdx[0][i];
+            mvlsuWriteSubIdx[0][2*i  ] = mvlsuReadSubIdx[0][2*i];
+            mvlsuWriteSubIdx[0][2*i+1] = mvlsuReadSubIdx[0][2*i+1];
 
             {mvlsuWriteEn[0][2*i+1][({index[1],1'b0,index[0],1'b0}+4'd4)+:2],
              mvlsuWriteEn[0][2*i+1][({index[1],1'b0,index[0],1'b0}     )+:2],
@@ -309,10 +316,9 @@ module zvt_ctrl (
             vdst[i*2*`WORD_WIDTH+:2*`WORD_WIDTH] = {readData[0][i][({1'b0,index[0],2'b0}+4'd8)*`BYTE_WIDTH+:`WORD_WIDTH],
                                                     readData[0][i][({1'b0,index[0],2'b0}     )*`BYTE_WIDTH+:`WORD_WIDTH]};
             // write
-            mvlsuWriteMtIdx[0][i]  = mvlsuReadSubIdx[0][i];
             mvlsuWriteSubIdx[0][i] = mvlsuReadSubIdx[0][i];
 
-            {mvlsuWriteEn[0][i][({1'b0,index[0],2'b0}+4'd4)+:4],
+            {mvlsuWriteEn[0][i][({1'b0,index[0],2'b0}+4'd8)+:4],
              mvlsuWriteEn[0][i][({1'b0,index[0],2'b0}     )+:4]} = {{2{bodyTn[(uop_index[0]*`TE/2+4*i+3)]}},
                                                                     {2{bodyTn[(uop_index[0]*`TE/2+4*i+2)]}},
                                                                     {2{bodyTn[(uop_index[0]*`TE/2+4*i+1)]}},
@@ -327,7 +333,7 @@ module zvt_ctrl (
         for(int i=0; i<`TE/16; i++) begin
           if(pattern) begin
             // read
-            mvlsuReadMtIdx[0][2*i  ]  = {tile[$clog2(`NUM_MT)-1:2], index[$clog2(`TE/4)], index[1]};
+            mvlsuReadMtIdx[0][2*i  ]  = {tile[$clog2(`NUM_MT)-1:2], uop_index[1], index[1]};
             mvlsuReadMtIdx[0][2*i+1]  = mvlsuReadMtIdx[0][i];
             mvlsuReadSubIdx[0][2*i  ] = ($clog2(`NUM_SUBTILE))'(index/4) + 
                                         ($clog2(`NUM_SUBTILE))'(partSubIdx32[i]*`TE/4); 
@@ -339,8 +345,6 @@ module zvt_ctrl (
                                                     readData[0][2*i  ][({1'b0,index[0],2'b0}+4'd8)*`BYTE_WIDTH+:`WORD_WIDTH],
                                                     readData[0][2*i  ][({1'b0,index[0],2'b0}     )*`BYTE_WIDTH+:`WORD_WIDTH]};
             // write
-            mvlsuWriteMtIdx[0][2*i  ]  = mvlsuReadSubIdx[0][2*i  ];
-            mvlsuWriteMtIdx[0][2*i+1]  = mvlsuReadSubIdx[0][2*i+1];
             mvlsuWriteSubIdx[0][2*i  ] = mvlsuReadSubIdx[0][2*i  ];
             mvlsuWriteSubIdx[0][2*i+1] = mvlsuReadSubIdx[0][2*i+1];
 
@@ -359,22 +363,26 @@ module zvt_ctrl (
           end
           else begin
             // read
-            mvlsuReadMtIdx[0][2*i  ]  = {tile[$clog2(`NUM_MT)-1:2], index[$clog2(`TE/4)], 1'b0};
-            mvlsuReadMtIdx[0][2*i+1]  = {tile[$clog2(`NUM_MT)-1:2], index[$clog2(`TE/4)], 1'b1};
-            mvlsuReadSubIdx[0][2*i  ] = ($clog2(`NUM_SUBTILE))'(index[$clog2(`TE/4)-1:1]*`TE/4) +
+            // TEW=32 punning: ptile = tile + 2*(row/(TE/2)) + col[1], and the
+            // subtile row is (row/2)%(TE/4) -- i.e. the partition bit is
+            // row's MSB (index[log2(TE/2)]), with the bits below it (down to
+            // bit 1) selecting the subtile row. This matches the PE array's
+            // addressing (BLKID[1] carries row/(TE/2), readMtId carries
+            // (row/2)%(TE/4)).
+            mvlsuReadMtIdx[0][2*i  ]  = {tile[$clog2(`NUM_MT)-1:2], index[$clog2(`TE/2)], 1'b0};
+            mvlsuReadMtIdx[0][2*i+1]  = {tile[$clog2(`NUM_MT)-1:2], index[$clog2(`TE/2)], 1'b1};
+            mvlsuReadSubIdx[0][2*i  ] = ($clog2(`NUM_SUBTILE))'(index[$clog2(`TE/2)-1:1]*`TE/4) +
                                         partSubIdx32[i];
             mvlsuReadSubIdx[0][2*i+1] = mvlsuReadSubIdx[0][2*i];
 
             vdst[i*4*`WORD_WIDTH+:4*`WORD_WIDTH] = {readData[0][2*i+1][{index[0],3'b0}*`BYTE_WIDTH+:2*`WORD_WIDTH],
                                                     readData[0][2*i  ][{index[0],3'b0}*`BYTE_WIDTH+:2*`WORD_WIDTH]};
             // write
-            mvlsuWriteMtIdx[0][2*i  ]  = mvlsuReadSubIdx[0][2*i];
-            mvlsuWriteMtIdx[0][2*i+1]  = mvlsuReadSubIdx[0][2*i+1];
             mvlsuWriteSubIdx[0][2*i  ] = mvlsuReadSubIdx[0][2*i];
             mvlsuWriteSubIdx[0][2*i+1] = mvlsuReadSubIdx[0][2*i+1];
 
-            {mvlsuWriteEn[0][2*i  ][{index[0],3'b0}+:8],
-             mvlsuWriteEn[0][2*i+1][{index[0],3'b0}+:8]} = {{4{bodyTn[uop_index[1:0]*`TE/4+4*i+3]}},
+            {mvlsuWriteEn[0][2*i+1][{index[0],3'b0}+:8],
+             mvlsuWriteEn[0][2*i  ][{index[0],3'b0}+:8]} = {{4{bodyTn[uop_index[1:0]*`TE/4+4*i+3]}},
                                                             {4{bodyTn[uop_index[1:0]*`TE/4+4*i+2]}},
                                                             {4{bodyTn[uop_index[1:0]*`TE/4+4*i+1]}},
                                                             {4{bodyTn[uop_index[1:0]*`TE/4+4*i]  }}};
@@ -479,40 +487,48 @@ module zvt_ctrl (
             zeroWriteSubIdx[2][`TE/4/2*i+j] = (`SUBTILE_SIZE)'((`TE/4)*(`TE/4*`COMPRATIO)*cnt+`TE/4*i+2*j);
             zeroWriteSubIdx[3][`TE/4/2*i+j] = (`SUBTILE_SIZE)'((`TE/4)*(`TE/4*`COMPRATIO)*cnt+`TE/4*i+2*j+'d1);
             
-            zeroWriteEn[0][`TE/4/2*i+j] = {{8{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+1]}},
-                                           {8{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i  ]}}} & {{2{bodyTn[(8*j  )+3]}}, 
+            zeroWriteEn[0][`TE/4/2*i+j] = {{4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+1]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i  ]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+1]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i  ]}}} & {{2{bodyTn[(8*j  )+3]}}, 
                                                                                            {2{bodyTn[(8*j  )+2]}},
-                                                                                           {2{bodyTn[(8*j  )+1]}},
-                                                                                           {2{bodyTn[(8*j  )+0]}},
                                                                                            {2{bodyTn[(8*j  )+3]}},
                                                                                            {2{bodyTn[(8*j  )+2]}},
                                                                                            {2{bodyTn[(8*j  )+1]}},
+                                                                                           {2{bodyTn[(8*j  )+0]}},
+                                                                                           {2{bodyTn[(8*j  )+1]}},
                                                                                            {2{bodyTn[(8*j  )+0]}}};
-            zeroWriteEn[1][`TE/4/2*i+j] = {{8{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+1]}},
-                                           {8{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i  ]}}} & {{2{bodyTn[(8*j+4)+3]}}, 
+            zeroWriteEn[1][`TE/4/2*i+j] = {{4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+1]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i  ]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+1]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i  ]}}} & {{2{bodyTn[(8*j+4)+3]}}, 
+                                                                                           {2{bodyTn[(8*j+4)+2]}},
+                                                                                           {2{bodyTn[(8*j+4)+3]}},
                                                                                            {2{bodyTn[(8*j+4)+2]}},
                                                                                            {2{bodyTn[(8*j+4)+1]}},
                                                                                            {2{bodyTn[(8*j+4)+0]}},
-                                                                                           {2{bodyTn[(8*j+4)+3]}},
-                                                                                           {2{bodyTn[(8*j+4)+2]}},
                                                                                            {2{bodyTn[(8*j+4)+1]}},
                                                                                            {2{bodyTn[(8*j+4)+0]}}};
-            zeroWriteEn[2][`TE/4/2*i+j] = {{8{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+3]}},
-                                           {8{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+2]}}} & {{2{bodyTn[(8*j  )+3]}}, 
+            zeroWriteEn[2][`TE/4/2*i+j] = {{4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+3]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+2]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+3]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+2]}}} & {{2{bodyTn[(8*j  )+3]}}, 
                                                                                            {2{bodyTn[(8*j  )+2]}},
-                                                                                           {2{bodyTn[(8*j  )+1]}},
-                                                                                           {2{bodyTn[(8*j  )+0]}},
                                                                                            {2{bodyTn[(8*j  )+3]}},
                                                                                            {2{bodyTn[(8*j  )+2]}},
                                                                                            {2{bodyTn[(8*j  )+1]}},
+                                                                                           {2{bodyTn[(8*j  )+0]}},
+                                                                                           {2{bodyTn[(8*j  )+1]}},
                                                                                            {2{bodyTn[(8*j  )+0]}}};
-            zeroWriteEn[3][`TE/4/2*i+j] = {{8{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+3]}},
-                                           {8{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+2]}}} & {{2{bodyTn[(8*j+4)+3]}}, 
+            zeroWriteEn[3][`TE/4/2*i+j] = {{4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+3]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+2]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+3]}},
+                                           {4{bodyTm[(`TE/4*`COMPRATIO)*4*cnt+4*i+2]}}} & {{2{bodyTn[(8*j+4)+3]}}, 
+                                                                                           {2{bodyTn[(8*j+4)+2]}},
+                                                                                           {2{bodyTn[(8*j+4)+3]}},
                                                                                            {2{bodyTn[(8*j+4)+2]}},
                                                                                            {2{bodyTn[(8*j+4)+1]}},
                                                                                            {2{bodyTn[(8*j+4)+0]}},
-                                                                                           {2{bodyTn[(8*j+4)+3]}},
-                                                                                           {2{bodyTn[(8*j+4)+2]}},
                                                                                            {2{bodyTn[(8*j+4)+1]}},
                                                                                            {2{bodyTn[(8*j+4)+0]}}};
           end
@@ -546,7 +562,7 @@ module zvt_ctrl (
                                                                                                {4{bodyTn[(4*j  )+0]}},
                                                                                                {4{bodyTn[(4*j  )+1]}},
                                                                                                {4{bodyTn[(4*j  )+0]}}};
-            zeroWriteEn[2][`TE/4*i+j] = {{8{bodyTm[`TE/2+(`TE/4*`COMPRATIO)*2*cnt+2*i+1]}},
+            zeroWriteEn[3][`TE/4*i+j] = {{8{bodyTm[`TE/2+(`TE/4*`COMPRATIO)*2*cnt+2*i+1]}},
                                          {8{bodyTm[`TE/2+(`TE/4*`COMPRATIO)*2*cnt+2*i  ]}}} & {{4{bodyTn[(4*j+2)+1]}}, 
                                                                                                {4{bodyTn[(4*j+2)+0]}},
                                                                                                {4{bodyTn[(4*j+2)+1]}},
@@ -591,10 +607,23 @@ module zvt_ctrl (
 
 
   // MT accessing
+`ifdef TB_SUPPORT
+  // uop tracking
+  logic [`NUM_BLK-1:0][`PC_WIDTH-1:0] readMtPc;
+  logic [`NUM_BLK-1:0][`PC_WIDTH-1:0] writeMtPc;
+`endif
+
   always_comb begin
     case(1'b1)
       isMv2Rvv,
       isVme2Lsu: begin
+      `ifdef TB_SUPPORT
+        readMtPc[0] = uop[0].uop_pc;
+        readMtPc[1] = uop[0].uop_pc;
+        readMtPc[2] = uop[0].uop_pc;
+        readMtPc[3] = uop[0].uop_pc;
+        writeMtPc   = 'b0;
+      `endif
         readMtIdx   = mvlsuReadMtIdx;
         readSubIdx  = mvlsuReadSubIdx;
         writeEn     = 'b0;  
@@ -604,6 +633,13 @@ module zvt_ctrl (
       end
       isMv2Vme,
       isLsu2Vme: begin
+      `ifdef TB_SUPPORT
+        readMtPc     = 'b0;
+        writeMtPc[0] = uop[0].uop_pc;
+        writeMtPc[1] = uop[0].uop_pc;
+        writeMtPc[2] = uop[0].uop_pc;
+        writeMtPc[3] = uop[0].uop_pc;
+      `endif
         readMtIdx   = 'b0;
         readSubIdx  = 'b0;
         writeEn     = mvlsuWriteEn;  
@@ -612,6 +648,13 @@ module zvt_ctrl (
         writeData   = mvlsuWriteData;
       end
       isZero: begin  
+      `ifdef TB_SUPPORT
+        readMtPc     = 'b0;
+        writeMtPc[0] = uop[0].uop_pc;
+        writeMtPc[1] = uop[0].uop_pc;
+        writeMtPc[2] = uop[0].uop_pc;
+        writeMtPc[3] = uop[0].uop_pc;
+      `endif
         readMtIdx   = 'b0;
         readSubIdx  = 'b0;
         writeEn     = zeroWriteEn;  
@@ -620,6 +663,10 @@ module zvt_ctrl (
         writeData   = 'b0;
       end
       default: begin
+      `ifdef TB_SUPPORT
+        readMtPc    = peReadPc;
+        writeMtPc   = peWritePc;
+      `endif
         readMtIdx   = peReadMtIdx;
         readSubIdx  = peReadSubIdx;
         writeEn     = peWriteEn;  
@@ -631,7 +678,7 @@ module zvt_ctrl (
   end
 
   // retire cmd information 
-  assign rtCmdVld       = isPe[0] ? &(peCmdVld&peCmdRdy) : uopVld[0]&uopRdy[0]&uop[0].last_uop_valid;
+  assign rtCmdVld       = isPe[0] ? &(peCmdVld&peCmdRdy) : !isMv2Rvv & uopVld[0] & uopRdy[0] & uop[0].last_uop_valid;
 `ifdef TB_SUPPORT
   assign rtCmd.inst_pc  = uop[0].uop_pc;
 `endif
@@ -641,17 +688,24 @@ module zvt_ctrl (
   assign rtCmd.isZero   = isZero;
   assign rtCmd.isPe     = isPe[0];
 `ifdef RVVI_ON
-  assign rtCmd.mt_index = uop[0].dst_index[4:1];
+  assign rtCmd.tssIndex = index;
+  assign rtCmd.tssPattern = pattern;
+  assign rtCmd.mt_index = (isMv2Vme || isLsu2Vme) ? tile : uop[0].dst_index[4:1];
   assign rtCmd.eew_mt   = uop[0].eew_mt;
-  assign miscRtMtIdx    = uop[0].dst_index[4:1];
+  assign miscRtMtIdx    = (isMv2Vme || isLsu2Vme) ? tile : uop[0].dst_index[4:1];
 `endif
 
+  // Every rtCmd push must be matched by exactly one push into each of zvt's
+  // four mtInfoRs FIFOs or vmeRt wedges. PE ops push those via peRtVld from
+  // the array; every other op (lsu, moves, zero) pushes all four together
+  // through miscRtVld, on the same cycle its rtCmd entry is pushed.
   always_comb begin
     case(isVme2Lsu) 
       isVme2Lsu,
       isLsu2Vme,
       isMv2Vme: miscRtVld = uopVld[0]&uopRdy[0]&uop[0].last_uop_valid;
       isZero:   miscRtVld = uopVld[0]&uopRdy[0]&cntCr;
+      // isMv2Rvv: miscRtVld = 'b0;
       default:  miscRtVld = 'b0;
     endcase
   end

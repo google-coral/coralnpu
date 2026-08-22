@@ -22,6 +22,13 @@ module zvt_pe_adder_fp_lane#(
   output fpnew_pkg::status_t          status,
   output logic                        down_valid
 );
+  // ----------
+  // Input isolation
+  // ----------
+  wire in_valid = up_valid && reg_enable[0];
+  wire [1:0][`WORD_WIDTH-1:0]  iso_operands = in_valid ? operands : '0;
+  wire                         iso_do_subtract = in_valid ? do_subtract : '0;
+  wire fpnew_pkg::roundmode_e  iso_rnd_mode = in_valid ? rnd_mode : fpnew_pkg::roundmode_e'(0);
 
   // ----------
   // Add / subtract with align
@@ -38,13 +45,14 @@ module zvt_pe_adder_fp_lane#(
     .OUT_EXP_BITS(32'd9),
     .OUT_SIG_BITS(32'd24)
   ) u_addfront (
-    .a_sign     (operands[0][31]),
-    .a_exponent (operands[0][30:23]),
-    .a_mantissa (operands[0][22: 0]),
-    .b_sign     (operands[1][31]),
-    .b_exponent (operands[1][30:23]),
-    .b_mantissa (operands[1][22: 0]),
-    .do_subtract(do_subtract),
+    .a_sign     (iso_operands[0][31]),
+    .a_exponent (iso_operands[0][30:23]),
+    .a_mantissa (iso_operands[0][22: 0]),
+    .b_sign     (iso_operands[1][31]),
+    .b_exponent (iso_operands[1][30:23]),
+    .b_mantissa (iso_operands[1][22: 0]),
+    .do_subtract(iso_do_subtract),
+    .rnd_mode   (iso_rnd_mode),
 
     // add/subtract output
     .result_sign       (sum_sign       ),
@@ -65,7 +73,10 @@ module zvt_pe_adder_fp_lane#(
   `ifdef ASSERT_ON
     `rvv_expect(`WORD_WIDTH == 32)
       else $warning("We only support FP32 currently");
-    `rvv_forbid(up_valid && reg_enable[0] && sum_significand[23] != (sum_exponent == 0))
+    
+    // If significand[23] == 1: significand implies it is a normal
+    // If sum_exponent == 0: exponent implies it is a subnormal
+    `rvv_forbid(up_valid && reg_enable[0] && sum_significand[23] == (sum_exponent == 0))
       else $warning("Significand and exponent argue on sum stage is a subnormal");
   `endif
 
@@ -96,7 +107,7 @@ module zvt_pe_adder_fp_lane#(
   assign mid_pipe[0].special_inf_sign = special_inf_sign;
   assign mid_pipe[0].special_invalid  = special_invalid;
   assign mid_pipe[0].align_overflow   = align_overflow;
-  assign mid_pipe[0].rnd_mode         = rnd_mode;
+  assign mid_pipe[0].rnd_mode         = rnd_mode;  // no need to isolate since gate signal is identical to EN
 
   // Generate the register stages
   for (genvar i = 0; i < NUM_MID_REGS; i++) begin: gen_mid_pipeline
@@ -130,7 +141,7 @@ module zvt_pe_adder_fp_lane#(
     .status              (round_status));
 
 
-  wire [31:0] fp32_inf = {mid_pipe[NUM_MID_REGS].special_inf_sign, 8'b1, 23'b0};
+  wire [31:0] fp32_inf = {mid_pipe[NUM_MID_REGS].special_inf_sign, 8'hff, 23'b0};
    // special mux
   always_comb begin
     if (mid_pipe[NUM_MID_REGS].special_nan) begin

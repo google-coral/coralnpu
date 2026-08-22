@@ -13,11 +13,16 @@ module zvt_pe_adder_int_lane#(
   output fpnew_pkg::status_t          status,
   output logic                        down_valid
 );
- 
-  wire [`WORD_WIDTH-1:0] src2 = do_subtract ? ~operands[1] : operands[1];
-  wire carry_in = do_subtract;
 
-  wire [`WORD_WIDTH-1:0] sum = operands[0] + src2 + carry_in; // let it overflow
+  wire in_valid = up_valid && reg_enable[0];
+
+  wire [1:0][`WORD_WIDTH-1:0] iso_operands = in_valid ? operands : '0;
+  wire iso_do_subtract = in_valid ? do_subtract : 1'b0;
+ 
+  wire [`WORD_WIDTH-1:0] src2 = iso_do_subtract ? ~iso_operands[1] : iso_operands[1];
+  wire carry_in = iso_do_subtract;
+
+  wire [`WORD_WIDTH-1:0] sum = iso_operands[0] + src2 + carry_in; // let it overflow
 
   typedef struct packed {
     logic en;

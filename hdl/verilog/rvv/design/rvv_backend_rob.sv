@@ -162,8 +162,8 @@ module rvv_backend_rob
         .rst_n        (rst_n),
       // push side
         .push         (uop_valid_dp2rob),
-        .datain       (uop_valid_dp2rob),
         .pushRdy      (),
+        .datain       (uop_valid_dp2rob),
         .full         (),
         .almost_full  (),
       // pop side

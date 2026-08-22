@@ -1541,31 +1541,14 @@ module rvv_backend_decode_unit_ari
                   if(csr_sew==SEW16) begin
                     emul_vd       = EMUL2;
                     emul_max      = EMUL2;
-                    if((!tss.pattern && (|csr_tm[$clog2(`TE):$clog2(`TE)-1])) || 
-                       ( tss.pattern && (|csr_tn[$clog2(`TE):$clog2(`TE)-1])) )
-                      uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                    uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
                   end
                 end
                 LMUL4: begin
                   if(csr_sew==SEW32) begin
                     emul_vd       = EMUL4;
                     emul_max      = EMUL4;
-                    if(!tss.pattern) begin
-                      if(csr_tm[$clog2(`TE):$clog2(`TE)-2]>=3'b011)
-                        uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-                      else if(csr_tm[$clog2(`TE):$clog2(`TE)-2]>=3'b010)
-                        uop_index_max = (`UOP_INDEX_WIDTH)'('d2);
-                      else if(csr_tm[$clog2(`TE):$clog2(`TE)-2]>=3'b001)
-                        uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-                    end
-                    else begin
-                      if(csr_tn[$clog2(`TE):$clog2(`TE)-2]>=3'b011)
-                        uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-                      else if(csr_tn[$clog2(`TE):$clog2(`TE)-2]>=3'b010)
-                        uop_index_max = (`UOP_INDEX_WIDTH)'('d2);
-                      else if(csr_tn[$clog2(`TE):$clog2(`TE)-2]>=3'b001)
-                        uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-                    end
+                    uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
                   end
                 end
               endcase
@@ -2714,17 +2697,30 @@ module rvv_backend_decode_unit_ari
                   endcase
                 end
                 else if(vs2_opcode==VTZERO) begin
-                  case({csr_sew, csr_mtwiden})
-                  `ifdef ZVTI16I32_ON
-                    {SEW16, 2'd2}: begin
+                  case(csr_sew)
+                    SEW8: begin
+                      eew_mt      = EEW8;
+                      eew_max     = EEW8;
+                    end
+                    SEW16: begin
+                      eew_mt      = EEW16;
+                      eew_max     = EEW16;
+                    end
+                    SEW32: begin
                       eew_mt      = EEW32;
                       eew_max     = EEW32;
                     end
-                  `endif
-                    {SEW8, 2'd3}: begin
-                      eew_mt      = EEW32;
-                      eew_max     = EEW32;
-                    end
+                  //case({csr_sew, csr_mtwiden})
+                  //`ifdef ZVTI16I32_ON
+                  //  {SEW16, 2'd2}: begin
+                  //    eew_mt      = EEW32;
+                  //    eew_max     = EEW32;
+                  //  end
+                  //`endif
+                  //  {SEW8, 2'd3}: begin
+                  //    eew_mt      = EEW32;
+                  //    eew_max     = EEW32;
+                  //  end
                   endcase
                 end
               `endif
@@ -3574,7 +3570,7 @@ module rvv_backend_decode_unit_ari
             case(vs2_opcode)
               VMV_S_X: check_special = inst_vm&(inst_vs2=='b0)&(csr_vstart=='b0);
             `ifdef ZVT_ON
-              VTMVVT:  check_special = inst_vm&check_tm&check_tn&(csr_vstart<=(`VSTART_WIDTH)'(tss.index));
+              VTMVVT:  check_special = inst_vm;
               VTZERO:  check_special = inst_vm&(inst_vs1==5'b00000)&(inst_vd[0]=='b0)&check_mtd_align&check_tm&check_tn;
             `endif
             endcase
@@ -3587,7 +3583,7 @@ module rvv_backend_decode_unit_ari
 
         `ifdef ZVT_ON
           VCOMPRESS_VTMVTV: begin
-            check_special = inst_vm&(inst_vd==5'b00000)&check_tm&check_tn&(csr_vstart<=(`VSTART_WIDTH)'(tss.index));
+            check_special = inst_vm&(inst_vd==5'b00000)&check_tn&(csr_vstart<=(`VSTART_WIDTH)'(tss.index));
           end
         `endif
         endcase

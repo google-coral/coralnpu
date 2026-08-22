@@ -22,6 +22,9 @@ module fp_addfront#(
 
   // input control,
   input logic                            do_subtract,
+  // Only used to pick the sign of an exact-zero sum (IEEE 754 6.3: + in all
+  // rounding modes except roundTowardNegative).
+  input fpnew_pkg::roundmode_e          rnd_mode,
 
   // normal resultuct
   output logic                           result_sign,
@@ -111,9 +114,8 @@ module fp_addfront#(
     ) u_in_align (
       .in_exponent   (in_exponents[i]),
       .in_significand(in_significands[i]),
-
-      .ext_lzc_cnt   ('0),
-      .ext_in_zero   (1'b0),
+      .ext_lzc_cnt   ('1), // dont care
+      .ext_in_zero   ('1), // dont care
 
       .align_minimum_exponent(subnormal_fix_align_exp),
       .align_trimmed_exponent(max_exponent),
@@ -198,6 +200,12 @@ module fp_addfront#(
     .overflow(align_overflow)
   );
 
-  assign result_sign = a_sign ^ sum_negative;
+  // Exact-zero sums from an effective subtraction are +0 in every rounding
+  // mode except roundTowardNegative; an effective addition of zeros keeps the
+  // operands' common sign.
+  wire effective_subtraction = a_sign ^ b_sign ^ do_subtract;
+  assign result_sign = sum_is_zero
+      ? (effective_subtraction ? (rnd_mode == fpnew_pkg::RDN) : a_sign)
+      : (a_sign ^ sum_negative);
 
 endmodule

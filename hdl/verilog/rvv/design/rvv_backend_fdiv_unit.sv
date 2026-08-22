@@ -105,7 +105,7 @@ module rvv_backend_fdiv_unit(
   for(genvar i=0;i<`VLENW;i++) begin:fdiv
     fpnew_divsqrt_th_64_multi #(
       .FpFmtConfig        (5'b10000),
-      .NumPipeRegs        (1),
+      .NumPipeRegs        (32'd1),
       .PipeConfig         (fpnew_pkg::BEFORE)
     )
     fdiv(

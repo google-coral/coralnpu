@@ -36,9 +36,9 @@ module zvt_pe_mulbulk #(
   // Output signals
   output logic [WIDTH-1:0]            result,   
   output fpnew_pkg::status_t          status,     // fp exception
-  output TAG_TYPE                     out_tag,    // Command information.
+  output TAG_TYPE [NUM_PIPE_REGS:1]   out_tag,    // Command information.
   // Output handshake
-  output logic                        out_valid,
+  output logic   [NUM_PIPE_REGS:1]    out_valid,
   input  logic                        out_ready,
   // Indication of valid data in flight
   output logic                        busy
@@ -57,24 +57,24 @@ module zvt_pe_mulbulk #(
     .NUM_PIPE_REGS(NUM_PIPE_REGS),
     .REMV_PIPE_BUBBLE(REMV_PIPE_BUBBLE)
   ) u_handshake (
-    .clk(clk),
-    .rst_n(rst_n),
-    .flush(flush),
-    .up_valid(in_valid),
-    .up_ready(in_ready),
-    .down_valid(out_valid),
-    .down_ready(out_ready),
-    .reg_enable(reg_enable),
-    .valids(),
-    .busy(busy)
+    .clk        (clk),
+    .rst_n      (rst_n),
+    .flush      (flush),
+    .up_valid   (in_valid),
+    .up_ready   (in_ready),
+    .down_valid (/*unused*/),
+    .down_ready (out_ready),
+    .reg_enable (reg_enable),
+    .valids     (out_valid),
+    .busy       (busy)
   );
 
   // ----------
   // Global data channel(tag)
   // ----------
-  TAG_TYPE [0:NUM_PIPE_REGS] pip_tag;
+  TAG_TYPE [NUM_PIPE_REGS:0] pip_tag;
   assign pip_tag[0] = in_tag;
-  assign out_tag = pip_tag[NUM_PIPE_REGS];
+  assign out_tag = pip_tag[NUM_PIPE_REGS:1];
   for (genvar i = 0; i < NUM_PIPE_REGS; i++) begin: gen_tag_pip
     edff #(.T(TAG_TYPE)) tag_reg(.q(pip_tag[i+1]), .d(pip_tag[i]), .e(reg_enable[i]), .clk(clk), .rst_n(rst_n));
   end
@@ -205,7 +205,7 @@ module zvt_pe_mulbulk #(
     .reg_enable(mid_reg_enable),
     .up_valid(inp_lane_int),
 
-    .operand_signed({op == INTMUL, op_mod}),
+    .operand_signed({op_mod_q, op_q == INTMUL}),
     .operands(operands_q),
     .mask(mask_q),
     .src_fmt(isrc_fmt_q),

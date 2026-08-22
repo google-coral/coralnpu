@@ -81,9 +81,11 @@ typedef struct packed {
   RVVLMUL                       lmul_orig;
 `ifdef ZVT_ON
   // VME (Zvt) non-tile state. Packed mtype view assembled from {tm, tk,
-  // mtwiden} per §15.1.1.2; widths follow the literal spec bit allocation
-  // (tk in [6:5] = 2 bits, mtwiden in [1:0] = 2 bits, tm in [23:10] = 14
-  // bits).
+  // mtwiden} per ?5.1.1.2.
+  // Note: The spec (v0.3) has a discrepancy: it defines tk as tk[2:0] (3 bits,
+  // values 0-4) but allocates it to bits 6:5 (2 bits). We assume tk is 3 bits
+  // and occupies bits 7:5, which shifts the reserved bits above it to 9:8.
+  // tm is in [23:10] (14 bits), mtwiden is in [1:0] (2 bits).
   logic                         altfmt;
   logic [1:0]                   mtwiden;
   logic [13:0]                  tm;
@@ -752,6 +754,8 @@ typedef struct packed {
   logic                                               isZero;
   logic                                               isPe;
 `ifdef RVVI_ON
+  logic [$clog2(`TE)-1:0]                             tssIndex;
+  logic                                               tssPattern;
   logic [$clog2(`NUM_MT)-1:0]                         mt_index;
   EEW_e                                               eew_mt;
 `endif
@@ -766,6 +770,13 @@ typedef struct packed {
   logic [3:0][`NUM_SUBTILE/2-1:0][`SUBTILE_SIZE*8-1:0]      rvviData;
 `endif  
 } MT_INFO_t;
+
+`ifdef RVVI_ON
+typedef struct packed {
+  logic [`PC_WIDTH-1:0]                               uop_pc;
+  logic [$clog2(`NUM_MT)-1:0]                         mtIdx;
+} PE_RTINFO_t;
+`endif
 
 typedef struct packed {
 `ifdef TB_SUPPORT

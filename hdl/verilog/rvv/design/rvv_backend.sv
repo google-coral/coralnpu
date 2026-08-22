@@ -178,10 +178,8 @@ module rvv_backend
 
     logic         [`NUM_DE_INST-1:0]      lcmd_valid_de2lcq;
     LCMD_t        [`NUM_DE_INST-1:0]      lcmd_de2lcq;
-  `ifdef TB_SUPPORT
     logic         [`NUM_DE_INST-1:0]      de2rvvi_valid;
     ROB2RT_t      [`NUM_DE_INST-1:0]      de2rvvi_data;
-  `endif
   // Legal command queue to Decode in DE2 stage
     logic         [`NUM_DE_INST-1:0]      lcmd_valid_lcq2de;
     LCMD_t        [`NUM_DE_INST-1:0]      lcmd_lcq2de;
@@ -416,9 +414,9 @@ module rvv_backend
         .pop          (pop_de2cq),
         .dataout      (inst_cq2de),
       // fifo status
-        .empty        (fifo_empty_cq2de),
         .full         (),
         .almost_full  (),
+        .empty        (fifo_empty_cq2de),
         .almost_empty (fifo_almost_empty_cq2de),
         .clear        (trap_flush_rvv),
         .fifo_data    (),
@@ -441,11 +439,9 @@ module rvv_backend
       .inst_valid         (inst_valid_cq2de),
       .inst               (inst_cq2de),
       .lcmd_valid         (lcmd_valid_de2lcq),
-      .lcmd               (lcmd_de2lcq)
-     `ifdef TB_SUPPORT
-      ,.de2rvvi_valid     (de2rvvi_valid),
+      .lcmd               (lcmd_de2lcq),
+      .de2rvvi_valid      (de2rvvi_valid),
       .de2rvvi_data       (de2rvvi_data)
-     `endif
     );
   
   // Legal Command Queue
@@ -893,7 +889,7 @@ module rvv_backend
       // fifo status
         .full         (),
         .almost_full  (),
-        .empty        (mapinfo_empty),
+        .empty        (),
         .almost_empty (mapinfo_almost_empty),
         .clear        (trap_flush_rvv),
         .fifo_data    (),
@@ -950,7 +946,7 @@ module rvv_backend
       // fifo status
         .full         (),
         .almost_full  (lsu_res_almost_full),
-        .empty        (lsu_res_empty),
+        .empty        (),
         .almost_empty (lsu_res_almost_empty),
         .clear        (trap_flush_rvv),
         .fifo_data    (),

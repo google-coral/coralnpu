@@ -44,14 +44,12 @@ module handshake_multistage_ctrl#(
   generate if (REMV_PIPE_BUBBLE) begin: remv_bubb
     // If we need to remove pipeline bubbles, every two stages will handshake
     for (genvar i = 0; i < NUM_PIPE_REGS; i++) begin: gen_handshake
-
       // For each stage:    (not back-pressure) or (this stage has bubble)
-      assign pip_ready[i] =  pip_ready[i+1]     |   ~pip_valid[i+1];
+      assign pip_ready[i] = pip_ready[i+1] | ~pip_valid[i+1];
       // use ready as enable for valid, indicates this stage can receive data
       cdffr #(.T(logic)) valid_reg(.q(pip_valid[i+1]), .d(pip_valid[i]), .c(flush), .e(pip_ready[i]), .clk(clk), .rst_n(rst_n));
       // data register enable = handshake success on this stage
       assign reg_enable[i] = pip_valid[i] & pip_ready[i];
-
     end
   end else begin: keep_bubb
     // If no need to remove bubbles, the pipeline will be treated as a shift register

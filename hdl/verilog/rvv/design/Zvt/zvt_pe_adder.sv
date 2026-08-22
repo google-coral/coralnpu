@@ -34,7 +34,6 @@ module zvt_pe_adder #(
   // ----------
   // Handshake & control logic
   // ----------
-  logic down_valid;  // unused
   // Descending range to match `handshake_multistage_ctrl`'s [N-1:0]
   // declaration (see comment in zvt_pe_mulbulk.sv).
   logic [NUM_PIPE_REGS-1:0] reg_enable;  // reg_ena[i] indicates data reg enable signal on i-th stage
@@ -42,16 +41,16 @@ module zvt_pe_adder #(
     .NUM_PIPE_REGS(NUM_PIPE_REGS),
     .REMV_PIPE_BUBBLE(REMV_PIPE_BUBBLE)
   ) u_handshake (
-    .clk(clk),
-    .rst_n(rst_n),
-    .flush(flush),
-    .up_valid(in_valid),
-    .up_ready(in_ready),
-    .down_valid(down_valid),
-    .down_ready(out_ready),
-    .reg_enable(reg_enable),
-    .valids(out_valid),
-    .busy(busy)
+    .clk        (clk),
+    .rst_n      (rst_n),
+    .flush      (flush),
+    .up_valid   (in_valid),
+    .up_ready   (in_ready),
+    .down_valid (/*unused*/),
+    .down_ready (out_ready),
+    .reg_enable (reg_enable),
+    .valids     (out_valid),
+    .busy       (busy)
   );
 
   // ----------

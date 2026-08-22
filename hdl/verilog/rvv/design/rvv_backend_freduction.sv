@@ -16,7 +16,7 @@ module rvv_backend_freduction(
 );
   localparam IDLE = 1'b0;
   localparam MATH = 1'b1;
-  localparam PipeLine = 3;
+  localparam int unsigned PipeLine = 32'd3;
   localparam CTRW = $clog2(`VLEN/`WORD_WIDTH);
   // global signals
   input   logic     clk;

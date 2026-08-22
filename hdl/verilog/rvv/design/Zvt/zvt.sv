@@ -78,6 +78,10 @@ module zvt (
   logic [`ZVT_LMUL-1:0] peCmdVld;
   logic [`ZVT_LMUL-1:0] peCmdRdy;
   logic                 peBusy;  
+`ifdef TB_SUPPORT
+  logic [`NUM_BLK-1:0][`PC_WIDTH-1:0]                               peReadPc;
+  logic [`NUM_BLK-1:0][`PC_WIDTH-1:0]                               peWritePc;
+`endif
   logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_MT)-1:0]       peReadMtIdx;
   logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_SUBTILE)-1:0]  peReadSubIdx;
   logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][`SUBTILE_SIZE-1:0]         peWriteEn;  
@@ -99,8 +103,8 @@ module zvt (
   logic                 miscRtVld;
   logic [`NUM_BLK-1:0]  peRtVld;
 `ifdef RVVI_ON
-  logic [$clog2(`NUM_MT)-1:0]                miscRtMtIdx;
-  logic [`NUM_BLK-1:0][$clog2(`NUM_MT)-1:0]  peRtMtIdx;
+  logic [$clog2(`NUM_MT)-1:0] miscRtMtIdx;
+  PE_RTINFO_t [`NUM_BLK-1:0]  peRtInfo;
 `endif
 
   // Controller
@@ -124,6 +128,10 @@ module zvt (
     .peBusy           (peBusy),
     .peReadMtIdx      (peReadMtIdx),
     .peReadSubIdx     (peReadSubIdx),
+  `ifdef TB_SUPPORT
+    .peReadPc         (peReadPc),
+    .peWritePc        (peWritePc),
+  `endif
     .peWriteEn        (peWriteEn),  
     .peWriteMtIdx     (peWriteMtIdx),
     .peWriteSubIdx    (peWriteSubIdx),
@@ -164,10 +172,10 @@ module zvt (
     .datain       (vmelsu),
     .pop          (uop_vme2lsu_vld & uop_vme2lsu_rdy),
     .dataout      (uop_vme2lsu),
-    .almost_full  (vmelsuAfull),
-    .almost_empty (vmelsuAempty),
     .full         (),
+    .almost_full  (vmelsuAfull),
     .empty        (),
+    .almost_empty (vmelsuAempty),
     .fifo_data    (),
     .wptr         (),
     .rptr         (),
@@ -189,10 +197,10 @@ module zvt (
     .datain       (uop_lsu2vme),
     .pop          (vmelsuresVld & vmelsuresRdy),
     .dataout      (vmelsures),
-    .almost_full  (vmelsuresAfull),
-    .almost_empty (vmelsuresAempty),
     .full         (),
+    .almost_full  (vmelsuresAfull),
     .empty        (),
+    .almost_empty (vmelsuresAempty),
     .fifo_data    (),
     .wptr         (),
     .rptr         (),
@@ -210,6 +218,10 @@ module zvt (
     .readMtIdx    (peReadMtIdx),
     .readSubIdx   (peReadSubIdx),
     .readData     (readData),
+  `ifdef TB_SUPPORT
+    .readPc       (peReadPc),
+    .writePc      (peWritePc),
+  `endif
     .writeEn      (peWriteEn),  
     .writeMtIdx   (peWriteMtIdx),
     .writeSubIdx  (peWriteSubIdx),
@@ -219,7 +231,7 @@ module zvt (
     .fpexpRdy     (fpexpRdy),
     .peRtVld      (peRtVld),
   `ifdef RVVI_ON
-    .peRtMtIdx    (peRtMtIdx),
+    .peRtInfo     (peRtInfo),
   `endif
     .flush        (flush),
     .busy         (peBusy)
@@ -274,7 +286,7 @@ module zvt (
   logic [$clog2(`NUM_MT)-1:0] blk0RtMtIdx, blk1RtMtIdx, blk2RtMtIdx, blk3RtMtIdx;
 
   dff #(.WIDTH($clog2(`NUM_MT))) regMiscRtMtIdx (.q(miscRtMtIdxD1), .clk(clk), .rst_n(rst_n), .d(miscRtMtIdx));
-  dff #(.WIDTH($clog2(`NUM_MT))) regBlk0RtMtIdx (.q(blk0RtMtIdx  ), .clk(clk), .rst_n(rst_n), .d(peRtMtIdx[0]));
+  dff #(.WIDTH($clog2(`NUM_MT))) regBlk0RtMtIdx (.q(blk0RtMtIdx  ), .clk(clk), .rst_n(rst_n), .d(peRtInfo[0].mtIdx));
   dff #(.WIDTH($clog2(`NUM_MT))) regBlk1RtMtIdx (.q(blk1RtMtIdx  ), .clk(clk), .rst_n(rst_n), .d(blk0RtMtIdx));
   dff #(.WIDTH($clog2(`NUM_MT))) regBlk3RtMtIdx (.q(blk3RtMtIdx  ), .clk(clk), .rst_n(rst_n), .d(blk1RtMtIdx));
   
@@ -439,10 +451,10 @@ module zvt (
 
       if(blk3RtVld) begin
         // default: EEW32
-        rvviMtIdx[BLKID3][0] = blk0RtMtIdx; 
-        rvviMtIdx[BLKID3][1] = blk0RtMtIdx + 'd1; 
-        rvviMtIdx[BLKID3][2] = blk0RtMtIdx + 'd2; 
-        rvviMtIdx[BLKID3][3] = blk0RtMtIdx + 'd3; 
+        rvviMtIdx[BLKID3][0] = blk3RtMtIdx; 
+        rvviMtIdx[BLKID3][1] = blk3RtMtIdx + 'd1; 
+        rvviMtIdx[BLKID3][2] = blk3RtMtIdx + 'd2; 
+        rvviMtIdx[BLKID3][3] = blk3RtMtIdx + 'd3; 
 
         for(int i=0;i<`TE/4;i++) begin
           for(int j=0;j<`TE/8;j++) begin
@@ -541,9 +553,27 @@ module zvt (
   // mt_index
   always_comb begin
     case(vmeRtCmd.eew_mt)
-      EEW8:    vmeRt.mtIdxVld = vmeRtCmd.isStore ? 'b0 : 4'b0001;
-      EEW16:   vmeRt.mtIdxVld = vmeRtCmd.isStore ? 'b0 : 4'b0011;
-      default: vmeRt.mtIdxVld = vmeRtCmd.isStore ? 'b0 : 4'b1111;
+      EEW8: begin   
+        vmeRt.mtIdxVld = vmeRtCmd.isStore ? 'b0 : 4'b0001;
+      end
+      EEW16: begin  
+        if(vmeRtCmd.isStore)
+          vmeRt.mtIdxVld = 'b0;
+        else if(vmeRtCmd.isMv2Vme && !vmeRtCmd.tssPattern)
+          vmeRt.mtIdxVld = vmeRtCmd.tssIndex[1] ? 4'b0010 : 4'b0001;
+        else 
+          vmeRt.mtIdxVld = 4'b0011;
+      end
+      default: begin
+        if(vmeRtCmd.isStore)
+          vmeRt.mtIdxVld = 'b0;
+        else if(vmeRtCmd.isMv2Vme && !vmeRtCmd.tssPattern)
+          vmeRt.mtIdxVld = vmeRtCmd.tssIndex[$clog2(`TE/2)] ? 4'b1100 : 4'b0011;
+        else if(vmeRtCmd.isMv2Vme && vmeRtCmd.tssPattern)
+          vmeRt.mtIdxVld = vmeRtCmd.tssIndex[1] ? 4'b1010 : 4'b0101;
+        else
+          vmeRt.mtIdxVld = 4'b1111;
+      end
     endcase
   end
 

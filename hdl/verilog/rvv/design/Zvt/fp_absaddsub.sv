@@ -23,7 +23,7 @@ module fp_absaddsub#(
     wire [IN_WIDTH-1:0] b_s = do_subtract ? ~b : b;
     wire carry_in = do_subtract;
 
-    wire [IN_WIDTH:0] raw_sum = {1'b0, a}+b_s+carry_in;
+    wire [IN_WIDTH:0] raw_sum = {1'b0, a}+{do_subtract, b_s}+carry_in;
 
     assign sum_negative = do_subtract && raw_sum[IN_WIDTH];
 
@@ -55,7 +55,7 @@ module fp_absaddsub#(
     //   b_low != 0 -> borrowed  -> carry_in_ab = 0
     wire                       carry_in_ab = do_subtract & (~|b_low);
     wire [VALID_HIGH_BITS-1:0] b_high_s    = do_subtract ? ~b_high : b_high;
-    wire [VALID_HIGH_BITS:0]   ab_high     = {1'b0, a_high} + b_high_s + carry_in_ab;
+    wire [VALID_HIGH_BITS:0]   ab_high     = {1'b0, a_high} + {do_subtract, b_high_s} + carry_in_ab;
 
     assign sum_negative = do_subtract && ab_high[VALID_HIGH_BITS];
 
@@ -65,8 +65,8 @@ module fp_absaddsub#(
       wire [VALID_HIGH_BITS-1:0] a_high_s    = do_subtract ? ~a_high : a_high;
       wire [VALID_HIGH_BITS:0]   ba_high     = {1'b0, b_high} + a_high_s + carry_in_ba;
       wire [VALID_HIGH_BITS-1:0] sub_high    =
-          sum_negative ? ab_high[VALID_HIGH_BITS-1:0]
-                       : ba_high[VALID_HIGH_BITS-1:0];
+          sum_negative ? ba_high[VALID_HIGH_BITS-1:0]
+                       : ab_high[VALID_HIGH_BITS-1:0];
       assign sum = {do_subtract ? {1'b0, sub_high} : ab_high, low_result};
     end else begin: g_neg
       // No dedicated b-a subtractor: derive b_high-a_high from ab_high[low]
@@ -76,15 +76,16 @@ module fp_absaddsub#(
       wire [VALID_HIGH_BITS-1:0] ba_high_bits =
           ~ab_high[VALID_HIGH_BITS-1:0] + nonzero_low_is_zero;
       wire [VALID_HIGH_BITS-1:0] sub_high =
-          sum_negative ? ab_high[VALID_HIGH_BITS-1:0] : ba_high_bits;
+          sum_negative ? ba_high_bits : ab_high[VALID_HIGH_BITS-1:0];
       assign sum = {do_subtract ? {1'b0, sub_high} : ab_high, low_result};
     end
   end endgenerate
 
   generate if (ENABLE_LZA) begin: g_lza
-    fp_lza #(.WIDTH(IN_WIDTH)) u_lza (
-      .a   (a),
-      .b   (b),
+    // Output has IN_WIDTH+1 bits, so zero-extends inputs here
+    fp_lza #(.WIDTH(IN_WIDTH+1)) u_lza (
+      .a   ({1'b0, a}),
+      .b   ({1'b0, b}),
       .cin (do_subtract),
       .sub (do_subtract),
       .scnt(lza_scnt)

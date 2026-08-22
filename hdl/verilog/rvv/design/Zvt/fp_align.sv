@@ -80,7 +80,11 @@ module fp_align#(
 
   localparam int unsigned MAX_EXP_BITS = 32'(2 + (IN_EXP_BITS > OUT_EXP_BITS ? IN_EXP_BITS : OUT_EXP_BITS));
   wire signed[MAX_EXP_BITS-1:0] align_exponent_distance = MAX_EXP_BITS'($signed(in_exponent - align_minimum_exponent)); // Er=E0-Em
-  wire [$clog2(OUT_SIG_BITS+1+IN_SIG_BITS+1)-1:0] tiny_shamt = align_exponent_distance + OUT_SIG_BITS + 1;
+  // Compute t in the wider signed exponent domain so we can catch very-negative Er that would
+  // otherwise wrap into a spurious small positive when truncated to the narrow shamt width.
+  wire signed [MAX_EXP_BITS-1:0] tiny_shamt_wide = align_exponent_distance + MAX_EXP_BITS'(OUT_SIG_BITS + 1);
+  wire tiny_shamt_negative = tiny_shamt_wide[MAX_EXP_BITS-1];
+  wire [$clog2(OUT_SIG_BITS+1+IN_SIG_BITS+1)-1:0] tiny_shamt = tiny_shamt_wide[$clog2(OUT_SIG_BITS+1+IN_SIG_BITS+1)-1:0];
   // t=Er+WO+1=E0-Em+WO+1+1
   logic signed[MAX_EXP_BITS-1:0] out_exponent_raw;
 
@@ -88,8 +92,11 @@ module fp_align#(
   wire in_case_c = ($signed(align_exponent_distance) >= MAX_EXP_BITS'($signed({1'b0, lzc_cnt_fix})));
 
   always_comb begin
-    exponent_too_tiny = 1'b1;
-    if (in_case_c) begin
+    exponent_too_tiny = 1'b0;
+    if (in_zero) begin
+      shamt = '0;
+      out_exponent_raw = (MAX_EXP_BITS)'(align_trimmed_exponent);
+    end else if (in_case_c) begin
       // (c) can be aligned to MSB
       shamt = {1'b0, lzc_cnt} + {1'b0, OUT_SIG_BITS} + 1;
       out_exponent_raw = (MAX_EXP_BITS)'(in_exponent - lzc_cnt);
@@ -99,13 +106,13 @@ module fp_align#(
     end else begin
       // (ab) cannot be aligned to MSB 
       out_exponent_raw = (MAX_EXP_BITS)'(align_trimmed_exponent);
-      if ($unsigned(tiny_shamt) >= ($clog2(OUT_SIG_BITS+1+IN_SIG_BITS+1))'($unsigned(lzc_cnt_fix))) begin
+      if (!tiny_shamt_negative && $unsigned(tiny_shamt) >= ($clog2(OUT_SIG_BITS+1+IN_SIG_BITS+1))'($unsigned(lzc_cnt_fix))) begin
         // (b) Still in significand/round_bit/stycky_msb range
         shamt = tiny_shamt;
       end else begin
         // (a) All in sticky range, can set shamt to 0
         shamt = 0;
-        exponent_too_tiny = 0;
+        exponent_too_tiny = 1'b1;
       end
     end
   end
