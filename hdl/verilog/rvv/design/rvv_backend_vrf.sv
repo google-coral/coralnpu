@@ -13,7 +13,7 @@ module rvv_backend_vrf(/*AUTOARG*/
   vrf2pmt_rd_data,
   rt2vrf_wr_valid, 
   rt2vrf_wr_data
-`ifdef TB_SUPPORT
+`ifdef RVVI_ON
   ,vrf_data
 `endif
 );  
@@ -39,12 +39,10 @@ output  logic     [`VLEN-1:0]                   vrf2pmt_rd_data;
 input   logic     [`NUM_RT_UOP-1:0]             rt2vrf_wr_valid;
 input   RT2VRF_t  [`NUM_RT_UOP-1:0]             rt2vrf_wr_data;
 
-`ifdef TB_SUPPORT
+`ifdef RVVI_ON
 // send VRF updating value to RVVI, corresponding to rt2vrf_wr_data;
 output  logic     [`NUM_VRF-1:0][`VLEN-1:0] vrf_data;
 `endif
-
-genvar  j,k;
 
 //
 // code start
@@ -61,30 +59,28 @@ logic [`NUM_VRF-1:0][`VLEN-1:0]                   vrf_wr_data_full;
 logic [`NUM_VRF-1:0][`VLEN-1:0]                   vrf_rd_data_full;   // full 32 VLEN data from VRF
 
 // RT2VRF data unpack
-generate
-  for (j=0;j<`NUM_RT_UOP;j++) begin: GET_WT_DATA
-    assign wr_valid[j] = rt2vrf_wr_valid[j];
-    assign wr_addr[j]  = rt2vrf_wr_data[j].rt_index;
-    assign wr_data[j]  = rt2vrf_wr_data[j].rt_data;
-    assign wr_we[j]    = rt2vrf_wr_data[j].rt_strobe;
-    
-    // generate write bit-enable
-    for(k=0;k<`VLENB;k++) begin: GET_WE_BIT
-      assign wr_web[j][k*`BYTE_WIDTH +: `BYTE_WIDTH] = {`BYTE_WIDTH{wr_we[j][k]}};
-    end
+for (genvar j=0;j<`NUM_RT_UOP;j++) begin: GET_WT_DATA
+  assign wr_valid[j] = rt2vrf_wr_valid[j];
+  assign wr_addr[j]  = rt2vrf_wr_data[j].rt_index;
+  assign wr_data[j]  = rt2vrf_wr_data[j].rt_data;
+  assign wr_we[j]    = rt2vrf_wr_data[j].rt_strobe;
+  
+  // generate write bit-enable
+  for(genvar k=0;k<`VLENB;k++) begin: GET_WE_BIT
+    assign wr_web[j][k*`BYTE_WIDTH +: `BYTE_WIDTH] = {`BYTE_WIDTH{wr_we[j][k]}};
+  end
 
-    // access VRF. Only write will update input
-    always_comb begin
-      vrf_wr_wen[j]  = 'b0;
-      vrf_wr_data[j] = 'b0;
+  // access VRF. Only write will update input
+  always_comb begin
+    vrf_wr_wen[j]  = 'b0;
+    vrf_wr_data[j] = 'b0;
 
-      if(wr_valid[j]) begin
-        vrf_wr_wen[j][wr_addr[j]] = wr_we[j];
-        vrf_wr_data[j][wr_addr[j]] = wr_data[j]&wr_web[j];
-      end
+    if(wr_valid[j]) begin
+      vrf_wr_wen[j][wr_addr[j]] = wr_we[j];
+      vrf_wr_data[j][wr_addr[j]] = wr_data[j]&wr_web[j];
     end
   end
-endgenerate
+end
 
 // merge all retire data
 always_comb begin
@@ -111,18 +107,16 @@ vrf_reg (
   .wdata  (vrf_wr_data_full)
 );
 
-`ifdef TB_SUPPORT
+`ifdef RVVI_ON
 assign vrf_data = vrf_rd_data_full;
 `endif
 
 // VRF2DP data pack
 assign vrf2dp_v0_data = vrf_rd_data_full[0];
 
-generate
-  for (j=0;j<`NUM_DP_VRF;j++) begin: GET_RD_DATA
-    assign vrf2dp_rd_data[j] = vrf_rd_data_full[dp2vrf_rd_index[j]];
-  end
-endgenerate
+for (genvar j=0;j<`NUM_DP_VRF;j++) begin: GET_RD_DATA
+  assign vrf2dp_rd_data[j] = vrf_rd_data_full[dp2vrf_rd_index[j]];
+end
 
 // VRF2PMT data pack
 assign vrf2pmt_rd_data = vrf_rd_data_full[pmt2vrf_rd_index];

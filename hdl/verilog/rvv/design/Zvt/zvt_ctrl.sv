@@ -682,6 +682,7 @@ module zvt_ctrl (
 `ifdef TB_SUPPORT
   assign rtCmd.inst_pc  = uop[0].uop_pc;
 `endif
+  assign rtCmd.rob_tag  = uop[0].rob_tag;
   assign rtCmd.isStore  = isVme2Lsu;
   assign rtCmd.isLoad   = isLsu2Vme;
   assign rtCmd.isMv2Vme = isMv2Vme;

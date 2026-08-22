@@ -1,6 +1,11 @@
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `define HDL_VERILOG_RVV_DESIGN_RVV_SVH
 
+`ifndef HDL_VERILOG_RVS_DEFINE_SVH
+// coral common defines
+`include "rvs_define.svh"
+`endif
+
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH
 `include "rvv_backend_define.svh"
 `endif  // not defined HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH
@@ -113,10 +118,10 @@ typedef struct packed {
 // been read from the scalar register file if necessary. It also contains
 // additional data to track configuration register state (ie: SEW, LMUL, etc).
 typedef struct packed {
-  logic [`ROB_TAG_WIDTH-1:0] rob_tag;
 `ifdef TB_SUPPORT
   logic [`PC_WIDTH-1:0]      inst_pc;
 `endif
+  logic [`ROB_TAG_WIDTH-1:0] rob_tag;
   RVVOpCode                  opcode;
   logic [24:0]               bits;
   logic [`XLEN-1:0]          rs1;
@@ -258,11 +263,11 @@ typedef enum logic [1:0] {
 
 // the uop struct stored in Uops Queue
 typedef struct packed {
-  logic   [`ROB_TAG_WIDTH-1:0]    rob_tag;
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]         uop_pc;
-  logic                           res_updating_end; 
 `endif
+  logic                           res_updating_end; 
+  logic   [`ROB_TAG_WIDTH-1:0]    rob_tag;
   logic   [`FUNCT3_WIDTH-1:0]     uop_funct3;
   FUNCT6_u                        uop_funct6;
   EXE_UNIT_e                      uop_exe_unit; 
@@ -552,11 +557,11 @@ typedef struct packed {
 
 // send uop to ROB
 typedef struct packed {
-  logic   [`ROB_TAG_WIDTH-1:0]        rob_tag;
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]             uop_pc;
-  logic                               res_updating_end; 
 `endif
+  logic   [`ROB_TAG_WIDTH-1:0]        rob_tag;
+  logic                               res_updating_end; 
   logic   [`REGIDX_WIDTH-1:0]         w_index;            //wr addr
   W_DATA_TYPE_e                       w_type;             //write type: 0 for VRF, 1 for XRF
   BYTE_TYPE_t                         byte_type;          //wr Byte mask
@@ -580,12 +585,12 @@ typedef struct packed {
 } ROB2DP_t;
 
 typedef struct packed {
-  logic   [`ROB_TAG_WIDTH-1:0]        rob_tag;
-  logic                               last_uop_valid;
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]             uop_pc;
-  logic                               res_updating_end; 
 `endif
+  logic [`ROB_TAG_WIDTH-1:0]          rob_tag;
+  logic                               res_updating_end; 
+  logic                               last_uop_valid;
   logic                               w_valid;            //entry valid
   logic   [`REGIDX_WIDTH-1:0]         w_index;            //wr addr
   logic   [`VLEN-1:0]                 w_data;             //when w_type=XRF, w_data[`XLEN-1:0] will store the scalar result
@@ -667,6 +672,7 @@ typedef struct packed {
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]         uop_pc;
 `endif
+  logic   [`ROB_TAG_WIDTH-1:0]    rob_tag;
   logic   [`ROB_DEPTH_WIDTH-1:0]  rob_entry;
   FUNCT6_u                        uop_funct6;  
   logic   [`FUNCT3_WIDTH-1:0]     uop_funct3;
@@ -753,6 +759,7 @@ typedef struct packed {
 `ifdef TB_SUPPORT
   logic [`PC_WIDTH-1:0]                               inst_pc;
 `endif
+  logic [`ROB_TAG_WIDTH-1:0]                          rob_tag;
   logic                                               isStore;
   logic                                               isLoad;
   logic                                               isMv2Vme;
@@ -787,6 +794,7 @@ typedef struct packed {
 `ifdef TB_SUPPORT
   logic [`PC_WIDTH-1:0]                               inst_pc;
 `endif
+  logic [`ROB_TAG_WIDTH-1:0]                          rob_tag;
   logic                                               isStore;
 `ifdef RVVI_ON
   logic [3:0]                                         mtIdxVld;

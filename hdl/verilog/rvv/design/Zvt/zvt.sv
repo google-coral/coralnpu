@@ -547,6 +547,7 @@ module zvt (
 `ifdef TB_SUPPORT
   assign vmeRt.inst_pc = vmeRtCmd.inst_pc;
 `endif
+  assign vmeRt.rob_tag = vmeRtCmd.rob_tag;
   assign vmeRt.isStore = vmeRtCmd.isStore;
 
 `ifdef RVVI_ON

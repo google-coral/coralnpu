@@ -240,7 +240,9 @@ module rvv_backend_freduction(
       vs1_reg     <= '0;
       vs2_reg     <= '0;
       tag_reg     <= '0;
-      vs2_type_reg<= '{default: NOT_CHANGE};
+      for(int i=0;i<`VLENW;i++) begin
+        vs2_type_reg[i] <= BYTE_TYPE_e'('0);
+      end
       fpexp_reg   <= '0;
       sub_rnd_reg <= fpnew_pkg::roundmode_e'('0);
       mask_cur_reg<= '0;

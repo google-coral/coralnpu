@@ -34,7 +34,7 @@ module rvv_backend
     uop_lsu2vme_rdy,
     vme_lsuflush_vld,
     vme_lsuflush_rdy,
-
+    
     vmeRtVld,
     vmeRt,
     vmeRtRdy,
@@ -149,11 +149,10 @@ module rvv_backend
     input   logic                                 vcsr_ready;
 
 // Retire information:
-// In verification testbenches, the port is widened to include both execution
-// retirement (NUM_RT_UOP) and decode bypass retirement for reserved instructions
-// (NUM_DE_INST).
-// For synthesis, fallback to the base NUM_RT_UOP lanes required by the scalar
-// RetirementBuffer.
+// Decoder retires for the reserved instructions.
+// RVV.ROB retires for the normal instructions.
+// They both need to retire instruction to RetirementBuffer for synthesis.
+// Once the test is passed, delete TB_SUPPORT and else-block
   `ifdef TB_SUPPORT
     output  logic     [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_valid_rob2rt_o;
     output  ROB2RT_t  [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_rob2rt_o;
@@ -178,8 +177,8 @@ module rvv_backend
 
     logic         [`NUM_DE_INST-1:0]      lcmd_valid_de2lcq;
     LCMD_t        [`NUM_DE_INST-1:0]      lcmd_de2lcq;
-    logic         [`NUM_DE_INST-1:0]      de2rvvi_valid;
-    ROB2RT_t      [`NUM_DE_INST-1:0]      de2rvvi_data;
+    logic         [`NUM_DE_INST-1:0]      de2rt_valid;
+    ROB2RT_t      [`NUM_DE_INST-1:0]      de2rt_data;
   // Legal command queue to Decode in DE2 stage
     logic         [`NUM_DE_INST-1:0]      lcmd_valid_lcq2de;
     LCMD_t        [`NUM_DE_INST-1:0]      lcmd_lcq2de;
@@ -282,13 +281,11 @@ module rvv_backend
     logic         [`NUM_LSU-1:0]          mapinfo_valid;
     LSU_MAP_INFO_t  [`NUM_LSU-1:0]        mapinfo;
     logic         [`NUM_LSU-1:0]          pop_mapinfo;
-    logic                                 mapinfo_empty;
     logic         [`NUM_LSU-1:0]          mapinfo_almost_empty;
   // LSU result
     logic         [`NUM_LSU-1:0]          lsu_res_valid;
     UOP_LSU_t     [`NUM_LSU-1:0]          lsu_res;
     logic         [`NUM_LSU-1:0]          pop_lsu_res;
-    logic                                 lsu_res_empty;
     logic         [`NUM_LSU-1:0]          lsu_res_almost_full;
     logic         [`NUM_LSU-1:0]          lsu_res_almost_empty;
     logic         [`NUM_LSU-1:0]          uop_lsu_valid;
@@ -367,10 +364,8 @@ module rvv_backend
     ROB2RT_t      [`NUM_RT_UOP-1:0]       rd_rob2rt;
     logic         [`NUM_RT_UOP-1:0]       rd_ready_rt2rob;
     logic         [`ROB_DEPTH_WIDTH-1:0]  rob_entry_rob2rt;
-  `ifdef TB_SUPPORT
-    logic         [`NUM_RT_UOP-1:0]       rt2rvvi_valid;
-    ROB2RT_t      [`NUM_RT_UOP-1:0]       rt2rvvi_data;
-  `endif
+    logic         [`NUM_RT_UOP-1:0]       rvvrob2rt_valid;
+    ROB2RT_t      [`NUM_RT_UOP-1:0]       rvvrob2rt_data;
   // RT to VRF
     logic         [`NUM_RT_UOP-1:0]       wr_valid_rt2vrf;
     RT2VRF_t      [`NUM_RT_UOP-1:0]       wr_data_rt2vrf;
@@ -386,12 +381,10 @@ module rvv_backend
     logic                                 zvtBusy;
 `endif
 
-  `ifdef TB_SUPPORT
-    // 32 VRF value.
+`ifdef RVVI_ON
+  // 32 VRF value.
     logic    [`NUM_VRF-1:0][`VLEN-1:0]    vrf_data;
-  `endif
-
-    genvar                                i;
+`endif
 
 // ---code start------------------------------------------------------
   // Command queue
@@ -425,10 +418,15 @@ module rvv_backend
         .entry_count  (used_count_cq)
     );
 
-    assign insts_ready_cq2rvs = trap_flush_rvv ? 'b0 : insts_ready;
-    
+  `ifndef PRECISE_RVVTRAP
+    assign insts_ready_cq2rvs     = trap_flush_rvv ? 'b0 : insts_ready;
     // output the remaining count in CQ
     assign remaining_count_cq2rvs = trap_flush_rvv ? 'b0 : `CQ_DEPTH - used_count_cq;
+  `else
+    assign insts_ready_cq2rvs     = is_trapping ? 'b0 : insts_ready;
+    // output the remaining count in CQ
+    assign remaining_count_cq2rvs = is_trapping ? 'b0 : `CQ_DEPTH - used_count_cq;
+  `endif
 
   // Decode unit in DE1 stage
     assign inst_valid_cq2de = ~(fifo_almost_empty_cq2de | fifo_almost_full_lcq2de);
@@ -440,8 +438,8 @@ module rvv_backend
       .inst               (inst_cq2de),
       .lcmd_valid         (lcmd_valid_de2lcq),
       .lcmd               (lcmd_de2lcq),
-      .de2rvvi_valid      (de2rvvi_valid),
-      .de2rvvi_data       (de2rvvi_data)
+      .de2rt_valid      (de2rt_valid),
+      .de2rt_data       (de2rt_data)
     );
   
   // Legal Command Queue
@@ -814,15 +812,13 @@ module rvv_backend
 
     // LSU RS pop logic
     logic [`NUM_LSU-1:0] lsu_rs_pop;
-    generate
-        for (i=0; i<`NUM_LSU; i++) begin: gen_lsu_rs_pop
-            if (i==0) begin: gen_first
-                assign lsu_rs_pop[i] = uop_lsu_valid_rvv2lsu[i] & uop_lsu_ready_lsu2rvv[i];
-            end else begin: gen_i
-                assign lsu_rs_pop[i] = lsu_rs_pop[i-1] & uop_lsu_valid_rvv2lsu[i] & uop_lsu_ready_lsu2rvv[i];
-            end
+    for (genvar i=0; i<`NUM_LSU; i++) begin: gen_lsu_rs_pop
+        if (i==0) begin: gen_first
+            assign lsu_rs_pop[i] = uop_lsu_valid_rvv2lsu[i] & uop_lsu_ready_lsu2rvv[i];
+        end else begin: gen_i
+            assign lsu_rs_pop[i] = lsu_rs_pop[i-1] & uop_lsu_valid_rvv2lsu[i] & uop_lsu_ready_lsu2rvv[i];
         end
-    endgenerate
+    end
 
     // LSU RS
     multi_fifo #(
@@ -857,15 +853,14 @@ module rvv_backend
     // output valid and data to LSU
     logic [`NUM_LSU-1:0] lsu_rs_valid_pre;
     assign lsu_rs_valid_pre = ~lsu_rs_almost_empty;
-    generate
-        for (i=0; i<`NUM_LSU; i++) begin: gen_lsu_valid
-            if (i==0) begin: gen_first
-                assign uop_lsu_valid_rvv2lsu[i] = lsu_rs_valid_pre[i];
-            end else begin: gen_i
-                assign uop_lsu_valid_rvv2lsu[i] = lsu_rs_valid_pre[i] & (uop_lsu_valid_rvv2lsu[i-1] & uop_lsu_ready_lsu2rvv[i-1]);
-            end
+
+    for (genvar i=0; i<`NUM_LSU; i++) begin: gen_lsu_valid
+        if (i==0) begin: gen_first
+            assign uop_lsu_valid_rvv2lsu[i] = lsu_rs_valid_pre[i];
+        end else begin: gen_i
+            assign uop_lsu_valid_rvv2lsu[i] = lsu_rs_valid_pre[i] & (uop_lsu_valid_rvv2lsu[i-1] & uop_lsu_ready_lsu2rvv[i-1]);
         end
-    endgenerate
+    end
 
     // LSU MAP INFO
     multi_fifo #(
@@ -898,15 +893,46 @@ module rvv_backend
         .entry_count  ()
     );
 
-  // LSU feedback result
+`ifndef PRECISE_RVVTRAP
     assign uop_lsu_valid = uop_lsu_valid_lsu2rvv;
+
+    for (genvar i=0;i<`NUM_LSU;i++) begin: get_uop_lsu
+      assign uop_lsu[i].trap_valid = 'b0;
+      assign uop_lsu[i].uop_lsu2rvv = uop_lsu_lsu2rvv[i];
+    end
+
+    // ready signal for LSU
+    assign uop_lsu_ready_rvv2lsu = trap_flush_rvv ? 'b0 : uop_lsu_ready;
+`else
+  // trap handler
+    // make sure all lsu uops before the trapping uop have been pushed into LSU_RES_FIFO 
+    assign trap_en = trap_valid_rvs2rvv & (uop_lsu_valid_lsu2rvv=='b0) & (!lsu_res_almost_full[0]) & (!is_trapping);
+
+    cdffr
+    trap_valid
+    (
+      .clk            (clk),
+      .rst_n          (rst_n),
+      .e              (trap_en),
+      .c              (trap_ready_rvv2rvs),
+      .d              (1'b1),
+      .q              (is_trapping)
+    );
+
+  // LSU feedback result
+    assign uop_lsu_valid = trap_en ? 'b1 : uop_lsu_valid_lsu2rvv;
     
-    generate
-      for (i=0;i<`NUM_LSU;i++) begin: get_uop_lsu
-        assign uop_lsu[i].trap_valid = 'b0;
-        assign uop_lsu[i].uop_lsu2rvv = uop_lsu_lsu2rvv[i];
-      end
-    endgenerate
+    assign uop_lsu[0].trap_valid  = trap_en;
+    assign uop_lsu[0].uop_lsu2rvv = trap_en ? 'b0 : uop_lsu_lsu2rvv[0];
+    
+    for (genvar i=1;i<`NUM_LSU;i++) begin: get_uop_lsu
+      assign uop_lsu[i].trap_valid = 'b0;
+      assign uop_lsu[i].uop_lsu2rvv = uop_lsu_lsu2rvv[i];
+    end
+
+    // ready signal for LSU
+    assign uop_lsu_ready_rvv2lsu = is_trapping ? 'b0 : uop_lsu_ready;
+`endif
 
     multi_fifo #(
         .T            (UOP_LSU_t),
@@ -936,8 +962,6 @@ module rvv_backend
         .rptr         (),
         .entry_count  ()
     );
-    // ready signal for LSU
-    assign uop_lsu_ready_rvv2lsu = trap_flush_rvv ? 'b0 : uop_lsu_ready;
 
   // PU, Process unit
     // ALU
@@ -1126,40 +1150,38 @@ module rvv_backend
            } = res_ready_arb2pu;
 
 `ifdef ARBITER_ON
-    generate
-      for(i=`NUM_PU_NOPINGPONG;i<`NUM_PU;i++) begin : gen_res_ff
-        multi_fifo #(
-            .T            (PU2ROB_t),
-            .M            (1),
-            .N            (1),
-            .ASYNC_RSTN   (1'b1),
-            .DEPTH        (2)
-        ) u_res_ff (
-          // global
-            .clk          (clk),
-            .rst_n        (rst_n),
-          // write
-            .push         (res_valid_pu2arb[i] & res_ready_arb2pu[i]),
-            .pushRdy      (res_ready_arb2pu[i]),
-            .datain       (res_pu2arb[i]),
-          // read
-            .pop          (grant_arb[i]),
-            .dataout      (item_ari[i]),
-          // fifo status
-            .full         (),
-            .almost_full  (),
-            .empty        (res_ff_empty[i]),
-            .almost_empty (),
-            .clear        (trap_flush_rvv),
-            .fifo_data    (),
-            .wptr         (),
-            .rptr         (),
-            .entry_count  ()
-        );
+    for(genvar i=`NUM_PU_NOPINGPONG;i<`NUM_PU;i++) begin : gen_res_ff
+      multi_fifo #(
+          .T            (PU2ROB_t),
+          .M            (1),
+          .N            (1),
+          .ASYNC_RSTN   (1'b1),
+          .DEPTH        (2)
+      ) u_res_ff (
+        // global
+          .clk          (clk),
+          .rst_n        (rst_n),
+        // write
+          .push         (res_valid_pu2arb[i] & res_ready_arb2pu[i]),
+          .pushRdy      (res_ready_arb2pu[i]),
+          .datain       (res_pu2arb[i]),
+        // read
+          .pop          (grant_arb[i]),
+          .dataout      (item_ari[i]),
+        // fifo status
+          .full         (),
+          .almost_full  (),
+          .empty        (res_ff_empty[i]),
+          .almost_empty (),
+          .clear        (trap_flush_rvv),
+          .fifo_data    (),
+          .wptr         (),
+          .rptr         (),
+          .entry_count  ()
+      );
 
-        assign req_ari[i] = !res_ff_empty[i];
-      end
-    endgenerate
+      assign req_ari[i] = !res_ff_empty[i];
+    end
 
     assign res_ready_arb2pu[`NUM_PU_NOPINGPONG-1:0] = grant_arb[`NUM_PU_NOPINGPONG-1:0] |
                                                       ~{
@@ -1222,7 +1244,9 @@ module rvv_backend
         .trap_valid_rmp2rob     (trap_valid_rmp2rob),
         .trap_rob_entry_rmp2rob (trap_rob_entry_rmp2rob),
         .trap_ready_rob2rmp     (trap_ready_rob2rmp),
+      `ifndef PRECISE_RVVTRAP
         .trap_valid_rvs2rvv     (trap_valid_rvs2rvv),
+      `endif
         .trap_ready_rvv2rvs     (trap_ready_rvv2rvs),
         .trap_flush_rvv         (trap_flush_rvv)
     );
@@ -1263,26 +1287,24 @@ module rvv_backend
       // write to update vcsr   
         .rt2vcsr_write_valid    (vcsr_valid),
         .rt2vcsr_write_data     (vector_csr),
-        .vcsr2rt_write_ready    (vcsr_ready)
+        .vcsr2rt_write_ready    (vcsr_ready),
       // Retire information for RVVI.
-      `ifdef TB_SUPPORT
-        ,.vrf_data              (vrf_data),
-        .rt2rvvi_valid          (rt2rvvi_valid),
-        .rt2rvvi_data           (rt2rvvi_data)
+        .rvvrob2rt_valid        (rvvrob2rt_valid),
+        .rvvrob2rt_data         (rvvrob2rt_data)
+      `ifdef RVVI_ON
+        ,.vrf_data              (vrf_data)
       `endif
     );
     
   `ifdef ZVE32F_ON
     // write back FRF.
-    generate
-      for(i=0; i<`NUM_RT_UOP; i++) begin: gen_rt_frf
-      `ifdef TB_SUPPORT
-        assign async_frd_pc[i]   = rt_rvs_rvv2rvs[i].uop_pc;
-      `endif
-        assign async_frd_addr[i] = rt_rvs_rvv2rvs[i].rt_index;
-        assign async_frd_data[i] = rt_rvs_rvv2rvs[i].rt_data;
-      end
-    endgenerate
+    for(genvar i=0; i<`NUM_RT_UOP; i++) begin: gen_rt_frf
+    `ifdef TB_SUPPORT
+      assign async_frd_pc[i]   = rt_rvs_rvv2rvs[i].uop_pc;
+    `endif
+      assign async_frd_addr[i] = rt_rvs_rvv2rvs[i].rt_index;
+      assign async_frd_data[i] = rt_rvs_rvv2rvs[i].rt_data;
+    end
   `endif
 
   // VRF, Vector Register File
@@ -1301,7 +1323,7 @@ module rvv_backend
       // VRF to PMT
         .vrf2pmt_rd_data  (rd_data_vrf2pmt),
       // RT to VRF
-      `ifdef TB_SUPPORT
+      `ifdef RVVI_ON 
         .vrf_data         (vrf_data),
       `endif
         .rt2vrf_wr_valid  (wr_valid_rt2vrf),
@@ -1309,13 +1331,11 @@ module rvv_backend
     );
   
   // Retire information:
-  // In testbenches, concatenate decode bypass packets ({de2rvvi}) with
-  // execution retirement ({rt2rvvi}) for RVVI tracers.
-  // For synthesis, directly wire base ROB retirement signals to maintain
-  // hardware compatibility with the scalar RetirementBuffer.
+  // Decoder and RVV.ROB both need to retire instruction to RetirementBuffer for synthesis.
+  // Once the test is passed, delete TB_SUPPORT and else-block
   `ifdef TB_SUPPORT
-    assign rd_valid_rob2rt_o = {de2rvvi_valid, rt2rvvi_valid};
-    assign rd_rob2rt_o       = {de2rvvi_data, rt2rvvi_data};
+    assign rd_valid_rob2rt_o = {de2rt_valid, rvvrob2rt_valid};
+    assign rd_rob2rt_o       = {de2rt_data, rvvrob2rt_data};
   `else
     assign rd_valid_rob2rt_o = rd_valid_rob2rt;
     assign rd_rob2rt_o       = rd_rob2rt;

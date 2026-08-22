@@ -3,7 +3,7 @@
 module edff (q, e, d, clk, rst_n
 );
   parameter type T = logic;
-  parameter T INIT  = T'('0);
+  parameter T INIT  = T'(0);
 
   output T        q;
 

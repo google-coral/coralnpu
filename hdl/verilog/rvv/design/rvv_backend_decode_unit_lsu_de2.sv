@@ -73,7 +73,6 @@ module rvv_backend_decode_unit_lsu_de2
   logic   [`NUM_DE_UOP-1:0]                         pshrob_valid;  
   logic                                             pshlsu_valid;
   FUNCT6_u                                          funct6_lsu;  
-  genvar                                            j;
 
 //
 // decode
@@ -100,6 +99,8 @@ module rvv_backend_decode_unit_lsu_de2
 
   // valid signal
   assign valid_lsu_opcode = inst_opcode==LOAD || inst_opcode==STORE;
+  
+  assign valid_lsu = valid_lsu_opcode&valid_lsu_mop&lcmd_valid;
 
   // identify load or store
   assign lsu_is_store = inst_opcode == STORE;
@@ -172,11 +173,9 @@ module rvv_backend_decode_unit_lsu_de2
   assign uop_index_base = uop_index_remain;
 
   // calculate the uop_index used in decoding uops 
-  generate
-    for(j=0;j<`NUM_DE_UOP;j++) begin: GET_UOP_INDEX
-      assign uop_index_current[j] = {1'b0, uop_index_base} + j[`UOP_INDEX_WIDTH:0];
-    end
-  endgenerate
+  for(genvar j=0;j<`NUM_DE_UOP;j++) begin: GET_UOP_INDEX
+    assign uop_index_current[j] = {1'b0, uop_index_base} + j[`UOP_INDEX_WIDTH:0];
+  end
 
   // generate uop valid
   always_comb begin        
@@ -774,61 +773,59 @@ module rvv_backend_decode_unit_lsu_de2
 `endif
 
   // assign result to output
-  generate
-    for(j=0;j<`NUM_DE_UOP;j++) begin: ASSIGN_RES
-      assign uop[j].rob_tag             = lcmd.cmd.rob_tag;
-    `ifdef TB_SUPPORT
-      assign uop[j].uop_pc              = lcmd.cmd.inst_pc;
-      assign uop[j].res_updating_end    = 'b1;
-    `endif  
-      assign uop[j].uop_funct3          = inst_funct3;
-      assign uop[j].uop_funct6          = funct6_lsu;
-      assign uop[j].uop_exe_unit        = uop_exe_unit;
-      assign uop[j].uop_class           = uop_class;   
-      assign uop[j].lsu_is_store        = lsu_is_store;   
-      assign uop[j].vector_csr          = vector_csr[j];  
-      assign uop[j].vs_evl              = lcmd.evl;
-      assign uop[j].ignore_vma          = 'b0;
-      assign uop[j].ignore_vta          = 'b0;
-      assign uop[j].force_vma_agnostic  = lcmd.force_vma_agnostic;
-      assign uop[j].force_vta_agnostic  = lcmd.force_vta_agnostic;
-      assign uop[j].vm                  = inst_vm;
-      assign uop[j].v0_valid            = 'b1;          
-    `ifdef ZVT_ON
-      assign uop[j].dst_index           = mt_valid ? inst_vd : vd_index[j];
-    `else
-      assign uop[j].dst_index           = vd_index[j];          
-    `endif
-      assign uop[j].vd_eew              = lcmd.eew_vd;  
-      assign uop[j].vd_valid            = vd_valid;
-      assign uop[j].vs3_valid           = vs3_valid;
-      assign uop[j].xd_valid            = 'b0; 
-    `ifdef ZVE32F_ON
-      assign uop[j].fd_valid            = 'b0; 
-    `endif
-    `ifdef ZVT_ON
-      assign uop[j].mt_valid            = mt_valid;
-      assign uop[j].mt_eew              = lcmd.eew_mt;
-    `endif
-      assign uop[j].vs1                 = 'b0;              
-      assign uop[j].vs1_eew             = EEW_NONE;           
-      assign uop[j].vs1_valid           = 'b0;
-      assign uop[j].vs2_index 	        = vs2_index[j]; 	       
-      assign uop[j].vs2_eew             = lcmd.eew_vs2;
-      assign uop[j].vs2_valid           = vs2_valid[j];
-      assign uop[j].rs1_data            = rs1;           
-    `ifdef ZVT_ON
-      assign uop[j].rs1_data_valid      = uop_exe_unit == VMELSU;
-    `else
-      assign uop[j].rs1_data_valid      = 'b0;    
-    `endif
-      assign uop[j].uop_index           = uop_index[j];         
-      assign uop[j].first_uop_valid     = first_uop_valid[j];   
-      assign uop[j].last_uop_valid      = last_uop_valid[j];    
-      assign uop[j].seg_field_index     = seg_field_index[j];   
-      assign uop[j].pshrob_valid        = pshrob_valid[j];   
-      assign uop[j].pshlsu_valid        = pshlsu_valid;   
-    end
-  endgenerate
+  for(genvar j=0;j<`NUM_DE_UOP;j++) begin: ASSIGN_RES
+  `ifdef TB_SUPPORT
+    assign uop[j].uop_pc              = lcmd.cmd.inst_pc;
+  `endif  
+    assign uop[j].rob_tag             = lcmd.cmd.rob_tag;
+    assign uop[j].res_updating_end    = 'b1;
+    assign uop[j].uop_funct3          = inst_funct3;
+    assign uop[j].uop_funct6          = funct6_lsu;
+    assign uop[j].uop_exe_unit        = uop_exe_unit;
+    assign uop[j].uop_class           = uop_class;   
+    assign uop[j].lsu_is_store        = lsu_is_store;   
+    assign uop[j].vector_csr          = vector_csr[j];  
+    assign uop[j].vs_evl              = lcmd.evl;
+    assign uop[j].ignore_vma          = 'b0;
+    assign uop[j].ignore_vta          = 'b0;
+    assign uop[j].force_vma_agnostic  = lcmd.force_vma_agnostic;
+    assign uop[j].force_vta_agnostic  = lcmd.force_vta_agnostic;
+    assign uop[j].vm                  = inst_vm;
+    assign uop[j].v0_valid            = 'b1;          
+  `ifdef ZVT_ON
+    assign uop[j].dst_index           = mt_valid ? inst_vd : vd_index[j];
+  `else
+    assign uop[j].dst_index           = vd_index[j];          
+  `endif
+    assign uop[j].vd_eew              = lcmd.eew_vd;  
+    assign uop[j].vd_valid            = vd_valid;
+    assign uop[j].vs3_valid           = vs3_valid;
+    assign uop[j].xd_valid            = 'b0; 
+  `ifdef ZVE32F_ON
+    assign uop[j].fd_valid            = 'b0; 
+  `endif
+  `ifdef ZVT_ON
+    assign uop[j].mt_valid            = mt_valid;
+    assign uop[j].mt_eew              = lcmd.eew_mt;
+  `endif
+    assign uop[j].vs1                 = 'b0;              
+    assign uop[j].vs1_eew             = EEW_NONE;           
+    assign uop[j].vs1_valid           = 'b0;
+    assign uop[j].vs2_index 	        = vs2_index[j]; 	       
+    assign uop[j].vs2_eew             = lcmd.eew_vs2;
+    assign uop[j].vs2_valid           = vs2_valid[j];
+    assign uop[j].rs1_data            = rs1;           
+  `ifdef ZVT_ON
+    assign uop[j].rs1_data_valid      = uop_exe_unit == VMELSU;
+  `else
+    assign uop[j].rs1_data_valid      = 'b0;    
+  `endif
+    assign uop[j].uop_index           = uop_index[j];         
+    assign uop[j].first_uop_valid     = first_uop_valid[j];   
+    assign uop[j].last_uop_valid      = last_uop_valid[j];    
+    assign uop[j].seg_field_index     = seg_field_index[j];   
+    assign uop[j].pshrob_valid        = pshrob_valid[j];   
+    assign uop[j].pshlsu_valid        = pshlsu_valid;   
+  end
 
 endmodule

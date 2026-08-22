@@ -482,6 +482,7 @@ module rvv_backend_dispatch
           `ifdef TB_SUPPORT
             assign rs_dp2zvt[i].uop_pc          = uop_uop2dp[i].uop_pc; 
           `endif
+            assign rs_dp2zvt[i].rob_tag         = uop_uop2dp[i].rob_tag;
             assign rs_dp2zvt[i].rob_entry       = rob_address[i]; 
             assign rs_dp2zvt[i].uop_funct6      = uop_uop2dp[i].uop_funct6;
             assign rs_dp2zvt[i].uop_funct3      = uop_uop2dp[i].uop_funct3;
@@ -536,11 +537,12 @@ module rvv_backend_dispatch
             assign mapinfo_dp2lsu[i].vregfile_write_addr = uop_uop2dp[i].dst_index;
 
           // ROB
-          assign uop_dp2rob[i].rob_tag          = uop_uop2dp[i].rob_tag;
           `ifdef TB_SUPPORT
             assign uop_dp2rob[i].uop_pc           = uop_uop2dp[i].uop_pc; 
-            assign uop_dp2rob[i].res_updating_end = uop_uop2dp[i].res_updating_end; 
           `endif
+            assign uop_dp2rob[i].rob_tag          = uop_uop2dp[i].rob_tag;
+            assign uop_dp2rob[i].res_updating_end = uop_uop2dp[i].res_updating_end; 
+            assign uop_dp2rob[i].last_uop_valid   = uop_uop2dp[i].last_uop_valid;
             assign uop_dp2rob[i].w_index          = uop_uop2dp[i].dst_index;
             assign uop_dp2rob[i].w_type           = uop_uop2dp[i].vd_valid ? VRF : 
                                                   `ifdef ZVE32F_ON
@@ -550,7 +552,6 @@ module rvv_backend_dispatch
             assign uop_dp2rob[i].byte_type        = uop_operand_byte_type[i].vd;
             assign uop_dp2rob[i].is_ff            = (uop_uop2dp[i].uop_exe_unit==LSU)&(uop_uop2dp[i].uop_funct6.lsu_funct6.lsu_umop==US_FF);
             assign uop_dp2rob[i].vector_csr       = uop_uop2dp[i].vector_csr;
-            assign uop_dp2rob[i].last_uop_valid   = uop_uop2dp[i].last_uop_valid;
         end
     endgenerate
 

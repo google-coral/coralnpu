@@ -20,21 +20,21 @@ module rvv_backend_retire(
   vcsr2rt_write_ready,
   rt2vxsat_write_valid,
   rt2vxsat_write_data,
-  vxsat2rt_write_ready
+  vxsat2rt_write_ready,
 `ifdef ZVT_ON
-  ,zvtFpexpVld,
+  zvtFpexpVld,
   zvtFpexp,
-  zvtFpexpRdy
+  zvtFpexpRdy,
 `endif
 `ifdef ZVE32F_ON
-  ,rt2fcsr_write_valid,
+  rt2fcsr_write_valid,
   rt2fcsr_write_data,
-  fcsr2rt_write_ready
+  fcsr2rt_write_ready,
 `endif
-`ifdef TB_SUPPORT
-  ,vrf_data,
-  rt2rvvi_valid,
-  rt2rvvi_data
+  rvvrob2rt_valid,
+  rvvrob2rt_data
+`ifdef RVVI_ON
+  ,vrf_data
 `endif
 );
 // ROB dataout
@@ -81,11 +81,11 @@ module rvv_backend_retire(
     input   logic                               fcsr2rt_write_ready;
 `endif
 
-`ifdef TB_SUPPORT
 // Retire information for RVVI.
+    output  logic    [`NUM_RT_UOP-1:0]          rvvrob2rt_valid; // always ready to receive.
+    output  ROB2RT_t [`NUM_RT_UOP-1:0]          rvvrob2rt_data;  
+`ifdef RVVI_ON
     input   logic    [`NUM_VRF-1:0][`VLEN-1:0]  vrf_data;
-    output  logic    [`NUM_RT_UOP-1:0]          rt2rvvi_valid; // always ready to receive.
-    output  ROB2RT_t [`NUM_RT_UOP-1:0]          rt2rvvi_data;  
 `endif
 
 ////////////Wires & Regs  ///////////////
@@ -338,28 +338,32 @@ generate
   end
 endgenerate
 
-`ifdef TB_SUPPORT
-// retire information for RVVI
+// retire information for the RetirementBuffer
   always_comb begin
     for(int j=0;j<`NUM_RT_UOP;j++) begin
-      rt2rvvi_valid[j]        = rob2rt_write_valid[j] &
-                                rt2rob_write_ready[j] &
-                                rob2rt_write_data[j].w_valid & 
-                                rob2rt_write_data[j].res_updating_end;
+      rvvrob2rt_valid[j]        = rob2rt_write_valid[j] &
+                                  rt2rob_write_ready[j] &
+                                  rob2rt_write_data[j].w_valid & 
+                                  rob2rt_write_data[j].res_updating_end;
 
-      rt2rvvi_data[j]         = rob2rt_write_data[j];
-      rt2rvvi_data[j].w_valid = rt2rvvi_valid[j];
+    
+      rvvrob2rt_data[j]         = rob2rt_write_data[j];
+      rvvrob2rt_data[j].w_valid = rvvrob2rt_valid[j];  
+    `ifndef RVVI_ON
+      rvvrob2rt_data[j].w_data  = 'b0;
+    `endif
 
       if(rob2rt_write_data[j].w_type==VRF) begin
         for(int i=0;i<`VLENB;i++) begin
-          rt2rvvi_data[j].vd_type                             = {`VLENB{BODY_ACTIVE}};
-          rt2rvvi_data[j].w_data[i*`BYTE_WIDTH+:`BYTE_WIDTH]  = vrfres_strobe[j][i] 
+          rvvrob2rt_data[j].vd_type                             = {`VLENB{BODY_ACTIVE}};
+        `ifdef RVVI_ON
+          rvvrob2rt_data[j].w_data[i*`BYTE_WIDTH+:`BYTE_WIDTH]  = vrfres_strobe[j][i] 
                                                                 ? vrfres[j][i*`BYTE_WIDTH+:`BYTE_WIDTH] 
                                                                 : vrf_data[rob2rt_write_data[j].w_index][i*`BYTE_WIDTH+:`BYTE_WIDTH];
+        `endif
         end
       end
     end
   end
-`endif
 
 endmodule

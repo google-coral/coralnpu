@@ -41,7 +41,9 @@ module rvv_backend_rob
     trap_valid_rmp2rob,
     trap_rob_entry_rmp2rob,
     trap_ready_rob2rmp,
+`ifndef PRECISE_RVVTRAP
     trap_valid_rvs2rvv,
+`endif
     trap_ready_rvv2rvs,
     trap_flush_rvv    
 );  
@@ -82,7 +84,9 @@ module rvv_backend_rob
     input   logic                             trap_valid_rmp2rob;
     input   logic   [`ROB_DEPTH_WIDTH-1:0]    trap_rob_entry_rmp2rob;
     output  logic                             trap_ready_rob2rmp;
+`ifndef PRECISE_RVVTRAP
     input   logic                             trap_valid_rvs2rvv;
+`endif
     output  logic                             trap_ready_rvv2rvs;    
     output  logic                             trap_flush_rvv;        
 
@@ -128,11 +132,11 @@ module rvv_backend_rob
         .push         (uop_valid_dp2rob),
         .pushRdy      (uop_ready_rob2dp),
         .datain       (uop_dp2rob),
-        .full         (),
-        .almost_full  (),
       // pop side
         .pop          (rd_valid_rob2rt & rd_ready_rt2rob),
         .dataout      (uop_rob2rt),
+        .full         (),
+        .almost_full  (),
         .empty        (rob_empty),
         .almost_empty (),
       // fifo info
@@ -166,14 +170,14 @@ module rvv_backend_rob
         .push         (uop_valid_dp2rob),
         .pushRdy      (),
         .datain       (uop_valid_dp2rob),
-        .full         (),
-        .almost_full  (),
       // pop side
         .pop          (rd_valid_rob2rt & rd_ready_rt2rob),
         .dataout      (uop_valid_rob2rt),
+      // fifo info
+        .full         (),
+        .almost_full  (),
         .empty        (),
         .almost_empty (),
-      // fifo info
         .clear        (trap_flush_rvv),
         .fifo_data    (entry_valid),
         .wptr         (),
@@ -291,12 +295,12 @@ module rvv_backend_rob
         assign rd_valid_rob2rt[i] = uop_valid_rob2rt[i] & uop_done[wind_uop_rptr[i]] & rd_valid_rob2rt[i-1] & ~trap_flag[wind_uop_rptr[i]-1'b1];
       end
     // retire_uop data
-      assign rd_rob2rt[i].rob_tag          = uop_rob2rt[i].rob_tag;
-      assign rd_rob2rt[i].last_uop_valid   = uop_rob2rt[i].last_uop_valid;
     `ifdef TB_SUPPORT          
       assign rd_rob2rt[i].uop_pc           = uop_rob2rt[i].uop_pc;
-      assign rd_rob2rt[i].res_updating_end = uop_rob2rt[i].res_updating_end;          
     `endif          
+      assign rd_rob2rt[i].rob_tag          = uop_rob2rt[i].rob_tag;
+      assign rd_rob2rt[i].res_updating_end = uop_rob2rt[i].res_updating_end;          
+      assign rd_rob2rt[i].last_uop_valid   = uop_rob2rt[i].last_uop_valid;
       assign rd_rob2rt[i].w_valid         = res_mem[wind_uop_rptr[i]].w_valid & uop_done[wind_uop_rptr[i]];
       assign rd_rob2rt[i].w_index         = uop_rob2rt[i].w_index;
       assign rd_rob2rt[i].w_data          = res_mem[wind_uop_rptr[i]].w_data;
@@ -322,7 +326,9 @@ module rvv_backend_rob
                   `ifdef ZVT_ON
                    || vme_lsuflush_vld
                   `endif
+                  `ifndef PRECISE_RVVTRAP
                    || trap_valid_rvs2rvv
+                  `endif
                    ;
 
   dff regTrapFlush (.q(is_trapping), .d(trap_in&(!is_trapping)), .clk(clk), .rst_n(rst_n));
