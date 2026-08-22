@@ -31,6 +31,8 @@ async def rvv_fflags_test(dut):
             'fcsr_divzero',
             'fflags_invalid',
             'fflags_overflow',
+            'fflags_underflow',
+            'fnmsub_result',
             'fflags_cleared',
             'fflags_hazard',
         ]
@@ -49,6 +51,8 @@ async def rvv_fflags_test(dut):
     fcsr_divzero = await read_u32('fcsr_divzero')
     fflags_invalid = await read_u32('fflags_invalid')
     fflags_overflow = await read_u32('fflags_overflow')
+    fflags_underflow = await read_u32('fflags_underflow')
+    fnmsub_result = await read_u32('fnmsub_result')
     fflags_cleared = await read_u32('fflags_cleared')
 
     dut._log.info(f"fflags_initial: {hex(fflags_initial)}")
@@ -57,6 +61,9 @@ async def rvv_fflags_test(dut):
     )
     dut._log.info(f"fflags_invalid: {hex(fflags_invalid)}")
     dut._log.info(f"fflags_overflow: {hex(fflags_overflow)}")
+    dut._log.info(
+        f"fflags_underflow: {hex(fflags_underflow)}, fnmsub_result: {hex(fnmsub_result)}"
+    )
     dut._log.info(f"fflags_cleared: {hex(fflags_cleared)}")
 
     # Check initial fflags is 0
@@ -73,6 +80,10 @@ async def rvv_fflags_test(dut):
 
     # Check overflow sets OF (0x4) | NX (0x1) = 0x5
     assert fflags_overflow == 0x5, f"Expected fflags_overflow=0x5 (OF|NX), got {hex(fflags_overflow)}"
+
+    # Check underflow sets UF (0x2) | NX (0x1) = 0x3 and result is 0x11
+    assert fnmsub_result == 0x11, f"Expected fnmsub_result=0x11, got {hex(fnmsub_result)}"
+    assert fflags_underflow == 0x3, f"Expected fflags_underflow=0x3 (UF|NX), got {hex(fflags_underflow)}"
 
     # Check cleared fflags is 0
     assert fflags_cleared == 0x0, f"Expected fflags_cleared=0x0, got {hex(fflags_cleared)}"

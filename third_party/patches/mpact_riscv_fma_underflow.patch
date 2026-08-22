@@ -1,0 +1,38 @@
+--- a/riscv/riscv_f_instructions.cc
++++ b/riscv/riscv_f_instructions.cc
+@@ -284,7 +284,7 @@ void RiscVFMadd(const Instruction* instruction) {
+           flag_db->Set<uint32_t>(0, *FPExceptions::kInvalidOp);
+           flag_db->Submit();
+         }
+-        return internal::CanonicalizeNaN(fma(a, b, c));
++        return internal::CanonicalizeNaN(std::fma(a, b, c));
+       });
+ }
+ 
+@@ -297,7 +297,7 @@ void RiscVFMsub(const Instruction* instruction) {
+           flag_db->Set<uint32_t>(0, *FPExceptions::kInvalidOp);
+           flag_db->Submit();
+         }
+-        return internal::CanonicalizeNaN(fma(a, b, -c));
++        return internal::CanonicalizeNaN(std::fma(a, b, -c));
+       });
+ }
+ 
+@@ -310,7 +310,7 @@ void RiscVFNmadd(const Instruction* instruction) {
+           flag_db->Set<uint32_t>(0, *FPExceptions::kInvalidOp);
+           flag_db->Submit();
+         }
+-        return internal::CanonicalizeNaN(fma(-a, b, -c));
++        return internal::CanonicalizeNaN(std::fma(-a, b, -c));
+       });
+ }
+ 
+@@ -323,7 +323,7 @@ void RiscVFNmsub(const Instruction* instruction) {
+           flag_db->Set<uint32_t>(0, *FPExceptions::kInvalidOp);
+           flag_db->Submit();
+         }
+-        return internal::CanonicalizeNaN(fma(-a, b, c));
++        return internal::CanonicalizeNaN(std::fma(-a, b, c));
+       });
+ }
+ 

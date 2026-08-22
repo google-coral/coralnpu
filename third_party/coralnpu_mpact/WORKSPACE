@@ -116,6 +116,7 @@ http_archive(
         "@coralnpu_hw//third_party/patches:mpact_riscv_vector_memory.patch",
         "@coralnpu_hw//third_party/patches:mpact_riscv_vstart_trap.patch",
         "@coralnpu_hw//third_party/patches:mpact_riscv_vrgather.patch",
+        "@coralnpu_hw//third_party/patches:mpact_riscv_fma_underflow.patch",
     ],
     repo_mapping = {
         "@abseil-cpp": "@com_google_absl",

@@ -28,6 +28,8 @@ uint32_t fflags_divzero __attribute__((section(".data")))    = 0xDEADBEEF;
 uint32_t fcsr_divzero __attribute__((section(".data")))      = 0xDEADBEEF;
 uint32_t fflags_invalid __attribute__((section(".data")))    = 0xDEADBEEF;
 uint32_t fflags_overflow __attribute__((section(".data")))   = 0xDEADBEEF;
+uint32_t fflags_underflow __attribute__((section(".data")))  = 0xDEADBEEF;
+uint32_t fnmsub_result __attribute__((section(".data")))     = 0xDEADBEEF;
 uint32_t fflags_cleared __attribute__((section(".data")))    = 0xDEADBEEF;
 uint32_t fflags_hazard[16] __attribute__((section(".data"))) = {0};
 
@@ -110,11 +112,29 @@ int main() {
       : "v0", "v1", "v2", "memory");
   asm volatile("csrr %0, fflags;" : "=r"(fflags_overflow));
 
-  // 5. Clear fflags and confirm it can be cleared again.
+  // 5. Underflow & Inexact (subnormal FMA):
+  // fnmsub.s fs9, ft10, ft11, ft2, rne -> -(ft10 * ft11) + ft2
+  // ft10 = 0x31 (+49 * 2^-149)
+  // ft11 = 0x80000011 (-17 * 2^-149)
+  // ft2  = 0x11 (+17 * 2^-149)
+  // Result is 0x11 with Underflow (0x02) and Inexact (0x01) -> fflags = 0x03.
+  asm volatile("csrw fflags, zero;");
+  asm volatile(
+      "fmv.w.x ft10, %[f30];"
+      "fmv.w.x ft11, %[f31];"
+      "fmv.w.x ft2,  %[f2];"
+      "fnmsub.s fs9, ft10, ft11, ft2, rne;"
+      "fmv.x.w  %[res], fs9;"
+      : [res] "=r"(fnmsub_result)
+      : [f30] "r"(0x31), [f31] "r"(0x80000011), [f2] "r"(0x11)
+      : "ft10", "ft11", "ft2", "fs9", "memory");
+  asm volatile("csrr %0, fflags;" : "=r"(fflags_underflow));
+
+  // 6. Clear fflags and confirm it can be cleared again.
   asm volatile("csrw fflags, zero;");
   asm volatile("csrr %0, fflags;" : "=r"(fflags_cleared));
 
-  // 6. Test concurrent CSR write to fflags while vector operation is retiring with exception flags.
+  // 7. Test concurrent CSR write to fflags while vector operation is retiring with exception flags.
   // Preload operands into v4 and v8 (e32, m1, vl=4)
   asm volatile(
       "vsetvli zero, %[vl4], e32, m1, ta, ma;"
