@@ -3996,3 +3996,260 @@ async def whole_reg_repro(dut):
         [],
     )
     await fixture.run_to_halt()
+
+
+async def load_store_stride_masked_param(dut, cases):
+    """Testbench for parameterized load store stride mask usage accessible from intrinsics."""
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation(
+            'coralnpu_hw/tests/cocotb/rvv/load_store/load_store_stride_masked_param.elf'
+        ),
+        [
+            'rvv_stride_mask',
+            'input_data8',
+            'output_data8',
+            'output_stride_store8',
+            'input_data16',
+            'output_data16',
+            'output_stride_store16',
+            'input_data32',
+            'output_data32',
+            'output_stride_store32',
+            'input_stride',
+            'input_mask',
+            'n',
+        ] + [c['rvv_stride_mask'] for c in cases],
+    )
+    rng = np.random.default_rng()
+    for c in tqdm.tqdm(cases):
+        stride_mask = c['rvv_stride_mask']
+        n = c['n']
+        bstride = c['bstride']
+        dtype = c['dtype']
+
+        input_stride = 'input_stride'
+        input_mask = 'input_mask'
+        if dtype == np.uint8:
+            input_data_buf = 'input_data8'
+            output_data_buf = 'output_data8'
+            output_stride_store_buf = 'output_stride_store8'
+        elif dtype == np.uint16:
+            input_data_buf = 'input_data16'
+            output_data_buf = 'output_data16'
+            output_stride_store_buf = 'output_stride_store16'
+        elif dtype == np.uint32:
+            input_data_buf = 'input_data32'
+            output_data_buf = 'output_data32'
+            output_stride_store_buf = 'output_stride_store32'
+
+        array_size = 1024
+        itemsize = np.dtype(dtype).itemsize
+        mask_bytes = rng.integers(0, 256, size=32, dtype=np.uint8)
+        data_unmodified = np.arange(array_size, dtype=dtype)
+        expected_output = np.zeros(n, dtype=dtype)
+        stride_step = bstride // itemsize
+        span_elements = ((n - 1) * stride_step + 1) if n > 0 else 0
+        expected_stride_output = np.zeros(span_elements, dtype=dtype)
+        for i in range(n):
+            is_active = bool((mask_bytes[i // 8] >> (i % 8)) & 1)
+            if is_active:
+                src_idx = i * stride_step
+                expected_output[i] = data_unmodified[src_idx]
+                expected_stride_output[src_idx] = expected_output[i]
+        await fixture.write(output_data_buf, np.zeros(n, dtype=dtype))
+        await fixture.write(
+            output_stride_store_buf, np.zeros(span_elements, dtype=dtype)
+        )
+        await fixture.write_ptr('rvv_stride_mask', stride_mask)
+        await fixture.write_word('n', n)
+        await fixture.write(input_stride, np.array([bstride], dtype=np.uint32))
+        await fixture.write("input_mask", mask_bytes)
+        await fixture.write(input_data_buf, data_unmodified)
+        await fixture.run_to_halt()
+        actual_output = np.array(
+            await fixture.read(output_data_buf,
+                               n * np.dtype(dtype).itemsize)
+        ).view(dtype)
+        stride_output = np.array(
+            await fixture.read(
+                output_stride_store_buf,
+                (span_elements) * np.dtype(dtype).itemsize
+            )
+        ).view(dtype)
+        debug_msg = str({
+            'rvv_stride_mask': stride_mask,
+            'input_data': input_data_buf,
+            'n': n,
+            'input_stride': bstride,
+            'input_mask': input_mask,
+            'actual_output': actual_output,
+            'expected_output': expected_output,
+            'stride_output': stride_output,
+            'expected_stride_output': expected_stride_output,
+        })
+        assert (actual_output == expected_output).all(), debug_msg
+        assert (stride_output == expected_stride_output).all(), debug_msg
+
+
+@cocotb.test()
+async def load_store_stride_masked_param_test(dut):
+    """Testbench cases for parameterized load store stride mask."""
+    cases = [{
+        'rvv_stride_mask': 'vstride_mask_u8mf4',
+        'n': n,
+        'bstride': bstride,
+        'dtype': np.uint8,
+    }
+             for n in range(0, 6, 2)
+             for bstride in range(0, 18, 2)] + [{
+                 'rvv_stride_mask': 'vstride_mask_u8mf2',
+                 'n': n,
+                 'bstride': bstride,
+                 'dtype': np.uint8,
+             } for n in range(0, 10, 2) for bstride in range(0, 18, 2)] + [
+                 {
+                     'rvv_stride_mask': 'vstride_mask_u8m1',
+                     'n': n,
+                     'bstride': bstride,
+                     'dtype': np.uint8,
+                 } for n in range(0, 18, 2) for bstride in range(0, 18, 2)
+             ] + [{
+                 'rvv_stride_mask': 'vstride_mask_u8m2',
+                 'n': n,
+                 'bstride': bstride,
+                 'dtype': np.uint8,
+             } for n in range(0, 34, 2) for bstride in range(0, 18, 2)] + [
+                 {
+                     'rvv_stride_mask': 'vstride_mask_u8m4',
+                     'n': n,
+                     'bstride': bstride,
+                     'dtype': np.uint8,
+                 } for n in range(0, 66, 2) for bstride in range(0, 18, 2)
+             ] + [{
+                 'rvv_stride_mask': 'vstride_mask_u8m8',
+                 'n': n,
+                 'bstride': bstride,
+                 'dtype': np.uint8,
+             } for n in range(0, 66, 2) for bstride in range(0, 18, 2)] + [
+                 {
+                     'rvv_stride_mask': 'vstride_mask_u16mf2',
+                     'n': n,
+                     'bstride': bstride,
+                     'dtype': np.uint16,
+                 } for n in range(0, 6, 2) for bstride in range(0, 18, 2)
+             ] + [{
+                 'rvv_stride_mask': 'vstride_mask_u16m1',
+                 'n': n,
+                 'bstride': bstride,
+                 'dtype': np.uint16,
+             } for n in range(0, 10, 2) for bstride in range(0, 18, 2)] + [
+                 {
+                     'rvv_stride_mask': 'vstride_mask_u16m2',
+                     'n': n,
+                     'bstride': bstride,
+                     'dtype': np.uint16,
+                 } for n in range(0, 18, 2) for bstride in range(0, 18, 2)
+             ] + [{
+                 'rvv_stride_mask': 'vstride_mask_u16m4',
+                 'n': n,
+                 'bstride': bstride,
+                 'dtype': np.uint16,
+             } for n in range(0, 34, 2) for bstride in range(0, 18, 2)] + [
+                 {
+                     'rvv_stride_mask': 'vstride_mask_u16m8',
+                     'n': n,
+                     'bstride': bstride,
+                     'dtype': np.uint16,
+                 } for n in range(0, 66, 2) for bstride in range(0, 18, 2)
+             ] + [{
+                 'rvv_stride_mask': 'vstride_mask_u32m1',
+                 'n': n,
+                 'bstride': bstride,
+                 'dtype': np.uint32,
+             } for n in range(0, 6, 2) for bstride in range(0, 24, 4)] + [
+                 {
+                     'rvv_stride_mask': 'vstride_mask_u32m2',
+                     'n': n,
+                     'bstride': bstride,
+                     'dtype': np.uint32,
+                 } for n in range(0, 10, 2) for bstride in range(0, 24, 4)
+             ] + [{
+                 'rvv_stride_mask': 'vstride_mask_u32m4',
+                 'n': n,
+                 'bstride': bstride,
+                 'dtype': np.uint32,
+             }
+                  for n in range(0, 18, 2)
+                  for bstride in range(0, 24, 4)] + [{
+                      'rvv_stride_mask': 'vstride_mask_u32m8',
+                      'n': n,
+                      'bstride': bstride,
+                      'dtype': np.uint32,
+                  } for n in range(0, 34, 2) for bstride in range(0, 24, 4)]
+    await load_store_stride_masked_param(dut, cases)
+
+
+@cocotb.test()
+async def load_store_stride_masked_test(dut):
+    """Testbench for constant load store stride mask usage accessible from intrinsics."""
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation(
+            'coralnpu_hw/tests/cocotb/rvv/load_store/load_store_stride_masked.elf'
+        ), [
+            'input_data',
+            'output_data',
+            'output_stride_store',
+            'input_stride',
+            'input_mask',
+            'n',
+        ]
+    )
+    n = 'n'
+
+    itemsize = np.dtype(np.uint32).itemsize
+    data_unmodified = np.arange(512, dtype=np.uint32)
+    bstride = 8
+    mask_array = 0b1111111111111111
+    expected_output = np.zeros(512, dtype=np.uint32)
+    expected_stride_output = np.zeros(512, dtype=np.uint32)
+    n_elements = 10
+    for i in range(n_elements):
+        is_active = (mask_array >> i) & 1
+
+        if is_active:
+            expected_output[i] = data_unmodified[i * (bstride // itemsize)]
+            expected_stride_output[i * (bstride // itemsize)
+                                   ] = expected_output[i]
+
+    input_data_buf = 'input_data'
+    output_data_buf = 'output_data'
+    output_stride_store_buf = 'output_stride_store'
+    input_stride = 'input_stride'
+    input_mask = 'input_mask'
+
+    await fixture.write(input_data_buf, data_unmodified)
+    await fixture.write(input_stride, np.array([bstride], dtype=np.uint32))
+    await fixture.write(input_mask, np.array([mask_array], dtype=np.uint32))
+    await fixture.run_to_halt()
+    actual_output = (await fixture.read(output_data_buf,
+                                        512 * itemsize)).view(np.uint32)
+    stride_output = (
+        await fixture.read(output_stride_store_buf, 512 * itemsize)
+    ).view(np.uint32)
+
+    debug_msg = str({
+        'input_data': input_data_buf,
+        'n': n,
+        'input_stride': input_stride,
+        'input_mask': input_mask,
+        'actual': actual_output,
+        'expected': expected_output,
+        'output_stride_store': output_stride_store_buf,
+        'expected_stride_store': expected_stride_output,
+    })
+    assert (actual_output == expected_output).all(), debug_msg
+    assert (stride_output == expected_stride_output).all(), debug_msg

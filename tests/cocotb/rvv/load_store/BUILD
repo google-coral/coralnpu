@@ -194,6 +194,12 @@ template_rule(
         "store_strided_vtype": {
             "srcs": ["store_strided_vtype.cc"],
         },
+        "load_store_stride_masked": {
+            "srcs": ["load_store_stride_masked.cc"],
+        },
+        "load_store_stride_masked_param": {
+            "srcs": ["load_store_stride_masked_param.cc"],
+        },
     },
 )
 
@@ -235,6 +241,8 @@ filegroup(
         ":load_store8_test.elf",
         ":load_store8_unit_m2.elf",
         ":load_store_bits.elf",
+        ":load_store_stride_masked.elf",
+        ":load_store_stride_masked_param.elf",
         ":load_store_whole_register.elf",
         ":load_stride_vtype.elf",
         ":load_unit_ff.elf",

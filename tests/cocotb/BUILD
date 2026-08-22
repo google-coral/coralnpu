@@ -352,6 +352,8 @@ RVV_LOAD_STORE_TESTCASES = [
     "lsu_fault_scalar_mixed_rs_flush",
     "lsu_fault_scalar_to_scalar_rs_flush",
     "load_store8_test",
+    ("load_store_stride_masked_param_test", "large"),
+    "load_store_stride_masked_test",
 ]
 # END_TESTCASES_FOR_rvv_load_store_test
 
