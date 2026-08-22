@@ -286,10 +286,10 @@ module zvt_ctrl (
             mvlsuReadSubIdx[0][2*i+1] = mvlsuReadSubIdx[0][2*i];
                                  
 
-            vdst[i*2*`WORD_WIDTH+:2*`WORD_WIDTH] = {readData[0][2*i  ][({index[1],1'b0,index[0],1'b0}+4'd4)*`BYTE_WIDTH+:`HWORD_WIDTH],
+            vdst[i*2*`WORD_WIDTH+:2*`WORD_WIDTH] = {readData[0][2*i+1][({index[1],1'b0,index[0],1'b0}+4'd4)*`BYTE_WIDTH+:`HWORD_WIDTH],
                                                     readData[0][2*i+1][({index[1],1'b0,index[0],1'b0}     )*`BYTE_WIDTH+:`HWORD_WIDTH],
                                                     readData[0][2*i  ][({index[1],1'b0,index[0],1'b0}+4'd4)*`BYTE_WIDTH+:`HWORD_WIDTH],
-                                                    readData[0][2*i+1][({index[1],1'b0,index[0],1'b0}     )*`BYTE_WIDTH+:`HWORD_WIDTH]};
+                                                    readData[0][2*i  ][({index[1],1'b0,index[0],1'b0}     )*`BYTE_WIDTH+:`HWORD_WIDTH]};
             // write
             mvlsuWriteSubIdx[0][2*i  ] = mvlsuReadSubIdx[0][2*i];
             mvlsuWriteSubIdx[0][2*i+1] = mvlsuReadSubIdx[0][2*i+1];
@@ -701,7 +701,7 @@ module zvt_ctrl (
   // the array; every other op (lsu, moves, zero) pushes all four together
   // through miscRtVld, on the same cycle its rtCmd entry is pushed.
   always_comb begin
-    case(isVme2Lsu) 
+    case(1'b1) 
       isVme2Lsu,
       isLsu2Vme,
       isMv2Vme: miscRtVld = uopVld[0]&uopRdy[0]&uop[0].last_uop_valid;
