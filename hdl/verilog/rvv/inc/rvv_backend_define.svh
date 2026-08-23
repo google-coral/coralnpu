@@ -1,23 +1,19 @@
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH
 `define HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH
 
-// Vector 
-`ifdef VLEN_1024
-  `define VLEN                  1024
-`elsif VLEN_512
-  `define VLEN                  512
-`elsif VLEN_256
-  `define VLEN                  256
-`elsif VLEN_128
-  `define VLEN                  128
-`else 
-  `define VLEN                  128
-  $display("Error: Undefine VLEN, default: VLEN=128.\n");
+`ifdef TB_SUPPORT
+  `ifndef RVVI_ON
+    `define RVVI_ON
+  `endif
 `endif
 
-`define VLENB                   (`VLEN/`BYTE_WIDTH)
-`define VLENH                   (`VLEN/`HWORD_WIDTH)
-`define VLENW                   (`VLEN/`WORD_WIDTH)
+// number of scalar core issue lane
+`define ISSUE_LANE              4
+`define INST_LANE               4
+
+`define REGIDX_WIDTH            5
+
+`define RV32F_ON
 
 // multi-issue and multi-read-ports of VRF
 `ifdef DISPATCH3
@@ -66,8 +62,11 @@
   `define FRDT_RS_DEPTH         4
   `define LSU_RS_DEPTH          4
   `define LSUMAP_DEPTH          8
-  `define ROB_DEPTH             16
+  `define ROB_DEPTH             8
 `endif
+
+// VRF REG depth
+`define NUM_VRF                 32
 
 // Uops Queue data width
 `define UQ_WIDTH                $bits(UOP_QUEUE_t)
@@ -97,8 +96,9 @@
   `define NUM_VME               0
 `endif
 
+`define NUM_ARI               (`NUM_ALU+`NUM_PMTRDT+`NUM_MUL+`NUM_DIV+`NUM_FALU+`NUM_VME)
 `define NUM_PU_NOPINGPONG       (`NUM_LSU+`NUM_VME)
-`define NUM_PU                  (`NUM_LSU+`NUM_VME+`NUM_ALU+`NUM_MUL+`NUM_PMTRDT+`NUM_DIV+`NUM_FALU)
+`define NUM_PU                  (`NUM_ARI+`NUM_LSU)
 
 `ifdef ARBITER_ON
 `define NUM_SMPORT              4
@@ -113,8 +113,13 @@
 `else
   `define ROB_TAG_WIDTH         4
 `endif
-
 `define NUM_RT_UOP              4
+`define PC_WIDTH                32
+`define XLEN                    32
+`define FLEN                    32
+`define BYTE_WIDTH              8
+`define HWORD_WIDTH             16
+`define WORD_WIDTH              32
 `define EMUL_MAX                8
 
 `ifdef ZVE32F_ON
@@ -142,6 +147,23 @@
 // max(`UOP_INDEX_WIDTH_ALU,`UOP_INDEX_WIDTH_LSU)
 `define UOP_INDEX_WIDTH         5
 
+// Vector 
+`ifdef VLEN_128
+`define VLEN                    128
+`endif
+`ifdef VLEN_256
+`define VLEN                    256
+`endif
+`ifdef VLEN_512
+`define VLEN                    512
+`endif
+`ifdef VLEN_1024
+`define VLEN                    1024
+`endif
+
+`define VLENB                   (`VLEN/`BYTE_WIDTH)
+`define VLENH                   (`VLEN/`HWORD_WIDTH)
+`define VLENW                   (`VLEN/`WORD_WIDTH)
 // VLMAX = VLEN*LMUL/SEW
 // vstart < VLMAX_max and vl <= VLMAX_max, VLMAX_max=VLEN*LMUL_max(8)/SEW_min(8)=VLEN
 `define VLMAX_MAX               `VLEN
@@ -159,6 +181,7 @@
 `define FUNCT6_WIDTH            6
 `define NFIELD_WIDTH            3
 `define VM_WIDTH                1
+`define REGFILE_INDEX_WIDTH     5
 `define UMOP_WIDTH              5
 `define NREG_WIDTH              3
 `define IMM_WIDTH               5
@@ -179,21 +202,28 @@
   
   `define TE                  (`VLEN/8)
 
-// PROCESS_DELAY = (1/`COMPRATIO)
   `ifdef ZVT_MAXCOMPUTING
-    `define COMPRATIO         1/4
-    `define PROCESS_DELAY     4
+  `define COMPRATIO           1/4
   `else       
-    `define COMPRATIO         4/`TE
-    `define PROCESS_DELAY     `TE/4
+  `define COMPRATIO           4/`TE
   `endif 
 
+  `ifdef ZVT_MAXCOMPUTING
+  `define PROCESS_DELAY       4
+  `define NUM_PE              (`TE*`TE/4)
+  `else
+  `define PROCESS_DELAY       (`TE/4)
+  `define NUM_PE              (4*`TE)
+  `endif
   `define ZVT_LMUL            (`WORD_WIDTH*`TE/`VLEN)
-  `define NUM_PE              (`TE*`TE*`COMPRATIO)
-  // The quantity of subtile for each mt
+  // The quantity of subtile for each acc
   `define NUM_SUBTILE         (`TE*`TE/`SUBTILE_SIZE)
   // The quantity of subtile ports for each block
-  `define NUM_BLKPORT         (int'($ceil(`TE/4*`COMPRATIO)*`TE/4))
+  `ifdef ZVT_MAXCOMPUTING
+  `define NUM_BLKPORT         (((`TE + 15) / 16) * `TE/4)
+  `else
+  `define NUM_BLKPORT         (`TE/4)
+  `endif
 `endif // ZVT_ON
 
 `endif // HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH

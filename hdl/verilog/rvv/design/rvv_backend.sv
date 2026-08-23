@@ -34,7 +34,7 @@ module rvv_backend
     uop_lsu2vme_rdy,
     vme_lsuflush_vld,
     vme_lsuflush_rdy,
-    
+
     vmeRtVld,
     vmeRt,
     vmeRtRdy,
@@ -177,6 +177,7 @@ module rvv_backend
 
     logic         [`NUM_DE_INST-1:0]      lcmd_valid_de2lcq;
     LCMD_t        [`NUM_DE_INST-1:0]      lcmd_de2lcq;
+
     logic         [`NUM_DE_INST-1:0]      de2rt_valid;
     ROB2RT_t      [`NUM_DE_INST-1:0]      de2rt_data;
   // Legal command queue to Decode in DE2 stage
@@ -281,11 +282,13 @@ module rvv_backend
     logic         [`NUM_LSU-1:0]          mapinfo_valid;
     LSU_MAP_INFO_t  [`NUM_LSU-1:0]        mapinfo;
     logic         [`NUM_LSU-1:0]          pop_mapinfo;
+    logic                                 mapinfo_empty;
     logic         [`NUM_LSU-1:0]          mapinfo_almost_empty;
   // LSU result
     logic         [`NUM_LSU-1:0]          lsu_res_valid;
     UOP_LSU_t     [`NUM_LSU-1:0]          lsu_res;
     logic         [`NUM_LSU-1:0]          pop_lsu_res;
+    logic                                 lsu_res_empty;
     logic         [`NUM_LSU-1:0]          lsu_res_almost_full;
     logic         [`NUM_LSU-1:0]          lsu_res_almost_empty;
     logic         [`NUM_LSU-1:0]          uop_lsu_valid;
@@ -407,9 +410,9 @@ module rvv_backend
         .pop          (pop_de2cq),
         .dataout      (inst_cq2de),
       // fifo status
+        .empty        (fifo_empty_cq2de),
         .full         (),
         .almost_full  (),
-        .empty        (fifo_empty_cq2de),
         .almost_empty (fifo_almost_empty_cq2de),
         .clear        (trap_flush_rvv),
         .fifo_data    (),
@@ -438,8 +441,8 @@ module rvv_backend
       .inst               (inst_cq2de),
       .lcmd_valid         (lcmd_valid_de2lcq),
       .lcmd               (lcmd_de2lcq),
-      .de2rt_valid      (de2rt_valid),
-      .de2rt_data       (de2rt_data)
+      .de2rt_valid        (de2rt_valid),
+      .de2rt_data         (de2rt_data)
     );
   
   // Legal Command Queue
@@ -884,7 +887,7 @@ module rvv_backend
       // fifo status
         .full         (),
         .almost_full  (),
-        .empty        (),
+        .empty        (mapinfo_empty),
         .almost_empty (mapinfo_almost_empty),
         .clear        (trap_flush_rvv),
         .fifo_data    (),
@@ -920,7 +923,7 @@ module rvv_backend
     );
 
   // LSU feedback result
-    assign uop_lsu_valid = trap_en ? 'b1 : uop_lsu_valid_lsu2rvv;
+    assign uop_lsu_valid = uop_lsu_valid_lsu2rvv;
     
     assign uop_lsu[0].trap_valid  = trap_en;
     assign uop_lsu[0].uop_lsu2rvv = trap_en ? 'b0 : uop_lsu_lsu2rvv[0];
@@ -954,7 +957,7 @@ module rvv_backend
       // fifo status
         .full         (),
         .almost_full  (lsu_res_almost_full),
-        .empty        (),
+        .empty        (lsu_res_empty),
         .almost_empty (lsu_res_almost_empty),
         .clear        (trap_flush_rvv),
         .fifo_data    (),

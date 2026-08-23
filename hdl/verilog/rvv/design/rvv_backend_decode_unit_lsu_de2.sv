@@ -99,8 +99,6 @@ module rvv_backend_decode_unit_lsu_de2
 
   // valid signal
   assign valid_lsu_opcode = inst_opcode==LOAD || inst_opcode==STORE;
-  
-  assign valid_lsu = valid_lsu_opcode&valid_lsu_mop&lcmd_valid;
 
   // identify load or store
   assign lsu_is_store = inst_opcode == STORE;

@@ -1,11 +1,6 @@
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `define HDL_VERILOG_RVV_DESIGN_RVV_SVH
 
-`ifndef HDL_VERILOG_RVS_DEFINE_SVH
-// coral common defines
-`include "rvs_define.svh"
-`endif
-
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH
 `include "rvv_backend_define.svh"
 `endif  // not defined HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH
@@ -86,11 +81,9 @@ typedef struct packed {
   RVVLMUL                       lmul_orig;
 `ifdef ZVT_ON
   // VME (Zvt) non-tile state. Packed mtype view assembled from {tm, tk,
-  // mtwiden} per ?5.1.1.2.
-  // Note: The spec (v0.3) has a discrepancy: it defines tk as tk[2:0] (3 bits,
-  // values 0-4) but allocates it to bits 6:5 (2 bits). We assume tk is 3 bits
-  // and occupies bits 7:5, which shifts the reserved bits above it to 9:8.
-  // tm is in [23:10] (14 bits), mtwiden is in [1:0] (2 bits).
+  // mtwiden} per §15.1.1.2; widths follow the literal spec bit allocation
+  // (tk in [6:5] = 2 bits, mtwiden in [1:0] = 2 bits, tm in [23:10] = 14
+  // bits).
   logic                         altfmt;
   logic [1:0]                   mtwiden;
   logic [13:0]                  tm;
