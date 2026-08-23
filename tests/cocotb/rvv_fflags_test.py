@@ -33,6 +33,8 @@ async def rvv_fflags_test(dut):
             'fflags_overflow',
             'fflags_underflow',
             'fnmsub_result',
+            'rmm_fadd_result',
+            'rmm_fflags',
             'fflags_cleared',
             'fflags_hazard',
         ]
@@ -53,6 +55,8 @@ async def rvv_fflags_test(dut):
     fflags_overflow = await read_u32('fflags_overflow')
     fflags_underflow = await read_u32('fflags_underflow')
     fnmsub_result = await read_u32('fnmsub_result')
+    rmm_fadd_result = await read_u32('rmm_fadd_result')
+    rmm_fflags = await read_u32('rmm_fflags')
     fflags_cleared = await read_u32('fflags_cleared')
 
     dut._log.info(f"fflags_initial: {hex(fflags_initial)}")
@@ -63,6 +67,9 @@ async def rvv_fflags_test(dut):
     dut._log.info(f"fflags_overflow: {hex(fflags_overflow)}")
     dut._log.info(
         f"fflags_underflow: {hex(fflags_underflow)}, fnmsub_result: {hex(fnmsub_result)}"
+    )
+    dut._log.info(
+        f"rmm_fadd_result: {hex(rmm_fadd_result)}, rmm_fflags: {hex(rmm_fflags)}"
     )
     dut._log.info(f"fflags_cleared: {hex(fflags_cleared)}")
 
@@ -84,6 +91,10 @@ async def rvv_fflags_test(dut):
     # Check underflow sets UF (0x2) | NX (0x1) = 0x3 and result is 0x11
     assert fnmsub_result == 0x11, f"Expected fnmsub_result=0x11, got {hex(fnmsub_result)}"
     assert fflags_underflow == 0x3, f"Expected fflags_underflow=0x3 (UF|NX), got {hex(fflags_underflow)}"
+
+    # Check RMM tie rounding away from zero (0x3f800001) and NX flag (0x1)
+    assert rmm_fadd_result == 0x3F800001, f"Expected rmm_fadd_result=0x3f800001 (RMM tie away from zero), got {hex(rmm_fadd_result)}"
+    assert rmm_fflags == 0x1, f"Expected rmm_fflags=0x1 (NX), got {hex(rmm_fflags)}"
 
     # Check cleared fflags is 0
     assert fflags_cleared == 0x0, f"Expected fflags_cleared=0x0, got {hex(fflags_cleared)}"

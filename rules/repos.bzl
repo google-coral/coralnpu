@@ -362,8 +362,11 @@ def mpact_repos():
         patches = [
             "@coralnpu_hw//third_party:mpact-riscv-openat.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_vector_memory.patch",
+            "@coralnpu_hw//third_party/patches:mpact_riscv_vstart_trap.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_vrgather.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_fma_underflow.patch",
+            "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_helpers.patch",
+            "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_f_instructions.patch",
         ],
         patch_args = ["-p1"],
     )

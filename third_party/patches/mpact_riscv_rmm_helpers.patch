@@ -1,0 +1,99 @@
+--- a/riscv/riscv_instruction_helpers.h
++++ b/riscv/riscv_instruction_helpers.h
+@@ -15,6 +15,8 @@
+ #ifndef MPACT_RISCV_RISCV_RISCV_INSTRUCTION_HELPERS_H_
+ #define MPACT_RISCV_RISCV_RISCV_INSTRUCTION_HELPERS_H_
+ 
++#include <cmath>
++#include <cstddef>
+ #include <cstdint>
+ #include <functional>
+ #include <limits>
+@@ -598,12 +600,38 @@
+   flag_db->Submit();
+ }
+ 
++// Helper to correct RMM (Round to Nearest, Ties to Max Magnitude) rounding
++// when host execution uses RNE (Round to Nearest, Ties to Even).
++template <typename T, typename ExactT>
++inline T CorrectRMMTie(T result, ExactT exact_val) {
++  if (std::isnan(result) || std::isinf(result) ||
++      result == static_cast<T>(0.0)) {
++    return result;
++  }
++  ExactT d_res = static_cast<ExactT>(result);
++  if (std::abs(d_res) < std::abs(exact_val)) {
++    ExactT delta = std::abs(exact_val) - std::abs(d_res);
++    T next_away = std::nextafter(
++        result, (result > static_cast<T>(0.0))
++                    ? std::numeric_limits<T>::infinity()
++                    : -std::numeric_limits<T>::infinity());
++    ExactT half_ulp =
++        (std::abs(static_cast<ExactT>(next_away)) - std::abs(d_res)) /
++        static_cast<ExactT>(2.0);
++    if (delta == half_ulp) {
++      return next_away;
++    }
++  }
++  return result;
++}
++
+ // Generic helper function for binary floating point instructions. The main
+ // difference is that it handles rounding mode.
+-template <typename Register, typename Result, typename Argument>
+-inline void RiscVBinaryFloatNaNBoxOp(
+-    const Instruction* instruction,
+-    std::function<Result(Argument, Argument)> operation) {
++template <typename Register, typename Result, typename Argument,
++          typename BinaryOp, typename ExactOp = std::nullptr_t>
++inline void RiscVBinaryFloatNaNBoxOp(const Instruction* instruction,
++                                     BinaryOp operation,
++                                     ExactOp exact_operation = nullptr) {
+   Argument lhs = GetNaNBoxedSource<Register, Argument>(instruction, 0);
+   Argument rhs = GetNaNBoxedSource<Register, Argument>(instruction, 1);
+ 
+@@ -624,6 +652,13 @@
+     ScopedFPStatus fp_status(rv_fp->host_fp_interface(), rm_value);
+     dest_value = operation(lhs, rhs);
+   }
++  if (rm_value == *FPRoundingMode::kRoundToNearestTiesToMax) {
++    if constexpr (!std::is_same_v<ExactOp, std::nullptr_t>) {
++      auto exact_val = exact_operation(static_cast<double>(lhs),
++                                       static_cast<double>(rhs));
++      dest_value = CorrectRMMTie(dest_value, exact_val);
++    }
++  }
+   if (FPTypeInfo<Result>::IsNaN(dest_value)) {
+     *reinterpret_cast<typename FPTypeInfo<Result>::UIntType*>(&dest_value) =
+         FPTypeInfo<Result>::kCanonicalNaN;
+@@ -648,10 +683,11 @@
+ }
+ 
+ // Generic helper function for ternary floating point instructions.
+-template <typename Register, typename Result, typename Argument>
+-inline void RiscVTernaryFloatNaNBoxOp(
+-    const Instruction* instruction,
+-    std::function<Result(Argument, Argument, Argument)> operation) {
++template <typename Register, typename Result, typename Argument,
++          typename TernaryOp, typename ExactOp = std::nullptr_t>
++inline void RiscVTernaryFloatNaNBoxOp(const Instruction* instruction,
++                                      TernaryOp operation,
++                                      ExactOp exact_operation = nullptr) {
+   Argument rs1 = generic::GetInstructionSource<Argument>(instruction, 0);
+   Argument rs2 = generic::GetInstructionSource<Argument>(instruction, 1);
+   Argument rs3 = generic::GetInstructionSource<Argument>(instruction, 2);
+@@ -672,6 +708,14 @@
+     ScopedFPStatus fp_status(rv_fp->host_fp_interface(), rm_value);
+     dest_value = operation(rs1, rs2, rs3);
+   }
++  if (rm_value == *FPRoundingMode::kRoundToNearestTiesToMax) {
++    if constexpr (!std::is_same_v<ExactOp, std::nullptr_t>) {
++      auto exact_val =
++          exact_operation(static_cast<double>(rs1), static_cast<double>(rs2),
++                          static_cast<double>(rs3));
++      dest_value = CorrectRMMTie(dest_value, exact_val);
++    }
++  }
+   auto* reg = static_cast<generic::RegisterDestinationOperand<Register>*>(
+                   instruction->Destination(0))
+                   ->GetRegister();

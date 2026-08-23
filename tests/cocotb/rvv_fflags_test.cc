@@ -30,6 +30,8 @@ uint32_t fflags_invalid __attribute__((section(".data")))    = 0xDEADBEEF;
 uint32_t fflags_overflow __attribute__((section(".data")))   = 0xDEADBEEF;
 uint32_t fflags_underflow __attribute__((section(".data")))  = 0xDEADBEEF;
 uint32_t fnmsub_result __attribute__((section(".data")))     = 0xDEADBEEF;
+uint32_t rmm_fadd_result __attribute__((section(".data")))   = 0xDEADBEEF;
+uint32_t rmm_fflags __attribute__((section(".data")))        = 0xDEADBEEF;
 uint32_t fflags_cleared __attribute__((section(".data")))    = 0xDEADBEEF;
 uint32_t fflags_hazard[16] __attribute__((section(".data"))) = {0};
 
@@ -130,11 +132,26 @@ int main() {
       : "ft10", "ft11", "ft2", "fs9", "memory");
   asm volatile("csrr %0, fflags;" : "=r"(fflags_underflow));
 
-  // 6. Clear fflags and confirm it can be cleared again.
+  // 6. Test RMM (Round to Nearest, ties to Max Magnitude) on exact tie:
+  // 1.0f (0x3f800000) + 2^-24f (0x33800000) = 1.000000059604644775390625f
+  // In RNE (mode 0), tie rounds to even -> 1.0f (0x3f800000).
+  // In RMM (mode 4), tie rounds away from zero -> 1.0f + 2^-23f (0x3f800001).
+  asm volatile("csrw fflags, zero;");
+  asm volatile(
+      "fmv.w.x ft0, %[f_one];"
+      "fmv.w.x ft1, %[f_half_ulp];"
+      "fadd.s  ft2, ft0, ft1, rmm;"
+      "fmv.x.w %[res], ft2;"
+      : [res] "=r"(rmm_fadd_result)
+      : [f_one] "r"(0x3f800000), [f_half_ulp] "r"(0x33800000)
+      : "ft0", "ft1", "ft2", "memory");
+  asm volatile("csrr %0, fflags;" : "=r"(rmm_fflags));
+
+  // 7. Clear fflags and confirm it can be cleared again.
   asm volatile("csrw fflags, zero;");
   asm volatile("csrr %0, fflags;" : "=r"(fflags_cleared));
 
-  // 7. Test concurrent CSR write to fflags while vector operation is retiring with exception flags.
+  // 8. Test concurrent CSR write to fflags while vector operation is retiring with exception flags.
   // Preload operands into v4 and v8 (e32, m1, vl=4)
   asm volatile(
       "vsetvli zero, %[vl4], e32, m1, ta, ma;"

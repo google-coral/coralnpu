@@ -17,6 +17,8 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "mpact_riscv_fma_underflow.patch",
     "mpact_riscv_vector_memory.patch",
+    "mpact_riscv_rmm_f_instructions.patch",
+    "mpact_riscv_rmm_helpers.patch",
     "mpact_riscv_vrgather.patch",
     "mpact_riscv_vstart_trap.patch",
 ])

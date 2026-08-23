@@ -1,0 +1,119 @@
+diff --git a/riscv/riscv_f_instructions.cc b/riscv/riscv_f_instructions.cc
+index 66c031c..bee2a00 100644
+--- a/riscv/riscv_f_instructions.cc
++++ b/riscv/riscv_f_instructions.cc
+@@ -159,22 +159,26 @@ void RiscVIFlwChild(const Instruction* instruction) {
+ // Basic arithmetic instructions.
+ void RiscVFAdd(const Instruction* instruction) {
+   RiscVBinaryFloatNaNBoxOp<FPRegister::ValueType, float, float>(
+-      instruction, [](float a, float b) { return a + b; });
++      instruction, [](float a, float b) { return a + b; },
++      [](double a, double b) { return a + b; });
+ }
+ 
+ void RiscVFSub(const Instruction* instruction) {
+   RiscVBinaryFloatNaNBoxOp<FPRegister::ValueType, float, float>(
+-      instruction, [](float a, float b) { return a - b; });
++      instruction, [](float a, float b) { return a - b; },
++      [](double a, double b) { return a - b; });
+ }
+ 
+ void RiscVFMul(const Instruction* instruction) {
+   RiscVBinaryFloatNaNBoxOp<FPRegister::ValueType, float, float>(
+-      instruction, [](float a, float b) { return a * b; });
++      instruction, [](float a, float b) { return a * b; },
++      [](double a, double b) { return a * b; });
+ }
+ 
+ void RiscVFDiv(const Instruction* instruction) {
+   RiscVBinaryFloatNaNBoxOp<FPRegister::ValueType, float, float>(
+-      instruction, [](float a, float b) { return a / b; });
++      instruction, [](float a, float b) { return a / b; },
++      [](double a, double b) { return a / b; });
+ }
+ 
+ // Square root uses the library square root, but check for special conditions
+@@ -214,6 +218,9 @@ void RiscVFSqrt(const Instruction* instruction) {
+       ScopedFPStatus set_fp_status(rv_fp->host_fp_interface(), rm_value);
+       res = sqrt(a);
+     }
++    if (rm_value == *FPRoundingMode::kRoundToNearestTiesToMax) {
++      res = CorrectRMMTie(res, std::sqrt(static_cast<double>(a)));
++    }
+     return res;
+   });
+ }
+@@ -277,7 +284,8 @@ void RiscVFMax(const Instruction* instruction) {
+ void RiscVFMadd(const Instruction* instruction) {
+   using T = float;
+   RiscVTernaryFloatNaNBoxOp<FPRegister::ValueType, T, T>(
+-      instruction, [instruction](T a, T b, T c) -> T {
++      instruction,
++      [instruction](T a, T b, T c) -> T {
+         // Propagate any NaNs.
+         if ((std::isinf(a) && (b == 0.0)) || ((std::isinf(b) && (a == 0.0)))) {
+           auto* flag_db = instruction->Destination(1)->AllocateDataBuffer();
+@@ -285,45 +293,60 @@ void RiscVFMadd(const Instruction* instruction) {
+           flag_db->Submit();
+         }
+         return internal::CanonicalizeNaN(std::fma(a, b, c));
++      },
++      [](double a, double b, double c) -> double {
++        return std::fma(a, b, c);
+       });
+ }
+ 
+ void RiscVFMsub(const Instruction* instruction) {
+   using T = float;
+   RiscVTernaryFloatNaNBoxOp<FPRegister::ValueType, T, T>(
+-      instruction, [instruction](T a, T b, T c) -> T {
++      instruction,
++      [instruction](T a, T b, T c) -> T {
+         if ((std::isinf(a) && (b == 0.0)) || ((std::isinf(b) && (a == 0.0)))) {
+           auto* flag_db = instruction->Destination(1)->AllocateDataBuffer();
+           flag_db->Set<uint32_t>(0, *FPExceptions::kInvalidOp);
+           flag_db->Submit();
+         }
+         return internal::CanonicalizeNaN(std::fma(a, b, -c));
++      },
++      [](double a, double b, double c) -> double {
++        return std::fma(a, b, -c);
+       });
+ }
+ 
+ void RiscVFNmadd(const Instruction* instruction) {
+   using T = float;
+   RiscVTernaryFloatNaNBoxOp<FPRegister::ValueType, T, T>(
+-      instruction, [instruction](T a, T b, T c) -> T {
++      instruction,
++      [instruction](T a, T b, T c) -> T {
+         if ((std::isinf(a) && (b == 0.0)) || ((std::isinf(b) && (a == 0.0)))) {
+           auto* flag_db = instruction->Destination(1)->AllocateDataBuffer();
+           flag_db->Set<uint32_t>(0, *FPExceptions::kInvalidOp);
+           flag_db->Submit();
+         }
+         return internal::CanonicalizeNaN(std::fma(-a, b, -c));
++      },
++      [](double a, double b, double c) -> double {
++        return std::fma(-a, b, -c);
+       });
+ }
+ 
+ void RiscVFNmsub(const Instruction* instruction) {
+   using T = float;
+   RiscVTernaryFloatNaNBoxOp<FPRegister::ValueType, T, T>(
+-      instruction, [instruction](T a, T b, T c) -> T {
++      instruction,
++      [instruction](T a, T b, T c) -> T {
+         if ((std::isinf(a) && (b == 0.0)) || ((std::isinf(b) && (a == 0.0)))) {
+           auto* flag_db = instruction->Destination(1)->AllocateDataBuffer();
+           flag_db->Set<uint32_t>(0, *FPExceptions::kInvalidOp);
+           flag_db->Submit();
+         }
+         return internal::CanonicalizeNaN(std::fma(-a, b, c));
++      },
++      [](double a, double b, double c) -> double {
++        return std::fma(-a, b, c);
+       });
+ }
+ 
