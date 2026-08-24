@@ -147,7 +147,8 @@ module rvv_backend_dispatch_ctrl
             always_comb begin
                 case (uop_ctrl[i].uop_exe_unit)
                   `ifdef ZVT_ON
-                    VME: rs_ready[i] = rs_ready[i-1] & rs_ready_zvt2dp[i];
+                    VME,
+                    VMELSU: rs_ready[i] = rs_ready[i-1] & rs_ready_zvt2dp[i];
                   `endif
                     VEU_CMP,
                     VEU_ALU: rs_ready[i] = rs_ready[i-1] & rs_ready_alu2dp[i];
@@ -183,7 +184,8 @@ module rvv_backend_dispatch_ctrl
 
           `ifdef ZVT_ON
             assign rs_valid_dp2zvt[i]      = uop_ready_dp2uop[i] & 
-                                             (uop_ctrl[i].uop_exe_unit == VME);
+                                             ((uop_ctrl[i].uop_exe_unit == VME) ||
+                                              (uop_ctrl[i].uop_exe_unit == VMELSU));
           `endif
             assign rs_valid_dp2alu[i]      = uop_ready_dp2uop[i] & 
                                              ((uop_ctrl[i].uop_exe_unit == VEU_ALU) ||
