@@ -1499,6 +1499,10 @@ filegroup(
         "rvv_widen_{}_{}_{}.elf".format(op, in_dtype, out_dtype)
         for (op, _, in_dtype, out_dtype, _, _, _, _) in MATH_WIDEN_OP_TYPE_PAIRS
     ] + [
+        ":rvv_bf16_{}_{}.elf".format(op, lmul)
+        for op in BF16_OPS
+        for lmul in BF16_LMULS
+    ] + [
         "vnclip_test.elf",
         "vnclipu_test.elf",
         "vnsra_test.elf",

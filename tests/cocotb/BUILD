@@ -748,7 +748,7 @@ cocotb_test_suite(
 
 pkg_zip(
     name = "rvv_test_binaries",
-    srcs = [
+    srcs = COCOTB_TEST_BINARY_TARGETS + [
         "//tests/cocotb/rvv/arithmetics:rvv_arith_tests",
         "//tests/cocotb/rvv/load_store:rvv_load_store_tests",
     ],
