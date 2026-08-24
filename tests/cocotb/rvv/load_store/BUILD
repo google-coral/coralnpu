@@ -26,6 +26,9 @@ template_rule(
         "load_store_whole_register": {
             "srcs": ["load_store_whole_register.cc"],
         },
+        "whole_reg_repro": {
+            "srcs": ["whole_reg_repro.cc"],
+        },
         "load_unit_masked": {
             "srcs": ["load_unit_masked.cc"],
         },
@@ -246,6 +249,7 @@ filegroup(
         ":store_strided_vtype.elf",
         ":store_unit_masked.elf",
         ":store_unit_vtype.elf",
+        ":whole_reg_repro.elf",
     ],
 )
 
