@@ -86,6 +86,8 @@ DENYLIST = [
     # Exclude until MPACT supports the vector bf16 spec.
     "*bf16*",
     "//tests/cocotb:zvfbf_test",
+    # Exclude until MPACT supports VME.
+    "*vme*",
     # Exclude all ml_ops tests from regression
     "//tests/cocotb/rvv/ml_ops:rvv_float_matmul",
     "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_assembly",

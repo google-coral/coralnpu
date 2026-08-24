@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("//rules:coco_tb.bzl", "cocotb_test_suite")
 load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 load(
@@ -25,6 +26,8 @@ VME_TEST_TESTCASES = [
     "vme_mset_csr_test",
     "vme_matmul_int8_test",
     "vme_matmul_fp32_test",
+    "vme_decode_test",
+    "vme_load_store_test",
 ]
 
 cocotb_test_suite(
@@ -43,11 +46,14 @@ cocotb_test_suite(
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
             "//coralnpu_test_utils:sim_test_fixture",
+            requirement("tqdm"),
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
             ":vme_matmul_test_program",
             ":vme_test_program",
+            ":vme_decode_test",
+            ":vme_load_store_test",
         ],
         "size": "medium",
     },
@@ -55,6 +61,8 @@ cocotb_test_suite(
     vcs_data = [
         ":vme_matmul_test_program",
         ":vme_test_program",
+        ":vme_decode_test",
+        ":vme_load_store_test",
         "//tests/cocotb:coverage_exclude.cfg",
         "//hdl/verilog:dpi_files",
     ],
@@ -79,4 +87,14 @@ coralnpu_v2_binary(
     name = "vme_matmul_test_program",
     srcs = ["vme_matmul_test_program.cc"],
     hdrs = ["vme_test_utils.h"],
+)
+
+coralnpu_v2_binary(
+    name = "vme_decode_test",
+    srcs = ["vme_decode_test.cc"],
+)
+
+coralnpu_v2_binary(
+    name = "vme_load_store_test",
+    srcs = ["vme_load_store_test.cc"],
 )

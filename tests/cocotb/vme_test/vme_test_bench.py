@@ -29,6 +29,7 @@ import numpy as np
 from coralnpu_test_utils.core_mini_axi_interface import CoreMiniAxiInterface
 from coralnpu_test_utils.sim_test_fixture import Fixture
 from bazel_tools.tools.python.runfiles import runfiles
+from tqdm import tqdm
 
 # struct VmeMsetCase   = 5 x uint32  (mtype, vtype, msettn_avl, msettm, msettk)
 # struct VmeMsetResult = 6 x uint32
@@ -345,3 +346,185 @@ async def vme_matmul_fp32_test(dut):
         )
         actual = await _run_matmul_case(fixture, case, a, b, c_init)
         _check_matmul_result("fp32", case, actual, expected)
+
+
+@cocotb.test()
+async def vme_decode_test(dut):
+    """Load and run vme_decode_test to verify illegal instruction trap behavior."""
+    test_names = [
+        "vtle64",
+        "vtse64",
+        "vtle_invalid_nf100",
+        "vtse_invalid_nf100",
+        "vtle_invalid_nf111",
+        "vtse_invalid_nf111",
+        "vtle8_masked_vm0",
+        "vtse8_masked_vm0",
+        "vtle8_nonzero_vd_vs3",
+        "vtse8_nonzero_vd_vs3",
+        "vtle8_nonzero_mop10",
+        "vtse8_nonzero_mop01",
+        "mew0_width7_load",
+        "mew0_width7_store",
+        "vill1_load",
+        "vill1_store",
+    ]
+
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_decode_test.elf"
+    )
+    fixture = await Fixture.Create(dut)
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        ["test_fn", "trap_count", "last_mcause"] + test_names,
+    )
+
+    for name in tqdm(test_names, desc="VME decode tests"):
+        await fixture.write_ptr("test_fn", name)
+        await fixture.run_to_halt()
+
+        trap_count_val = int.from_bytes(
+            (await fixture.read_word("trap_count")).tobytes(),
+            "little",
+        )
+        last_mcause_val = int.from_bytes(
+            (await fixture.read_word("last_mcause")).tobytes(),
+            "little",
+        )
+        assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
+        assert trap_count_val == 1, f"[{name}] Expected 1 trap, got {trap_count_val}"
+        assert last_mcause_val == 2, f"[{name}] Expected mcause=2 (illegal), got {last_mcause_val}"
+
+
+@cocotb.test(expect_fail=True)
+async def vme_load_store_test(dut):
+    """Load and run valid vtle and vtse instructions, verifying memory."""
+    vlen = 128
+    vl = vlen // 8  # Assuming TE = VLEN / 8 = 16 elements
+
+    test_cases = [
+        # EEW8
+        {
+            "name": "test_vtle8_row",
+            "dtype": np.int8
+        },
+        {
+            "name": "test_vtle8_col",
+            "dtype": np.int8
+        },
+        {
+            "name": "test_vtse8_row",
+            "dtype": np.int8
+        },
+        {
+            "name": "test_vtse8_col",
+            "dtype": np.int8
+        },
+        # EEW16
+        {
+            "name": "test_vtle16_row",
+            "dtype": np.int16
+        },
+        {
+            "name": "test_vtle16_col",
+            "dtype": np.int16
+        },
+        {
+            "name": "test_vtse16_row",
+            "dtype": np.int16
+        },
+        {
+            "name": "test_vtse16_col",
+            "dtype": np.int16
+        },
+        # EEW32
+        {
+            "name": "test_vtle32_row",
+            "dtype": np.int32
+        },
+        {
+            "name": "test_vtle32_col",
+            "dtype": np.int32
+        },
+        {
+            "name": "test_vtse32_row",
+            "dtype": np.int32
+        },
+        {
+            "name": "test_vtse32_col",
+            "dtype": np.int32
+        },
+        # Roundtrip (Direct Memory <-> Tile)
+        {
+            "name": "test_roundtrip_e8_row",
+            "dtype": np.int8
+        },
+        {
+            "name": "test_roundtrip_e8_col",
+            "dtype": np.int8
+        },
+        {
+            "name": "test_roundtrip_e16_row",
+            "dtype": np.int16
+        },
+        {
+            "name": "test_roundtrip_e16_col",
+            "dtype": np.int16
+        },
+        {
+            "name": "test_roundtrip_e32_row",
+            "dtype": np.int32
+        },
+        {
+            "name": "test_roundtrip_e32_col",
+            "dtype": np.int32
+        },
+    ]
+
+    test_names = [tc["name"] for tc in test_cases]
+
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_load_store_test.elf"
+    )
+    fixture = await Fixture.Create(dut)
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        ["test_fn", "trap_count", "last_mcause", "in_buf", "out_buf"] +
+        test_names,
+    )
+
+    zeros = np.zeros(1024, dtype=np.uint8)
+
+    for tc in tqdm(test_cases, desc="VME load store tests"):
+        name = tc["name"]
+        dtype = tc["dtype"]
+
+        iinfo = np.iinfo(dtype)
+        num_elements = 1024 // np.dtype(dtype).itemsize
+        in_data = np.random.randint(
+            iinfo.min, iinfo.max + 1, size=num_elements, dtype=dtype
+        )
+
+        await fixture.write("in_buf", in_data)
+        await fixture.write("out_buf", zeros)
+
+        await fixture.write_ptr("test_fn", name)
+        await fixture.run_to_halt()
+
+        trap_count_val = int.from_bytes(
+            (await fixture.read_word("trap_count")).tobytes(),
+            "little",
+        )
+        assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
+        assert trap_count_val == 0, f"[{name}] Expected no traps, got {trap_count_val}"
+
+        out = (await fixture.read("out_buf", 1024)).view(dtype)
+
+        expected = in_data[:vl]
+        actual = out[:vl]
+
+        np.testing.assert_array_equal(
+            actual, expected, err_msg=f"[{name}] Output mismatch"
+        )
