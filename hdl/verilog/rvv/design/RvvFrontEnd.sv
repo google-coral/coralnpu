@@ -453,13 +453,26 @@ module RvvFrontEnd#(parameter N = 4,
   RVVCmd [N-1:0] unaligned_cmd_data;
   logic [N-1:0] unaligned_trap_valid;  // Should this instruction trap
   RVVInstruction [N-1:0] unaligned_trap_data;
+  logic [N-1:0] is_whole_reg;
   always_comb begin
     for (int i = 0; i < N; i++) begin
-      unaligned_trap_valid[i] = valid_inst_q[i] && !is_setvl[i] &&
-          inst_config_state[i+1].vill;
+      // Whole-register moves (vmv<nr>r.v: opcode=RVV, funct3=OPIVI, funct6=VSMUL_VMVNRR, vm=1, vs1[4:3]=00)
+      // ignore vtype and execute even when vill is set (RVV 1.0 §16.6).
+      is_whole_reg[i] = (inst_q[i].opcode == RVV) &&
+                        (inst_q[i].bits[7:5] == OPIVI) &&
+                        (inst_q[i].bits[24:19] == VSMUL_VMVNRR) &&
+                        (inst_q[i].bits[18] == 1'b1) &&
+                        (inst_q[i].bits[12:11] == 2'b00);
+
+      // vill is checked here only for vector arithmetic/ALU instructions (opcode == RVV).
+      // Vector loads and stores (and whole-register moves) are excluded: loads/stores that
+      // violate vill are trapped in scalar decode to avoid hanging the scalar LSU.
+      // Configuration instructions (vset*/mset*) do not trap on vill.
+      unaligned_trap_valid[i] = valid_inst_q[i] && (inst_q[i].opcode == RVV) &&
+          !is_setvl[i] && !is_whole_reg[i] && inst_config_state[i+1].vill;
       unaligned_trap_data[i] = inst_q[i];
       unaligned_cmd_valid[i] = valid_inst_q[i] && !is_setvl[i] &&
-          !inst_config_state[i+1].vill;
+          ((inst_q[i].opcode != RVV) || !inst_config_state[i+1].vill || is_whole_reg[i]);
 
       // Combine instruction + arch state into command
       unaligned_cmd_data[i].rob_tag = inst_q[i].rob_tag;

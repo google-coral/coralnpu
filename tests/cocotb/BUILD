@@ -258,6 +258,7 @@ RVV_ASSEMBLY_TESTCASES = [
     "core_mini_vmsof_test",
     "core_mini_vmsif_test",
     "core_mini_vill_test",
+    "core_mini_vill_whole_reg_test",
     "core_mini_vl_test",
     "vsetvl_test",
     "vslideup_test",

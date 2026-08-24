@@ -502,6 +502,24 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   } else {
     Seq.fill(p.instructionLanes)(true.B)
   }
+  // ---------------------------------------------------------------------------
+  // Rvv Vill
+  // Only check vill at scalar dispatch for LSU instructions (vector loads/stores)
+  // because they dual-dispatch to both the scalar LSU and the RVV pipeline.
+  // Non-LSU instructions (vector arithmetic) have their vill check handled in the
+  // vector frontend (RvvFrontEnd).
+  // Whole-register loads/stores (vl<nf>r.v / vs<nf>r.v) ignore vtype and vill (RVV 1.0 §7.2).
+  val rvvVillInterlock = if (p.enableRvv) {
+    (0 until p.instructionLanes).map(i => {
+      val isNonWrLdSt = decodedInsts(i).rvv.get.valid &&
+        decodedInsts(i).rvv.get.bits.isLoadStore() &&
+        !decodedInsts(i).rvv.get.bits.isWholeRegisterLoadStore()
+      val invalidVill = isNonWrLdSt && (configInvalid(i) || io.rvvState.get.bits.vill)
+      !invalidVill
+    })
+  } else {
+    Seq.fill(p.instructionLanes)(true.B)
+  }
 
   // ---------------------------------------------------------------------------
   // Rvv Interlock
@@ -572,6 +590,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       slot0Interlock(i) &&        // Special instructions execute out of slot 0 only
       rvvConfigInterlock(i) &&    // Rvv interlock rules
       rvvVstartInterlock(i) &&    // Don't dispatch illegal vstart != 0
+      rvvVillInterlock(i) &&      // Don't dispatch illegal vill != 0 on non-WR load/store
       // rvvLsuInterlock(i) &&  // Dispatch only one Rvv LsuOp
       lsuInterlock(i) &&                     // Ensure lsu instructions can be dispatched into queue
       rvvInterlock(i) &&                     // Ensure rvv instructions can be dispatched into queue
@@ -897,7 +916,17 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
                                  decodedInsts(0).rvv.get.bits.requireZeroVstart()
                                val vStartNotZero = io.rvvState.get.valid &&
                                  (io.rvvState.get.bits.vstart =/= 0.U)
-                               io.inst(0).valid && requireZeroVstart && vStartNotZero
+                               val invalidVstart = requireZeroVstart && vStartNotZero
+
+                               // Return fault if vill is set for non-WR load/store (LSU instructions).
+                               // Non-LSU vector instructions are checked in the vector front-end.
+                               val isNonWrLdSt = decodedInsts(0).rvv.get.valid &&
+                                 decodedInsts(0).rvv.get.bits.isLoadStore() &&
+                                 !decodedInsts(0).rvv.get.bits.isWholeRegisterLoadStore()
+                               val villIsSet   = io.rvvState.get.valid && io.rvvState.get.bits.vill
+                               val invalidVill = isNonWrLdSt && villIsSet
+
+                               io.inst(0).valid && (invalidVstart || invalidVill)
                              } else {
                                false.B
                              })

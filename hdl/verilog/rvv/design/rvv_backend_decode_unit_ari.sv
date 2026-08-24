@@ -3746,8 +3746,12 @@ module rvv_backend_decode_unit_ari
     endcase
   end
 
-  //check common requirements for all instructions
-  assign check_common = (!csr_vill)&check_vd_align&check_sew&check_lmul&(check_vs2_align&check_vs1_align
+  logic is_vmv_nr;
+  assign is_vmv_nr = (inst_funct3 == OPIVI) && (inst_funct6 == VSMUL_VMVNRR);
+
+  // Whole-register moves (vmv<nr>r.v) do not read vtype and do not check for vill (RVV 1.0 §16.6).
+  // check common requirements for all instructions
+  assign check_common = (!csr_vill || is_vmv_nr)&check_vd_align&check_sew&check_lmul&(check_vs2_align&check_vs1_align
                       `ifdef ZVT_ON
                         || isVmeAlu
                       `endif

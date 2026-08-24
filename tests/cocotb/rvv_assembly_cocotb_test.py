@@ -514,6 +514,26 @@ async def core_mini_vill_test(dut):
 
 
 @cocotb.test()
+async def core_mini_vill_whole_reg_test(dut):
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation("coralnpu_hw/tests/cocotb/rvv/vill_whole_reg_test.elf"),
+        ["src_data", "faulted", "test_passed"],
+    )
+
+    src_data = np.arange(1, 129, dtype=np.uint8)
+    await fixture.write("src_data", src_data)
+
+    await fixture.run_to_halt()
+
+    faulted = (await fixture.read_word("faulted")).view(np.uint32)[0]
+    assert faulted == 0, f"Unexpected fault occurred (faulted={faulted})"
+    test_passed = (await fixture.read_word("test_passed")).view(np.uint32)[0]
+    assert test_passed == 1, f"Test did not pass (test_passed={test_passed})"
+
+
+@cocotb.test()
 async def core_mini_vl_test(dut):
     """Testbench to test vsetvl instruciton saturate vl correctly."""
     # Test bench setup

@@ -50,6 +50,9 @@ template_rule(
         "vill_test": {
             "srcs": ["vill_test.cc"],
         },
+        "vill_whole_reg_test": {
+            "srcs": ["vill_whole_reg_test.cc"],
+        },
         "viota_test": {
             "srcs": ["viota_test.cc"],
         },
@@ -124,6 +127,7 @@ filegroup(
         "vfirst_test.elf",
         "vgather.elf",
         "vill_test.elf",
+        "vill_whole_reg_test.elf",
         "viota_test.elf",
         "vmsbf_test.elf",
         "vmsif_test.elf",

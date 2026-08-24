@@ -202,6 +202,10 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     opcode.isOneOf(RvvCompressedOpcode.RVVLOAD, RvvCompressedOpcode.RVVSTORE)
   }
 
+  def isWholeRegisterLoadStore(): Bool = {
+    isLoadStore() && !bits(21) && (bits(20, 19) === 0.U) && (bits(17, 13) === "b01000".U)
+  }
+
   def readsRs1(): Bool = {
     isLoadStore() ||
     (funct3() === "b100".U) ||                                 // OPIVX
