@@ -256,6 +256,14 @@ module RvvCore #(parameter N = 4,
   // logic                 vme_lsuflush_rdy_dummy;
 `endif
 
+`ifdef TB_SUPPORT
+  logic    [`NUM_RT_UOP+`NUM_DE_INST-1:0] rd_valid_rob2rt_backend;
+  ROB2RT_t [`NUM_RT_UOP+`NUM_DE_INST-1:0] rd_rob2rt_backend;
+
+  assign rd_valid_rob2rt_o = rd_valid_rob2rt_backend[`NUM_RT_UOP-1:0];
+  assign rd_rob2rt_o       = rd_rob2rt_backend[`NUM_RT_UOP-1:0];
+`endif
+
   logic   [`ISSUE_LANE-1:0] insts_ready_cq2rvs;
   logic rvv_backend_idle;
   assign rvv_idle = rvv_backend_idle && (frontend_cmd_valid == 0);
@@ -303,9 +311,15 @@ module RvvCore #(parameter N = 4,
       .vcsr_valid(vcsr_valid),
       .vector_csr(vector_csr),
       .vcsr_ready(vcsr_ready),
+`ifdef TB_SUPPORT
+      .rd_valid_rob2rt_o(rd_valid_rob2rt_backend),
+      .rvv_idle(rvv_backend_idle),
+      .rd_rob2rt_o(rd_rob2rt_backend)
+`else
       .rd_valid_rob2rt_o(rd_valid_rob2rt_o),
       .rvv_idle(rvv_backend_idle),
       .rd_rob2rt_o(rd_rob2rt_o)
+`endif
 `ifdef ZVT_ON
       ,.uop_vme2lsu_vld(),
       .uop_vme2lsu(),

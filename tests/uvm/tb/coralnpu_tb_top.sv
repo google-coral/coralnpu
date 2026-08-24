@@ -85,122 +85,210 @@ module coralnpu_tb_top;
 
 
   //--------------------------------------------------------------------------
+  // Debug Port Binding Macros for RvvCoreMiniVerificationAxi
+  // Collapses ~300 lines of repetitive unconnected debug ports
+  //--------------------------------------------------------------------------
+  `define DEBUG_RB_VEC_WRITE(lane, vw) \
+      .io_debug_rb_inst_``lane``_bits_vecWrites_``vw``_valid(), \
+      .io_debug_rb_inst_``lane``_bits_vecWrites_``vw``_bits_data(), \
+      .io_debug_rb_inst_``lane``_bits_vecWrites_``vw``_bits_idx()
+
+  `define DEBUG_RB_VEC_WRITES(lane) \
+      `DEBUG_RB_VEC_WRITE(lane, 0), \
+      `DEBUG_RB_VEC_WRITE(lane, 1), \
+      `DEBUG_RB_VEC_WRITE(lane, 2), \
+      `DEBUG_RB_VEC_WRITE(lane, 3), \
+      `DEBUG_RB_VEC_WRITE(lane, 4), \
+      `DEBUG_RB_VEC_WRITE(lane, 5), \
+      `DEBUG_RB_VEC_WRITE(lane, 6), \
+      `DEBUG_RB_VEC_WRITE(lane, 7)
+
+  `define DEBUG_RB_LANE(lane) \
+      .io_debug_rb_inst_``lane``_valid(), \
+      .io_debug_rb_inst_``lane``_bits_pc(), \
+      .io_debug_rb_inst_``lane``_bits_inst(), \
+      .io_debug_rb_inst_``lane``_bits_idx(), \
+      .io_debug_rb_inst_``lane``_bits_data(), \
+      `DEBUG_RB_VEC_WRITES(lane), \
+      .io_debug_rb_inst_``lane``_bits_trap()
+
+  `define DEBUG_RB_ALL_LANES \
+      `DEBUG_RB_LANE(0), \
+      `DEBUG_RB_LANE(1), \
+      `DEBUG_RB_LANE(2), \
+      `DEBUG_RB_LANE(3), \
+      `DEBUG_RB_LANE(4), \
+      `DEBUG_RB_LANE(5), \
+      `DEBUG_RB_LANE(6), \
+      `DEBUG_RB_LANE(7)
+
+  `define DEBUG_DISPATCH_LANE(n) \
+      .io_debug_dispatch_``n``_instFire(), \
+      .io_debug_dispatch_``n``_instAddr(), \
+      .io_debug_dispatch_``n``_instInst()
+
+  `define DEBUG_REGFILE_WRITE_ADDR(n) \
+      .io_debug_regfile_writeAddr_``n``_valid(), \
+      .io_debug_regfile_writeAddr_``n``_bits()
+
+  `define DEBUG_REGFILE_WRITE_DATA(n) \
+      .io_debug_regfile_writeData_``n``_valid(), \
+      .io_debug_regfile_writeData_``n``_bits_addr(), \
+      .io_debug_regfile_writeData_``n``_bits_data()
+
+  `define DEBUG_FLOAT_WRITE_DATA(n) \
+      .io_debug_float_writeData_``n``_valid(), \
+      .io_debug_float_writeData_``n``_bits_addr(), \
+      .io_debug_float_writeData_``n``_bits_data()
+
+  `define DEBUG_CORE_PORTS \
+      .io_debug_en                             (), \
+      .io_debug_addr_0                         (), \
+      .io_debug_addr_1                         (), \
+      .io_debug_addr_2                         (), \
+      .io_debug_addr_3                         (), \
+      .io_debug_inst_0                         (), \
+      .io_debug_inst_1                         (), \
+      .io_debug_inst_2                         (), \
+      .io_debug_inst_3                         (), \
+      .io_debug_cycles                         (), \
+      .io_debug_dbus_valid                     (), \
+      .io_debug_dbus_bits_addr                 (), \
+      .io_debug_dbus_bits_wdata                (), \
+      .io_debug_dbus_bits_write                (), \
+      `DEBUG_DISPATCH_LANE(0), \
+      `DEBUG_DISPATCH_LANE(1), \
+      `DEBUG_DISPATCH_LANE(2), \
+      `DEBUG_DISPATCH_LANE(3), \
+      `DEBUG_REGFILE_WRITE_ADDR(0), \
+      `DEBUG_REGFILE_WRITE_ADDR(1), \
+      `DEBUG_REGFILE_WRITE_ADDR(2), \
+      `DEBUG_REGFILE_WRITE_ADDR(3), \
+      `DEBUG_REGFILE_WRITE_DATA(0), \
+      `DEBUG_REGFILE_WRITE_DATA(1), \
+      `DEBUG_REGFILE_WRITE_DATA(2), \
+      `DEBUG_REGFILE_WRITE_DATA(3), \
+      `DEBUG_REGFILE_WRITE_DATA(4), \
+      `DEBUG_REGFILE_WRITE_DATA(5), \
+      .io_debug_float_writeAddr_valid          (), \
+      .io_debug_float_writeAddr_bits           (), \
+      `DEBUG_FLOAT_WRITE_DATA(0), \
+      `DEBUG_FLOAT_WRITE_DATA(1), \
+      `DEBUG_RB_ALL_LANES
+
+  //--------------------------------------------------------------------------
   // DUT Instantiation
   //--------------------------------------------------------------------------
   RvvCoreMiniVerificationAxi u_dut (
-      .io_aclk(clk),
-      .io_aresetn(resetn),
-
-      // AXI Slave Port (Driven by TB Master)
-      .io_axi_slave_write_addr_valid      (master_axi_if.awvalid),
-      .io_axi_slave_write_addr_ready      (master_axi_if.awready),
-      .io_axi_slave_write_addr_bits_addr  (master_axi_if.awaddr),
-      .io_axi_slave_write_addr_bits_prot  (master_axi_if.awprot),
-      .io_axi_slave_write_addr_bits_id    (master_axi_if.awid),
-      .io_axi_slave_write_addr_bits_len   (master_axi_if.awlen),
-      .io_axi_slave_write_addr_bits_size  (master_axi_if.awsize),
-      .io_axi_slave_write_addr_bits_burst (master_axi_if.awburst),
-      .io_axi_slave_write_addr_bits_lock  (master_axi_if.awlock),
-      .io_axi_slave_write_addr_bits_cache (master_axi_if.awcache),
-      .io_axi_slave_write_addr_bits_qos   (master_axi_if.awqos),
-      .io_axi_slave_write_addr_bits_region(master_axi_if.awregion),
-
-      .io_axi_slave_write_data_valid    (master_axi_if.wvalid),
-      .io_axi_slave_write_data_ready    (master_axi_if.wready),
-      .io_axi_slave_write_data_bits_data(master_axi_if.wdata),
-      .io_axi_slave_write_data_bits_last(master_axi_if.wlast),
-      .io_axi_slave_write_data_bits_strb(master_axi_if.wstrb),
-
-      .io_axi_slave_write_resp_valid    (master_axi_if.bvalid),
-      .io_axi_slave_write_resp_ready    (master_axi_if.bready),
-      .io_axi_slave_write_resp_bits_id  (master_axi_if.bid),
-      .io_axi_slave_write_resp_bits_resp(master_axi_if.bresp),
-
-      .io_axi_slave_read_addr_valid      (master_axi_if.arvalid),
-      .io_axi_slave_read_addr_ready      (master_axi_if.arready),
-      .io_axi_slave_read_addr_bits_addr  (master_axi_if.araddr),
-      .io_axi_slave_read_addr_bits_prot  (master_axi_if.arprot),
-      .io_axi_slave_read_addr_bits_id    (master_axi_if.arid),
-      .io_axi_slave_read_addr_bits_len   (master_axi_if.arlen),
-      .io_axi_slave_read_addr_bits_size  (master_axi_if.arsize),
-      .io_axi_slave_read_addr_bits_burst (master_axi_if.arburst),
-      .io_axi_slave_read_addr_bits_lock  (master_axi_if.arlock),
-      .io_axi_slave_read_addr_bits_cache (master_axi_if.arcache),
-      .io_axi_slave_read_addr_bits_qos   (master_axi_if.arqos),
-      .io_axi_slave_read_addr_bits_region(master_axi_if.arregion),
-
-      .io_axi_slave_read_data_valid    (master_axi_if.rvalid),
-      .io_axi_slave_read_data_ready    (master_axi_if.rready),
-      .io_axi_slave_read_data_bits_data(master_axi_if.rdata),
-      .io_axi_slave_read_data_bits_id  (master_axi_if.rid),
-      .io_axi_slave_read_data_bits_resp(master_axi_if.rresp),
-      .io_axi_slave_read_data_bits_last(master_axi_if.rlast),
-
-
-      // AXI Master Port (Drives TB Slave)
-      .io_axi_master_write_addr_valid   (slave_axi_if.awvalid),
-      .io_axi_master_write_addr_ready   (slave_axi_if.awready),
-      .io_axi_master_write_addr_bits_addr(slave_axi_if.awaddr),
-      .io_axi_master_write_addr_bits_prot(slave_axi_if.awprot),
-      .io_axi_master_write_addr_bits_id (slave_axi_if.awid),
-      .io_axi_master_write_addr_bits_len(slave_axi_if.awlen),
-      .io_axi_master_write_addr_bits_size(slave_axi_if.awsize),
-      .io_axi_master_write_addr_bits_burst(slave_axi_if.awburst),
-      .io_axi_master_write_addr_bits_lock(slave_axi_if.awlock),
-      .io_axi_master_write_addr_bits_cache(slave_axi_if.awcache),
-      .io_axi_master_write_addr_bits_qos(slave_axi_if.awqos),
+      .io_aclk                             (clk),
+      .io_aresetn                          (resetn),
+      .io_axi_slave_write_addr_ready       (master_axi_if.awready),
+      .io_axi_slave_write_addr_valid       (master_axi_if.awvalid),
+      .io_axi_slave_write_addr_bits_addr   (master_axi_if.awaddr),
+      .io_axi_slave_write_addr_bits_prot   (master_axi_if.awprot),
+      .io_axi_slave_write_addr_bits_id     (master_axi_if.awid),
+      .io_axi_slave_write_addr_bits_len    (master_axi_if.awlen),
+      .io_axi_slave_write_addr_bits_size   (master_axi_if.awsize),
+      .io_axi_slave_write_addr_bits_burst  (master_axi_if.awburst),
+      .io_axi_slave_write_addr_bits_lock   (master_axi_if.awlock),
+      .io_axi_slave_write_addr_bits_cache  (master_axi_if.awcache),
+      .io_axi_slave_write_addr_bits_qos    (master_axi_if.awqos),
+      .io_axi_slave_write_addr_bits_region (master_axi_if.awregion),
+      .io_axi_slave_write_data_ready       (master_axi_if.wready),
+      .io_axi_slave_write_data_valid       (master_axi_if.wvalid),
+      .io_axi_slave_write_data_bits_data   (master_axi_if.wdata),
+      .io_axi_slave_write_data_bits_last   (master_axi_if.wlast),
+      .io_axi_slave_write_data_bits_strb   (master_axi_if.wstrb),
+      .io_axi_slave_write_resp_ready       (master_axi_if.bready),
+      .io_axi_slave_write_resp_valid       (master_axi_if.bvalid),
+      .io_axi_slave_write_resp_bits_id     (master_axi_if.bid),
+      .io_axi_slave_write_resp_bits_resp   (master_axi_if.bresp),
+      .io_axi_slave_read_addr_ready        (master_axi_if.arready),
+      .io_axi_slave_read_addr_valid        (master_axi_if.arvalid),
+      .io_axi_slave_read_addr_bits_addr    (master_axi_if.araddr),
+      .io_axi_slave_read_addr_bits_prot    (master_axi_if.arprot),
+      .io_axi_slave_read_addr_bits_id      (master_axi_if.arid),
+      .io_axi_slave_read_addr_bits_len     (master_axi_if.arlen),
+      .io_axi_slave_read_addr_bits_size    (master_axi_if.arsize),
+      .io_axi_slave_read_addr_bits_burst   (master_axi_if.arburst),
+      .io_axi_slave_read_addr_bits_lock    (master_axi_if.arlock),
+      .io_axi_slave_read_addr_bits_cache   (master_axi_if.arcache),
+      .io_axi_slave_read_addr_bits_qos     (master_axi_if.arqos),
+      .io_axi_slave_read_addr_bits_region  (master_axi_if.arregion),
+      .io_axi_slave_read_data_ready        (master_axi_if.rready),
+      .io_axi_slave_read_data_valid        (master_axi_if.rvalid),
+      .io_axi_slave_read_data_bits_data    (master_axi_if.rdata),
+      .io_axi_slave_read_data_bits_id      (master_axi_if.rid),
+      .io_axi_slave_read_data_bits_resp    (master_axi_if.rresp),
+      .io_axi_slave_read_data_bits_last    (master_axi_if.rlast),
+      .io_axi_master_write_addr_ready      (slave_axi_if.awready),
+      .io_axi_master_write_addr_valid      (slave_axi_if.awvalid),
+      .io_axi_master_write_addr_bits_addr  (slave_axi_if.awaddr),
+      .io_axi_master_write_addr_bits_prot  (slave_axi_if.awprot),
+      .io_axi_master_write_addr_bits_id    (slave_axi_if.awid),
+      .io_axi_master_write_addr_bits_len   (slave_axi_if.awlen),
+      .io_axi_master_write_addr_bits_size  (slave_axi_if.awsize),
+      .io_axi_master_write_addr_bits_burst (slave_axi_if.awburst),
+      .io_axi_master_write_addr_bits_lock  (slave_axi_if.awlock),
+      .io_axi_master_write_addr_bits_cache (slave_axi_if.awcache),
+      .io_axi_master_write_addr_bits_qos   (slave_axi_if.awqos),
       .io_axi_master_write_addr_bits_region(slave_axi_if.awregion),
-
-      .io_axi_master_write_data_valid   (slave_axi_if.wvalid),
-      .io_axi_master_write_data_ready   (slave_axi_if.wready),
-      .io_axi_master_write_data_bits_data(slave_axi_if.wdata),
-      .io_axi_master_write_data_bits_last(slave_axi_if.wlast),
-      .io_axi_master_write_data_bits_strb(slave_axi_if.wstrb),
-
-      .io_axi_master_write_resp_valid   (slave_axi_if.bvalid),
-      .io_axi_master_write_resp_ready   (slave_axi_if.bready),
-      .io_axi_master_write_resp_bits_id (slave_axi_if.bid),
-      .io_axi_master_write_resp_bits_resp(slave_axi_if.bresp),
-
-      .io_axi_master_read_addr_valid      (slave_axi_if.arvalid),
-      .io_axi_master_read_addr_ready      (slave_axi_if.arready),
-      .io_axi_master_read_addr_bits_addr  (slave_axi_if.araddr),
-      .io_axi_master_read_addr_bits_prot  (slave_axi_if.arprot),
-      .io_axi_master_read_addr_bits_id    (slave_axi_if.arid),
-      .io_axi_master_read_addr_bits_len   (slave_axi_if.arlen),
-      .io_axi_master_read_addr_bits_size  (slave_axi_if.arsize),
-      .io_axi_master_read_addr_bits_burst (slave_axi_if.arburst),
-      .io_axi_master_read_addr_bits_lock  (slave_axi_if.arlock),
-      .io_axi_master_read_addr_bits_cache (slave_axi_if.arcache),
-      .io_axi_master_read_addr_bits_qos   (slave_axi_if.arqos),
-      .io_axi_master_read_addr_bits_region(slave_axi_if.arregion),
-
-      .io_axi_master_read_data_valid    (slave_axi_if.rvalid),
-      .io_axi_master_read_data_ready    (slave_axi_if.rready),
-      .io_axi_master_read_data_bits_data(slave_axi_if.rdata),
-      .io_axi_master_read_data_bits_id  (slave_axi_if.rid),
-      .io_axi_master_read_data_bits_resp(slave_axi_if.rresp),
-      .io_axi_master_read_data_bits_last(slave_axi_if.rlast),
-
-      // IRQ, Control, and Status Signals
-      .io_irq(irq_if.irq),
-      .io_te(irq_if.te),
-      .io_halted(irq_if.halted),
-      .io_fault(irq_if.fault),
-      .io_wfi(irq_if.wfi),
-
-      // TODO: Connect Debug and Logging ports if needed by TB
-      .io_debug_en(),
-      .io_debug_addr_0(),
-      .io_debug_addr_1(),
-      .io_debug_addr_2(),
-      .io_debug_addr_3(),
-      .io_debug_inst_0(),
-      .io_debug_inst_1(),
-      .io_debug_inst_2(),
-      .io_debug_inst_3(),
-      .io_debug_cycles()
+      .io_axi_master_write_data_ready      (slave_axi_if.wready),
+      .io_axi_master_write_data_valid      (slave_axi_if.wvalid),
+      .io_axi_master_write_data_bits_data  (slave_axi_if.wdata),
+      .io_axi_master_write_data_bits_last  (slave_axi_if.wlast),
+      .io_axi_master_write_data_bits_strb  (slave_axi_if.wstrb),
+      .io_axi_master_write_resp_ready      (slave_axi_if.bready),
+      .io_axi_master_write_resp_valid      (slave_axi_if.bvalid),
+      .io_axi_master_write_resp_bits_id    (slave_axi_if.bid),
+      .io_axi_master_write_resp_bits_resp  (slave_axi_if.bresp),
+      .io_axi_master_read_addr_ready       (slave_axi_if.arready),
+      .io_axi_master_read_addr_valid       (slave_axi_if.arvalid),
+      .io_axi_master_read_addr_bits_addr   (slave_axi_if.araddr),
+      .io_axi_master_read_addr_bits_prot   (slave_axi_if.arprot),
+      .io_axi_master_read_addr_bits_id     (slave_axi_if.arid),
+      .io_axi_master_read_addr_bits_len    (slave_axi_if.arlen),
+      .io_axi_master_read_addr_bits_size   (slave_axi_if.arsize),
+      .io_axi_master_read_addr_bits_burst  (slave_axi_if.arburst),
+      .io_axi_master_read_addr_bits_lock   (slave_axi_if.arlock),
+      .io_axi_master_read_addr_bits_cache  (slave_axi_if.arcache),
+      .io_axi_master_read_addr_bits_qos    (slave_axi_if.arqos),
+      .io_axi_master_read_addr_bits_region (slave_axi_if.arregion),
+      .io_axi_master_read_data_ready       (slave_axi_if.rready),
+      .io_axi_master_read_data_valid       (slave_axi_if.rvalid),
+      .io_axi_master_read_data_bits_data   (slave_axi_if.rdata),
+      .io_axi_master_read_data_bits_id     (slave_axi_if.rid),
+      .io_axi_master_read_data_bits_resp   (slave_axi_if.rresp),
+      .io_axi_master_read_data_bits_last   (slave_axi_if.rlast),
+      .io_halted                           (irq_if.halted),
+      .io_fault                            (irq_if.fault),
+      .io_wfi                              (irq_if.wfi),
+      .io_irq                              (irq_if.irq),
+      .io_boot_addr                        (32'h0),
+      .io_timer_irq                        (1'b0),
+      .io_software_irq                     (1'b0),
+      `DEBUG_CORE_PORTS,
+      .io_dm_req_ready                     (),
+      .io_dm_req_valid                     (1'b0),
+      .io_dm_req_bits_address              (32'h0),
+      .io_dm_req_bits_data                 (32'h0),
+      .io_dm_req_bits_op                   (2'b0),
+      .io_dm_rsp_ready                     (1'b0),
+      .io_dm_rsp_valid                     (),
+      .io_dm_rsp_bits_data                 (),
+      .io_dm_rsp_bits_op                   (),
+      .io_te                               (irq_if.te)
   );
+
+  `undef DEBUG_RB_VEC_WRITE
+  `undef DEBUG_RB_VEC_WRITES
+  `undef DEBUG_RB_LANE
+  `undef DEBUG_RB_ALL_LANES
+  `undef DEBUG_DISPATCH_LANE
+  `undef DEBUG_REGFILE_WRITE_ADDR
+  `undef DEBUG_REGFILE_WRITE_DATA
+  `undef DEBUG_FLOAT_WRITE_DATA
+  `undef DEBUG_CORE_PORTS
 
 
   //--------------------------------------------------------------------------

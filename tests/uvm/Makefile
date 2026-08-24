@@ -90,6 +90,7 @@ ifeq ($(SIMULATOR),vcs)
 SIM_COMPILE_OPTS = \
 	-full64 \
 	-sverilog \
+	+error=TFIPC \
 	+define+UVM_NO_DEPRECATED \
 	+define+TB_SUPPORT \
 		+define+VLEN_128 \
