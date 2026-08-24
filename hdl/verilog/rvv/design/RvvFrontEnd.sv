@@ -489,6 +489,9 @@ module RvvFrontEnd#(parameter N = 4,
       unaligned_cmd_data[i].rs1 =
           inst_q[i].bits[7] ?
               ((inst_q[i].bits[7:5] == 3'b101) ? freg_read_data_i[i]  // OPFVF
+`ifdef ZVT_ON
+               : ((inst_q[i].opcode != RVV) && (inst_q[i].bits[21:19] == 3'b100)) ? reg_read_data_i[(2*i) + 1]  // VME tile ld/st (TSS in rs2)
+`endif
                                                : reg_read_data_i[2*i])
             : 0;
 
@@ -563,9 +566,13 @@ module RvvFrontEnd#(parameter N = 4,
       requires_rs1_read[i] =
           lsu_requires_rs1_read[i] || non_lsu_requires_rs1_read[i];
 
-      // Only strided loads/stores (mop=0b10) read rs2
+      // Only strided loads/stores (mop=0b10) and VME tile loads/stores read rs2
       lsu_requires_rs2_read[i] = (inst_q[i].opcode != RVV) &&
-          (inst_q[i].bits[20:19] == 2'b10);
+          ((inst_q[i].bits[20:19] == 2'b10)
+`ifdef ZVT_ON
+           || ((inst_q[i].bits[21:19] == 3'b100) && (inst_q[i].bits[7:5] == 3'b111))
+`endif
+          );
       // vsetvl is only non LSU instruction that reads rs2
       non_lsu_requires_rs2_read[i] = (inst_q[i].opcode == RVV) &&
           (inst_q[i].bits[7:5] == 3'b111) &&
