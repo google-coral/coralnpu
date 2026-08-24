@@ -28,6 +28,7 @@ VME_TEST_TESTCASES = [
     "vme_matmul_fp32_test",
     "vme_decode_test",
     "vme_load_store_test",
+    "vme_transpose_test",
 ]
 
 cocotb_test_suite(
@@ -54,6 +55,7 @@ cocotb_test_suite(
             ":vme_test_program",
             ":vme_decode_test",
             ":vme_load_store_test",
+            ":vme_transpose_test",
         ],
         "size": "medium",
     },
@@ -63,6 +65,7 @@ cocotb_test_suite(
         ":vme_test_program",
         ":vme_decode_test",
         ":vme_load_store_test",
+        ":vme_transpose_test",
         "//tests/cocotb:coverage_exclude.cfg",
         "//hdl/verilog:dpi_files",
     ],
@@ -97,4 +100,9 @@ coralnpu_v2_binary(
 coralnpu_v2_binary(
     name = "vme_load_store_test",
     srcs = ["vme_load_store_test.cc"],
+)
+
+coralnpu_v2_binary(
+    name = "vme_transpose_test",
+    srcs = ["vme_transpose_test.cc"],
 )
