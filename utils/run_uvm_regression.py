@@ -120,6 +120,10 @@ TIMEOUT_MAP = {
     "//tests/cocotb/rvv/ml_ops:rvv_float_matmul": 100000000,
     "//tests/cocotb/rvv/ml_ops:rvv_matmul": 100000000,
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly": 100000000,
+    "//tests/cocotb/rvv/ml_ops/static_reference_tests:float_matmul_16x48x16":
+    100000000,
+    "//tests/cocotb/rvv/ml_ops/static_reference_tests:int_matmul_16x48x16":
+    100000000,
     "//examples:coralnpu_v2_rvv_add_intrinsic": 200000,
 }
 
@@ -373,106 +377,6 @@ def generate_spike_log(
     except Exception as e:
         logging.error(f"Spike generation failed: {e}")
         return False
-
-
-def run_uvm(
-    elf_path: str,
-    spike_log_path: Optional[str] = None,
-    target: Optional[str] = None,
-    mpact_root: Optional[str] = None,
-    tohost_addr: Optional[int] = None
-) -> Tuple[str, str, str]:
-
-    logging.info(f"Running UVM for {elf_path}...")
-    if not mpact_root:
-        mpact_root = resolve_default_mpact_root()
-    if not os.path.exists(elf_path):
-        # We don't want to deal too much with handling exceptions in
-        # the run loop that calls this. We'll just log in the CSV and let
-        # the user pick up the pieces.
-        return "BUILD_ARTIFACT_MISSING", "ELF file not found", ""
-
-    env = os.environ.copy()
-    env["CORALNPU_MPACT"] = mpact_root
-    # Use absolute path for TEST_ELF
-    abs_elf_path = os.path.abspath(elf_path)
-    cmd = [
-        "make", "-C", "tests/uvm", "run", "UVM_VERBOSITY=UVM_HIGH",
-        f"TEST_ELF={abs_elf_path}"
-    ]
-
-    if target and target in TIMEOUT_MAP:
-        timeout_ns = TIMEOUT_MAP[target]
-        cmd.append(f"TEST_TIMEOUT_NS={timeout_ns}")
-        logging.info(f"  Using custom timeout: {timeout_ns} ns")
-
-    if tohost_addr is not None:
-        cmd.append(f"EXTRA_PLUSARGS=+TOHOST_ADDR={tohost_addr:08x}")
-
-    if spike_log_path:
-        cmd.append(f"SPIKE_LOG={os.path.abspath(spike_log_path)}")
-
-    max_retries = 3
-    for attempt in range(1, max_retries + 1):
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, env=env
-            )
-            output = result.stdout + result.stderr
-            if result.returncode != 0 and "1-800-VERILOG" in output:
-                if attempt < max_retries:
-                    logging.warning(
-                        f"  WARNING: License failure detected (1-800-VERILOG), retrying... (Attempt {attempt}/{max_retries})"
-                    )
-                    continue
-                else:
-                    logging.error(
-                        f"  ERROR: License failure detected (1-800-VERILOG), max retries reached."
-                    )
-            # If successful or failed for other reasons, break loop
-            break
-
-        except Exception as e:
-            return "EXEC_FAIL", str(e), ""
-
-    # Process result (from last attempt)
-    try:
-        # Check for UVM errors/fatals regardless of return code
-        # Match lines like: UVM_ERROR file.sv(123) @ 100: ... or UVM_FATAL @ 100: ...
-        # Exclude summary lines like "UVM_ERROR : 0" or "Number of ... : 0"
-        uvm_err = re.search(
-            r"^\s*(UVM_(?:FATAL|ERROR)(?!.*:\s+0\s*$).*)$", output,
-            re.MULTILINE
-        )
-
-        if result.returncode != 0:
-            status = "FAIL"
-            reason = "Unknown Error"
-
-            if uvm_err:
-                reason = uvm_err.group(1).strip()
-            elif "AXI_DECERR" in output:
-                reason = "AXI_DECERR detected"
-            else:
-                lines = output.strip().split('\n')
-                reason = "Make failed: " + (lines[-1] if lines else "Unknown")
-
-            # Sanitize reason for CSV (remove commas and newlines)
-            reason = reason.replace(',', ';').replace('\n', ' ')
-            return status, reason, output
-
-        # Even if return code is 0, check for UVM errors
-        if uvm_err:
-            reason = uvm_err.group(1).strip()
-            # Sanitize reason for CSV
-            reason = reason.replace(',', ';').replace('\n', ' ')
-            return "FAIL", reason, output
-
-        status = "PASS"
-        return status, "None", output
-
-    except Exception as e:
-        return "EXEC_FAIL", str(e), ""
 
 
 def get_riscv_test_artifacts() -> List[Tuple[str, str]]:
@@ -927,7 +831,7 @@ def run_full_regression(
     # 1. Preparation: Copy ELFs and generate Spike logs
     logging.info(f"Preparing {len(tests_to_run)} tests...")
     test_info_map = {}  # target -> info dict
-    for i, (target, src_elf) in enumerate(tests_to_run):
+    for target, src_elf in tests_to_run:
         if src_elf and os.path.exists(src_elf):
             safe_name = target.replace('//', '').replace(':', '_').replace(
                 '/', '_'
@@ -947,29 +851,11 @@ def run_full_regression(
                 if spike_bin and target not in SPIKE_DENYLIST:
                     spike_log_name = safe_name + ".spike.log"
                     temp_spike_log = os.path.join(temp_elf_dir, spike_log_name)
-                    if os.path.exists(temp_spike_log):
-                        os.remove(temp_spike_log)
-                    cmd_spike = [
-                        spike_bin, f"-m{get_spike_memory_map_str()}",
-                        f"--isa={SPIKE_ISA}", "--misaligned", "-l",
-                        "--log-commits", f"--pc={entry_point}", dest_elf
-                    ]
-                    try:
-                        with open(os.devnull, 'w') as devnull:
-                            subprocess.run(
-                                cmd_spike,
-                                stdout=devnull,
-                                stderr=devnull,
-                                timeout=30
-                            )
-                        if os.path.exists(temp_spike_log):
-                            shutil.copy2(
-                                temp_spike_log,
-                                os.path.join(logs_dir, spike_log_name)
-                            )
-                            spike_log_path = os.path.abspath(temp_spike_log)
-                    except:
-                        pass
+                    dest_spike_log = os.path.join(logs_dir, spike_log_name)
+                    if generate_spike_log(spike_bin, dest_elf, temp_spike_log,
+                                          entry_point):
+                        shutil.copy2(temp_spike_log, dest_spike_log)
+                        spike_log_path = os.path.abspath(dest_spike_log)
 
                 tohost_addr = get_tohost_addr(dest_elf)
                 if tohost_addr is None: tohost_addr = 0xFFFFFFFF
