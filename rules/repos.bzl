@@ -361,7 +361,6 @@ def mpact_repos():
         url = "https://github.com/google/mpact-riscv/archive/cb68bd4a2cb80dea24d9760dc6397b5854ea41bd.tar.gz",
         patches = [
             "@coralnpu_hw//third_party:mpact-riscv-openat.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_vector_memory.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_vrgather.patch",
         ],
         patch_args = ["-p1"],

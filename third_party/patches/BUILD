@@ -15,7 +15,6 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "mpact_riscv_vector_memory.patch",
     "mpact_riscv_vrgather.patch",
     "mpact_riscv_vstart_trap.patch",
 ])
