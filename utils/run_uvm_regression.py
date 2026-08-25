@@ -157,7 +157,7 @@ SPIKE_MEMORY_REGIONS = [
     (0x10000, 0x8000),  # DTCM
     (0x20000000, 0x400000),  # DRAM
 ]
-SPIKE_ISA = "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zfbfmin_zvfbfa"
+SPIKE_ISA = "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zfbfmin_zvfbfa_xcoralnpu"
 
 
 def get_spike_memory_map_str() -> str:

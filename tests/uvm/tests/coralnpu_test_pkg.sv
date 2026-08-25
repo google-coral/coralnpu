@@ -218,10 +218,10 @@ package coralnpu_test_pkg;
         if (clp.get_arg_value("+MISA_VALUE=", misa_value_str)) begin
           if ($sscanf(misa_value_str, "'h%h", initial_misa_value) != 1) begin
             `uvm_fatal(get_type_name(),
-                       "Invalid +MISA_VALUE format. Use hex format (e.g., 'h40201120).")
+                       "Invalid +MISA_VALUE format. Use hex format (e.g., 'h40a01120).")
           end
         end else begin
-          initial_misa_value = 32'h40201120;
+          initial_misa_value = 32'h40a01120;
         end
       end
 

@@ -39,7 +39,7 @@ class CoralNPUV2Simulator:
             self.ddr_region = self._create_memory_region(
                 0x80000000, 0x8000000, MP.kReadWriteExecute
             )
-            self.options.initial_misa_value = 0x40201120
+            self.options.initial_misa_value = 0x40a01120
             self.options.memory_regions = [
                 self.itcm_region, self.dtcm_region, self.extmem_region,
                 self.ddr_region

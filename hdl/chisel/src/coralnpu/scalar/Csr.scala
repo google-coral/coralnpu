@@ -325,7 +325,7 @@ class Csr(p: Parameters) extends Module {
   val minstret_val              = minstret + minstretThisCycle_delayed
 
   // MXLEN, I,M,X extensions
-  val misaValue = (if (p.xlen == 32) BigInt(0x40001100L) else BigInt("8000000000001100", 16)) |
+  val misaValue = (if (p.xlen == 32) BigInt(0x40801100L) else BigInt("8000000000801100", 16)) |
     (if (p.enableRvv) { BigInt(1) << 21 }
      else { BigInt(0) }) |
     (if (p.enableFloat) { BigInt(1) << 5 }

@@ -686,3 +686,187 @@ async def fencei_test(dut):
     assert result_smc == 30, f"Expected result_smc=30, got {result_smc}"
     assert result1 == 42, f"Expected result1=42, got {result1}"
     assert result2 == 99, f"Expected result2=99, got {result2}"
+
+
+def check_misa_value(misa_val: int, is_rvv: bool, has_float: bool = True):
+    """Validates the exact contents of MISA according to the RISC-V Privileged specification."""
+    # Base architecture: MXL[31:30]
+    mxl = (misa_val >> 30) & 0x3
+    assert mxl == 1, f"Expected MXL=1 (RV32), got {mxl} (MISA=0x{misa_val:08x})"
+    assert (misa_val & (1 << 31)) == 0, "Bit 31 must be 0 for RV32"
+    assert (misa_val & (1 << 30)) != 0, "Bit 30 must be 1 for RV32"
+
+    # Reserved bits [29:26] must return zero
+    reserved = (misa_val >> 26) & 0xF
+    assert reserved == 0, f"Reserved bits [29:26] must be 0, got {reserved:#x} (MISA=0x{misa_val:08x})"
+
+    # Base integer ISA: 'I' (bit 8)
+    assert (
+        misa_val & (1 << 8)
+    ) != 0, f"Expected 'I' extension (bit 8) to be set in 0x{misa_val:08x}"
+
+    # Integer Multiply/Divide: 'M' (bit 12)
+    assert (
+        misa_val & (1 << 12)
+    ) != 0, f"Expected 'M' extension (bit 12) to be set in 0x{misa_val:08x}"
+
+    # Non-standard / Custom extensions: 'X' (bit 23)
+    assert (
+        misa_val & (1 << 23)
+    ) != 0, f"Expected 'X' extension (bit 23) to be set in 0x{misa_val:08x}"
+
+    # Vector extension: 'V' (bit 21)
+    if is_rvv:
+        assert (
+            misa_val & (1 << 21)
+        ) != 0, f"Expected 'V' extension (bit 21) to be set for RVV core in 0x{misa_val:08x}"
+    else:
+        assert (
+            misa_val & (1 << 21)
+        ) == 0, f"Expected 'V' extension (bit 21) to be clear for non-RVV core in 0x{misa_val:08x}"
+
+    # Floating-point extension: 'F' (bit 5)
+    if has_float:
+        assert (
+            misa_val & (1 << 5)
+        ) != 0, f"Expected 'F' extension (bit 5) to be set when Float enabled in 0x{misa_val:08x}"
+    else:
+        assert (
+            misa_val & (1 << 5)
+        ) == 0, f"Expected 'F' extension (bit 5) to be clear when Float disabled in 0x{misa_val:08x}"
+
+    # Unimplemented standard extensions must return 0
+    unimplemented_bits = [
+        0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24,
+        25
+    ]
+    for bit in unimplemented_bits:
+        char = chr(ord('A') + bit)
+        assert (
+            misa_val & (1 << bit)
+        ) == 0, f"Expected '{char}' extension (bit {bit}) to be 0, got 1 in 0x{misa_val:08x}"
+
+    # Verify complete 32-bit value
+    expected = (1 << 30) | (1 << 23) | (1 << 12) | (1 << 8)
+    if is_rvv:
+        expected |= (1 << 21)
+    if has_float:
+        expected |= (1 << 5)
+    assert misa_val == expected, f"Expected MISA=0x{expected:08x}, got 0x{misa_val:08x}"
+
+
+@cocotb.test()
+async def core_mini_axi_misa_test(dut):
+    """Validates MISA CSR contents and WARL read/write behavior on CoreMiniAxi."""
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/misa_test.elf")
+
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        ['results'],
+    )
+
+    await fixture.run_to_halt()
+
+    results_bytes = await fixture.read('results', 17 * 4)
+    results = results_bytes.view(np.uint32)
+
+    initial_misa = int(results[0])
+    write_zero_read = int(results[1])
+    write_all_ones_read = int(results[2])
+    write_toggle_v_read = int(results[3])
+    write_toggle_f_read = int(results[4])
+    write_toggle_x_read = int(results[5])
+    write_patterns_read = [int(results[6 + i]) for i in range(6)]
+    csrrs_set_all_read = int(results[12])
+    csrrc_clear_all_read = int(results[13])
+    faulted = int(results[14])
+    mcause = int(results[15])
+    mtval = int(results[16])
+
+    dut._log.info(f"Initial MISA: 0x{initial_misa:08x}")
+    dut._log.info(
+        f"Faulted: {faulted}, mcause: 0x{mcause:08x}, mtval: 0x{mtval:08x}"
+    )
+
+    assert faulted == 0, f"Test faulted with mcause=0x{mcause:08x}"
+    assert dut.io_fault.value == 0, "DUT reported hardware fault"
+
+    is_rvv = "Rvv" in dut._name
+    has_float = True
+
+    # 1. Validate MISA extension contents per RTL configuration
+    check_misa_value(initial_misa, is_rvv=is_rvv, has_float=has_float)
+
+    # 2. Validate WARL behavior: writes must not alter hardwired legal value
+    assert write_zero_read == initial_misa, f"WARL violation: write 0 changed MISA to 0x{write_zero_read:08x}"
+    assert write_all_ones_read == initial_misa, f"WARL violation: write 0xFFFFFFFF changed MISA to 0x{write_all_ones_read:08x}"
+    assert write_toggle_v_read == initial_misa, f"WARL violation: toggle V changed MISA to 0x{write_toggle_v_read:08x}"
+    assert write_toggle_f_read == initial_misa, f"WARL violation: toggle F changed MISA to 0x{write_toggle_f_read:08x}"
+    assert write_toggle_x_read == initial_misa, f"WARL violation: toggle X changed MISA to 0x{write_toggle_x_read:08x}"
+    for i, pat_read in enumerate(write_patterns_read):
+        assert pat_read == initial_misa, f"WARL violation: pattern[{i}] changed MISA to 0x{pat_read:08x}"
+    assert csrrs_set_all_read == initial_misa, f"WARL violation: CSRRS changed MISA to 0x{csrrs_set_all_read:08x}"
+    assert csrrc_clear_all_read == initial_misa, f"WARL violation: CSRRC changed MISA to 0x{csrrc_clear_all_read:08x}"
+
+    dut._log.info("CoreMiniAxi MISA contents and WARL test passed!")
+
+
+@cocotb.test()
+async def rvv_misa_test(dut):
+    """Validates MISA CSR contents and WARL read/write behavior on RvvCoreMiniAxi."""
+    if "Rvv" not in dut._name:
+        dut._log.info("Skipping rvv_misa_test on non-RVV core")
+        return
+
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/misa_test.elf")
+
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        ['results'],
+    )
+
+    await fixture.run_to_halt()
+
+    results_bytes = await fixture.read('results', 17 * 4)
+    results = results_bytes.view(np.uint32)
+
+    initial_misa = int(results[0])
+    write_zero_read = int(results[1])
+    write_all_ones_read = int(results[2])
+    write_toggle_v_read = int(results[3])
+    write_toggle_f_read = int(results[4])
+    write_toggle_x_read = int(results[5])
+    write_patterns_read = [int(results[6 + i]) for i in range(6)]
+    csrrs_set_all_read = int(results[12])
+    csrrc_clear_all_read = int(results[13])
+    faulted = int(results[14])
+    mcause = int(results[15])
+    mtval = int(results[16])
+
+    dut._log.info(f"RvvCoreMiniAxi Initial MISA: 0x{initial_misa:08x}")
+    dut._log.info(
+        f"Faulted: {faulted}, mcause: 0x{mcause:08x}, mtval: 0x{mtval:08x}"
+    )
+
+    assert faulted == 0, f"Test faulted with mcause=0x{mcause:08x}"
+    assert dut.io_fault.value == 0, "DUT reported hardware fault"
+
+    # 1. Validate MISA extension contents for RVV core (V=1, F=1, X=1, M=1, I=1, MXL=1)
+    check_misa_value(initial_misa, is_rvv=True, has_float=True)
+
+    # 2. Validate WARL behavior: writes must not alter hardwired legal value
+    assert write_zero_read == initial_misa, f"WARL violation: write 0 changed MISA to 0x{write_zero_read:08x}"
+    assert write_all_ones_read == initial_misa, f"WARL violation: write 0xFFFFFFFF changed MISA to 0x{write_all_ones_read:08x}"
+    assert write_toggle_v_read == initial_misa, f"WARL violation: toggle V changed MISA to 0x{write_toggle_v_read:08x}"
+    assert write_toggle_f_read == initial_misa, f"WARL violation: toggle F changed MISA to 0x{write_toggle_f_read:08x}"
+    assert write_toggle_x_read == initial_misa, f"WARL violation: toggle X changed MISA to 0x{write_toggle_x_read:08x}"
+    for i, pat_read in enumerate(write_patterns_read):
+        assert pat_read == initial_misa, f"WARL violation: pattern[{i}] changed MISA to 0x{pat_read:08x}"
+    assert csrrs_set_all_read == initial_misa, f"WARL violation: CSRRS changed MISA to 0x{csrrs_set_all_read:08x}"
+    assert csrrc_clear_all_read == initial_misa, f"WARL violation: CSRRC changed MISA to 0x{csrrc_clear_all_read:08x}"
+
+    dut._log.info("RvvCoreMiniAxi MISA contents and WARL test passed!")
