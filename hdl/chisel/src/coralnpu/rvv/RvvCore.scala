@@ -803,15 +803,12 @@ class RvvCoreShim(p: Parameters) extends Module {
   io.rvv_idle       := rvvCoreWrapper.io.rvv_idle
   io.queue_capacity := rvvCoreWrapper.io.queue_capacity
 
-  val inst_fires    = io.inst.map(_.fire).reduce(_ || _)
-  val inst_consumed = RegNext(inst_fires, false.B)
-
   val vstart_wdata = MuxCase(
     vstart,
     Seq(
       io.csr.vstart_write.valid    -> io.csr.vstart_write.bits,
       rvvCoreWrapper.io.vcsr_valid -> rvvCoreWrapper.io.vcsr_vstart,
-      inst_consumed                -> 0.U
+      io.clear_vstart              -> 0.U
     )
   )
   vstart := vstart_wdata

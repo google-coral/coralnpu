@@ -40,6 +40,8 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
   val empty       = Output(Bool())
   val trapPending = Output(Bool())
   val trapRetired = Output(Bool())
+  val isVector    = Option.when(p.enableRvv)(Input(Vec(p.instructionLanes, Bool())))
+  val clearVstart = Option.when(p.enableRvv)(Output(Bool()))
   val debug       = Option.when(p.shouldExposeDebugPorts)(Output(new RetirementBufferDebugIO(p)))
 }
 
@@ -65,6 +67,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     val isControlFlow = Bool() // True if instruction is a jump or branch.
     val isBranch      = Bool()
     val isVector      = Bool()
+    val resetsVstart  = Bool()
     // Target storage removed in favor of linkOk check for area optimization
     val linkOk   = Bool()
     val isEcall  = Bool()
@@ -116,6 +119,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     scalarAddr: RegfileWriteAddrIO,
     floatAddr: Option[RegfileWriteAddrIO],
     vectorAddr: Option[RegfileWriteAddrIO],
+    resetsVstart: Bool,
     isJump: Bool,
     isBranch: Bool,
     linkOk: Bool,
@@ -174,6 +178,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     instr.isControlFlow := isJump || isBranch
     instr.isBranch      := isBranch
     instr.isVector      := vectorValid || vectorStore
+    instr.resetsVstart  := resetsVstart
     instr.linkOk        := linkOk
     instr.isEcall       := (finst.inst === 0x73.U)
     instr.isMpause      := (finst.inst === 0x08000073.U)
@@ -185,6 +190,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     scalarAddr: RegfileWriteAddrIO,
     floatAddr: Option[RegfileWriteAddrIO],
     vectorAddr: Option[RegfileWriteAddrIO],
+    resetsVstart: Bool,
     isJump: Bool,
     isBranch: Bool
   ): Instruction = {
@@ -195,6 +201,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       scalarAddr,
       floatAddr,
       vectorAddr,
+      resetsVstart,
       isJump,
       isBranch,
       linkOk = true.B,
@@ -255,14 +262,16 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
 
     val fAddr = io.writeAddrFloat.filter(_ => i == 0)
     val vAddr = io.writeAddrVector.map(_(i))
+    val isVec = io.isVector.map(_(i)).getOrElse(false.B)
     Mux(
       isNoFireFault,
-      fault(io.inst(i).bits, io.writeAddrScalar(i), fAddr, vAddr, io.jump(i), io.branch(i)),
+      fault(io.inst(i).bits, io.writeAddrScalar(i), fAddr, vAddr, isVec, io.jump(i), io.branch(i)),
       dispatch(
         io.inst(i).bits,
         io.writeAddrScalar(i),
         fAddr,
         vAddr,
+        isVec,
         io.jump(i),
         io.branch(i),
         linkOk,
@@ -587,6 +596,13 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   if (p.enableRvv) {
     accEnqPtr := Mux(trapRetired, 0.U, accEnqPtr + instBuffer.io.enqValid)
     accDeqPtr := Mux(trapRetired, 0.U, accDeqPtr + deqReady)
+
+    val clearVstart = VecInit(
+      (0 until p.retirementLanes).map { i =>
+        (i.U < deqReady) && !resultUpdate(i).bits.trap && instBuffer.io.dataOut(i).resetsVstart
+      }
+    ).asUInt.orR
+    io.clearVstart.get := clearVstart
 
     if (!mini) {
       val tagWidth = log2Ceil(bufferSize)

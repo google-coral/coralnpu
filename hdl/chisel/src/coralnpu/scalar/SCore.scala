@@ -75,6 +75,7 @@ class SCore(p: Parameters) extends Module {
   dispatch.io.retirement_buffer_empty        := rob_io.empty
   dispatch.io.retirement_buffer_trap_pending := rob_io.trapPending
   if (p.enableRvv) {
+    rob_io.isVector.get        := dispatch.io.isVector.get
     rob_io.writeAddrVector.get := dispatch.io.rvvRdMark.get
     (0 until p.instructionLanes).foreach(i => {
       rob_io.writeDataVector.get(i).valid               := io.rvvcore.get.rd_rob2rt_o(i).valid
@@ -505,14 +506,15 @@ class SCore(p: Parameters) extends Module {
     io.rvvcore.get.csr.vstart_write <> csr.io.rvv.get.vstart_write
     io.rvvcore.get.csr.vxrm_write <> csr.io.rvv.get.vxrm_write
     io.rvvcore.get.csr.vxsat_write <> csr.io.rvv.get.vxsat_write
-    io.rvvcore.get.csr.frm := csr.io.rvv.get.frm
-    csr.io.rvv.get.vstart  := io.rvvcore.get.csr.vstart
-    csr.io.rvv.get.vl      := io.rvvcore.get.configState.bits.vl
-    csr.io.rvv.get.vtype   := io.rvvcore.get.configState.bits.vtype
-    csr.io.rvv.get.vxrm    := io.rvvcore.get.csr.vxrm
-    csr.io.rvv.get.vxsat   := io.rvvcore.get.csr.vxsat
-    csr.io.rvv.get.fflags  := io.rvvcore.get.csr.fflags
-    io.rvvcore.get.flush   := rob_io.trapRetired
+    io.rvvcore.get.csr.frm      := csr.io.rvv.get.frm
+    csr.io.rvv.get.vstart       := io.rvvcore.get.csr.vstart
+    csr.io.rvv.get.vl           := io.rvvcore.get.configState.bits.vl
+    csr.io.rvv.get.vtype        := io.rvvcore.get.configState.bits.vtype
+    csr.io.rvv.get.vxrm         := io.rvvcore.get.csr.vxrm
+    csr.io.rvv.get.vxsat        := io.rvvcore.get.csr.vxsat
+    csr.io.rvv.get.fflags       := io.rvvcore.get.csr.fflags
+    io.rvvcore.get.flush        := rob_io.trapRetired
+    io.rvvcore.get.clear_vstart := rob_io.clearVstart.getOrElse(false.B)
     if (p.enableVme) {
       csr.io.rvv.get.mtype := io.rvvcore.get.configState.bits.mtype.get
     } else {

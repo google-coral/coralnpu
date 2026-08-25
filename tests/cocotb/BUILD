@@ -259,10 +259,14 @@ RVV_ASSEMBLY_TESTCASES = [
     "vslide1down_test",
     "vslide_boundary_test",
     "vgather_test",
-    # "vstart_test",  # Commented out to avoid Bazel generation of test while skipped.
+    "vstart_test",
     "core_mini_rvv_small_loop_test",
     "core_mini_rvv_flush_race_test",
     "core_mini_rvv_vill_loop_trap_test",
+    "core_mini_rvv_vstart_rob_test",
+    "core_mini_rvv_vstart_trap_flush_test",
+    "core_mini_rvv_vstart_vmv_scalar_test",
+    "core_mini_rvv_vstart_vset_test",
 ]
 # END_TESTCASES_FOR_rvv_assembly_cocotb_test
 

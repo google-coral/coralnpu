@@ -1,0 +1,99 @@
+/*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * Directed test to verify vstart reset for vector config instructions
+ * (vsetivli): non-zero vstart is reset to zero upon in-order architectural
+ * retirement, including co-dispatched vector instructions.
+ */
+
+.section .data
+.align 16
+
+.global input_a
+input_a:
+    .word 10, 20, 30, 40
+
+.global input_b
+input_b:
+    .word 1, 2, 3, 4
+
+.global output_dual_dispatch
+output_dual_dispatch:
+    .word 0, 0, 0, 0
+
+.global test_results_vset
+test_results_vset:
+    .word 0xDEAD, 0xDEAD, 0xDEAD, 0
+
+.global test_results_dual_dispatch
+test_results_dual_dispatch:
+    .word 0xDEAD, 0xDEAD, 0xDEAD, 0
+
+.section .text
+.global main
+.option norelax
+
+main:
+    // Setup vectors
+    vsetivli x0, 4, e32, m1, ta, ma
+    la t1, input_a
+    la t2, input_b
+    vle32.v v9, (t1)
+    vle32.v v10, (t2)
+
+    // ---------------------------------------------------------
+    // Test 1: Vector config instruction (vsetivli) resets vstart
+    // ---------------------------------------------------------
+    la t4, test_results_vset
+    li t0, 4
+    csrw vstart, t0
+    vsetivli x0, 4, e32, m1, ta, ma
+    .rept 50
+    nop
+    .endr
+    csrr t1, vstart
+    sw t1, 0(t4)
+
+    // ---------------------------------------------------------
+    // Test 2: Dual-dispatch vsetivli + vadd.vv in same cycle
+    // ---------------------------------------------------------
+    la t4, test_results_dual_dispatch
+    la t3, output_dual_dispatch
+    vmv.v.i v8, 0
+    li t0, 2
+    csrw vstart, t0
+
+    .p2align 3
+    vsetivli x0, 4, e32, m1, ta, ma
+    vadd.vv v8, v9, v10
+
+    .rept 50
+    nop
+    .endr
+
+    csrr t1, vstart
+    sw t1, 0(t4)
+    vse32.v v8, (t3)
+
+    .rept 50
+    nop
+    .endr
+
+    li t5, 0x800
+    csrs mie, t5
+    wfi
+    ret

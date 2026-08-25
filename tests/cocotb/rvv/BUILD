@@ -86,6 +86,18 @@ template_rule(
         "rvv_vill_loop_trap_test": {
             "srcs": ["rvv_vill_loop_trap_test.S"],
         },
+        "rvv_vstart_rob_test": {
+            "srcs": ["rvv_vstart_rob_test.S"],
+        },
+        "rvv_vstart_trap_flush_test": {
+            "srcs": ["rvv_vstart_trap_flush_test.S"],
+        },
+        "rvv_vstart_vmv_scalar_test": {
+            "srcs": ["rvv_vstart_vmv_scalar_test.S"],
+        },
+        "rvv_vstart_vset_test": {
+            "srcs": ["rvv_vstart_vset_test.S"],
+        },
     },
 )
 
@@ -97,6 +109,10 @@ filegroup(
         "rvv_load.elf",
         "rvv_small_loop_test.elf",
         "rvv_vill_loop_trap_test.elf",
+        "rvv_vstart_rob_test.elf",
+        "rvv_vstart_trap_flush_test.elf",
+        "rvv_vstart_vmv_scalar_test.elf",
+        "rvv_vstart_vset_test.elf",
         "vcompress_test.elf",
         "vcpop_exception_test.elf",
         "vcpop_test.elf",

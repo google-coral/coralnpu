@@ -165,9 +165,6 @@ module RvvFrontEnd#(parameter N = 4,
 `endif  // ZVE32F_ON
     for (int i = 0; i < N; i++) begin
       inst_config_state[i+1] = inst_config_state[i];
-      if (valid_inst_q[i] && ((inst_q[i].opcode != RVV) || (inst_q[i].bits[7:5] != 3'b111))) begin
-          inst_config_state[i+1].vstart = 0;
-      end
       avl[i] = 0;
       vlmax[i] = 0;
       is_setvl[i] = 0;
@@ -281,6 +278,7 @@ module RvvFrontEnd#(parameter N = 4,
       end
 
       if (is_setvl[i]) begin
+        inst_config_state[i+1].vstart = 0;
         // Compute legality of vtype.
         unique case (inst_config_state[i+1].sew)
           SEW8:
@@ -470,7 +468,7 @@ module RvvFrontEnd#(parameter N = 4,
 `endif
       unaligned_cmd_data[i].opcode = inst_q[i].opcode;
       unaligned_cmd_data[i].bits = inst_q[i].bits;
-      unaligned_cmd_data[i].arch_state = inst_config_state[i];
+      unaligned_cmd_data[i].arch_state = inst_config_state[i+1];
       // TODO: Handle rs propagation for loads/stores
       // funct3 == inst[14:12] == bits[7:5]; bits[7] == funct3[2] indicates
       // scalar rs1 is used (OPIVX, OPFVF, OPMVX, OPCFG). For OPFVF the scalar
