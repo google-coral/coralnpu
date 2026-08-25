@@ -45,3 +45,53 @@ If you encounter an error like `ccache: error: Failed to create temporary file .
 ```bash
 bazel --action_env=CCACHE_DISABLE=1 test --config=vcs //...
 ```
+
+### Code Coverage (vcs_binary)
+
+`vcs_binary` targets (e.g. the simulators in `tests/vcs_sim/`) can be compiled
+with VCS code coverage instrumentation via the `--//rules:vcs_coverage_types`
+build setting:
+
+```bash
+bazel build --config=vcs \
+    --//rules:vcs_coverage_types=line+cond+fsm+branch+tgl+assert \
+    //tests/vcs_sim:rvv_core_mini_verification_axi_sim
+```
+
+Repeated `--//rules:vcs_coverage_types=` flags accumulate; values are joined
+with `+` before being passed to `vcs -cm`.
+
+When a simv is coverage-instrumented, the generated runner script keeps the
+coverage database away from the binary itself. This matters because VCS derives
+its default database location from the simv path (`<simv>.vdb`), which is inside
+`bazel-out/`. A database left there by an earlier run or build no longer matches
+the freshly linked coverage model, and the simulation aborts at startup with:
+
+```text
+Error-[MON-ICDF] Incompatible Code Coverage Directory
+  Simulation could not read the database from the directory '...simv.vdb'.
+```
+
+The runner handles this automatically: it deletes any stale `<simv>.vdb` and
+passes `-cm_dir` pointing at a fresh per-run directory (under `$TEST_TMPDIR`
+inside bazel tests, otherwise the current working directory). After the run it
+prints where the database was written.
+
+To control where coverage lands yourself, either set an environment variable
+(the same directory is reused across runs, so results accumulate and merge):
+```bash
+VCS_COVERAGE_DIR=$PWD/cov_rvv_add ./bazel-bin/tests/vcs_sim/rvv_core_mini_verification_axi_sim \
+    +binary=$ELF +permissive -cm line+cond+fsm+branch+tgl+assert -l run.log
+```
+
+or pass an explicit runtime flag, which always wins:
+
+```bash
+./bazel-bin/tests/vcs_sim/rvv_core_mini_verification_axi_sim ... -cm_dir $PWD/my_cov
+```
+
+Generate a report from any of these databases with URG:
+
+```bash
+urg -dir <database_dir>/<simv>.vdb -report urgReport
+```
