@@ -361,6 +361,7 @@ def mpact_repos():
         url = "https://github.com/google/mpact-riscv/archive/cb68bd4a2cb80dea24d9760dc6397b5854ea41bd.tar.gz",
         patches = [
             "@coralnpu_hw//third_party:mpact-riscv-openat.patch",
+            "@coralnpu_hw//third_party/patches:mpact_riscv_vector_memory.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_vrgather.patch",
         ],
         patch_args = ["-p1"],
@@ -372,6 +373,8 @@ def mpact_repos():
         sha256 = "426328af9681929b262147538e61c7b6545bebf70e4db2d483c94d9613ac5909",
         strip_prefix = "coralnpu-mpact-e2a26e6d983f13d4c10875e4e5878a6171c04a06",
         workspace_file = "@coralnpu_hw//third_party/coralnpu_mpact:WORKSPACE",
+        patches = ["@coralnpu_hw//third_party/coralnpu_mpact:0002-Patch-mpact_riscv-WORKSPACE.patch"],
+        patch_args = ["-p1"],
     )
 
 def uvm_verilator_repos():

@@ -1,0 +1,29 @@
+From 870c10fb23e7dfa59869b234a967e2b668deaaf0 Mon Sep 17 00:00:00 2001
+From: Alex Van Damme <atv@google.com>
+Date: Tue, 25 Aug 2026 20:45:30 +0000
+Subject: [PATCH] Patch mpact_riscv WORKSPACE
+
+---
+ WORKSPACE | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/WORKSPACE b/WORKSPACE
+index 6900273..8770e89 100644
+--- a/WORKSPACE
++++ b/WORKSPACE
+@@ -28,6 +28,12 @@ http_archive(
+     sha256 = "38faef26745f34a82de0daf3b65a207c8d2ecf825f37484a4a27132512583574",
+     strip_prefix = "mpact-riscv-cb68bd4a2cb80dea24d9760dc6397b5854ea41bd",
+     url = "https://github.com/google/mpact-riscv/archive/cb68bd4a2cb80dea24d9760dc6397b5854ea41bd.tar.gz",
++    patches = [
++        "@coralnpu_hw//third_party:mpact-riscv-openat.patch",
++        "@coralnpu_hw//third_party/patches:mpact_riscv_vector_memory.patch",
++        "@coralnpu_hw//third_party/patches:mpact_riscv_vrgather.patch",
++    ],
++    patch_args = ["-p1"],
+ )
+ 
+ # Download only the single svdpi.h file.
+-- 
+2.43.7
+
