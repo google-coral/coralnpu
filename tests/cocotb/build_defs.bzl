@@ -106,6 +106,24 @@ def rvv_core_mini_axi_netlist_test_suite(
         vcs_netlist_test_args = VCS_NETLIST_TEST_ARGS,
         **kwargs):
     """A generic template for creating netlist tests for RvvCoreMiniAxi."""
+    user_tests_kwargs = kwargs.pop("tests_kwargs", {})
+    default_tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniAxi",
+        "waves": False,
+        "seed": "42",
+        "tags": ["vcs", "manual"],
+        "test_module": ["@coralnpu_hw//tests/cocotb:core_mini_axi_sim.py"],
+        "deps": [
+            "@coralnpu_hw//coralnpu_test_utils:core_mini_axi_sim_interface",
+            "@coralnpu_hw//coralnpu_test_utils:sim_test_fixture",
+            requirement("tqdm"),
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        "data": ["@coralnpu_hw//tests/cocotb:cocotb_test_binary_targets"],
+        "size": "enormous",
+    }
+    default_tests_kwargs.update(user_tests_kwargs)
+
     cocotb_test_suite(
         name = name,
         simulators = ["vcs_netlist"],
@@ -128,21 +146,7 @@ def rvv_core_mini_axi_netlist_test_suite(
             "unreachable_prefetch_fault",
             "core_mini_axi_frm_test",
         ],
-        tests_kwargs = {
-            "hdl_toplevel": "RvvCoreMiniAxi",
-            "waves": False,
-            "seed": "42",
-            "tags": ["vcs", "manual"],
-            "test_module": ["@coralnpu_hw//tests/cocotb:core_mini_axi_sim.py"],
-            "deps": [
-                "@coralnpu_hw//coralnpu_test_utils:core_mini_axi_sim_interface",
-                "@coralnpu_hw//coralnpu_test_utils:sim_test_fixture",
-                requirement("tqdm"),
-                "@bazel_tools//tools/python/runfiles",
-            ],
-            "data": ["@coralnpu_hw//tests/cocotb:cocotb_test_binary_targets"],
-            "size": "enormous",
-        },
+        tests_kwargs = default_tests_kwargs,
         vcs_netlist_build_args = VCS_NETLIST_BUILD_ARGS + vcs_build_args_extra,
         vcs_netlist_data = [
             "@coralnpu_hw//tests/cocotb:cocotb_test_binary_targets",
