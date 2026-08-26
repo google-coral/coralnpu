@@ -2352,16 +2352,17 @@ class LsuSuperSlot(p: Parameters) extends Module {
         ),
         _.cells -> VecInit.tabulate(nCells) { i =>
           MuxUpTo1H(
-            cells(i).initDone(),
+            // active cells: do data HS iff masked
+            cells(i).initLoad(addr + i.U, needData = masked),
             Seq(
-              // Prestart: skip to WB
-              (i.U < startCell) -> cells(i).initSkip(),
-              // Active cells: skip HS if not masked
-              (i.U >= startCell && i.U < endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
-                .initLoad(addr + i.U, needData = masked),
-              // tail cells:  skip to WB
-              (i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i).initSkip()
-              // Default: unreachable cells
+              // unmasked, prestart: skip to WB
+              (!masked && i.U < startCell) -> cells(i).initSkip(),
+              // unmasked, tail:  skip to WB
+              (!masked && i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
+                .initSkip(),
+              // unreachable cells
+              ((i / p.rvvVlenb).U > maxActiveReg) -> cells(i).initDone()
+              // default: active cells
             )
           )
         }
@@ -2391,9 +2392,9 @@ class LsuSuperSlot(p: Parameters) extends Module {
         ),
         _.cells -> VecInit.tabulate(nCells) { i =>
           Mux(
-            // TODO: consider vl/vstart
             (i / p.rvvVlenb).U <= maxVectorPerSegment * nfields + nfields + maxVectorPerSegment,
             cells(i).initVectorStore(addr + i.U),
+            // unreachable cells
             cells(i).initDone()
           )
         }
@@ -2555,16 +2556,17 @@ class LsuSuperSlot(p: Parameters) extends Module {
         ),
         _.cells -> VecInit.tabulate(nCells) { i =>
           MuxUpTo1H(
-            cells(i).initDone(),
+            // active cells: do data HS iff masked
+            cells(i).initLoad(addr + offsets(i), needData = masked),
             Seq(
-              // Prestart: skip to WB
-              (i.U < startCell) -> cells(i).initSkip(),
-              // Active cells: skip HS if not masked
-              (i.U >= startCell && i.U < endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
-                .initLoad(addr + offsets(i), needData = masked),
-              // tail cells:  skip to WB
-              (i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i).initSkip()
+              // unmasked, prestart: skip to WB
+              (!masked && i.U < startCell) -> cells(i).initSkip(),
+              // unmasked, tail:  skip to WB
+              (!masked && i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
+                .initSkip(),
               // Default: unreachable cells
+              ((i / p.rvvVlenb).U > maxActiveReg) -> cells(i).initDone()
+              // default: active cells
             )
           )
         }
@@ -2634,6 +2636,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
             // TODO: consider vl/vstart
             (i / p.rvvVlenb).U <= maxVectorPerSegment * nfields + nfields + maxVectorPerSegment,
             cells(i).initVectorStore(addr + offsets(i)),
+            // unreachable cells
             cells(i).initDone()
           )
         }
@@ -2666,12 +2669,11 @@ class LsuSuperSlot(p: Parameters) extends Module {
         )
       )
       val newCells = VecInit.tabulate(nCells) { i =>
-        // TODO: consider vl/vstart
         val cellIsActive = i.U < activeCellCount
         MuxUpTo1H(
           cells(i).initDone(),
           Seq(
-            // TODO: unmasked loads can skip W_DATA.
+            // No skip here.
             (cellIsActive && !write) -> cells(i).initLoad(addr + offsets(i), needData = true.B),
             (cellIsActive && write)  -> cells(i).initVectorStore(addr + offsets(i))
             // Default: !cellIsActive
