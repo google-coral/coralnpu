@@ -23,7 +23,11 @@ load(
 load("@coralnpu_hw//rules:lint.bzl", "vcstatic_lint")
 load("@coralnpu_hw//rules:utils.bzl", "filter_files_by_extension", "template_rule")
 load("@coralnpu_hw//rules:verilog.bzl", "verilog_zip_bundle")
-load("//hdl/chisel/src/coralnpu:flags.bzl", "RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS")
+load(
+    "//hdl/chisel/src/coralnpu:flags.bzl",
+    "RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS",
+    "VME_CORE_MINI_AXI_COMMON_GEN_FLAGS",
+)
 
 package(default_visibility = ["//visibility:public"])
 
@@ -815,10 +819,6 @@ filegroup(
 # VME (Zvt) variant. Adds the non-tile mset* CSR plumbing on top of the RVV
 # core. Kept as a separate template_rule call so the RVV-only targets above
 # remain byte-identical (the ZVT_ON define widens the RVVConfigState struct).
-VME_CORE_MINI_AXI_COMMON_GEN_FLAGS = RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS + [
-    "--enableVme=True",
-]
-
 template_rule(
     chisel_cc_library,
     {
@@ -834,6 +834,18 @@ template_rule(
                 "--dtcmSizeKBytes=32",
             ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
             "module_name": "VmeCoreMiniAxi",
+        },
+        "vme_core_mini_verification_axi_cc_library": {
+            "verilog_file_path": "VmeCoreMiniVerificationAxi.sv",
+            "extra_outs": [
+                "VVmeCoreMiniVerificationAxi_parameters.h",
+                "VmeCoreMiniVerificationAxi.zip",
+            ],
+            "gen_flags": [
+                "--moduleName=VmeCoreMiniVerification",
+                "--enableVerification=True",
+            ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
+            "module_name": "VmeCoreMiniVerificationAxi",
         },
     },
     chisel_lib = ":coralnpu",

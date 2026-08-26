@@ -24,3 +24,7 @@ RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS = [
     "--enableVectorBf16=True",
     "--useAxi",
 ]
+
+VME_CORE_MINI_AXI_COMMON_GEN_FLAGS = RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS + [
+    "--enableVme=True",
+]
