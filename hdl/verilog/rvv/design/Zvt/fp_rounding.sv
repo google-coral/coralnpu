@@ -89,12 +89,12 @@ module fp_rounding#(
     endcase
   end
 
-  logic [NUM_FORMATS-1:0][SUPER_MAN_BITS+2-1:0] fmt_carry_in_bits;
+  logic [NUM_FORMATS-1:0][SUPER_MAN_BITS-1:0] fmt_carry_in_bits;
   for (genvar i = 0; i < NUM_FORMATS; i++) begin
-    assign fmt_carry_in_bits[i] = ((SUPER_MAN_BITS+2)'(FP_FMT_CONFIG[i]))
-                                    << (SUPER_MAN_BITS+2-1-fpnew_pkg::FP_ENCODINGS[i].man_bits);
+    assign fmt_carry_in_bits[i] = ((SUPER_MAN_BITS)'(FP_FMT_CONFIG[i]))
+                                    << (SUPER_MAN_BITS-fpnew_pkg::FP_ENCODINGS[i].man_bits);
   end
-  wire [SUPER_MAN_BITS+2-1:0] carry_in_bits = round_up ? fmt_carry_in_bits[dst_fmt] : '0;
+  wire [SUPER_MAN_BITS-1:0] carry_in_bits = round_up ? fmt_carry_in_bits[dst_fmt] : '0;
 
   // Round it up
   logic [SUPER_MAN_BITS-1:0] round_mantissa;

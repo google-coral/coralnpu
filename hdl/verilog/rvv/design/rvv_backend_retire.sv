@@ -324,6 +324,7 @@ generate
         `ifdef TB_SUPPORT
         rt2rvs_write_data[j].uop_pc     = rob2rt_write_data[j].uop_pc;
         `endif
+        rt2rvs_write_data[j].rob_tag    = rob2rt_write_data[j].rob_tag;
         rt2rvs_write_data[j].rt_index   = w_addr[j];
         rt2rvs_write_data[j].rt_data    = w_data[j][31:0];
       end

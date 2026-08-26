@@ -49,6 +49,7 @@ module rvv_backend
   `ifdef TB_SUPPORT
     async_frd_pc,
   `endif
+    async_frd_rob_tag,
     async_frd_addr,
     async_frd_data,
     async_frd_ready,
@@ -122,6 +123,7 @@ module rvv_backend
   `ifdef TB_SUPPORT
     output  logic [`NUM_RT_UOP-1:0][`PC_WIDTH-1:0]      async_frd_pc;
   `endif
+    output  logic [`NUM_RT_UOP-1:0][`ROB_TAG_WIDTH-1:0] async_frd_rob_tag;
     output  logic [`NUM_RT_UOP-1:0][`REGIDX_WIDTH-1:0]  async_frd_addr;
     output  logic [`NUM_RT_UOP-1:0][`XLEN-1:0]          async_frd_data;
     input   logic [`NUM_RT_UOP-1:0]                     async_frd_ready;
@@ -1189,7 +1191,7 @@ module rvv_backend
     assign res_ready_arb2pu[`NUM_PU_NOPINGPONG-1:0] = grant_arb[`NUM_PU_NOPINGPONG-1:0] |
                                                       ~{
                                                       `ifdef ZVT_ON
-                                                        res_vme2rvv,
+                                                        res_vme2rvv_vld,
                                                       `endif
                                                         res_valid_lsu};
 
@@ -1303,10 +1305,11 @@ module rvv_backend
     // write back FRF.
     for(genvar i=0; i<`NUM_RT_UOP; i++) begin: gen_rt_frf
     `ifdef TB_SUPPORT
-      assign async_frd_pc[i]   = rt_rvs_rvv2rvs[i].uop_pc;
+      assign async_frd_pc[i]      = rt_rvs_rvv2rvs[i].uop_pc;
     `endif
-      assign async_frd_addr[i] = rt_rvs_rvv2rvs[i].rt_index;
-      assign async_frd_data[i] = rt_rvs_rvv2rvs[i].rt_data;
+      assign async_frd_rob_tag[i] = rt_rvs_rvv2rvs[i].rob_tag;
+      assign async_frd_addr[i]    = rt_rvs_rvv2rvs[i].rt_index;
+      assign async_frd_data[i]    = rt_rvs_rvv2rvs[i].rt_data;
     end
   `endif
 

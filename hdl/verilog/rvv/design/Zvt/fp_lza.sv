@@ -16,6 +16,15 @@ module fp_lza #(
   output logic [$clog2(WIDTH+1)-1:0] scnt
 );
 
+  `ifdef ASSERT_ON
+    `rvv_expect(~(a[WIDTH-1] & b[WIDTH-1]))
+      else $error("Schmookler-Nowka algorithm needs MSB of either a or b is 0 to generate p");
+      // "...it would be useful to prefix the sequence with a T for subtraction and a Z for addition."
+      // Implemented by caller extending 1 bit, see instantiation in fp_absaddsub.
+      // Schmookler, M.S. & Nowka, K.J. (2001). Leading zero anticipation and detection-
+      // a comparison of methods.
+  `endif
+
   logic [WIDTH:0]   f;
   logic [WIDTH-1:0] p, g, k;
   logic [WIDTH-1:0] pp1, gm1, km1;

@@ -208,6 +208,7 @@ module RvvCore #(parameter N = 4,
 `ifdef TB_SUPPORT
   logic [`NUM_RT_UOP-1:0][`PC_WIDTH-1:0]            rvv2rvs_frd_pc;
 `endif
+  logic [`NUM_RT_UOP-1:0][`ROB_TAG_WIDTH-1:0]       rvv2rvs_frd_rob_tag;
   logic [`NUM_RT_UOP-1:0][`REGFILE_INDEX_WIDTH-1:0] rvv2rvs_frd_addr;
   logic [`NUM_RT_UOP-1:0][`XLEN-1:0]                rvv2rvs_frd_data;
   logic [`NUM_RT_UOP-1:0]                           rvv2rvs_frd_ready;
@@ -292,6 +293,7 @@ module RvvCore #(parameter N = 4,
 `ifdef TB_SUPPORT
       .async_frd_pc(rvv2rvs_frd_pc),
 `endif
+      .async_frd_rob_tag(rvv2rvs_frd_rob_tag),
       .async_frd_addr(rvv2rvs_frd_addr),
       .async_frd_data(rvv2rvs_frd_data),
       .async_frd_ready(rvv2rvs_frd_ready),

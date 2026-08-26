@@ -3483,7 +3483,7 @@ module rvv_backend_decode_unit_lsu
       default: check_vd_cmp = 'b0;
     endcase
   end
-  assign check_vd_in_range = (emul_vd_nf!=EMUL_NONE) ? inst_vd <= check_vd_cmp : 'b0;
+  assign check_vd_in_range = (inst_funct6[2:0] == TILE_LDST) ? 1'b1 : ((emul_vd_nf!=EMUL_NONE) ? inst_vd <= check_vd_cmp : 'b0);
 
   // check the validation of EEW
   assign check_sew = (eew_max != EEW_NONE);

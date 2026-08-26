@@ -617,6 +617,7 @@ typedef struct packed {
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]       uop_pc;
 `endif
+  logic   [`ROB_TAG_WIDTH-1:0]  rob_tag;
   logic   [`REGIDX_WIDTH-1:0]   rt_index; 
   logic   [`XLEN-1:0]           rt_data; 
 }RT2RVS_t;

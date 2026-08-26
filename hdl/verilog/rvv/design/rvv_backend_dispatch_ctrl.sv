@@ -117,7 +117,8 @@ module rvv_backend_dispatch_ctrl
             always_comb begin
                 case (uop_ctrl[i].uop_exe_unit)
                   `ifdef ZVT_ON
-                    VME: rs_ready[0] = rs_ready_zvt2dp[0];
+                    VME,
+                    VMELSU:  rs_ready[0] = rs_ready_zvt2dp[0];
                   `endif
                     VEU_CMP,
                     VEU_ALU: rs_ready[0] = rs_ready_alu2dp[0];

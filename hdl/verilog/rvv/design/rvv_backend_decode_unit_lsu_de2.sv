@@ -490,14 +490,19 @@ module rvv_backend_decode_unit_lsu_de2
   // update vd_valid and vs3_valid
   // some uop need vd as the vs3 vector operand
   always_comb begin
-    // initial
-    vs3_valid = 'b0;
-    vd_valid  = 'b0;
-
-    if(inst_opcode==STORE)
+  `ifdef ZVT_ON
+    if(uop_exe_unit==VMELSU) begin
+      vs3_valid = 1'b0;
+      vd_valid  = 1'b0;
+    end else
+  `endif
+    if(inst_opcode==STORE) begin
       vs3_valid = 1'b1;
-    else
+      vd_valid  = 1'b0;
+    end else begin
+      vs3_valid = 1'b0;
       vd_valid  = 1'b1;
+    end
   end
 
   // update vs2 offset and valid  

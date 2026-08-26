@@ -82,10 +82,13 @@ module fp_absaddsub#(
   end endgenerate
 
   generate if (ENABLE_LZA) begin: g_lza
-    // Output has IN_WIDTH+1 bits, so zero-extends inputs here
+    // Extending by 1 bit is needed by algorithm:
+    // "...it would be useful to prefix the sequence with a T for subtraction and a Z for addition."
+    // Ti == Ai xor Bi
+    // Zi == ~Ai and ~Bi
     fp_lza #(.WIDTH(IN_WIDTH+1)) u_lza (
       .a   ({1'b0, a}),
-      .b   ({1'b0, b}),
+      .b   ({do_subtract, do_subtract ? ~b : b}),
       .cin (do_subtract),
       .sub (do_subtract),
       .scnt(lza_scnt)
