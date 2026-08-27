@@ -64,7 +64,7 @@ def verilator_repos():
         name = "org_gnu_m4",
         urls = [
             "https://ftp.gnu.org/gnu/m4/m4-1.4.18.tar.xz",
-            "https://ftpmirror.gnu.org/m4/m4-1.4.18.tar.xz",
+            "https://mirrors.ibiblio.org/pub/mirrors/gnu/m4/m4-1.4.18.tar.xz",
         ],
         strip_prefix = "m4-1.4.18",
         sha256 = "f2c1e86ca0a404ff281631bdc8377638992744b175afb806e25871a24a934e07",
@@ -85,7 +85,7 @@ def verilator_repos():
         name = "org_gnu_bison",
         urls = [
             "https://ftp.gnu.org/gnu/bison/bison-3.5.tar.xz",
-            "https://ftpmirror.gnu.org/bison/bison-3.5.tar.xz",
+            "https://mirrors.ibiblio.org/pub/mirrors/gnu/bison/bison-3.5.tar.xz",
         ],
         strip_prefix = "bison-3.5",
         sha256 = "55e4a023b1b4ad19095a5f8279f0dc048fa29f970759cea83224a6d5e7a3a641",
