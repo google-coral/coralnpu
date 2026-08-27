@@ -22,6 +22,9 @@
 # If this script exits with a non-zero exit code, it's considered as a failure
 # and the output will be discarded.
 
-if git_rev=$(git rev-parse HEAD 2>/dev/null); then
-  echo "CORALNPU_BUILD_GIT_VERSION ${git_rev}"
+if ! git_rev=$(git rev-parse HEAD 2>/dev/null); then
+  # We don't have git history so output a non-zero but obviously wrong sha1
+  # scm_info.py uses this same special value
+  git_rev="ffffffffffffffffffffffffffffffffffffffff"
 fi
+echo "CORALNPU_BUILD_GIT_VERSION ${git_rev}"
