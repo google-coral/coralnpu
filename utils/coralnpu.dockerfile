@@ -105,13 +105,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     echo "${_USERNAME} ALL=(ALL) NOPASSWD:/bin/mkdir" >> /etc/sudoers.d/${_USERNAME}
     echo "${_USERNAME} ALL=(ALL) NOPASSWD:/bin/chown" >> /etc/sudoers.d/${_USERNAME}
     echo "${_USERNAME} ALL=(ALL) NOPASSWD:/bin/ln" >> /etc/sudoers.d/${_USERNAME}
+    groupadd -f plugdev
+    groupadd -f dialout
     groupadd --gid ${_GID} ${_USERNAME}
     useradd \
         --home-dir ${HOME} \
         --comment "" \
         --uid ${_UID} \
         --gid ${_GID} \
+        --groups plugdev,dialout \
         ${_USERNAME}
+
     mkdir -p /home/${_USERNAME}
     chown ${_USERNAME}:${_USERNAME} ${HOME}
     # Work around differeing libmpfr versions between distros
