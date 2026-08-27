@@ -59,152 +59,143 @@ class FmaSpec extends AnyFreeSpec with ChiselSim {
     java.lang.Float.intBitsToFloat(int_val)
   }
 
-  "Mul Zero" in {
+  "FMA Operations" in {
     simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(0))
-      dut.io.inb.poke(Float2BigInt(42))
-      dut.io.inc.poke(Float2BigInt(0))
-      dut.io.out.sign.expect(0)
-      dut.io.out.exponent.expect(0)
-      dut.io.out.mantissa.expect(0)
-    }
-  }
+      // Mul Zero
+      {
+        dut.io.ina.poke(Float2BigInt(0))
+        dut.io.inb.poke(Float2BigInt(42))
+        dut.io.inc.poke(Float2BigInt(0))
+        dut.io.out.sign.expect(0)
+        dut.io.out.exponent.expect(0)
+        dut.io.out.mantissa.expect(0)
+      }
 
-  "Mul Identity" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(1))
-      dut.io.inb.poke(Float2BigInt(42))
-      dut.io.inc.poke(Float2BigInt(0))
-      dut.io.out.sign.expect(0)
-      dut.io.out.exponent.expect(132)
-      dut.io.out.mantissa.expect(2621440)
-    }
-  }
+      // Mul Identity
+      {
+        dut.io.ina.poke(Float2BigInt(1))
+        dut.io.inb.poke(Float2BigInt(42))
+        dut.io.inc.poke(Float2BigInt(0))
+        dut.io.out.sign.expect(0)
+        dut.io.out.exponent.expect(132)
+        dut.io.out.mantissa.expect(2621440)
+      }
 
-  "Mul Negative" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(-1.0f))
-      dut.io.inb.poke(Float2BigInt(42))
-      dut.io.inc.poke(Float2BigInt(0))
-      dut.io.out.sign.expect(1)
-      dut.io.out.exponent.expect(132)
-      dut.io.out.mantissa.expect(2621440)
-    }
-  }
+      // Mul Negative
+      {
+        dut.io.ina.poke(Float2BigInt(-1.0f))
+        dut.io.inb.poke(Float2BigInt(42))
+        dut.io.inc.poke(Float2BigInt(0))
+        dut.io.out.sign.expect(1)
+        dut.io.out.exponent.expect(132)
+        dut.io.out.mantissa.expect(2621440)
+      }
 
-  "Mul Half" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(0.5f))
-      dut.io.inb.poke(Float2BigInt(42))
-      dut.io.inc.poke(Float2BigInt(0))
-      dut.io.out.sign.expect(0)
-      dut.io.out.exponent.expect(131)
-      dut.io.out.mantissa.expect(2621440)
-    }
-  }
+      // Mul Half
+      {
+        dut.io.ina.poke(Float2BigInt(0.5f))
+        dut.io.inb.poke(Float2BigInt(42))
+        dut.io.inc.poke(Float2BigInt(0))
+        dut.io.out.sign.expect(0)
+        dut.io.out.exponent.expect(131)
+        dut.io.out.mantissa.expect(2621440)
+      }
 
-  "Mul Overflow" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(2e30f))
-      dut.io.inb.poke(Float2BigInt(2e30f))
-      dut.io.inc.poke(Float2BigInt(0))
-      dut.io.out.sign.expect(0)
-      dut.io.out.exponent.expect(255)
-      dut.io.out.mantissa.expect(0)
-    }
-  }
+      // Mul Overflow
+      {
+        dut.io.ina.poke(Float2BigInt(2e30f))
+        dut.io.inb.poke(Float2BigInt(2e30f))
+        dut.io.inc.poke(Float2BigInt(0))
+        dut.io.out.sign.expect(0)
+        dut.io.out.exponent.expect(255)
+        dut.io.out.mantissa.expect(0)
+      }
 
-  "Mul Rounds to Zero" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(1e-30f))
-      dut.io.inb.poke(Float2BigInt(1e-30f))
-      dut.io.inc.poke(Float2BigInt(0))
-      dut.io.out.sign.expect(0)
-      dut.io.out.exponent.expect(0)
-      dut.io.out.mantissa.expect(0)
-    }
-  }
+      // Mul Rounds to Zero
+      {
+        dut.io.ina.poke(Float2BigInt(1e-30f))
+        dut.io.inb.poke(Float2BigInt(1e-30f))
+        dut.io.inc.poke(Float2BigInt(0))
+        dut.io.out.sign.expect(0)
+        dut.io.out.exponent.expect(0)
+        dut.io.out.mantissa.expect(0)
+      }
 
-  "Mul NaN" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(Float.NaN))
-      dut.io.inb.poke(Float2BigInt(4.0f))
-      dut.io.inc.poke(Float2BigInt(0))
-      dut.io.out.sign.expect(0)
-      dut.io.out.exponent.expect(255)
-      assert(dut.io.out.mantissa.peek().litValue != 0)
-    }
-  }
+      // Mul NaN
+      {
+        dut.io.ina.poke(Float2BigInt(Float.NaN))
+        dut.io.inb.poke(Float2BigInt(4.0f))
+        dut.io.inc.poke(Float2BigInt(0))
+        dut.io.out.sign.expect(0)
+        dut.io.out.exponent.expect(255)
+        assert(dut.io.out.mantissa.peek().litValue != 0)
+      }
 
-  "Fma" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(2.0f))
-      dut.io.inb.poke(Float2BigInt(1.5f))
-      dut.io.inc.poke(Float2BigInt(6.0f))
+      // Fma
+      {
+        dut.io.ina.poke(Float2BigInt(2.0f))
+        dut.io.inb.poke(Float2BigInt(1.5f))
+        dut.io.inc.poke(Float2BigInt(6.0f))
 
-      dut.io.out.sign.expect(0)
-      dut.io.out.exponent.expect(130)
-      dut.io.out.mantissa.expect(1048576)
-    }
-  }
+        dut.io.out.sign.expect(0)
+        dut.io.out.exponent.expect(130)
+        dut.io.out.mantissa.expect(1048576)
+      }
 
-  "Fms" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(2.0f))
-      dut.io.inb.poke(Float2BigInt(1.5f))
-      dut.io.inc.poke(Float2BigInt(-6.0f))
+      // Fms
+      {
+        dut.io.ina.poke(Float2BigInt(2.0f))
+        dut.io.inb.poke(Float2BigInt(1.5f))
+        dut.io.inc.poke(Float2BigInt(-6.0f))
 
-      dut.io.out.sign.expect(1)
-      dut.io.out.exponent.expect(128)
-      dut.io.out.mantissa.expect(4194304)
-    }
-  }
+        dut.io.out.sign.expect(1)
+        dut.io.out.exponent.expect(128)
+        dut.io.out.mantissa.expect(4194304)
+      }
 
-  "Fnma" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(-2.0f))
-      dut.io.inb.poke(Float2BigInt(1.5f))
-      dut.io.inc.poke(Float2BigInt(13.5f))
+      // Fnma
+      {
+        dut.io.ina.poke(Float2BigInt(-2.0f))
+        dut.io.inb.poke(Float2BigInt(1.5f))
+        dut.io.inc.poke(Float2BigInt(13.5f))
 
-      dut.io.out.sign.expect(0)
-      dut.io.out.exponent.expect(130)
-      dut.io.out.mantissa.expect(2621440)
-    }
-  }
+        dut.io.out.sign.expect(0)
+        dut.io.out.exponent.expect(130)
+        dut.io.out.mantissa.expect(2621440)
+      }
 
-  "Fnms" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(-2.0f))
-      dut.io.inb.poke(Float2BigInt(1.5f))
-      dut.io.inc.poke(Float2BigInt(-13.5f))
+      // Fnms
+      {
+        dut.io.ina.poke(Float2BigInt(-2.0f))
+        dut.io.inb.poke(Float2BigInt(1.5f))
+        dut.io.inc.poke(Float2BigInt(-13.5f))
 
-      dut.io.out.sign.expect(1)
-      dut.io.out.exponent.expect(131)
-      dut.io.out.mantissa.expect(262144)
-    }
-  }
+        dut.io.out.sign.expect(1)
+        dut.io.out.exponent.expect(131)
+        dut.io.out.mantissa.expect(262144)
+      }
 
-  "Add" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(9000.0f))
-      dut.io.inb.poke(Float2BigInt(1.0f))
-      dut.io.inc.poke(Float2BigInt(1.0f))
+      // Add
+      {
+        dut.io.ina.poke(Float2BigInt(9000.0f))
+        dut.io.inb.poke(Float2BigInt(1.0f))
+        dut.io.inc.poke(Float2BigInt(1.0f))
 
-      dut.io.out.sign.expect(0)
-      dut.io.out.exponent.expect(140)
-      dut.io.out.mantissa.expect(828416)
-    }
-  }
+        dut.io.out.sign.expect(0)
+        dut.io.out.exponent.expect(140)
+        dut.io.out.mantissa.expect(828416)
+      }
 
-  "Sub" in {
-    simulate(new FmaTester()) { dut =>
-      dut.io.ina.poke(Float2BigInt(15.0f))
-      dut.io.inb.poke(Float2BigInt(1.0f))
-      dut.io.inc.poke(Float2BigInt(-100.0f))
+      // Sub
+      {
+        dut.io.ina.poke(Float2BigInt(15.0f))
+        dut.io.inb.poke(Float2BigInt(1.0f))
+        dut.io.inc.poke(Float2BigInt(-100.0f))
 
-      dut.io.out.sign.expect(1)
-      dut.io.out.exponent.expect(133)
-      dut.io.out.mantissa.expect(2752512)
+        dut.io.out.sign.expect(1)
+        dut.io.out.exponent.expect(133)
+        dut.io.out.mantissa.expect(2752512)
+      }
     }
   }
 }

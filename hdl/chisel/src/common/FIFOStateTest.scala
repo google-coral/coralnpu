@@ -45,310 +45,314 @@ class FIFOStateTestWrapper(t: UInt, n: Int, capacity: Int) extends Module {
 }
 
 class FIFOStateSpec extends AnyFreeSpec with ChiselSim {
-  "FIFOState Basic Test" in {
-    simulate(new FIFOStateTestWrapper(UInt(32.W), 4, 16)) { dut =>
-      // Reuse logic from CircularBufferMultiSpec "Basic"
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
-
-      dut.io.enqValid.poke(2)
-      dut.io.enqData(0).poke(3)
-      dut.io.enqData(1).poke(5)
-      dut.clock.step()
-
-      dut.io.nEnqueued.expect(2)
-      dut.io.dataOut(0).expect(3)
-      dut.io.dataOut(1).expect(5)
-
-      dut.io.enqValid.poke(1)
-      dut.io.enqData(0).poke(9001)
-      dut.io.enqData(1).poke(0)
-      dut.clock.step()
-
-      dut.io.nEnqueued.expect(3)
-      dut.io.dataOut(0).expect(3)
-      dut.io.dataOut(1).expect(5)
-      dut.io.dataOut(2).expect(9001)
-
-      dut.io.enqValid.poke(0)
-      dut.io.deqReady.poke(1)
-      dut.clock.step()
-
-      dut.io.nEnqueued.expect(2)
-      dut.io.dataOut(0).expect(5)
-      dut.io.dataOut(1).expect(9001)
-    }
+  def resetDut(dut: FIFOStateTestWrapper): Unit = {
+    dut.reset.poke(true.B)
+    dut.clock.step()
+    dut.reset.poke(false.B)
+    dut.io.flush.poke(false.B)
+    dut.io.enqValid.poke(0.U)
+    dut.io.deqReady.poke(0.U)
   }
 
-  "Write n" in {
+  "FIFOState Operations (capacity=16)" in {
     simulate(new FIFOStateTestWrapper(UInt(32.W), 4, 16)) { dut =>
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
+      // Basic Test
+      {
+        resetDut(dut)
+        dut.io.nEnqueued.expect(0)
 
-      for (n <- 0 until 4) {
-        dut.io.enqData(n).poke(n)
+        dut.io.enqValid.poke(2)
+        dut.io.enqData(0).poke(3)
+        dut.io.enqData(1).poke(5)
+        dut.clock.step()
+
+        dut.io.nEnqueued.expect(2)
+        dut.io.dataOut(0).expect(3)
+        dut.io.dataOut(1).expect(5)
+
+        dut.io.enqValid.poke(1)
+        dut.io.enqData(0).poke(9001)
+        dut.io.enqData(1).poke(0)
+        dut.clock.step()
+
+        dut.io.nEnqueued.expect(3)
+        dut.io.dataOut(0).expect(3)
+        dut.io.dataOut(1).expect(5)
+        dut.io.dataOut(2).expect(9001)
+
+        dut.io.enqValid.poke(0)
+        dut.io.deqReady.poke(1)
+        dut.clock.step()
+
+        dut.io.nEnqueued.expect(2)
+        dut.io.dataOut(0).expect(5)
+        dut.io.dataOut(1).expect(9001)
       }
-      dut.io.enqValid.poke(4)
-      dut.clock.step()
 
-      dut.io.nEnqueued.expect(4)
+      // Write n
+      {
+        resetDut(dut)
+        dut.io.nEnqueued.expect(0)
 
-      for (n <- 0 until 4) {
-        dut.io.dataOut(n).expect(n)
-      }
-    }
-  }
-
-  "Fill Buffer" in {
-    simulate(new FIFOStateTestWrapper(UInt(32.W), 4, 16)) { dut =>
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
-
-      // Fill buffer completely
-      for (writeCount <- 0 until 4) {
-        for (nIndex <- 0 until 4) {
-          val indata = writeCount * 4 + nIndex
-          dut.io.enqData(nIndex).poke(indata)
+        for (n <- 0 until 4) {
+          dut.io.enqData(n).poke(n)
         }
         dut.io.enqValid.poke(4)
         dut.clock.step()
-        // Confirm nEnqueued increments the amount corresponding to #enqValid each cycle
-        dut.io.nEnqueued.expect((writeCount + 1) * 4)
+
+        dut.io.nEnqueued.expect(4)
+
+        for (n <- 0 until 4) {
+          dut.io.dataOut(n).expect(n)
+        }
       }
-    }
-  }
 
-  "Fill and Empty Buffer" in {
-    simulate(new FIFOStateTestWrapper(UInt(32.W), 4, 16)) { dut =>
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
+      // Fill Buffer
+      {
+        resetDut(dut)
+        dut.io.nEnqueued.expect(0)
 
-      // Fill buffer completely
-      for (writeCount <- 0 until 4) {
+        // Fill buffer completely
+        for (writeCount <- 0 until 4) {
+          for (nIndex <- 0 until 4) {
+            val indata = writeCount * 4 + nIndex
+            dut.io.enqData(nIndex).poke(indata)
+          }
+          dut.io.enqValid.poke(4)
+          dut.clock.step()
+          // Confirm nEnqueued increments the amount corresponding to #enqValid each cycle
+          dut.io.nEnqueued.expect((writeCount + 1) * 4)
+        }
+      }
+
+      // Fill and Empty Buffer
+      {
+        resetDut(dut)
+        dut.io.nEnqueued.expect(0)
+
+        // Fill buffer completely
+        for (writeCount <- 0 until 4) {
+          for (nIndex <- 0 until 4) {
+            val indata = writeCount * 4 + nIndex
+            dut.io.enqData(nIndex).poke(indata)
+          }
+          dut.io.enqValid.poke(4)
+          dut.clock.step()
+        }
+        dut.io.enqValid.poke(0)
+        dut.io.nEnqueued.expect(16)
+
+        // Empty buffer completely
+        for (writeCount <- 0 until 4) {
+          for (nIndex <- 0 until 4) {
+            val outdata = writeCount * 4 + nIndex
+            dut.io.dataOut(nIndex).expect(outdata)
+          }
+          dut.io.deqReady.poke(4)
+          dut.clock.step()
+        }
+        dut.io.deqReady.poke(0)
+        dut.io.nEnqueued.expect(0)
+      }
+
+      // Fill, Remove 4 items, and fill back to the top
+      {
+        resetDut(dut)
+        dut.io.nEnqueued.expect(0)
+
+        // Fill buffer completely
+        // Use 4x transactions of n=4 items to fill up to size 16, incrementing each transaction
+        for (writeCount <- 0 until 4) {
+          for (nIndex <- 0 until 4) {
+            val indata = writeCount * 4 + nIndex
+            dut.io.enqData(nIndex).poke(indata)
+          }
+          dut.io.enqValid.poke(4)
+          dut.clock.step()
+        }
+        dut.io.enqValid.poke(0)
+        dut.io.nEnqueued.expect(16)
+
+        // Remove 4x items
+        for (writeCount <- 0 until 1) {
+          for (nIndex <- 0 until 4) {
+            val outdata = writeCount * 4 + nIndex
+            dut.io.dataOut(nIndex).expect(outdata)
+          }
+          dut.io.deqReady.poke(4)
+          dut.clock.step()
+        }
+        dut.io.deqReady.poke(0)
+        dut.io.nEnqueued.expect(12)
+
+        // Add back n=4 items
+        for (writeCount <- 4 until 5) {
+          for (nIndex <- 0 until 4) {
+            val indata = writeCount * 4 + nIndex
+            dut.io.enqData(nIndex).poke(indata)
+          }
+          dut.io.enqValid.poke(4)
+          dut.clock.step()
+        }
+        dut.io.enqValid.poke(0)
+        dut.io.nEnqueued.expect(16)
+        // Remove 4x items
+        for (writeCount <- 1 until 2) {
+          for (nIndex <- 0 until 4) {
+            val outdata = writeCount * 4 + nIndex
+            dut.io.dataOut(nIndex).expect(outdata)
+          }
+          dut.io.deqReady.poke(4)
+          dut.clock.step()
+        }
+        dut.io.nEnqueued.expect(12)
+      }
+
+      // Flush Test
+      {
+        resetDut(dut)
+        dut.io.nEnqueued.expect(0)
+
+        // Fill buffer completely and flush
+        for (writeCount <- 0 until 4) {
+          for (nIndex <- 0 until 4) {
+            val indata = writeCount * 4 + nIndex
+            dut.io.enqData(nIndex).poke(indata)
+          }
+          dut.io.enqValid.poke(4)
+          dut.clock.step()
+        }
+        dut.io.enqValid.poke(0)
+
+        dut.io.nEnqueued.expect(16)
+
+        dut.io.flush.poke(true)
+        dut.clock.step()
+        dut.clock.step()
+        dut.io.nEnqueued.expect(0)
+        dut.io.flush.poke(false)
+
+        // Add 4x items and flush
+        for (writeCount <- 0 until 1) {
+          for (nIndex <- 0 until 4) {
+            val indata = writeCount * 4 + nIndex
+            dut.io.enqData(nIndex).poke(indata)
+          }
+          dut.io.enqValid.poke(4)
+          dut.clock.step()
+        }
+        dut.io.enqValid.poke(0)
+
+        dut.io.nEnqueued.expect(4)
+
+        dut.io.flush.poke(true)
+        dut.clock.step()
+        dut.clock.step()
+        dut.io.nEnqueued.expect(0)
+        dut.io.flush.poke(false)
+      }
+
+      // Read and Write Buffer on Same Cycle
+      {
+        resetDut(dut)
+        dut.io.nEnqueued.expect(0)
+
+        // Use 2x transactions of n=4 items to fill up to size 8, incrementing each transaction
+        for (writeCount <- 0 until 2) {
+          for (nIndex <- 0 until 4) {
+            val indata = writeCount * 4 + nIndex
+            dut.io.enqData(nIndex).poke(indata)
+          }
+          dut.io.enqValid.poke(4)
+          dut.clock.step()
+        }
+        dut.io.enqValid.poke(0)
+        dut.io.nEnqueued.expect(8)
+
+        // Enque and Deque on same cycle
+        dut.io.enqValid.poke(3)
+        dut.io.enqData(0).poke(3)
+        dut.io.enqData(1).poke(5)
+        dut.io.enqData(2).poke(7)
+
+        dut.io.deqReady.poke(4)
+
+        dut.clock.step()
+        dut.io.deqReady.poke(0)
+        dut.io.enqValid.poke(0)
+        dut.io.nEnqueued.expect(7)
+
+        // Flush
+        dut.io.flush.poke(true)
+        dut.clock.step()
+        dut.clock.step()
+        dut.io.nEnqueued.expect(0)
+        dut.io.flush.poke(false)
+        dut.clock.step()
+
+        // Fill buffer up to 12 items
+        for (writeCount <- 0 until 3) {
+          for (nIndex <- 0 until 4) {
+            val indata = writeCount * 4 + nIndex
+            dut.io.enqData(nIndex).poke(indata)
+          }
+          dut.io.enqValid.poke(4)
+          dut.clock.step()
+        }
+        dut.io.nEnqueued.expect(12)
+
+        // Fill buffer completely and dequeue on same cycle
         for (nIndex <- 0 until 4) {
-          val indata = writeCount * 4 + nIndex
+          val indata = nIndex
           dut.io.enqData(nIndex).poke(indata)
         }
         dut.io.enqValid.poke(4)
-        dut.clock.step()
-      }
-      dut.io.enqValid.poke(0)
-      dut.io.nEnqueued.expect(16)
-
-      // Empty buffer completely
-      for (writeCount <- 0 until 4) {
-        for (nIndex <- 0 until 4) {
-          val outdata = writeCount * 4 + nIndex
-          dut.io.dataOut(nIndex).expect(outdata)
-        }
         dut.io.deqReady.poke(4)
         dut.clock.step()
+        dut.io.enqValid.poke(0)
+        dut.io.deqReady.poke(0)
+
+        dut.io.nEnqueued.expect(12)
       }
-      dut.io.deqReady.poke(0)
-      dut.io.nEnqueued.expect(0)
-    }
-  }
 
-  "Fill, Remove 4 items, and fill back to the top" in {
-    simulate(new FIFOStateTestWrapper(UInt(32.W), 4, 16)) { dut =>
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
+      // Simultaneous Read Write
+      {
+        resetDut(dut)
+        dut.io.nEnqueued.expect(0)
 
-      // Fill buffer completely
-      // Use 4x transactions of n=4 items to fill up to size 16, incrementing each transaction
-      for (writeCount <- 0 until 4) {
-        for (nIndex <- 0 until 4) {
-          val indata = writeCount * 4 + nIndex
-          dut.io.enqData(nIndex).poke(indata)
+        // Fill 16 items
+        for (j <- 0 until 4) {
+          dut.io.enqValid.poke(4)
+          for (i <- 0 until 4) dut.io.enqData(i).poke(j * 100 + i)
+          dut.clock.step()
         }
+        dut.io.nEnqueued.expect(16)
+
+        // Enqueue 4, Dequeue 4 (Full buffer)
+        // Should succeed if logic handles it.
         dut.io.enqValid.poke(4)
-        dut.clock.step()
-      }
-      dut.io.enqValid.poke(0)
-      dut.io.nEnqueued.expect(16)
-
-      // Remove 4x items
-      for (writeCount <- 0 until 1) {
-        for (nIndex <- 0 until 4) {
-          val outdata = writeCount * 4 + nIndex
-          dut.io.dataOut(nIndex).expect(outdata)
-        }
         dut.io.deqReady.poke(4)
-        dut.clock.step()
-      }
-      dut.io.deqReady.poke(0)
-      dut.io.nEnqueued.expect(12)
+        for (i <- 0 until 4) dut.io.enqData(i).poke(200 + i)
 
-      // Add back n=4 items
-      for (writeCount <- 4 until 5) {
-        for (nIndex <- 0 until 4) {
-          val indata = writeCount * 4 + nIndex
-          dut.io.enqData(nIndex).poke(indata)
-        }
-        dut.io.enqValid.poke(4)
         dut.clock.step()
+
+        dut.io.nEnqueued.expect(16) // Still full
+
+        // Verify old data removed (0, 1, 2, 3) and new data enqueued (200+i)
+        // The peek(4) shows oldest data.
+        // We removed 4 (Batch 0).
+        // The next oldest data is Batch 1 (100, 101, 102, 103).
+
+        // After removing 4, we expect 100, 101, 102, 103 (from 2nd batch).
+        dut.io.dataOut(0).expect(100)
+        dut.io.dataOut(1).expect(101)
+        dut.io.dataOut(2).expect(102)
+        dut.io.dataOut(3).expect(103)
       }
-      dut.io.enqValid.poke(0)
-      dut.io.nEnqueued.expect(16)
-      // Remove 4x items
-      for (writeCount <- 1 until 2) {
-        for (nIndex <- 0 until 4) {
-          val outdata = writeCount * 4 + nIndex
-          dut.io.dataOut(nIndex).expect(outdata)
-        }
-        dut.io.deqReady.poke(4)
-        dut.clock.step()
-      }
-      dut.io.nEnqueued.expect(12)
     }
   }
 
-  "Flush Test" in {
-    simulate(new FIFOStateTestWrapper(UInt(32.W), 4, 16)) { dut =>
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
-
-      // Fill buffer completely and flush
-      for (writeCount <- 0 until 4) {
-        for (nIndex <- 0 until 4) {
-          val indata = writeCount * 4 + nIndex
-          dut.io.enqData(nIndex).poke(indata)
-        }
-        dut.io.enqValid.poke(4)
-        dut.clock.step()
-      }
-      dut.io.enqValid.poke(0)
-
-      dut.io.nEnqueued.expect(16)
-
-      dut.io.flush.poke(true)
-      dut.clock.step()
-      dut.clock.step()
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
-
-      // Add 4x items and flush
-      for (writeCount <- 0 until 1) {
-        for (nIndex <- 0 until 4) {
-          val indata = writeCount * 4 + nIndex
-          dut.io.enqData(nIndex).poke(indata)
-        }
-        dut.io.enqValid.poke(4)
-        dut.clock.step()
-      }
-      dut.io.enqValid.poke(0)
-
-      dut.io.nEnqueued.expect(4)
-
-      dut.io.flush.poke(true)
-      dut.clock.step()
-      dut.clock.step()
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
-    }
-  }
-
-  "Read and Write Buffer on Same Cycle" in {
-    simulate(new FIFOStateTestWrapper(UInt(32.W), 4, 16)) { dut =>
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
-
-      // Use 2x transactions of n=4 items to fill up to size 8, incrementing each transaction
-      for (writeCount <- 0 until 2) {
-        for (nIndex <- 0 until 4) {
-          val indata = writeCount * 4 + nIndex
-          dut.io.enqData(nIndex).poke(indata)
-        }
-        dut.io.enqValid.poke(4)
-        dut.clock.step()
-      }
-      dut.io.enqValid.poke(0)
-      dut.io.nEnqueued.expect(8)
-
-      // Enque and Deque on same cycle
-      dut.io.enqValid.poke(3)
-      dut.io.enqData(0).poke(3)
-      dut.io.enqData(1).poke(5)
-      dut.io.enqData(2).poke(7)
-
-      dut.io.deqReady.poke(4)
-
-      dut.clock.step()
-      dut.io.deqReady.poke(0)
-      dut.io.enqValid.poke(0)
-      dut.io.nEnqueued.expect(7)
-
-      // Flush
-      dut.io.flush.poke(true)
-      dut.clock.step()
-      dut.clock.step()
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
-      dut.clock.step()
-
-      // Fill buffer up to 12 items
-      for (writeCount <- 0 until 3) {
-        for (nIndex <- 0 until 4) {
-          val indata = writeCount * 4 + nIndex
-          dut.io.enqData(nIndex).poke(indata)
-        }
-        dut.io.enqValid.poke(4)
-        dut.clock.step()
-      }
-      dut.io.nEnqueued.expect(12)
-
-      // Fill buffer completely and dequeue on same cycle
-      for (nIndex <- 0 until 4) {
-        val indata = nIndex
-        dut.io.enqData(nIndex).poke(indata)
-      }
-      dut.io.enqValid.poke(4)
-      dut.io.deqReady.poke(4)
-      dut.clock.step()
-      dut.io.enqValid.poke(0)
-      dut.io.deqReady.poke(0)
-
-      dut.io.nEnqueued.expect(12)
-    }
-  }
-
-  "Simultaneous Read Write" in {
-    simulate(new FIFOStateTestWrapper(UInt(32.W), 4, 16)) { dut =>
-      dut.io.nEnqueued.expect(0)
-      dut.io.flush.poke(false)
-
-      // Fill 16 items
-      for (j <- 0 until 4) {
-        dut.io.enqValid.poke(4)
-        for (i <- 0 until 4) dut.io.enqData(i).poke(j * 100 + i)
-        dut.clock.step()
-      }
-      dut.io.nEnqueued.expect(16)
-
-      // Enqueue 4, Dequeue 4 (Full buffer)
-      // Should succeed if logic handles it.
-      dut.io.enqValid.poke(4)
-      dut.io.deqReady.poke(4)
-      for (i <- 0 until 4) dut.io.enqData(i).poke(200 + i)
-
-      dut.clock.step()
-
-      dut.io.nEnqueued.expect(16) // Still full
-
-      // Verify old data removed (0, 1, 2, 3) and new data enqueued (200+i)
-      // The peek(4) shows oldest data.
-      // We removed 4 (Batch 0).
-      // The next oldest data is Batch 1 (100, 101, 102, 103).
-
-      // After removing 4, we expect 100, 101, 102, 103 (from 2nd batch).
-      dut.io.dataOut(0).expect(100)
-      dut.io.dataOut(1).expect(101)
-      dut.io.dataOut(2).expect(102)
-      dut.io.dataOut(3).expect(103)
-    }
-  }
-
-  "Non-Power-of-2 Size (capacity=5)" in {
+  "FIFOState Non-Power-of-2 Size (capacity=5)" in {
     simulate(new FIFOStateTestWrapper(UInt(32.W), 4, 5)) { dut =>
       dut.io.nEnqueued.expect(0)
       dut.io.flush.poke(false)

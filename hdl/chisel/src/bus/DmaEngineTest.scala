@@ -110,11 +110,6 @@ class DmaEngineSpec extends AnyFreeSpec with ChiselSim {
 
   /** Reactive memory model: step clock while servicing host port transactions. Runs for `maxCycles`
     * or until DMA is no longer busy.
-    *
-    * Timing: In Chisel sim, poke is combinational (immediate), step advances the clock. We keep
-    * a.ready=1. When a.valid is seen (peek), that means on the NEXT step, fire will occur. We
-    * capture the request, step (fire happens, DMA transitions), then present D response, step again
-    * (D fire happens).
     */
   def runDmaWithMemory(
     dut: DmaEngine,
@@ -192,197 +187,202 @@ class DmaEngineSpec extends AnyFreeSpec with ChiselSim {
 
   // --- Tests ---
 
-  "CSR Register Access" in {
+  "DmaEngine Operations" in {
     simulate(new DmaEngine(hostTlulP, deviceTlulP)) { dut =>
-      dut.reset.poke(true.B)
-      dut.clock.step()
-      dut.reset.poke(false.B)
+      // CSR Register Access
+      {
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
 
-      csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0xdead0000L.U)
-      assert(csrReadData(dut.io.tl_device, dut.clock, 0x08.U) == 0xdead0000L)
+        csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0xdead0000L.U)
+        assert(csrReadData(dut.io.tl_device, dut.clock, 0x08.U) == 0xdead0000L)
 
-      csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x01.U)
-      val ctrl = csrReadData(dut.io.tl_device, dut.clock, 0x00.U)
-      assert((ctrl & 1) == 1)
+        csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x01.U)
+        val ctrl = csrReadData(dut.io.tl_device, dut.clock, 0x00.U)
+        assert((ctrl & 1) == 1)
 
-      val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
-      assert(status == 0)
-    }
-  }
+        val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
+        assert(status == 0)
+      }
 
-  "CSR Error on Invalid Address" in {
-    simulate(new DmaEngine(hostTlulP, deviceTlulP)) { dut =>
-      dut.reset.poke(true.B)
-      dut.clock.step()
-      dut.reset.poke(false.B)
+      // CSR Error on Invalid Address
+      {
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
 
-      val (_, error) = csrRead(dut.io.tl_device, dut.clock, 0x100.U)
-      assert(error, "Invalid address should return error")
-    }
-  }
+        val (_, error) = csrRead(dut.io.tl_device, dut.clock, 0x100.U)
+        assert(error, "Invalid address should return error")
+      }
 
-  "CSR Error on Write to Read-Only Register" in {
-    simulate(new DmaEngine(hostTlulP, deviceTlulP)) { dut =>
-      dut.reset.poke(true.B)
-      dut.clock.step()
-      dut.reset.poke(false.B)
+      // CSR Error on Write to Read-Only Register
+      {
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
 
-      dut.io.tl_device.a.valid.poke(true.B)
-      dut.io.tl_device.a.bits.opcode.poke(TLULOpcodesA.PutFullData.asUInt)
-      dut.io.tl_device.a.bits.address.poke(0x04.U)
-      dut.io.tl_device.a.bits.data.poke(1.U)
-      dut.io.tl_device.a.bits.mask.poke(0xf.U)
-      while (dut.io.tl_device.a.ready.peek().litValue == 0) dut.clock.step()
-      dut.clock.step()
-      dut.io.tl_device.a.valid.poke(false.B)
-      while (dut.io.tl_device.d.valid.peek().litValue == 0) dut.clock.step()
-      assert(dut.io.tl_device.d.bits.error.peek().litValue != 0)
-    }
-  }
+        dut.io.tl_device.a.valid.poke(true.B)
+        dut.io.tl_device.a.bits.opcode.poke(TLULOpcodesA.PutFullData.asUInt)
+        dut.io.tl_device.a.bits.address.poke(0x04.U)
+        dut.io.tl_device.a.bits.data.poke(1.U)
+        dut.io.tl_device.a.bits.mask.poke(0xf.U)
+        while (dut.io.tl_device.a.ready.peek().litValue == 0) dut.clock.step()
+        dut.clock.step()
+        dut.io.tl_device.a.valid.poke(false.B)
+        while (dut.io.tl_device.d.valid.peek().litValue == 0) dut.clock.step()
+        assert(dut.io.tl_device.d.bits.error.peek().litValue != 0)
+      }
 
-  "Simple Mem-to-Mem Transfer" in {
-    simulate(new DmaEngine(hostTlulP, deviceTlulP)) { dut =>
-      dut.reset.poke(true.B)
-      dut.clock.step()
-      dut.reset.poke(false.B)
+      // Simple Mem-to-Mem Transfer
+      {
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
 
-      val mem = scala.collection.mutable.Map[Long, Byte]()
+        val mem = scala.collection.mutable.Map[Long, Byte]()
 
-      // Source data: 16 bytes at 0x1000
-      for (i <- 0 until 16) mem(0x1000L + i) = (0xa0 + i).toByte
+        // Source data: 16 bytes at 0x1000
+        for (i <- 0 until 16) mem(0x1000L + i) = (0xa0 + i).toByte
 
-      // Descriptor at 0x2000: 16 bytes from 0x1000 to 0x3000, 4-byte beats
-      buildDescriptor(mem, 0x2000L, 0x1000L, 0x3000L, xferLen = 16, xferWidth = 2)
+        // Descriptor at 0x2000: 16 bytes from 0x1000 to 0x3000, 4-byte beats
+        buildDescriptor(mem, 0x2000L, 0x1000L, 0x3000L, xferLen = 16, xferWidth = 2)
 
-      // Program DMA via CSR
-      csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0x2000.U) // DESC_ADDR
-      csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x03.U)   // CTRL: enable + start
+        // Program DMA via CSR
+        csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0x2000.U) // DESC_ADDR
+        csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x03.U)   // CTRL: enable + start
 
-      // Run reactive memory model
-      val _ = runDmaWithMemory(dut, mem, maxCycles = 500)
+        // Run reactive memory model
+        val _ = runDmaWithMemory(dut, mem, maxCycles = 500)
 
-      val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
-      assert((status & 0x2) != 0, s"STATUS.done should be set, got 0x${status.toString(16)}")
-      assert((status & 0x4) == 0, s"STATUS.error should be clear, got 0x${status.toString(16)}")
+        val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
+        assert((status & 0x2) != 0, s"STATUS.done should be set, got 0x${status.toString(16)}")
+        assert((status & 0x4) == 0, s"STATUS.error should be clear, got 0x${status.toString(16)}")
 
-      // Verify destination
-      for (i <- 0 until 16) {
-        val expected = (0xa0 + i).toByte
-        val actual   = mem.getOrElse(0x3000L + i, 0.toByte)
+        // Verify destination
+        for (i <- 0 until 16) {
+          val expected = (0xa0 + i).toByte
+          val actual   = mem.getOrElse(0x3000L + i, 0.toByte)
+          assert(
+            actual == expected,
+            s"Byte $i: expected 0x${(expected & 0xff).toHexString}, got 0x${(actual & 0xff).toHexString}"
+          )
+        }
+      }
+
+      // Descriptor Chaining
+      {
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
+
+        val mem = scala.collection.mutable.Map[Long, Byte]()
+
+        for (i <- 0 until 8) mem(0x1000L + i) = (0x10 + i).toByte
+        for (i <- 0 until 8) mem(0x1100L + i) = (0x20 + i).toByte
+
+        buildDescriptor(
+          mem,
+          0x2000L,
+          0x1000L,
+          0x3000L,
+          xferLen = 8,
+          xferWidth = 2,
+          nextDesc = 0x2020L
+        )
+        buildDescriptor(mem, 0x2020L, 0x1100L, 0x3100L, xferLen = 8, xferWidth = 2)
+
+        csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0x2000.U)
+        csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x03.U)
+
+        runDmaWithMemory(dut, mem, maxCycles = 500)
+
+        val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
+        assert((status & 0x2) != 0, s"STATUS.done should be set, got 0x${status.toString(16)}")
+
+        for (i <- 0 until 8) {
+          assert(
+            mem.getOrElse(0x3000L + i, 0.toByte) == (0x10 + i).toByte,
+            s"Chain 0 byte $i mismatch"
+          )
+        }
+        for (i <- 0 until 8) {
+          assert(
+            mem.getOrElse(0x3100L + i, 0.toByte) == (0x20 + i).toByte,
+            s"Chain 1 byte $i mismatch"
+          )
+        }
+      }
+
+      // Fixed Destination Address (Mem to Periph)
+      {
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
+
+        val mem = scala.collection.mutable.Map[Long, Byte]()
+
+        memWrite32(mem, 0x1000L, 0xaabbccddL)
+        memWrite32(mem, 0x1004L, 0x11223344L)
+        memWrite32(mem, 0x1008L, 0x55667788L)
+
+        // 12 bytes from 0x1000 to fixed 0x5000
+        buildDescriptor(
+          mem,
+          0x2000L,
+          0x1000L,
+          0x5000L,
+          xferLen = 12,
+          xferWidth = 2,
+          dstFixed = true
+        )
+
+        csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0x2000.U)
+        csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x03.U)
+
+        runDmaWithMemory(dut, mem, maxCycles = 500)
+
+        // With dst_fixed=true, all 3 writes go to 0x5000. Check the last value written.
+        val finalVal = memRead32(mem, 0x5000L)
+        assert(finalVal == 0x55667788L, s"Final value at fixed addr: 0x${finalVal.toHexString}")
+
+        val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
+        assert((status & 0x2) != 0, "STATUS.done should be set")
+      }
+
+      // Abort Transfer
+      {
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
+
+        val mem = scala.collection.mutable.Map[Long, Byte]()
+
+        for (i <- 0 until 64) mem(0x1000L + i) = i.toByte
+        buildDescriptor(mem, 0x2000L, 0x1000L, 0x3000L, xferLen = 64, xferWidth = 2)
+
+        csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0x2000.U)
+        csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x03.U)
+
+        // Let DMA start but don't service host port — it will be stuck waiting for A.ready
+        dut.io.tl_host.a.ready.poke(false.B)
+        dut.clock.step(5)
+
+        // Abort
+        csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x05.U) // enable=1, abort=1
+
+        dut.clock.step(5)
+
+        val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
         assert(
-          actual == expected,
-          s"Byte $i: expected 0x${(expected & 0xff).toHexString}, got 0x${(actual & 0xff).toHexString}"
+          (status & 0x4) != 0,
+          s"STATUS.error should be set after abort, got 0x${status.toString(16)}"
+        )
+        assert(
+          (status & 0x1) == 0,
+          s"STATUS.busy should be clear after abort, got 0x${status.toString(16)}"
         )
       }
-    }
-  }
-
-  "Descriptor Chaining" in {
-    simulate(new DmaEngine(hostTlulP, deviceTlulP)) { dut =>
-      dut.reset.poke(true.B)
-      dut.clock.step()
-      dut.reset.poke(false.B)
-
-      val mem = scala.collection.mutable.Map[Long, Byte]()
-
-      for (i <- 0 until 8) mem(0x1000L + i) = (0x10 + i).toByte
-      for (i <- 0 until 8) mem(0x1100L + i) = (0x20 + i).toByte
-
-      buildDescriptor(
-        mem,
-        0x2000L,
-        0x1000L,
-        0x3000L,
-        xferLen = 8,
-        xferWidth = 2,
-        nextDesc = 0x2020L
-      )
-      buildDescriptor(mem, 0x2020L, 0x1100L, 0x3100L, xferLen = 8, xferWidth = 2)
-
-      csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0x2000.U)
-      csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x03.U)
-
-      runDmaWithMemory(dut, mem, maxCycles = 500)
-
-      val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
-      assert((status & 0x2) != 0, s"STATUS.done should be set, got 0x${status.toString(16)}")
-
-      for (i <- 0 until 8) {
-        assert(
-          mem.getOrElse(0x3000L + i, 0.toByte) == (0x10 + i).toByte,
-          s"Chain 0 byte $i mismatch"
-        )
-      }
-      for (i <- 0 until 8) {
-        assert(
-          mem.getOrElse(0x3100L + i, 0.toByte) == (0x20 + i).toByte,
-          s"Chain 1 byte $i mismatch"
-        )
-      }
-    }
-  }
-
-  "Fixed Destination Address (Mem to Periph)" in {
-    simulate(new DmaEngine(hostTlulP, deviceTlulP)) { dut =>
-      dut.reset.poke(true.B)
-      dut.clock.step()
-      dut.reset.poke(false.B)
-
-      val mem = scala.collection.mutable.Map[Long, Byte]()
-
-      memWrite32(mem, 0x1000L, 0xaabbccddL)
-      memWrite32(mem, 0x1004L, 0x11223344L)
-      memWrite32(mem, 0x1008L, 0x55667788L)
-
-      // 12 bytes from 0x1000 to fixed 0x5000
-      buildDescriptor(mem, 0x2000L, 0x1000L, 0x5000L, xferLen = 12, xferWidth = 2, dstFixed = true)
-
-      csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0x2000.U)
-      csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x03.U)
-
-      runDmaWithMemory(dut, mem, maxCycles = 500)
-
-      // With dst_fixed=true, all 3 writes go to 0x5000. Check the last value written.
-      val finalVal = memRead32(mem, 0x5000L)
-      assert(finalVal == 0x55667788L, s"Final value at fixed addr: 0x${finalVal.toHexString}")
-
-      val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
-      assert((status & 0x2) != 0, "STATUS.done should be set")
-    }
-  }
-
-  "Abort Transfer" in {
-    simulate(new DmaEngine(hostTlulP, deviceTlulP)) { dut =>
-      dut.reset.poke(true.B)
-      dut.clock.step()
-      dut.reset.poke(false.B)
-
-      val mem = scala.collection.mutable.Map[Long, Byte]()
-
-      for (i <- 0 until 64) mem(0x1000L + i) = i.toByte
-      buildDescriptor(mem, 0x2000L, 0x1000L, 0x3000L, xferLen = 64, xferWidth = 2)
-
-      csrWrite(dut.io.tl_device, dut.clock, 0x08.U, 0x2000.U)
-      csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x03.U)
-
-      // Let DMA start but don't service host port — it will be stuck waiting for A.ready
-      dut.io.tl_host.a.ready.poke(false.B)
-      dut.clock.step(5)
-
-      // Abort
-      csrWrite(dut.io.tl_device, dut.clock, 0x00.U, 0x05.U) // enable=1, abort=1
-
-      dut.clock.step(5)
-
-      val status = csrReadData(dut.io.tl_device, dut.clock, 0x04.U)
-      assert(
-        (status & 0x4) != 0,
-        s"STATUS.error should be set after abort, got 0x${status.toString(16)}"
-      )
-      assert(
-        (status & 0x1) == 0,
-        s"STATUS.busy should be clear after abort, got 0x${status.toString(16)}"
-      )
     }
   }
 }

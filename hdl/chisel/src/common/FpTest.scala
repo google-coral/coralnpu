@@ -63,40 +63,41 @@ class Fp32CvtTester extends Module {
 }
 
 class FpSpec extends AnyFreeSpec with ChiselSim {
-  "Zero" in {
+  "Classification (Zero, Inf, Nan)" in {
     simulate(new Fp32Tester()) { dut =>
-      dut.io.in.poke(0.U)
-      dut.io.is_zero.expect(1)
-      dut.io.is_inf.expect(0)
-      dut.io.is_nan.expect(0)
-    }
-  }
+      // Zero
+      {
+        dut.io.in.poke(0.U)
+        dut.io.is_zero.expect(1)
+        dut.io.is_inf.expect(0)
+        dut.io.is_nan.expect(0)
+      }
 
-  "Inf" in {
-    simulate(new Fp32Tester()) { dut =>
-      dut.io.in.poke(BigInt("0" + "11111111" + "00000000000000000000000", 2))
-      dut.io.is_zero.expect(0)
-      dut.io.is_inf.expect(1)
-      dut.io.is_nan.expect(0)
+      // Inf
+      {
+        dut.io.in.poke(BigInt("0" + "11111111" + "00000000000000000000000", 2))
+        dut.io.is_zero.expect(0)
+        dut.io.is_inf.expect(1)
+        dut.io.is_nan.expect(0)
 
-      dut.io.in.poke(BigInt("1" + "11111111" + "00000000000000000000000", 2))
-      dut.io.is_zero.expect(0)
-      dut.io.is_inf.expect(1)
-      dut.io.is_nan.expect(0)
-    }
-  }
+        dut.io.in.poke(BigInt("1" + "11111111" + "00000000000000000000000", 2))
+        dut.io.is_zero.expect(0)
+        dut.io.is_inf.expect(1)
+        dut.io.is_nan.expect(0)
+      }
 
-  "Nan" in {
-    simulate(new Fp32Tester()) { dut =>
-      dut.io.in.poke(BigInt("0" + "11111111" + "00011000011000111000100", 2))
-      dut.io.is_zero.expect(0)
-      dut.io.is_inf.expect(0)
-      dut.io.is_nan.expect(1)
+      // Nan
+      {
+        dut.io.in.poke(BigInt("0" + "11111111" + "00011000011000111000100", 2))
+        dut.io.is_zero.expect(0)
+        dut.io.is_inf.expect(0)
+        dut.io.is_nan.expect(1)
 
-      dut.io.in.poke(BigInt("1" + "11111111" + "00011000011000111000100", 2))
-      dut.io.is_zero.expect(0)
-      dut.io.is_inf.expect(0)
-      dut.io.is_nan.expect(1)
+        dut.io.in.poke(BigInt("1" + "11111111" + "00011000011000111000100", 2))
+        dut.io.is_zero.expect(0)
+        dut.io.is_inf.expect(0)
+        dut.io.is_nan.expect(1)
+      }
     }
   }
 

@@ -23,12 +23,6 @@ import common.ProcessTestResults
 class DvuSpec extends AnyFreeSpec with ChiselSim {
   val p = new Parameters
 
-  "Initialization" in {
-    simulate(new Dvu(p)) { dut =>
-      dut.io.rd.valid.expect(0)
-    }
-  }
-
   private def testDvuOp(
     dut: Dvu,
     addr: UInt,
@@ -62,62 +56,73 @@ class DvuSpec extends AnyFreeSpec with ChiselSim {
     if (!ProcessTestResults(good, printfn = info(_))) fail()
   }
 
-  "DIV" in {
-    val inputs = Seq(
-      (20L, 5L, 4L),
-      (19L, 5L, 3L),
-      (-20L, 5L, -4L),
-      (-19L, 5L, -3L),
-      (20L, -5L, -4L),
-      (-20L, -5L, 4L),
-      (7L, 0L, -1L) // div by zero returns all 1s
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 14.U, DvuOp.DIV, testCases))
-  }
+  "DVU Operations" in {
+    simulate(new Dvu(p)) { dut =>
+      // Initialization
+      dut.io.rd.valid.expect(0)
 
-  "DIVU" in {
-    val inputs = Seq(
-      (20L, 5L, 4L),
-      (19L, 5L, 3L),
-      (7L, 0L, 0xffffffffL)
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 14.U, DvuOp.DIVU, testCases))
-  }
+      // DIV
+      {
+        val inputs = Seq(
+          (20L, 5L, 4L),
+          (19L, 5L, 3L),
+          (-20L, 5L, -4L),
+          (-19L, 5L, -3L),
+          (20L, -5L, -4L),
+          (-20L, -5L, 4L),
+          (7L, 0L, -1L) // div by zero returns all 1s
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 14.U, DvuOp.DIV, testCases)
+      }
 
-  "REM" in {
-    val inputs = Seq(
-      (20L, 5L, 0L),
-      (19L, 5L, 4L),
-      (-19L, 5L, -4L),
-      (19L, -5L, 4L),
-      (7L, 0L, 7L) // rem by zero returns dividend
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 14.U, DvuOp.REM, testCases))
-  }
+      // DIVU
+      {
+        val inputs = Seq(
+          (20L, 5L, 4L),
+          (19L, 5L, 3L),
+          (7L, 0L, 0xffffffffL)
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 14.U, DvuOp.DIVU, testCases)
+      }
 
-  "REMU" in {
-    val inputs = Seq(
-      (20L, 5L, 0L),
-      (19L, 5L, 4L),
-      (7L, 0L, 7L)
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
+      // REM
+      {
+        val inputs = Seq(
+          (20L, 5L, 0L),
+          (19L, 5L, 4L),
+          (-19L, 5L, -4L),
+          (19L, -5L, 4L),
+          (7L, 0L, 7L) // rem by zero returns dividend
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 14.U, DvuOp.REM, testCases)
+      }
+
+      // REMU
+      {
+        val inputs = Seq(
+          (20L, 5L, 0L),
+          (19L, 5L, 4L),
+          (7L, 0L, 7L)
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 14.U, DvuOp.REMU, testCases)
+      }
     }
-    simulate(new Dvu(p))(testDvuOp(_, 14.U, DvuOp.REMU, testCases))
   }
 }
 
@@ -157,109 +162,121 @@ class Dvu64Spec extends AnyFreeSpec with ChiselSim {
     if (!ProcessTestResults(good, printfn = info(_))) fail()
   }
 
-  "DIVW" in {
-    val inputs = Seq(
-      (20L, 5L, 4L),
-      (-20L, 5L, -4L),
-      (0xffffffff80000000L, -1L, 0xffffffff80000000L), // 32-bit signed overflow
-      (7L, 0L, -1L)                                    // div by zero
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 15.U, DvuOp.DIVW, testCases))
-  }
+  "DVU 64-bit Operations" in {
+    simulate(new Dvu(p)) { dut =>
+      // DIVW
+      {
+        val inputs = Seq(
+          (20L, 5L, 4L),
+          (-20L, 5L, -4L),
+          (0xffffffff80000000L, -1L, 0xffffffff80000000L), // 32-bit signed overflow
+          (7L, 0L, -1L)                                    // div by zero
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 15.U, DvuOp.DIVW, testCases)
+      }
 
-  "DIVUW" in {
-    val inputs = Seq(
-      (20L, 5L, 4L),
-      (
-        0x00000000fffffffeL,
-        2L,
-        0x000000007fffffffL
-      ), // 32-bit unsigned division zero-extended operands
-      (7L, 0L, -1L)
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 15.U, DvuOp.DIVUW, testCases))
-  }
+      // DIVUW
+      {
+        val inputs = Seq(
+          (20L, 5L, 4L),
+          (
+            0x00000000fffffffeL,
+            2L,
+            0x000000007fffffffL
+          ), // 32-bit unsigned division zero-extended operands
+          (7L, 0L, -1L)
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 15.U, DvuOp.DIVUW, testCases)
+      }
 
-  "REMW" in {
-    val inputs = Seq(
-      (19L, 5L, 4L),
-      (-19L, 5L, -4L),
-      (7L, 0L, 7L)
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 15.U, DvuOp.REMW, testCases))
-  }
+      // REMW
+      {
+        val inputs = Seq(
+          (19L, 5L, 4L),
+          (-19L, 5L, -4L),
+          (7L, 0L, 7L)
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 15.U, DvuOp.REMW, testCases)
+      }
 
-  "REMUW" in {
-    val inputs = Seq(
-      (19L, 5L, 4L),
-      (0x00000000fffffffeL, 3L, 2L),
-      (7L, 0L, 7L)
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 15.U, DvuOp.REMUW, testCases))
-  }
+      // REMUW
+      {
+        val inputs = Seq(
+          (19L, 5L, 4L),
+          (0x00000000fffffffeL, 3L, 2L),
+          (7L, 0L, 7L)
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 15.U, DvuOp.REMUW, testCases)
+      }
 
-  "DIV" in {
-    val inputs = Seq(
-      (0x0000000100000000L, 2L, 0x0000000080000000L),
-      (-0x0000000100000000L, 2L, -0x0000000080000000L),
-      (0x8000000000000000L, -1L, 0x8000000000000000L) // 64-bit signed overflow
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 15.U, DvuOp.DIV, testCases))
-  }
+      // DIV
+      {
+        val inputs = Seq(
+          (0x0000000100000000L, 2L, 0x0000000080000000L),
+          (-0x0000000100000000L, 2L, -0x0000000080000000L),
+          (0x8000000000000000L, -1L, 0x8000000000000000L) // 64-bit signed overflow
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 15.U, DvuOp.DIV, testCases)
+      }
 
-  "DIVU" in {
-    val inputs = Seq(
-      (0x0000000100000000L, 2L, 0x0000000080000000L),
-      (0xfffffffffffffffeL, 2L, 0x7fffffffffffffffL)
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 15.U, DvuOp.DIVU, testCases))
-  }
+      // DIVU
+      {
+        val inputs = Seq(
+          (0x0000000100000000L, 2L, 0x0000000080000000L),
+          (0xfffffffffffffffeL, 2L, 0x7fffffffffffffffL)
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 15.U, DvuOp.DIVU, testCases)
+      }
 
-  "REM" in {
-    val inputs = Seq(
-      (0x0000000100000001L, 0x0000000100000000L, 1L),
-      (-0x0000000100000001L, 0x0000000100000000L, -1L)
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
-    }
-    simulate(new Dvu(p))(testDvuOp(_, 15.U, DvuOp.REM, testCases))
-  }
+      // REM
+      {
+        val inputs = Seq(
+          (0x0000000100000001L, 0x0000000100000000L, 1L),
+          (-0x0000000100000001L, 0x0000000100000000L, -1L)
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 15.U, DvuOp.REM, testCases)
+      }
 
-  "REMU" in {
-    val inputs = Seq(
-      (0x0000000100000001L, 0x0000000100000000L, 1L),
-      (0xfffffffffffffffeL, 3L, 2L)
-    )
-    val mask      = (BigInt(1) << p.xlen) - 1
-    val testCases = inputs.map { case (rs1, rs2, exp) =>
-      (rs1, rs2, BigInt(exp) & mask)
+      // REMU
+      {
+        val inputs = Seq(
+          (0x0000000100000001L, 0x0000000100000000L, 1L),
+          (0xfffffffffffffffeL, 3L, 2L)
+        )
+        val mask      = (BigInt(1) << p.xlen) - 1
+        val testCases = inputs.map { case (rs1, rs2, exp) =>
+          (rs1, rs2, BigInt(exp) & mask)
+        }
+        testDvuOp(dut, 15.U, DvuOp.REMU, testCases)
+      }
     }
-    simulate(new Dvu(p))(testDvuOp(_, 15.U, DvuOp.REMU, testCases))
   }
 }

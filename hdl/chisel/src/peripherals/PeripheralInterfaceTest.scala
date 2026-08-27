@@ -68,111 +68,128 @@ class CounterAxiPeripheral extends Module { // extends AxiCsrInterface(3) {
 }
 
 class PeripheralInterfaceSpec extends AnyFreeSpec with ChiselSim {
-  "Does Nothing" in {
+  "CounterAxiPeripheral" in {
     simulate(new CounterAxiPeripheral) { dut =>
-      for (i <- 0 until 32) {
-        dut.io.count.expect(0)
+      def resetDut(): Unit = {
+        dut.reset.poke(true.B)
         dut.clock.step()
+        dut.reset.poke(false.B)
+        dut.io.axi.read.addr.valid.poke(false.B)
+        dut.io.axi.read.data.ready.poke(false.B)
+        dut.io.axi.write.addr.valid.poke(false.B)
+        dut.io.axi.write.data.valid.poke(false.B)
+        dut.io.axi.write.resp.ready.poke(false.B)
       }
-    }
-  }
 
-  "Read" in {
-    simulate(new CounterAxiPeripheral) { dut =>
-      dut.io.axi.read.data.ready.poke(1)
-      dut.io.axi.read.addr.valid.poke(1)
+      // Does Nothing
+      {
+        for (i <- 0 until 32) {
+          dut.io.count.expect(0)
+          dut.clock.step()
+        }
+      }
 
-      // Read limit
-      dut.io.axi.read.addr.bits.addr.poke(4)
-      dut.clock.step()
-      dut.io.axi.read.data.valid.expect(1)
-      dut.io.axi.read.data.bits.data.expect(256)
-      dut.io.axi.read.data.bits.resp.expect(0)
+      resetDut()
 
-      // Read count
-      dut.io.axi.read.addr.bits.addr.poke(0)
-      dut.clock.step()
-      dut.io.axi.read.data.valid.expect(1)
-      dut.io.axi.read.data.bits.data.expect(0)
-      dut.io.axi.read.data.bits.resp.expect(0)
+      // Read
+      {
+        dut.io.axi.read.data.ready.poke(1)
+        dut.io.axi.read.addr.valid.poke(1)
 
-      // Read read invalid address
-      dut.io.axi.read.addr.bits.addr.poke(3)
-      dut.clock.step()
-      dut.io.axi.read.data.valid.expect(1)
-      dut.io.axi.read.data.bits.data.expect(0)
-      dut.io.axi.read.data.bits.resp.expect(2)
-    }
-  }
-
-  "Write" in {
-    simulate(new CounterAxiPeripheral) { dut =>
-      dut.io.axi.write.addr.valid.poke(1)
-      dut.io.axi.write.data.valid.poke(1)
-      dut.io.axi.write.resp.ready.poke(1)
-
-      // Write count
-      dut.io.axi.write.addr.bits.addr.poke(0)
-      dut.io.axi.write.data.bits.data.poke(64)
-      dut.clock.step()
-      dut.io.axi.write.resp.valid.expect(1)
-      dut.io.axi.write.resp.bits.resp.expect(0)
-
-      // Write limit
-      dut.io.axi.write.addr.bits.addr.poke(4)
-      dut.io.axi.write.data.bits.data.poke(2048)
-      dut.clock.step()
-      dut.io.axi.write.resp.valid.expect(1)
-      dut.io.axi.write.resp.bits.resp.expect(0)
-
-      // Write invalid
-      dut.io.axi.write.addr.bits.addr.poke(6)
-      dut.io.axi.write.data.bits.data.poke(9001)
-      dut.clock.step()
-      dut.io.axi.write.resp.valid.expect(1)
-      dut.io.axi.write.resp.bits.resp.expect(2)
-
-      dut.io.axi.write.addr.valid.poke(0)
-      dut.io.axi.write.data.valid.poke(0)
-
-      // Read results
-      dut.io.axi.read.data.ready.poke(1)
-      dut.io.axi.read.addr.valid.poke(1)
-
-      // Read count
-      dut.io.axi.read.addr.bits.addr.poke(0)
-      dut.clock.step()
-      dut.io.axi.read.data.valid.expect(1)
-      dut.io.axi.read.data.bits.data.expect(64)
-      dut.io.axi.read.data.bits.resp.expect(0)
-
-      // Read limit
-      dut.io.axi.read.addr.bits.addr.poke(4)
-      dut.clock.step()
-      dut.io.axi.read.data.valid.expect(1)
-      dut.io.axi.read.data.bits.data.expect(2048)
-      dut.io.axi.read.data.bits.resp.expect(0)
-    }
-  }
-
-  "Enable" in {
-    simulate(new CounterAxiPeripheral) { dut =>
-      dut.io.axi.write.addr.valid.poke(1)
-      dut.io.axi.write.data.valid.poke(1)
-      dut.io.axi.write.resp.ready.poke(1)
-
-      // Write enable
-      dut.io.axi.write.addr.bits.addr.poke(8)
-      dut.io.axi.write.data.bits.data.poke(1)
-      dut.clock.step()
-      dut.io.axi.write.resp.valid.expect(1)
-      dut.io.axi.write.resp.bits.resp.expect(0)
-      dut.io.axi.write.addr.valid.poke(0)
-      dut.io.axi.write.data.valid.poke(0)
-
-      for (i <- 0 until 64) {
+        // Read limit
+        dut.io.axi.read.addr.bits.addr.poke(4)
         dut.clock.step()
-        dut.io.count.expect(i)
+        dut.io.axi.read.data.valid.expect(1)
+        dut.io.axi.read.data.bits.data.expect(256)
+        dut.io.axi.read.data.bits.resp.expect(0)
+
+        // Read count
+        dut.io.axi.read.addr.bits.addr.poke(0)
+        dut.clock.step()
+        dut.io.axi.read.data.valid.expect(1)
+        dut.io.axi.read.data.bits.data.expect(0)
+        dut.io.axi.read.data.bits.resp.expect(0)
+
+        // Read read invalid address
+        dut.io.axi.read.addr.bits.addr.poke(3)
+        dut.clock.step()
+        dut.io.axi.read.data.valid.expect(1)
+        dut.io.axi.read.data.bits.data.expect(0)
+        dut.io.axi.read.data.bits.resp.expect(2)
+      }
+
+      resetDut()
+
+      // Write
+      {
+        dut.io.axi.write.addr.valid.poke(1)
+        dut.io.axi.write.data.valid.poke(1)
+        dut.io.axi.write.resp.ready.poke(1)
+
+        // Write count
+        dut.io.axi.write.addr.bits.addr.poke(0)
+        dut.io.axi.write.data.bits.data.poke(64)
+        dut.clock.step()
+        dut.io.axi.write.resp.valid.expect(1)
+        dut.io.axi.write.resp.bits.resp.expect(0)
+
+        // Write limit
+        dut.io.axi.write.addr.bits.addr.poke(4)
+        dut.io.axi.write.data.bits.data.poke(2048)
+        dut.clock.step()
+        dut.io.axi.write.resp.valid.expect(1)
+        dut.io.axi.write.resp.bits.resp.expect(0)
+
+        // Write invalid
+        dut.io.axi.write.addr.bits.addr.poke(6)
+        dut.io.axi.write.data.bits.data.poke(9001)
+        dut.clock.step()
+        dut.io.axi.write.resp.valid.expect(1)
+        dut.io.axi.write.resp.bits.resp.expect(2)
+
+        dut.io.axi.write.addr.valid.poke(0)
+        dut.io.axi.write.data.valid.poke(0)
+
+        // Read results
+        dut.io.axi.read.data.ready.poke(1)
+        dut.io.axi.read.addr.valid.poke(1)
+
+        // Read count
+        dut.io.axi.read.addr.bits.addr.poke(0)
+        dut.clock.step()
+        dut.io.axi.read.data.valid.expect(1)
+        dut.io.axi.read.data.bits.data.expect(64)
+        dut.io.axi.read.data.bits.resp.expect(0)
+
+        // Read limit
+        dut.io.axi.read.addr.bits.addr.poke(4)
+        dut.clock.step()
+        dut.io.axi.read.data.valid.expect(1)
+        dut.io.axi.read.data.bits.data.expect(2048)
+        dut.io.axi.read.data.bits.resp.expect(0)
+      }
+
+      resetDut()
+
+      // Enable
+      {
+        dut.io.axi.write.addr.valid.poke(1)
+        dut.io.axi.write.data.valid.poke(1)
+        dut.io.axi.write.resp.ready.poke(1)
+
+        // Write enable
+        dut.io.axi.write.addr.bits.addr.poke(8)
+        dut.io.axi.write.data.bits.data.poke(1)
+        dut.clock.step()
+        dut.io.axi.write.resp.valid.expect(1)
+        dut.io.axi.write.resp.bits.resp.expect(0)
+        dut.io.axi.write.addr.valid.poke(0)
+        dut.io.axi.write.data.valid.poke(0)
+
+        for (i <- 0 until 64) {
+          dut.clock.step()
+          dut.io.count.expect(i)
+        }
       }
     }
   }

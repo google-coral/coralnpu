@@ -81,48 +81,53 @@ class ShiftVectorRightTester extends Module {
 }
 
 class LibrarySpec extends AnyFreeSpec with ChiselSim {
-  "ForceZero when invalid" in {
+  "ForceZero" in {
     simulate(new ForceZeroTester) { dut =>
-      dut.io.in.bits.poke(9001)
-      dut.io.in.valid.poke(0)
-      dut.clock.step()
-      dut.io.out.bits.expect(0)
+      // ForceZero when invalid
+      {
+        dut.io.in.bits.poke(9001)
+        dut.io.in.valid.poke(0)
+        dut.clock.step()
+        dut.io.out.bits.expect(0)
+      }
+
+      // ForceZero propogates when valid
+      {
+        dut.io.in.bits.poke(9001)
+        dut.io.in.valid.poke(1)
+        dut.clock.step()
+        dut.io.out.bits.expect(9001)
+      }
     }
   }
 
-  "ForceZeroForceZero propogates when valid" in {
-    simulate(new ForceZeroTester) { dut =>
-      dut.io.in.bits.poke(9001)
-      dut.io.in.valid.poke(1)
-      dut.clock.step()
-      dut.io.out.bits.expect(9001)
-    }
-  }
-
-  "Zip32 Words" in {
+  "Zip32" in {
     simulate(new Zip32Tester) { dut =>
-      dut.io.sz.poke(4)
-      dut.io.a.poke(5)
-      dut.io.b.poke(3163)
-      dut.io.out.expect((3163L << 32L) | 5)
-    }
-  }
+      // Zip32 Words
+      {
+        dut.io.sz.poke(4)
+        dut.io.a.poke(5)
+        dut.io.b.poke(3163)
+        dut.io.out.expect((3163L << 32L) | 5)
+      }
 
-  "Zip32 Halves" in {
-    simulate(new Zip32Tester) { dut =>
-      dut.io.sz.poke(2)
-      dut.io.a.poke((7L << 16L) | 3)
-      dut.io.b.poke((11L << 16L) | 5)
-      dut.io.out.expect((11L << 48L) | (7L << 32L) | (5L << 16L) | 3L)
-    }
-  }
+      // Zip32 Halves
+      {
+        dut.io.sz.poke(2)
+        dut.io.a.poke((7L << 16L) | 3)
+        dut.io.b.poke((11L << 16L) | 5)
+        dut.io.out.expect((11L << 48L) | (7L << 32L) | (5L << 16L) | 3L)
+      }
 
-  "Zip32 Bytes" in {
-    simulate(new Zip32Tester) { dut =>
-      dut.io.sz.poke(1)
-      dut.io.a.poke((37L << 16L) | (7L << 8L) | 3)
-      dut.io.b.poke((43L << 16L) | (11L << 8L) | 5)
-      dut.io.out.expect((43L << 40L) | (37L << 32L) | (11L << 24L) | (7L << 16L) | (5L << 8L) | 3L)
+      // Zip32 Bytes
+      {
+        dut.io.sz.poke(1)
+        dut.io.a.poke((37L << 16L) | (7L << 8L) | 3)
+        dut.io.b.poke((43L << 16L) | (11L << 8L) | 5)
+        dut.io.out.expect(
+          (43L << 40L) | (37L << 32L) | (11L << 24L) | (7L << 16L) | (5L << 8L) | 3L
+        )
+      }
     }
   }
 

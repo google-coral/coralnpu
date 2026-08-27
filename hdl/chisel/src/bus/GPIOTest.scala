@@ -18,43 +18,49 @@ import chisel3._
 import chisel3.simulator.scalatest.ChiselSim
 import org.scalatest.freespec.AnyFreeSpec
 import coralnpu.Parameters
+
 class GPIOSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   val p      = new Parameters
   val tlul_p = p.toTLUL()
   val gp     = GPIOParameters(width = 8)
 
-  "GPIO Output Control" in {
+  "GPIO" in {
     simulate(new GPIO(tlul_p, gp)) { dut =>
-      dut.reset.poke(true.B)
-      dut.clock.step()
-      dut.reset.poke(false.B)
+      def resetDut(): Unit = {
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
+        dut.io.gpio_i.poke(0.U)
+      }
 
-      // Set output data
-      tlWrite(dut.io.tl, dut.clock, 0x04.U, 0xa5.U) // DATA_OUT
-      assert(dut.io.gpio_o.peek().litValue == 0xa5)
+      // GPIO Output Control
+      {
+        resetDut()
 
-      // Enable output
-      tlWrite(dut.io.tl, dut.clock, 0x08.U, 0xff.U) // OUT_EN
-      assert(dut.io.gpio_en_o.peek().litValue == 0xff)
+        // Set output data
+        tlWrite(dut.io.tl, dut.clock, 0x04.U, 0xa5.U) // DATA_OUT
+        assert(dut.io.gpio_o.peek().litValue == 0xa5)
 
-      // Read back
-      assert(tlReadData(dut.io.tl, dut.clock, 0x04.U) == 0xa5)
-      assert(tlReadData(dut.io.tl, dut.clock, 0x08.U) == 0xff)
-    }
-  }
+        // Enable output
+        tlWrite(dut.io.tl, dut.clock, 0x08.U, 0xff.U) // OUT_EN
+        assert(dut.io.gpio_en_o.peek().litValue == 0xff)
 
-  "GPIO Input Read" in {
-    simulate(new GPIO(tlul_p, gp)) { dut =>
-      dut.reset.poke(true.B)
-      dut.clock.step()
-      dut.reset.poke(false.B)
+        // Read back
+        assert(tlReadData(dut.io.tl, dut.clock, 0x04.U) == 0xa5)
+        assert(tlReadData(dut.io.tl, dut.clock, 0x08.U) == 0xff)
+      }
 
-      // Drive input
-      dut.io.gpio_i.poke(0x5a.U)
-      dut.clock.step()
+      // GPIO Input Read
+      {
+        resetDut()
 
-      // Read input register
-      assert(tlReadData(dut.io.tl, dut.clock, 0x00.U) == 0x5a)
+        // Drive input
+        dut.io.gpio_i.poke(0x5a.U)
+        dut.clock.step()
+
+        // Read input register
+        assert(tlReadData(dut.io.tl, dut.clock, 0x00.U) == 0x5a)
+      }
     }
   }
 }
