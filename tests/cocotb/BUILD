@@ -280,6 +280,7 @@ RVV_ASSEMBLY_TESTCASES = [
     "core_mini_rvv_vstart_vset_test",
     "core_mini_rvv_vfrdiv_test",
     "core_mini_rvv_vleff_test",
+    "core_mini_rvv_vl0_v0_corruption_test",
 ]
 # END_TESTCASES_FOR_rvv_assembly_cocotb_test
 
@@ -287,6 +288,7 @@ RVV_ASSEMBLY_TESTCASES = [
 RVV_LOAD_STORE_TESTCASES = [
     "load_store_bits",
     "load_store_whole_register_test",
+    "whole_reg_repro",
     "load_unit_masked",
     "load_unit_ff",
     "load_unit_all_vtypes_test",

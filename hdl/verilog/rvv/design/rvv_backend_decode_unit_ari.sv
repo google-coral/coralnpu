@@ -3755,11 +3755,11 @@ module rvv_backend_decode_unit_ari
                       `ifdef ZVT_ON
                         || isVmeAlu
                       `endif
-                        )&
+                        )
                       `ifdef ZVE32F_ON
-                        check_frm&
+                        &check_frm
                       `endif
-                        check_vl_not_0;
+                        ;
 
   // check whether vd is aligned to emul_vd
   always_comb begin

@@ -3982,3 +3982,17 @@ async def load_store_whole_register_test(dut):
                         assert (store_data[data_written:] == 0xFF).all()
                     else:
                         assert (store_data[data_written:] == 0x00).all()
+
+
+@cocotb.test()
+async def whole_reg_repro(dut):
+    """Testbench to run whole_reg_repro."""
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation(
+            'coralnpu_hw/tests/cocotb/rvv/load_store/whole_reg_repro.elf'
+        ),
+        [],
+    )
+    await fixture.run_to_halt()

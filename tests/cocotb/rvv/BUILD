@@ -104,6 +104,9 @@ template_rule(
         "rvv_vfrdiv_test": {
             "srcs": ["rvv_vfrdiv_test.S"],
         },
+        "rvv_vl0_v0_corruption_test": {
+            "srcs": ["rvv_vl0_v0_corruption_test.S"],
+        },
         "rvv_vleff_test": {
             "srcs": ["rvv_vleff_test.S"],
         },
@@ -119,6 +122,7 @@ filegroup(
         "rvv_small_loop_test.elf",
         "rvv_vfrdiv_test.elf",
         "rvv_vill_loop_trap_test.elf",
+        "rvv_vl0_v0_corruption_test.elf",
         "rvv_vleff_test.elf",
         "rvv_vstart_rob_test.elf",
         "rvv_vstart_trap_flush_test.elf",

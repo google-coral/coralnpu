@@ -2293,3 +2293,59 @@ async def core_mini_rvv_vleff_test(dut):
     assert np.array_equal(
         v3_result, expected_v3
     ), f"v3 mismatch (unaligned vle32ff): got {[hex(x) for x in v3_result]}, expected {[hex(x) for x in expected_v3]}"
+
+
+@cocotb.test()
+async def core_mini_rvv_vl0_v0_corruption_test(dut):
+    """Directed test to check vector mask register v0 preservation when vl=0."""
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+    r = runfiles.Create()
+
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/rvv/rvv_vl0_v0_corruption_test.elf"
+    )
+    if not elf_path:
+        raise ValueError("elf_path must consist a valid path")
+    with open(elf_path, "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+    with open(elf_path, "rb") as f:
+        output_v0_after_vmsbc_addr = core_mini_axi.lookup_symbol(
+            f, "output_v0_after_vmsbc"
+        )
+        output_v29_after_vmsbc_addr = core_mini_axi.lookup_symbol(
+            f, "output_v29_after_vmsbc"
+        )
+
+    # Initial expected v0: 0xf0b0e6759579717a4fc03532a0a512b6
+    expected_v0 = np.array([0xA0A512B6, 0x4FC03532, 0x9579717A, 0xF0B0E675],
+                           dtype=np.uint32)
+
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_wfi()
+
+    v0_after_vmsbc = (
+        await core_mini_axi.read(output_v0_after_vmsbc_addr, 16)
+    ).view(np.uint32)
+    v29_after_vmsbc = (
+        await core_mini_axi.read(output_v29_after_vmsbc_addr, 16)
+    ).view(np.uint32)
+
+    dut._log.info(
+        f"v0_after_vmsbc:  0x{v0_after_vmsbc[3]:08x}_{v0_after_vmsbc[2]:08x}_{v0_after_vmsbc[1]:08x}_{v0_after_vmsbc[0]:08x}"
+    )
+    dut._log.info(
+        f"v29_after_vmsbc: 0x{v29_after_vmsbc[3]:08x}_{v29_after_vmsbc[2]:08x}_{v29_after_vmsbc[1]:08x}_{v29_after_vmsbc[0]:08x}"
+    )
+    dut._log.info(
+        f"expected_v0:     0x{expected_v0[3]:08x}_{expected_v0[2]:08x}_{expected_v0[1]:08x}_{expected_v0[0]:08x}"
+    )
+
+    np.testing.assert_array_equal(
+        v0_after_vmsbc,
+        expected_v0,
+        err_msg="Vector mask v0 corrupted after vmsbc.vvm under vl=0",
+    )

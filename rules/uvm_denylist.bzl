@@ -108,6 +108,7 @@ SPIKE_DENYLIST = [
     "//tests/cocotb/rvv:rvv_small_loop_test",
     "//tests/cocotb:csr_behavior",
     "//tests/cocotb/rvv:rvv_vfrdiv_test",
+    "//tests/cocotb/rvv:rvv_vl0_v0_corruption_test",
     "//tests/cocotb/rvv:rvv_vleff_test",
 ]
 

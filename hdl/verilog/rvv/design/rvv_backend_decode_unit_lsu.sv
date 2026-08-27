@@ -3424,8 +3424,7 @@ module rvv_backend_decode_unit_lsu
   end
 
   //check common requirements for all instructions
-  assign check_common = check_vd_align&check_vs2_align&check_vd_in_range&check_sew&check_lmul
-                        &check_evl_not_0;
+  assign check_common = check_vd_align&check_vs2_align&check_vd_in_range&check_sew&check_lmul;
 
   // check whether vd is aligned to emul_vd
   always_comb begin
