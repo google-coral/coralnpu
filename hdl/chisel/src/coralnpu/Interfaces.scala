@@ -165,6 +165,8 @@ class DFlushIO(p: Parameters) extends Bundle {
   val ready = Input(Bool())
   val all   = Output(Bool()) // all=0, see io.dbus.addr for line address.
   val clean = Output(Bool()) // clean and flush
+
+  def fire: Bool = valid && ready
 }
 
 class RetirementBufferDebugIO(p: Parameters) extends Bundle {

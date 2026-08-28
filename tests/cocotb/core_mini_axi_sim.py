@@ -663,3 +663,26 @@ async def rvv_frm_hazard_test(dut):
         assert result_fcsr[
             i
         ] == 0x3f800003, f"result_fcsr[{i}] expected 0x3f800003 (RUP), got {hex(result_fcsr[i])}"
+
+
+@cocotb.test()
+async def fencei_test(dut):
+    """Tests the FENCE.I instruction by modifying code in external memory."""
+    fixture = await Fixture.Create(dut)
+    r = runfiles.Create()
+
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation("coralnpu_hw/tests/cocotb/fencei_test.elf"),
+        ["result_smc", "result1", "result2"],
+    )
+
+    await fixture.run_to_halt(timeout_cycles=100000)
+    result_smc = (await fixture.read("result_smc", 4)).view(np.uint32)[0]
+    result1 = (await fixture.read("result1", 4)).view(np.uint32)[0]
+    result2 = (await fixture.read("result2", 4)).view(np.uint32)[0]
+    dut._log.info(
+        f"fencei_test: result_smc={result_smc}, result1={result1}, result2={result2}"
+    )
+    assert result_smc == 30, f"Expected result_smc=30, got {result_smc}"
+    assert result1 == 42, f"Expected result1=42, got {result1}"
+    assert result2 == 99, f"Expected result2=99, got {result2}"

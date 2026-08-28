@@ -49,6 +49,7 @@ COCOTB_TEST_BINARY_TARGETS = glob(["**/*.elf"]) + glob(["**/*.o"]) + [
     ":zfbfmin_test.elf",
     ":zvfbf_test.elf",
     ":rvv_fflags_test.elf",
+    ":fencei_test.elf",
     "//tests/cocotb/coralnpu_isa:coralnpu_isa_tests",
     "//tests/cocotb/exceptions:elf_files",
     "//third_party/riscv-tests:all_files",
@@ -138,6 +139,7 @@ CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_fcsr_frm_hazard_test",
     "core_mini_axi_backdoor_load_test",
     "core_mini_axi_minstret_test",
+    "fencei_test",
 ]
 # END_TESTCASES_FOR_core_mini_axi_sim_cocotb
 
@@ -164,6 +166,7 @@ RVV_CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_fcsr_frm_hazard_test",
     "rvv_frm_hazard_test",
     "core_mini_axi_backdoor_load_test",
+    "fencei_test",
 ]
 # END_TESTCASES_FOR_rvv_core_mini_axi_sim_cocotb
 
@@ -688,6 +691,11 @@ coralnpu_v2_binary(
 coralnpu_v2_binary(
     name = "vector_store_fault",
     srcs = ["vector_store_fault.cc"],
+)
+
+coralnpu_v2_binary(
+    name = "fencei_test",
+    srcs = ["fencei_test.cc"],
 )
 
 cocotb_test_suite(

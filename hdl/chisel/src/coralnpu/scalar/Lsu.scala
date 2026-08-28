@@ -3232,15 +3232,21 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     new CircularBufferMulti(new LsuUOp(p), p.instructionLanes, math.max(4, p.instructionLanes))
   )
 
+  // Flush state
+  val flushCmd = RegInit(MakeInvalid(new FlushCmd))
+
   // Accept instructions based on available space.
   val validSums = io.req.map(_.valid).scan(0.U(log2Ceil(p.instructionLanes + 1).W))(_ + _)
   for (i <- 0 until p.instructionLanes) {
-    io.req(i).ready := validSums(i) < rs.io.nSpace
+    io.req(i).ready := (validSums(i) < rs.io.nSpace) && !flushCmd.valid
   }
 
   // Prepare and align instructions for the queue.
   val ops = (0 until p.instructionLanes).map(i =>
-    MakeValid(io.req(i).fire, LsuUOp(p, i, io.req(i).bits, io.busPort, io.busPort_flt, io.rvvState))
+    MakeValid(
+      io.req(i).fire && (io.req(i).bits.op =/= LsuOp.FENCEI),
+      LsuUOp(p, i, io.req(i).bits, io.busPort, io.busPort_flt, io.rvvState)
+    )
   )
   val alignedOps = Aligner(ops)
 
@@ -3298,6 +3304,16 @@ class LsuV3(p: Parameters) extends Lsu(p) {
 
   rs.io.flush   := io.pipelineFlush || faultReg.valid
   slot.io.flush := io.pipelineFlush || faultReg.valid
+
+  flushCmd := MuxCase(
+    flushCmd,
+    Seq(
+      (io.pipelineFlush || faultReg.valid) -> MakeInvalid(new FlushCmd),
+      io.flush.fire                        -> MakeInvalid(new FlushCmd),
+      (io.req(0).fire && (io.req(0).bits.op === LsuOp.FENCEI))
+        -> MakeValid(true.B, FlushCmd(io.req(0).bits))
+    )
+  )
 
   io.ibus.valid := itcm && slot.io.busReq.valid && !slot.io.busReq.bits.write
   io.ibus.addr  := addr
@@ -3392,17 +3408,14 @@ class LsuV3(p: Parameters) extends Lsu(p) {
   io.fault := faultReg
 
   // status reporting
-  io.active        := rs.io.nEnqueued > 0.U || !slot.io.active
+  io.active        := rs.io.nEnqueued > 0.U || !slot.io.active || flushCmd.valid
   io.storeComplete := MakeValid(slot.io.storeComplete, slot.io.pc)
 
-  // Tie off all outputs to safe defaults.
-  // TODO(davidgao): all these should be gone once LsuV3 is fully functional
-
-  io.flush.valid  := false.B
+  io.flush.valid  := flushCmd.valid
   io.flush.all    := false.B
   io.flush.clean  := false.B
-  io.flush.fencei := false.B
-  io.flush.pcNext := 0.U
+  io.flush.fencei := flushCmd.bits.fencei
+  io.flush.pcNext := flushCmd.bits.pcNext
 
   io.vldst := false.B
 }
