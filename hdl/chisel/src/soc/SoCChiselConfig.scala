@@ -49,6 +49,7 @@ case class CoreTlulParameters(
   enableFloat: Boolean,
   enableZfbfmin: Boolean = true,
   enableVectorBf16: Boolean = true,
+  enableAxiInstructionFetch: Boolean = true,
   memoryRegions: Seq[MemoryRegion]
 ) extends ModuleParameters
 

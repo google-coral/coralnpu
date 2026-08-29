@@ -77,6 +77,7 @@ chisel_cc_library(
     ],
     gen_flags = [
         "--moduleName=RvvCoreMini",  # Generates RvvCoreMiniAxi module
+        "--enableAxiInstructionFetch=False",
     ] + RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS,
     module_name = "RvvCoreMiniAxi",
     verilog_file_path = "RvvCoreMiniAxi.sv",

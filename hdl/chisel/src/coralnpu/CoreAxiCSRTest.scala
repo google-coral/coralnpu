@@ -219,3 +219,45 @@ class CoreTlulAxiCSRSpec extends AnyFreeSpec with ChiselSim {
     }
   }
 }
+
+class CoreAxiInstructionFetchSpec extends AnyFreeSpec with ChiselSim {
+  "CoreAxi parameters verify enableAxiInstructionFetch" in {
+    val pTrue = new Parameters
+    assert(pTrue.enableAxiInstructionFetch == true)
+
+    val pFalse = new Parameters
+    pFalse.enableAxiInstructionFetch = false
+    assert(pFalse.enableAxiInstructionFetch == false)
+
+    val pAugment = pFalse.augmentId(2)
+    assert(pAugment.enableAxiInstructionFetch == false)
+
+    val headerTrue = EmitParametersHeader(pTrue)
+    assert(headerTrue.contains("#define KP_enableAxiInstructionFetch  true"))
+
+    val headerFalse = EmitParametersHeader(pFalse)
+    assert(headerFalse.contains("#define KP_enableAxiInstructionFetch  false"))
+  }
+
+  "CoreAxi elaborates with enableAxiInstructionFetch false" in {
+    val pFalse = new Parameters
+    pFalse.m = MemoryRegions.default
+    pFalse.lsuDataBits = 128
+    pFalse.fetchDataBits = 128
+    pFalse.enableFetchL0 = false
+    pFalse.enableAxiInstructionFetch = false
+    val sv = _root_.circt.stage.ChiselStage.emitSystemVerilog(new CoreAxi(pFalse, "CoreAxiNoIbus"))
+    assert(!sv.contains("IBus2Axi"))
+  }
+
+  "CoreAxi elaborates with enableAxiInstructionFetch true" in {
+    val pTrue = new Parameters
+    pTrue.m = MemoryRegions.default
+    pTrue.lsuDataBits = 128
+    pTrue.fetchDataBits = 128
+    pTrue.enableFetchL0 = false
+    pTrue.enableAxiInstructionFetch = true
+    val sv = _root_.circt.stage.ChiselStage.emitSystemVerilog(new CoreAxi(pTrue, "CoreAxiWithIbus"))
+    assert(sv.contains("IBus2Axi"))
+  }
+}

@@ -174,7 +174,7 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
 
     // ITCM path: only issue read when address is in ITCM
     itcmArbiter.io.source(0).readDataAddr := MakeValid(
-      core.io.ibus.valid && inItcm,
+      core.io.ibus.valid && (if (p.enableAxiInstructionFetch) inItcm else true.B),
       core.io.ibus.addr
     )
     itcmArbiter.io.source(0).writeDataAddr :=
@@ -182,22 +182,32 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
     itcmArbiter.io.source(0).writeDataBits := 0.U
     itcmArbiter.io.source(0).writeDataStrb := 0.U
 
-    // AXI path: route instruction fetches outside ITCM through IBus2Axi
-    val ibus2axi = IBus2Axi(p, id = 1)
-    ibus2axi.io.ibus.valid := core.io.ibus.valid && !inItcm
-    ibus2axi.io.ibus.addr  := core.io.ibus.addr
+    val ibus2axi = Option.when(p.enableAxiInstructionFetch)(IBus2Axi(p, id = 1))
 
-    // Mux results back to core.
-    // Register inItcm to break the combinational cycle (addr -> inItcm -> rdata -> core -> addr).
-    // This matches the 1-cycle SRAM read latency: rdata reflects the previous cycle's request source.
-    val inItcmReg = RegNext(inItcm, true.B)
-    core.io.ibus.rdata := Mux(
-      inItcmReg,
-      itcmArbiter.io.source(0).readData.bits,
-      ibus2axi.io.ibus.rdata
-    )
-    core.io.ibus.ready := Mux(inItcm, inItcmReg, ibus2axi.io.ibus.ready)
-    core.io.ibus.fault := ibus2axi.io.ibus.fault
+    if (p.enableAxiInstructionFetch) {
+      // AXI path: route instruction fetches outside ITCM through IBus2Axi
+      ibus2axi.get.io.ibus.valid := core.io.ibus.valid && !inItcm
+      ibus2axi.get.io.ibus.addr  := core.io.ibus.addr
+
+      // Mux results back to core.
+      // Register inItcm to break the combinational cycle (addr -> inItcm -> rdata -> core -> addr).
+      // This matches the 1-cycle SRAM read latency: rdata reflects the previous cycle's request source.
+      val inItcmReg = RegNext(inItcm, true.B)
+      core.io.ibus.rdata := Mux(
+        inItcmReg,
+        itcmArbiter.io.source(0).readData.bits,
+        ibus2axi.get.io.ibus.rdata
+      )
+      core.io.ibus.ready := Mux(inItcm, inItcmReg, ibus2axi.get.io.ibus.ready)
+      core.io.ibus.fault := ibus2axi.get.io.ibus.fault
+    } else {
+      core.io.ibus.rdata            := itcmArbiter.io.source(0).readData.bits
+      core.io.ibus.ready            := true.B
+      core.io.ibus.fault.valid      := core.io.ibus.valid && !inItcm
+      core.io.ibus.fault.bits.write := false.B
+      core.io.ibus.fault.bits.addr  := 0.U
+      core.io.ibus.fault.bits.epc   := core.io.ibus.addr
+    }
 
     // Build DTCM and connect to dbus
     val dtcmSizeBytes: Int = 1024 * p.dtcmSizeKBytes
@@ -263,24 +273,35 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
     io.axi_master.write.data <> GateDecoupled(Queue(ebus2axi.io.axi.write.data, 2), axiEnable)
     ebus2axi.io.axi.write.resp <> Queue(GateDecoupled(io.axi_master.write.resp, axiEnable), 2)
 
-    // Read channel: arbitrate between ibus and ebus.
-    val readAddrArb =
-      Module(new CoralNPURRArbiter(new AxiAddress(p.axi2AddrBits, p.axi2DataBits, p.axi2IdBits), 2))
-    readAddrArb.io.in(0) <> ebus2axi.io.axi.read.addr
-    readAddrArb.io.in(1) <> ibus2axi.io.axi.addr
-    io.axi_master.read.addr <> GateDecoupled(Queue(readAddrArb.io.out, 2), axiEnable)
+    if (p.enableAxiInstructionFetch) {
+      // Read channel: arbitrate between ibus and ebus.
+      val readAddrArb =
+        Module(
+          new CoralNPURRArbiter(new AxiAddress(p.axi2AddrBits, p.axi2DataBits, p.axi2IdBits), 2)
+        )
+      readAddrArb.io.in(0) <> ebus2axi.io.axi.read.addr
+      readAddrArb.io.in(1) <> ibus2axi.get.io.axi.addr
+      io.axi_master.read.addr <> GateDecoupled(Queue(readAddrArb.io.out, 2), axiEnable)
 
-    // Route read data back based on ID.
-    val readDataSkid = Queue(GateDecoupled(io.axi_master.read.data, axiEnable), 2)
-    readDataSkid.ready := Mux(
-      readDataSkid.bits.id === 1.U,
-      ibus2axi.io.axi.data.ready,
-      ebus2axi.io.axi.read.data.ready
-    )
-    ebus2axi.io.axi.read.data.valid := readDataSkid.valid && readDataSkid.bits.id === 0.U
-    ibus2axi.io.axi.data.valid      := readDataSkid.valid && readDataSkid.bits.id === 1.U
+      // Route read data back based on ID.
+      val readDataSkid = Queue(GateDecoupled(io.axi_master.read.data, axiEnable), 2)
+      readDataSkid.ready := Mux(
+        readDataSkid.bits.id === 1.U,
+        ibus2axi.get.io.axi.data.ready,
+        ebus2axi.io.axi.read.data.ready
+      )
+      ebus2axi.io.axi.read.data.valid := readDataSkid.valid && readDataSkid.bits.id === 0.U
+      ibus2axi.get.io.axi.data.valid  := readDataSkid.valid && readDataSkid.bits.id === 1.U
 
-    ebus2axi.io.axi.read.data.bits := readDataSkid.bits
-    ibus2axi.io.axi.data.bits      := readDataSkid.bits
+      ebus2axi.io.axi.read.data.bits := readDataSkid.bits
+      ibus2axi.get.io.axi.data.bits  := readDataSkid.bits
+    } else {
+      io.axi_master.read.addr <> GateDecoupled(Queue(ebus2axi.io.axi.read.addr, 2), axiEnable)
+
+      val readDataSkid = Queue(GateDecoupled(io.axi_master.read.data, axiEnable), 2)
+      readDataSkid.ready              := ebus2axi.io.axi.read.data.ready
+      ebus2axi.io.axi.read.data.valid := readDataSkid.valid
+      ebus2axi.io.axi.read.data.bits  := readDataSkid.bits
+    }
   }
 }

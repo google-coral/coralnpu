@@ -138,6 +138,9 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   var enableFetchL0   = true
   val fetchCacheBytes = 1024
 
+  // Enable instruction fetch via AXI master port (fallback for execution outside ITCM)
+  var enableAxiInstructionFetch = true
+
   // Scalar Core Fetch bus.
   def fetchAddrBits        = programCounterBits // do not change
   var fetchDataBits        = 256                // do not change
@@ -207,6 +210,7 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
     newP.enableZfbfmin = this.enableZfbfmin
     newP.enableVectorBf16 = this.enableVectorBf16
     newP.enableFetchL0 = this.enableFetchL0
+    newP.enableAxiInstructionFetch = this.enableAxiInstructionFetch
     newP.fetchDataBits = this.fetchDataBits
     newP.lsuDataBits = this.lsuDataBits
     newP.itcmSizeKBytes = this.itcmSizeKBytes

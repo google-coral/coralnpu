@@ -200,6 +200,7 @@ class CoralNPUChiselSubsystem(
             core_p.enableFloat = p.enableFloat
             core_p.enableZfbfmin = p.enableZfbfmin
             core_p.enableVectorBf16 = p.enableVectorBf16
+            core_p.enableAxiInstructionFetch = p.enableAxiInstructionFetch
             core_p.itcmSizeKBytes = itcmSize.kBytes
             core_p.dtcmSizeKBytes = dtcmSize.kBytes
             Module(new CoreTlul(core_p, config.name))
