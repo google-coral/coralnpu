@@ -16,6 +16,7 @@ package coralnpu
 
 import chisel3._
 import chisel3.util._
+import common._
 
 class FaultManager(p: Parameters) extends Module {
   val io = IO(new Bundle {
@@ -41,7 +42,7 @@ class FaultManager(p: Parameters) extends Module {
           }
         )
       )
-      val memory_fault = Input(Valid(new FaultInfo(p)))
+      val memory_fault = Input(Valid(new LsuFaultInfo(p)))
       val rvv_fault    = Option.when(p.enableRvv)(Input(Valid(new FaultManagerOutput(p))))
       val undef        = Input(
         Vec(
@@ -163,5 +164,6 @@ class FaultManager(p: Parameters) extends Module {
   if (p.enableRvv) {
     io.out.bits.is_rvv.get  := rvv_fault
     io.out.bits.rob_tag.get := io.in.rvv_fault.get.bits.rob_tag.getOrElse(0.U)
+    io.out.bits.vstart.get  := io.in.memory_fault.bits.vstart.getOrElse(MakeInvalid(0.U))
   }
 }

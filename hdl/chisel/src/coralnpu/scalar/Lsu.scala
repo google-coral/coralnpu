@@ -39,7 +39,7 @@ class Lsu(p: Parameters) extends Module {
     val ibus  = new IBusIO(p)
     val dbus  = new DBusIO(p)
     val flush = new DFlushFenceiIO(p)
-    val fault = Valid(new FaultInfo(p))
+    val fault = Valid(new LsuFaultInfo(p))
 
     // DBus that will eventually reach an external bus.
     // Intended for sending a transaction to an external
@@ -1167,9 +1167,8 @@ class LsuV2(p: Parameters) extends Lsu(p) {
   ibusFault.bits.addr  := targetLineAddr
   ibusFault.bits.epc   := slot.pc
 
-  io.fault.valid := faultReg.valid
-  io.fault.bits  := faultReg.bits.info
-  faultReg       := {
+  io.fault := LsuFaultInfo(p)(MakeValid(faultReg.valid, faultReg.bits.info))
+  faultReg := {
     val f             = Wire(Valid(new LsuFault(p)))
     val nextFaultInfo = MuxCase(
       MakeInvalid(new FaultInfo(p)),
@@ -1506,10 +1505,11 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
   // Simplified bus request interface before bookkeeping.
   class BusReq extends Bundle {
-    val rowAddr = UInt(p.dbusRowAddrBits.W)
-    val write   = Bool()
-    val wdata   = UInt(p.lsuDataBits.W)
-    val wmask   = UInt(p.lsuDataBytes.W)
+    val rowAddr   = UInt(p.dbusRowAddrBits.W)
+    val write     = Bool()
+    val wdata     = UInt(p.lsuDataBits.W)
+    val wmask     = UInt(p.lsuDataBytes.W)
+    val cellIndex = Option.when(p.enableRvv)(UInt(ctrWidth.W))
   }
 
   class WritebackReq extends Bundle {
@@ -1709,6 +1709,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.bits.wdata -> Mux(strictMode, wDataStrict, wDataNormal),
         _.bits.wmask -> Mux(strictMode, wMaskStrict, wMaskNormal)
       )
+      tx.bits.cellIndex.foreach(_ := leadIndex)
       val started  = Mux(strictMode, startedStrict, startedNormal)
       val moveLead = Mux(strictMode, moveLeadStrict, moveLeadNormal)
 
@@ -3132,7 +3133,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val pc              = UInt(p.programCounterBits.W)
     val active          = Bool()
     val storeComplete   = Bool()
-    val flush           = Input(Bool())
+    val faultingVstart  = Option.when(p.enableRvv)(Output(Valid(UInt(log2Ceil(p.rvvVlen).W))))
   })
 
   val state    = RegInit(State())
@@ -3143,7 +3144,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val txPending              = RegInit(MakeInvalid(new BusReq))
   val txOutgoing             = Mux(txPending.valid, txPending, tx)
   txPending := Mux(
-    io.busReq.ready || state.faulted || newFault || io.flush,
+    io.busReq.ready || state.faulted || newFault,
     MakeInvalid(txPending.bits),
     txOutgoing
   )
@@ -3160,8 +3161,10 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val stateFromUop = state.fromUop(io.uop.bits)
 
   // TODO: use real bookkeeping
-  val busRespRowAddr = RegNext(txOutgoing.bits.rowAddr, 0.U)
-  val busRespData    = VecInit.tabulate(p.lsuDataBytes) { i =>
+  val busRespRowAddr   = RegNext(txOutgoing.bits.rowAddr, 0.U)
+  val busRespCellIndex =
+    Option.when(p.enableRvv)(RegNext(txOutgoing.bits.cellIndex.get, 0.U(ctrWidth.W)))
+  val busRespData = VecInit.tabulate(p.lsuDataBytes) { i =>
     io.busResp.bits.rdata(i * 8 + 7, i * 8)
   }
   val busRespMask    = RegNext(starts, 0.U)
@@ -3208,21 +3211,51 @@ class LsuSuperSlot(p: Parameters) extends Module {
     }
   )
   io.uop.ready := stateFromAction.isDone
-  state        := Mux(io.flush, State(), Mux(io.uop.fire, stateFromUop, stateFromAction))
+  state        := Mux(io.uop.fire, stateFromUop, stateFromAction)
 
   io.active := state.cells.forall { x =>
     x.state === LsuCellState.DONE
   }
-  // storeComplete is raised iff we've just received the last response
+  // storeComplete is raised iff we've completed all cells and writebacks
   io.storeComplete := state.write && !state.cells.forall { x =>
-    x.state === LsuCellState.W_WB || x.state === LsuCellState.DONE
+    x.state === LsuCellState.DONE
   } && stateFromAction.cells.forall { x =>
-    x.state === LsuCellState.W_WB || x.state === LsuCellState.DONE
+    x.state === LsuCellState.DONE
   }
   io.pc := state.pc
 
   io.vectorData.map { x =>
     x.ready := state.cells.map(_.state === LsuCellState.W_DATA).reduce(_ || _)
+  }
+
+  io.faultingVstart.foreach { vstartOut =>
+    val isVector = state.vector.map(v => v.segmentStep =/= 0.U).getOrElse(false.B)
+    vstartOut.valid := isVector && newFault
+    val faultingCell = busRespCellIndex.get
+
+    // 1. Divide faultingCell by (NF + 1) in [1..8]
+    val divByNf = MuxLookup(state.vector.get.dataSegment.max, faultingCell)(
+      Seq(
+        0.U -> faultingCell,
+        1.U -> (faultingCell >> 1),
+        2.U -> (faultingCell / 3.U),
+        3.U -> (faultingCell >> 2),
+        4.U -> (faultingCell / 5.U),
+        5.U -> (faultingCell / 6.U),
+        6.U -> (faultingCell / 7.U),
+        7.U -> (faultingCell >> 3)
+      )
+    )
+
+    // 2. Right-shift by element width (elemBytes = segmentStep: 1, 2, or 4)
+    val vstart = MuxLookup(state.vector.get.segmentStep, divByNf)(
+      Seq(
+        1.U -> divByNf,
+        2.U -> (divByNf >> 1),
+        4.U -> (divByNf >> 2)
+      )
+    )
+    vstartOut.bits := vstart(log2Ceil(p.rvvVlen) - 1, 0)
   }
 }
 
@@ -3257,9 +3290,8 @@ class LsuV3(p: Parameters) extends Lsu(p) {
 
   // Internals
   val slot = Module(new LsuSuperSlot(p))
-  slot.io.uop.valid := rs.io.nEnqueued > 0.U
-  slot.io.uop.bits  := rs.io.dataOut(0)
-  rs.io.deqReady    := Mux(slot.io.uop.fire, 1.U, 0.U)
+  slot.io.uop.bits := rs.io.dataOut(0)
+  rs.io.deqReady   := slot.io.uop.fire
   if (p.enableRvv) {
     slot.io.vectorData.get <> io.rvv2lsu.get(0)
     io.rvv2lsu.get(1).ready := false.B
@@ -3291,19 +3323,22 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     _.bits.addr  -> slot.io.busReq.bits.rowAddr,
     _.bits.epc   -> slot.io.pc
   )
-  val faultReg = RegNext(
-    MuxCase(
-      MakeInvalid(new FaultInfo(p)),
-      Seq(
-        io.ebus.fault.valid -> io.ebus.fault,
-        ibusFault.valid     -> ibusFault
-      )
-    ),
-    MakeInvalid(new FaultInfo(p))
+
+  val rawFault = MuxCase(
+    MakeInvalid(new FaultInfo(p)),
+    Seq(
+      io.ebus.fault.valid -> io.ebus.fault,
+      ibusFault.valid     -> ibusFault
+    )
   )
 
-  rs.io.flush   := io.pipelineFlush || faultReg.valid
-  slot.io.flush := io.pipelineFlush || faultReg.valid
+  val faultReg = LsuFaultInfo(p)(
+    RegNext(rawFault, MakeInvalid(new FaultInfo(p))),
+    slot.io.faultingVstart
+  )
+
+  rs.io.flush       := io.pipelineFlush || faultReg.valid
+  slot.io.uop.valid := (rs.io.nEnqueued > 0.U) && !rs.io.flush
 
   flushCmd := MuxCase(
     flushCmd,

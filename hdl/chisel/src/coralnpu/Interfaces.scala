@@ -14,7 +14,7 @@
 
 package coralnpu
 
-import common.Fp32
+import common._
 import chisel3._
 import chisel3.util._
 
@@ -109,6 +109,28 @@ class FaultInfo(p: Parameters) extends Bundle {
   val write = Bool()
   val addr  = UInt(p.programCounterBits.W)
   val epc   = UInt(p.programCounterBits.W)
+}
+
+class LsuFaultInfo(p: Parameters) extends Bundle {
+  val write  = Bool()
+  val addr   = UInt(p.programCounterBits.W)
+  val epc    = UInt(p.programCounterBits.W)
+  val vstart = Option.when(p.enableRvv)(Valid(UInt(log2Ceil(p.rvvVlen).W)))
+}
+
+object LsuFaultInfo {
+  def apply(p: Parameters)(
+    fault: Valid[FaultInfo],
+    vstart: Option[Valid[UInt]] = None
+  ): Valid[LsuFaultInfo] = {
+    val res = Wire(Valid(new LsuFaultInfo(p)))
+    res.valid      := fault.valid
+    res.bits.write := fault.bits.write
+    res.bits.addr  := fault.bits.addr
+    res.bits.epc   := fault.bits.epc
+    res.bits.vstart.foreach(v => v := vstart.getOrElse(MakeInvalid(0.U)))
+    res
+  }
 }
 
 class DBusIO(p: Parameters, bank: Boolean = false) extends Bundle {
@@ -333,4 +355,5 @@ class FaultManagerOutput(p: Parameters) extends Bundle {
   val decode  = Bool()
   val is_rvv  = Option.when(p.enableRvv)(Bool())
   val rob_tag = Option.when(p.enableRvv)(UInt(4.W))
+  val vstart  = Option.when(p.enableRvv)(Valid(UInt(log2Ceil(p.rvvVlen).W)))
 }

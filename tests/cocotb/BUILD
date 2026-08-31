@@ -333,7 +333,15 @@ RVV_LOAD_STORE_TESTCASES = [
     "store8_seg_unit",
     "store16_seg_unit",
     "store32_seg_unit",
-    "load_store8_fault",
+    "lsu_fault_scalar_preserves_vstart",
+    "lsu_fault_unit_stride_rs_flush",
+    "lsu_fault_negative_stride_mid_vstart",
+    "lsu_fault_indexed_mid_vstart",
+    "lsu_fault_seg3_negative_stride_mid_vstart",
+    "lsu_fault_seg5_negative_stride_mid_vstart",
+    "lsu_fault_vector_load_rs_flush",
+    "lsu_fault_scalar_mixed_rs_flush",
+    "lsu_fault_scalar_to_scalar_rs_flush",
     "load_store8_test",
 ]
 # END_TESTCASES_FOR_rvv_load_store_test

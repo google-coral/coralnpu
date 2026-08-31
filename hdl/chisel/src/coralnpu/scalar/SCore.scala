@@ -167,6 +167,7 @@ class SCore(p: Parameters) extends Module {
     fault_manager.io.in.rvv_fault.get.bits.decode      := false.B
     fault_manager.io.in.rvv_fault.get.bits.is_rvv.get  := true.B
     fault_manager.io.in.rvv_fault.get.bits.rob_tag.get := io.rvvcore.get.trap.bits.rob_tag
+    fault_manager.io.in.rvv_fault.get.bits.vstart.get  := MakeInvalid(0.U)
   }
   bru(0).io.fault_manager.get := fault_manager.io.out
 
@@ -508,7 +509,9 @@ class SCore(p: Parameters) extends Module {
       }
     }
 
-    io.rvvcore.get.csr.vstart_write <> csr.io.rvv.get.vstart_write
+    val fault_vstart = fault_manager.io.out.bits.vstart.getOrElse(MakeInvalid(0.U))
+    val vstart_write = Mux(fault_vstart.valid, fault_vstart, csr.io.rvv.get.vstart_write)
+    io.rvvcore.get.csr.vstart_write := vstart_write
     io.rvvcore.get.csr.vxrm_write <> csr.io.rvv.get.vxrm_write
     io.rvvcore.get.csr.vxsat_write <> csr.io.rvv.get.vxsat_write
     io.rvvcore.get.csr.frm      := csr.io.rvv.get.frm

@@ -515,7 +515,9 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       i
     ).bits.trap || faultingInstr || (validBufferEntry && bufferEntry.trap) || (validBufferEntry && isControlFlow && newCfDone && (!cfMatch || noFire0Fault) && !isMpause)
 
-    val newDataDone = validBufferEntry && !prevDataDone && (dataReady || currentTrap)
+    val trapReady =
+      bufferEntry.trap || (isControlFlow && newCfDone) || (faultingInstr && (!bufferEntry.isVector || isRvvFault))
+    val newDataDone = validBufferEntry && !prevDataDone && (dataReady || trapReady)
 
     val currentDataDone = prevDataDone || newDataDone
     val currentCfDone   = prevCfDone || newCfDone

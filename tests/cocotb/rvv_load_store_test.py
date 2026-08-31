@@ -3037,39 +3037,227 @@ async def store32_seg_unit(dut):
     )
 
 
-# TODO: rename to m4
-@cocotb.test()
-async def load_store8_fault(dut):
-    """Testbench to test RVV load fault."""
+async def _setup_lsu_fault_fixture(dut):
     fixture = await Fixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation(
-            'coralnpu_hw/tests/cocotb/rvv/load_store/load_store8_fault.elf'
+            'coralnpu_hw/tests/cocotb/rvv/load_store/lsu_fault_cases.elf'
         ),
-        ['buffer', 'in_ptr', 'out_ptr', 'vl', 'fault_count'],
+        [
+            '__data_start__',
+            'buffer',
+            'in_ptr',
+            'out_ptr',
+            'vl',
+            'test_fn',
+            'fault_count',
+            'fault_mcause',
+            'fault_mtval',
+            'fault_mepc',
+            'fault_vstart',
+            'faulting_insn_scalar',
+            'faulting_insn_unit',
+            'faulting_insn_neg_stride',
+            'faulting_insn_indexed',
+            'faulting_insn_seg3',
+            'faulting_insn_seg5',
+            'faulting_insn_load',
+            'faulting_insn_scalar_mixed',
+            'faulting_insn_scalar_scalar',
+            'run_scalar_fault_preserves_vstart',
+            'run_unit_stride_fault_rs_flush',
+            'run_negative_stride_mid_vstart_fault',
+            'run_indexed_mid_vstart_fault',
+            'run_seg3_negative_stride_mid_vstart_fault',
+            'run_seg5_negative_stride_mid_vstart_fault',
+            'run_vector_load_fault_rs_flush',
+            'run_scalar_mixed_fault_rs_flush',
+            'run_scalar_to_scalar_fault_rs_flush',
+        ],
     )
+    return fixture
 
-    vl = 64
-    input_data = np.random.randint(0, 255, vl, dtype=np.uint8)
-    target_in_addr = fixture.symbols['buffer']
-    target_out_addr = fixture.symbols['buffer'] + 64
 
-    await fixture.core_mini_axi.write(target_in_addr, input_data)
-    await fixture.write('in_ptr', np.array([target_in_addr], dtype=np.uint32))
-    await fixture.write(
-        'out_ptr', np.array([target_out_addr], dtype=np.uint32)
-    )
-    await fixture.write('vl', np.array([vl], dtype=np.uint32))
+async def _run_and_verify_lsu_fault(
+    fixture,
+    test_fn_symbol: str,
+    faulting_insn_symbol: str,
+    expected_mcause: int,
+    expected_mtval: int,
+    expected_vstart: int = 0,
+    vl: int | None = None,
+    num_input_bytes: int | None = None,
+):
+    """Helper to run a fault test function and verify architectural fault state."""
+    if vl is not None:
+        count = num_input_bytes if num_input_bytes is not None else vl
+        target_in_addr = fixture.symbols['buffer']
+        await fixture.core_mini_axi.write(
+            target_in_addr, np.random.randint(0, 255, count, dtype=np.uint8)
+        )
+        await fixture.write(
+            'in_ptr', np.array([target_in_addr], dtype=np.uint32)
+        )
+        await fixture.write('vl', np.array([vl], dtype=np.uint32))
 
+    await fixture.write_ptr('test_fn', test_fn_symbol)
     await fixture.run_to_halt()
 
     fault_count = (await fixture.read_word('fault_count')).view(np.int32)[0]
-    assert (fault_count == 1)
-    routputs = (await fixture.core_mini_axi.read(target_out_addr,
-                                                 vl)).view(np.uint8)
-    # TODO(davidgao): when we flush the LSU RS on fault, add this assertion
-    # assert (input_data != routputs).any()
+    assert fault_count == 1, f"Expected exactly 1 fault, got {fault_count}"
+
+    fault_mcause = (await fixture.read_word('fault_mcause')).view(np.uint32)[0]
+    assert fault_mcause == expected_mcause, (
+        f"Expected mcause={expected_mcause}, got {fault_mcause}"
+    )
+
+    fault_mepc = (await fixture.read_word('fault_mepc')).view(np.uint32)[0]
+    expected_pc = fixture.symbols[faulting_insn_symbol]
+    assert fault_mepc == expected_pc, (
+        f"Expected PC {hex(expected_pc)}, got {hex(fault_mepc)}"
+    )
+
+    fault_mtval = (await fixture.read_word('fault_mtval')).view(np.uint32)[0]
+    assert fault_mtval == expected_mtval, (
+        f"Expected mtval {hex(expected_mtval)}, got {hex(fault_mtval)}"
+    )
+
+    fault_vstart = (await fixture.read_word('fault_vstart')).view(np.uint32)[0]
+    assert fault_vstart == expected_vstart, (
+        f"Expected vstart={expected_vstart}, got {fault_vstart}"
+    )
+
+
+@cocotb.test()
+async def lsu_fault_scalar_preserves_vstart(dut):
+    """Testbench to verify scalar memory fault preserves non-zero vstart."""
+    fixture = await _setup_lsu_fault_fixture(dut)
+    await _run_and_verify_lsu_fault(
+        fixture,
+        test_fn_symbol='run_scalar_fault_preserves_vstart',
+        faulting_insn_symbol='faulting_insn_scalar',
+        expected_mcause=7,
+        expected_mtval=fixture.symbols['__data_start__'] - 4,
+        expected_vstart=3,
+    )
+
+
+@cocotb.test()
+async def lsu_fault_unit_stride_rs_flush(dut):
+    """Testbench to verify unit-stride vector store fault purges subsequent stores in RS (Vector -> Vector)."""
+    fixture = await _setup_lsu_fault_fixture(dut)
+    await _run_and_verify_lsu_fault(
+        fixture,
+        test_fn_symbol='run_unit_stride_fault_rs_flush',
+        faulting_insn_symbol='faulting_insn_unit',
+        expected_mcause=7,
+        expected_mtval=fixture.symbols['__data_start__'] - 4,
+        expected_vstart=0,
+    )
+
+
+@cocotb.test()
+async def lsu_fault_negative_stride_mid_vstart(dut):
+    """Testbench to verify negative-stride vector store crossing boundary calculates mid-vector vstart."""
+    fixture = await _setup_lsu_fault_fixture(dut)
+    await _run_and_verify_lsu_fault(
+        fixture,
+        test_fn_symbol='run_negative_stride_mid_vstart_fault',
+        faulting_insn_symbol='faulting_insn_neg_stride',
+        expected_mcause=7,
+        expected_mtval=(fixture.symbols['__data_start__'] - 4) & ~0xF,
+        expected_vstart=3,
+        vl=8,
+    )
+
+
+@cocotb.test()
+async def lsu_fault_indexed_mid_vstart(dut):
+    """Testbench to verify indexed vector store calculates mid-vector vstart."""
+    fixture = await _setup_lsu_fault_fixture(dut)
+    await _run_and_verify_lsu_fault(
+        fixture,
+        test_fn_symbol='run_indexed_mid_vstart_fault',
+        faulting_insn_symbol='faulting_insn_indexed',
+        expected_mcause=7,
+        expected_mtval=0xA0000000,
+        expected_vstart=5,
+        vl=8,
+        num_input_bytes=32,
+    )
+
+
+@cocotb.test()
+async def lsu_fault_seg3_negative_stride_mid_vstart(dut):
+    """Testbench to verify segment store with NF=3 calculates mid-vector vstart via NF=3 division."""
+    fixture = await _setup_lsu_fault_fixture(dut)
+    await _run_and_verify_lsu_fault(
+        fixture,
+        test_fn_symbol='run_seg3_negative_stride_mid_vstart_fault',
+        faulting_insn_symbol='faulting_insn_seg3',
+        expected_mcause=7,
+        expected_mtval=(fixture.symbols['__data_start__'] - 6) & ~0xF,
+        expected_vstart=4,
+        vl=8,
+    )
+
+
+@cocotb.test()
+async def lsu_fault_seg5_negative_stride_mid_vstart(dut):
+    """Testbench to verify segment store with NF=5 calculates mid-vector vstart via NF=5 division."""
+    fixture = await _setup_lsu_fault_fixture(dut)
+    await _run_and_verify_lsu_fault(
+        fixture,
+        test_fn_symbol='run_seg5_negative_stride_mid_vstart_fault',
+        faulting_insn_symbol='faulting_insn_seg5',
+        expected_mcause=7,
+        expected_mtval=(fixture.symbols['__data_start__'] - 10) & ~0xF,
+        expected_vstart=3,
+        vl=8,
+    )
+
+
+@cocotb.test()
+async def lsu_fault_vector_load_rs_flush(dut):
+    """Testbench to verify vector load fault purges follow-on scalar store in RS (Vector -> Scalar)."""
+    fixture = await _setup_lsu_fault_fixture(dut)
+    await _run_and_verify_lsu_fault(
+        fixture,
+        test_fn_symbol='run_vector_load_fault_rs_flush',
+        faulting_insn_symbol='faulting_insn_load',
+        expected_mcause=5,
+        expected_mtval=0xA0000000,
+        expected_vstart=0,
+    )
+
+
+@cocotb.test()
+async def lsu_fault_scalar_mixed_rs_flush(dut):
+    """Testbench to verify scalar store fault purges follow-on vector store in RS (Scalar -> Vector)."""
+    fixture = await _setup_lsu_fault_fixture(dut)
+    await _run_and_verify_lsu_fault(
+        fixture,
+        test_fn_symbol='run_scalar_mixed_fault_rs_flush',
+        faulting_insn_symbol='faulting_insn_scalar_mixed',
+        expected_mcause=7,
+        expected_mtval=fixture.symbols['__data_start__'] - 4,
+        expected_vstart=0,
+    )
+
+
+@cocotb.test()
+async def lsu_fault_scalar_to_scalar_rs_flush(dut):
+    """Testbench to verify scalar store fault purges follow-on scalar stores in RS (Scalar -> Scalar)."""
+    fixture = await _setup_lsu_fault_fixture(dut)
+    await _run_and_verify_lsu_fault(
+        fixture,
+        test_fn_symbol='run_scalar_to_scalar_fault_rs_flush',
+        faulting_insn_symbol='faulting_insn_scalar_scalar',
+        expected_mcause=7,
+        expected_mtval=fixture.symbols['__data_start__'] - 4,
+        expected_vstart=0,
+    )
 
 
 @cocotb.test()
