@@ -625,6 +625,15 @@ coralnpu_v2_binary(
 )
 
 coralnpu_v2_binary(
+    name = "csr_illegal_write_test",
+    srcs = [
+        "csr_illegal_write_test.S",
+    ],
+    crt = "",
+    linkopts = ["-nostartfiles"],
+)
+
+coralnpu_v2_binary(
     name = "float_csr_interlock_test",
     srcs = [
         "float_csr_interlock_test.S",

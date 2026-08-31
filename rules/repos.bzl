@@ -411,6 +411,7 @@ def mpact_repos():
             "@coralnpu_hw//third_party/patches:mpact_riscv_fma_underflow.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_helpers.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_f_instructions.patch",
+            "@coralnpu_hw//third_party/patches:mpact_riscv_vector_csr.patch",
         ],
         patch_args = ["-p1"],
     )

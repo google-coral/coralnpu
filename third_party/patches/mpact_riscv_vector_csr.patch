@@ -1,0 +1,64 @@
+--- a/riscv/riscv_vector_state.h
++++ b/riscv/riscv_vector_state.h
+@@ -39,6 +39,8 @@
+   // Overrides. Note that this CSR is read-only.
+   uint32_t AsUint32() override;
+   uint64_t AsUint64() override { return static_cast<uint64_t>(AsUint32()); }
++  uint32_t GetUint32() override { return AsUint32(); }
++  uint64_t GetUint64() override { return AsUint64(); }
+ 
+  private:
+   const RiscVVectorState* const vector_state_;
+@@ -52,6 +54,8 @@
+   // Overrides. Note that this CSR is read-only.
+   uint32_t AsUint32() override;
+   uint64_t AsUint64() override { return static_cast<uint64_t>(AsUint32()); }
++  uint32_t GetUint32() override { return AsUint32(); }
++  uint64_t GetUint64() override { return AsUint64(); }
+ 
+  private:
+   const RiscVVectorState* const vector_state_;
+@@ -67,6 +71,10 @@
+   uint64_t AsUint64() override { return static_cast<uint64_t>(AsUint32()); }
+   void Write(uint32_t value) override;
+   void Write(uint64_t value) override { Write(static_cast<uint32_t>(value)); }
++  uint32_t GetUint32() override { return AsUint32(); }
++  uint64_t GetUint64() override { return AsUint64(); }
++  void Set(uint32_t value) override { Write(value); }
++  void Set(uint64_t value) override { Write(static_cast<uint32_t>(value)); }
+ 
+  private:
+   RiscVVectorState* const vector_state_;
+@@ -82,6 +90,10 @@
+   uint64_t AsUint64() override { return static_cast<uint64_t>(AsUint32()); }
+   void Write(uint32_t value) override;
+   void Write(uint64_t value) override { Write(static_cast<uint32_t>(value)); }
++  uint32_t GetUint32() override { return AsUint32(); }
++  uint64_t GetUint64() override { return AsUint64(); }
++  void Set(uint32_t value) override { Write(value); }
++  void Set(uint64_t value) override { Write(static_cast<uint32_t>(value)); }
+ 
+  private:
+   RiscVVectorState* const vector_state_;
+@@ -97,6 +109,10 @@
+   uint64_t AsUint64() override { return static_cast<uint64_t>(AsUint32()); }
+   void Write(uint32_t value) override;
+   void Write(uint64_t value) override { Write(static_cast<uint32_t>(value)); }
++  uint32_t GetUint32() override { return AsUint32(); }
++  uint64_t GetUint64() override { return AsUint64(); }
++  void Set(uint32_t value) override { Write(value); }
++  void Set(uint64_t value) override { Write(static_cast<uint32_t>(value)); }
+ 
+  private:
+   RiscVVectorState* const vector_state_;
+@@ -116,6 +132,10 @@
+   uint64_t AsUint64() override { return static_cast<uint64_t>(AsUint32()); }
+   void Write(uint32_t value) override;
+   void Write(uint64_t value) override { Write(static_cast<uint32_t>(value)); }
++  uint32_t GetUint32() override { return AsUint32(); }
++  uint64_t GetUint64() override { return AsUint64(); }
++  void Set(uint32_t value) override { Write(value); }
++  void Set(uint64_t value) override { Write(static_cast<uint32_t>(value)); }
+ 
+  private:
+   RiscVVectorState* const vector_state_;

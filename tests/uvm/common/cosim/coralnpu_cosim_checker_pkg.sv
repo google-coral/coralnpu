@@ -574,8 +574,136 @@ package coralnpu_cosim_checker_pkg;
         end
       end
 
+      // CSR Writeback Detection
+      if (rvvi_vif.csr_wb[0][rtl_info.retire_index] != 0) begin
+        logic [31:0] mpact_csr_val;
+        logic [31:0] rtl_csr_wdata;
+        logic [31:0] check_mask;
+        for (int i = 0; i < 4096; i++) begin
+          if (rvvi_vif.csr_wb[0][rtl_info.retire_index][i]) begin
+            string csr_name = get_csr_name(i);
+            if (mpact_get_register(csr_name, mpact_csr_val) != 0) begin
+              `uvm_warning("COSIM_CSR_UNKNOWN",
+                           $sformatf("Cannot check CSR '%s' (0x%03x) - not in MPACT", csr_name, i))
+            end else begin
+              rtl_csr_wdata = rvvi_vif.csr[0][rtl_info.retire_index][i];
+              check_mask    = get_csr_compare_mask(i);
+
+              if ((mpact_csr_val & check_mask) != (rtl_csr_wdata & check_mask)) begin
+                string msg;
+                msg = $sformatf(
+                    "CSR[0x%03x] %s mismatch at PC 0x%08x, Insn=0x%08x. RTL: 0x%08x, MPACT: 0x%08x (mask: 0x%08x)",
+                    i,
+                    csr_name,
+                    rtl_info.pc,
+                    rtl_info.insn,
+                    rtl_csr_wdata,
+                    mpact_csr_val,
+                    check_mask
+                );
+                `uvm_error("COSIM_CSR_MISMATCH", msg)
+                return 0;  // FAIL
+              end
+
+              `uvm_info("COSIM_CSR_MATCH", $sformatf(
+                        "CSR[0x%03x] %s compare success at PC 0x%08x, Insn=0x%08x. RTL: 0x%08x, MPACT: 0x%08x (mask: 0x%08x)",
+                        i,
+                        csr_name,
+                        rtl_info.pc,
+                        rtl_info.insn,
+                        rtl_csr_wdata,
+                        mpact_csr_val,
+                        check_mask
+                        ), UVM_HIGH)
+            end
+          end
+        end
+      end
+
       // If we reach here, all checks passed for this instruction.
       return 1;  // PASS
+    endfunction
+
+    function automatic logic [31:0] get_csr_compare_mask(int csr_idx);
+      case (csr_idx)
+        // mstatus (0x300):
+        // Compare architecturally active control bits:
+        // - MPIE (bit 7): Machine Previous Interrupt Enable
+        // - MIE  (bit 3): Machine Interrupt Enable
+        // Mask out WARL and implementation/config-specific fields:
+        // - SD   (bit 31): Summary dirty bit
+        // - FS   (bits 14:13): Floating-point status (hardwired 01 in RTL; 11 in MPACT)
+        // - MPP  (bits 12:11): Previous mode (hardwired 11 in RTL; 00 in MPACT)
+        // - VS   (bits 10:9): Vector status (hardwired 01 in RTL; 00 in MPACT)
+        12'h300: return 32'h0000_0088;
+
+        // mip (0x344):
+        // Interrupt pending bits reflect asynchronous external signals (PLIC/timer)
+        12'h344: return 32'h0000_0000;
+
+        // Default: Exact bit-for-bit check on all standard architectural CSRs
+        // (mscratch, mepc, mcause, mtval, misa, fflags, frm, fcsr, vstart, vxrm, vxsat, tdata1/2, etc.)
+        default: return 32'hffff_ffff;
+      endcase
+    endfunction
+
+    function automatic string get_csr_name(int csr_idx);
+      case (csr_idx)
+        12'h001: return "fflags";
+        12'h002: return "frm";
+        12'h003: return "fcsr";
+        12'h008: return "vstart";
+        12'h009: return "vxsat";
+        12'h00a: return "vxrm";
+        12'h00f: return "vcsr";
+        12'h300: return "mstatus";
+        12'h301: return "misa";
+        12'h304: return "mie";
+        12'h305: return "mtvec";
+        12'h310: return "mstatush";
+        12'h340: return "mscratch";
+        12'h341: return "mepc";
+        12'h342: return "mcause";
+        12'h343: return "mtval";
+        12'h344: return "mip";
+        12'h7a0: return "tselect";
+        12'h7a1: return "tdata1";
+        12'h7a2: return "tdata2";
+        12'h7a4: return "tinfo";
+        12'h7b0: return "dcsr";
+        12'h7b1: return "dpc";
+        12'h7b2: return "dscratch0";
+        12'h7b3: return "dscratch1";
+        12'h7c0: return "mcontext0";
+        12'h7c1: return "mcontext1";
+        12'h7c2: return "mcontext2";
+        12'h7c3: return "mcontext3";
+        12'h7c4: return "mcontext4";
+        12'h7c5: return "mcontext5";
+        12'h7c6: return "mcontext6";
+        12'h7c7: return "mcontext7";
+        12'h7e0: return "mpc";
+        12'h7e1: return "msp";
+        12'hb00: return "mcycle";
+        12'hb02: return "minstret";
+        12'hb80: return "mcycleh";
+        12'hb82: return "minstreth";
+        12'hc20: return "vl";
+        12'hc21: return "vtype";
+        12'hc22: return "vlenb";
+        12'hc23: return "mtype";
+        12'hf11: return "mvendorid";
+        12'hf12: return "marchid";
+        12'hf13: return "mimpid";
+        12'hf14: return "mhartid";
+        12'hfc0: return "kisa";
+        12'hfc4: return "kscm0";
+        12'hfc8: return "kscm1";
+        12'hfcc: return "kscm2";
+        12'hfd0: return "kscm3";
+        12'hfd4: return "kscm4";
+        default: return $sformatf("csr_%03x", csr_idx);
+      endcase
     endfunction
 
   endclass : coralnpu_cosim_checker

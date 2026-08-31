@@ -255,6 +255,19 @@ chisel_test(
 )
 
 chisel_test(
+    name = "coralnpu_csr_tests",
+    size = "large",
+    srcs = [
+        "scalar/CsrTest.scala",
+    ],
+    deps = [
+        ":coralnpu_base",
+        ":coralnpu_scalar",
+        "//hdl/chisel/src/common:testing",
+    ],
+)
+
+chisel_test(
     name = "coralnpu_mlu_tests",
     size = "large",
     srcs = [

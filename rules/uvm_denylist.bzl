@@ -111,6 +111,7 @@ SPIKE_DENYLIST = [
     "//tests/cocotb/rvv:rvv_vl0_v0_corruption_test",
     "//tests/cocotb/rvv:rvv_vleff_test",
     "//tests/cocotb/rvv:rvv_lsu_indexed_short_vl_test",
+    "//tests/cocotb:csr_illegal_write_test",
 ]
 
 # Map of targets to custom timeouts (in nanoseconds)

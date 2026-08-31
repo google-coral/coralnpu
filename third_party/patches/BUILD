@@ -21,4 +21,5 @@ exports_files([
     "mpact_riscv_rmm_helpers.patch",
     "mpact_riscv_vrgather.patch",
     "mpact_riscv_vstart_trap.patch",
+    "mpact_riscv_vector_csr.patch",
 ])

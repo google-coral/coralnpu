@@ -445,34 +445,46 @@ class Csr(p: Parameters) extends Module {
     )
   }
 
+  // Common bitfield formatting helpers shared by rdata and trace_data
+  private def mstatusWord(mie: Bool, mpie: Bool): UInt = Cat(
+    0.U((p.xlen - 15).W),
+    fs,
+    3.U(2.W),
+    vs,
+    0.U(1.W),
+    mpie,
+    0.U(3.W),
+    mie,
+    0.U(3.W)
+  )
+  private def fflagsWord(f: UInt): UInt = Cat(0.U((p.xlen - 5).W), f(4, 0))
+  private def frmWord(m: UInt): UInt    = Cat(0.U((p.xlen - 3).W), m(2, 0))
+  private def fcsrWord(c: UInt): UInt   = Cat(0.U((p.xlen - 8).W), c(7, 0))
+  private def vstartWord(v: UInt): UInt =
+    Cat(0.U((p.xlen - log2Ceil(p.rvvVlen)).W), v(log2Ceil(p.rvvVlen) - 1, 0))
+  private def vxrmWord(v: UInt): UInt  = Cat(0.U((p.xlen - 2).W), v(1, 0))
+  private def vxsatWord(v: UInt): UInt = Cat(0.U((p.xlen - 1).W), v(0))
+
+  val mip = Cat(
+    0.U((p.xlen - 12).W),
+    io.irq,
+    0.U(3.W),
+    io.timer_irq,
+    0.U(3.W),
+    io.software_irq,
+    0.U(3.W)
+  )
+
   val rdata = MuxUpTo1H(
     0.U(p.xlen.W),
     Seq(
-      fflagsEn  -> Cat(0.U((p.xlen - 5).W), fflags),
-      frmEn     -> Cat(0.U((p.xlen - 3).W), frm),
-      fcsrEn    -> Cat(0.U((p.xlen - 8).W), fcsr),
-      mstatusEn -> Cat(
-        0.U((p.xlen - 15).W),
-        fs,
-        3.U(2.W),
-        vs,
-        0.U(1.W),
-        mstatus_mpie,
-        0.U(3.W),
-        mstatus_mie,
-        0.U(3.W)
-      ),
-      misaEn -> misa,
-      mieEn  -> mie,
-      mipEn  -> Cat(
-        0.U((p.xlen - 12).W),
-        io.irq,
-        0.U(3.W),
-        io.timer_irq,
-        0.U(3.W),
-        io.software_irq,
-        0.U(3.W)
-      ),
+      fflagsEn    -> fflagsWord(fflags),
+      frmEn       -> frmWord(frm),
+      fcsrEn      -> fcsrWord(fcsr),
+      mstatusEn   -> mstatusWord(mstatus_mie, mstatus_mpie),
+      misaEn      -> misa,
+      mieEn       -> mie,
+      mipEn       -> mip,
       mtvecEn     -> mtvec,
       mscratchEn  -> mscratch,
       mepcEn      -> mepc,
@@ -510,11 +522,11 @@ class Csr(p: Parameters) extends Module {
       Option
         .when(p.enableRvv) {
           Seq(
-            vstartEn.get -> io.rvv.get.vstart,
+            vstartEn.get -> vstartWord(io.rvv.get.vstart),
             vlEn.get     -> io.rvv.get.vl,
             vtypeEn.get  -> io.rvv.get.vtype,
-            vxrmEn.get   -> io.rvv.get.vxrm,
-            vxsatEn.get  -> io.rvv.get.vxsat,
+            vxrmEn.get   -> vxrmWord(io.rvv.get.vxrm),
+            vxsatEn.get  -> vxsatWord(io.rvv.get.vxsat),
             vlenbEn.get  -> 16.U(32.W) // Vector length in Bytes
           )
         }
@@ -782,9 +794,35 @@ class Csr(p: Parameters) extends Module {
   io.rd.bits.addr := req.bits.addr
   io.rd.bits.data := rdata
 
-  io.trace.valid := is_csr_write
+  val fcsr_w = localWdata(fcsr)
+
+  val trace_data = MuxUpTo1H(
+    wdata,
+    Seq(
+      mstatusEn  -> mstatusWord(wdata(3), wdata(7)),
+      mieEn      -> (wdata & "h888".U),
+      mtvecEn    -> localWdata(mtvec),
+      mepcEn     -> localWdata(mepc),
+      misaEn     -> misa,
+      mstatushEn -> 0.U,
+      mipEn      -> mip,
+      fflagsEn   -> fflagsWord(wdata),
+      frmEn      -> frmWord(localWdata(frm)),
+      fcsrEn     -> fcsrWord(fcsr_w),
+      tdata1En   -> LegalizeTdata1(wdata).asWord,
+      tinfoEn    -> tinfo
+    ) ++ Seq(
+      vstartEn.map(_ -> vstartWord(wdata)),
+      vxrmEn.map(_ -> vxrmWord(wdata)),
+      vxsatEn.map(_ -> vxsatWord(wdata))
+    ).flatten
+  )
+
+  val is_read_only = req.bits.index(11, 10) === 3.U
+
+  io.trace.valid := is_csr_write && !is_read_only
   io.trace.addr  := req.bits.index
-  io.trace.data  := wdata
+  io.trace.data  := trace_data
 
   // Assertions.
   assert(!(req.valid && !io.rs1.valid))
