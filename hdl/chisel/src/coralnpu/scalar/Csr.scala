@@ -224,11 +224,13 @@ class Csr(p: Parameters) extends Module {
     val req = Flipped(Valid(new CsrCmd(p)))
 
     // Execute cycle.
-    val rs1   = Flipped(new RegfileReadDataIO(p))
-    val rd    = Valid(Flipped(new RegfileWriteDataIO(p)))
-    val bru   = Flipped(new CsrBruIO(p))
-    val float = Option.when(p.enableFloat) { Flipped(new CsrFloatIO(p)) }
-    val rvv   = Option.when(p.enableRvv) { new CsrRvvIO(p) }
+    val rs1         = Flipped(new RegfileReadDataIO(p))
+    val rd          = Valid(Flipped(new RegfileWriteDataIO(p)))
+    val bru         = Flipped(new CsrBruIO(p))
+    val float       = Option.when(p.enableFloat) { Flipped(new CsrFloatIO(p)) }
+    val rvv         = Option.when(p.enableRvv) { new CsrRvvIO(p) }
+    val float_dirty = Option.when(p.enableFloat)(Input(Bool()))
+    val rvv_dirty   = Option.when(p.enableRvv)(Input(Bool()))
 
     val counters = Input(new CsrCounters(p))
 
@@ -343,9 +345,12 @@ class Csr(p: Parameters) extends Module {
 
   val fcsr = Cat(frm, fflags)
 
-  // TODO(b/452672880): Implement the dirty feature for fs and vs.
-  val fs = if (p.enableFloat) 1.U(2.W) else 0.U(2.W)
-  val vs = if (p.enableRvv) 1.U(2.W) else 0.U(2.W)
+  val fs = Option.when(p.enableFloat)(RegInit(1.U(2.W)))
+  val vs = Option.when(p.enableRvv)(RegInit(1.U(2.W)))
+
+  val fs_val     = fs.getOrElse(0.U(2.W))
+  val vs_val     = vs.getOrElse(0.U(2.W))
+  val mstatus_sd = (fs_val === 3.U) || (vs_val === 3.U)
 
   // Decode the Index.
   val (csr_address, csr_address_valid) = CsrAddress.safe(req.bits.index)
@@ -445,12 +450,23 @@ class Csr(p: Parameters) extends Module {
     )
   }
 
+  // WARL legalization for FS and VS: Coral NPU does not support disabling the
+  // extension units (00 -> 11 Dirty).
+  private def legalizeFsVs(v: UInt): UInt = Mux(v === 0.U, 3.U(2.W), v)
+
   // Common bitfield formatting helpers shared by rdata and trace_data
-  private def mstatusWord(mie: Bool, mpie: Bool): UInt = Cat(
-    0.U((p.xlen - 15).W),
-    fs,
+  private def mstatusWord(
+    mie: Bool,
+    mpie: Bool,
+    fs_val: UInt,
+    vs_val: UInt,
+    sd_val: Bool
+  ): UInt = Cat(
+    sd_val,
+    0.U((p.xlen - 16).W),
+    fs_val,
     3.U(2.W),
-    vs,
+    vs_val,
     0.U(1.W),
     mpie,
     0.U(3.W),
@@ -483,7 +499,7 @@ class Csr(p: Parameters) extends Module {
       fflagsEn    -> fflagsWord(fflags),
       frmEn       -> frmWord(frm),
       fcsrEn      -> fcsrWord(fcsr),
-      mstatusEn   -> mstatusWord(mstatus_mie, mstatus_mpie),
+      mstatusEn   -> mstatusWord(mstatus_mie, mstatus_mpie, fs_val, vs_val, mstatus_sd),
       misaEn      -> misa,
       mieEn       -> mie,
       mipEn       -> mip,
@@ -564,6 +580,33 @@ class Csr(p: Parameters) extends Module {
 
   val mtvec_w = Cat(localWdata(mtvec)(p.programCounterBits - 1, 2), 0.U(2.W))
 
+  val is_csr_write =
+    req.valid && !(req.bits.op.isOneOf(CsrOp.CSRRS, CsrOp.CSRRC) && req.bits.rs1 === 0.U)
+
+  val float_dirty_event = Option.when(p.enableFloat) {
+    (is_csr_write && (fflagsEn || frmEn || fcsrEn)) ||
+    io.float.get.in.fflags.valid ||
+    io.float_dirty.get
+  }
+
+  val rvv_dirty_event = Option.when(p.enableRvv) {
+    (is_csr_write && (vstartEn.get || vxrmEn.get || vxsatEn.get || vlEn.get || vtypeEn.get)) ||
+    io.rvv.get.fflags.valid ||
+    io.rvv_dirty.get
+  }
+
+  if (p.enableFloat) {
+    val mstatus_write_fs = is_csr_write && mstatusEn
+    val w_fs             = legalizeFsVs(wdata(14, 13))
+    fs.get := Mux(mstatus_write_fs, w_fs, fs.get) | Fill(2, float_dirty_event.get)
+  }
+
+  if (p.enableRvv) {
+    val mstatus_write_vs = is_csr_write && mstatusEn
+    val w_vs             = legalizeFsVs(wdata(10, 9))
+    vs.get := Mux(mstatus_write_vs, w_vs, vs.get) | Fill(2, rvv_dirty_event.get)
+  }
+
   val fflags_base = WireDefault(fflags)
   when(req.valid) {
     when(fflagsEn) { fflags_base := wdata(4, 0) }
@@ -573,7 +616,10 @@ class Csr(p: Parameters) extends Module {
       fflags_base := fcsr_w(4, 0)
       frm         := fcsr_w(7, 5)
     }
-    when(mstatusEn) { mstatus_mie := wdata(3); mstatus_mpie := wdata(7) }
+    when(is_csr_write && mstatusEn) {
+      mstatus_mie  := wdata(3)
+      mstatus_mpie := wdata(7)
+    }
     when(mieEn) { mie := wdata & "h888".U }
     when(mtvecEn) { mtvec := mtvec_w }
     // Writes to mstatush are ignored (hardwired zero)
@@ -596,8 +642,6 @@ class Csr(p: Parameters) extends Module {
     when(tdata1En) { tdata1 := LegalizeTdata1(wdata) }
     when(tdata2En) { tdata2 := wdata }
   }
-  val is_csr_write =
-    req.valid && !(req.bits.op.isOneOf(CsrOp.CSRRS, CsrOp.CSRRC) && req.bits.rs1 === 0.U)
 
   if (p.enableRvv) {
     io.rvv.get.vstart_write.valid := req.valid && vstartEn.get
@@ -800,10 +844,16 @@ class Csr(p: Parameters) extends Module {
 
   val fcsr_w = localWdata(fcsr)
 
+  val next_fs =
+    if (p.enableFloat) (legalizeFsVs(wdata(14, 13)) | Fill(2, float_dirty_event.get)) else 0.U(2.W)
+  val next_vs =
+    if (p.enableRvv) (legalizeFsVs(wdata(10, 9)) | Fill(2, rvv_dirty_event.get)) else 0.U(2.W)
+  val next_sd = (next_fs === 3.U) || (next_vs === 3.U)
+
   val trace_data = MuxUpTo1H(
     wdata,
     Seq(
-      mstatusEn  -> mstatusWord(wdata(3), wdata(7)),
+      mstatusEn  -> mstatusWord(wdata(3), wdata(7), next_fs, next_vs, next_sd),
       mieEn      -> (wdata & "h888".U),
       mtvecEn    -> mtvec_w,
       mepcEn     -> mepcWord(localWdata(mepc)),

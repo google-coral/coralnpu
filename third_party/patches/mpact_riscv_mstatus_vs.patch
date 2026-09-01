@@ -1,0 +1,1026 @@
+diff --git a/riscv/riscv_f_instructions.cc b/riscv/riscv_f_instructions.cc
+index bee2a00..38a24b1 100644
+--- a/riscv/riscv_f_instructions.cc
++++ b/riscv/riscv_f_instructions.cc
+@@ -151,9 +151,13 @@ void RiscVIFlwChild(const Instruction* instruction) {
+     reg_value <<= sizeof(FPUInt) * 8;
+     reg_value |= value;
+     reg->data_buffer()->Set<FPRegister::ValueType>(0, reg_value);
+-    return;
++  } else {
++    reg->data_buffer()->Set<FPRegister::ValueType>(0, value);
++  }
++  if (auto* rv_state = static_cast<RiscVState*>(instruction->state());
++      rv_state != nullptr && rv_state->rv_fp() != nullptr) {
++    rv_state->rv_fp()->MarkDirty();
+   }
+-  reg->data_buffer()->Set<FPRegister::ValueType>(0, value);
+ }
+ 
+ // Basic arithmetic instructions.
+diff --git a/riscv/riscv_fp_state.cc b/riscv/riscv_fp_state.cc
+index 68b989b..fc1c6bf 100644
+--- a/riscv/riscv_fp_state.cc
++++ b/riscv/riscv_fp_state.cc
+@@ -22,6 +22,7 @@
+ #include "riscv/riscv_fp_host.h"
+ #include "riscv/riscv_fp_info.h"
+ #include "riscv/riscv_state.h"
++#include "riscv/riscv_xstatus.h"
+ 
+ namespace mpact {
+ namespace sim {
+@@ -94,6 +95,16 @@ void RiscVFPState::SetRoundingMode(FPRoundingMode mode) {
+   }
+ }
+ 
++void RiscVFPState::MarkDirty() {
++  if (auto* rv_state = static_cast<RiscVState*>(rv_state_);
++      rv_state != nullptr && rv_state->mstatus() != nullptr &&
++      rv_state->mstatus()->fs() != RiscVMStatus::kStatusOff &&
++      rv_state->mstatus()->fs() != RiscVMStatus::kStatusDirty) {
++    rv_state->mstatus()->set_fs(RiscVMStatus::kStatusDirty);
++    rv_state->mstatus()->Submit();
++  }
++}
++
+ // The RiscV fp csr.
+ RiscVFcsr::RiscVFcsr(RiscVFPState* fp_state)
+     : RiscVSimpleCsr<uint32_t>(kFcsrName, RiscVCsrEnum::kFCsr, kFcsrInitial,
+@@ -119,6 +130,7 @@ void RiscVFcsr::Write(uint32_t value) {
+   fp_state_->host_fp_interface()->SetRiscVFcsr(wr_value);
+   fp_state_->SetRoundingMode(
+       static_cast<FPRoundingMode>((wr_value >> 5) & 0b111));
++  fp_state_->MarkDirty();
+ }
+ 
+ void RiscVFcsr::Write(uint64_t value) { Write(static_cast<uint32_t>(value)); }
+@@ -139,8 +151,8 @@ uint32_t RiscVFflags::AsUint32() {
+ void RiscVFflags::Write(uint32_t value) {
+   uint32_t current = fp_state_->fcsr()->AsUint32();
+   uint32_t new_value = (current & ~write_mask()) | (value & write_mask());
+-  if (new_value == current) return;
+   fp_state_->fcsr()->Write(new_value);
++  fp_state_->MarkDirty();
+ }
+ 
+ uint32_t RiscVFflags::GetUint32() { return AsUint32(); }
+@@ -166,6 +178,7 @@ void RiscVFrm::Write(uint32_t value) {
+   uint32_t fcsr = fp_state_->fcsr()->AsUint32();
+   uint32_t new_fcsr = ((fcsr & 0b1'1111) | (wr_value << 5));
+   fp_state_->fcsr()->Write(new_fcsr);
++  fp_state_->MarkDirty();
+ }
+ 
+ uint32_t RiscVFrm::GetUint32() { return AsUint32(); }
+diff --git a/riscv/riscv_fp_state.h b/riscv/riscv_fp_state.h
+index 337d201..ed1a5bb 100644
+--- a/riscv/riscv_fp_state.h
++++ b/riscv/riscv_fp_state.h
+@@ -101,6 +101,8 @@ class RiscVFPState {
+ 
+   void SetRoundingMode(FPRoundingMode mode);
+ 
++  void MarkDirty();
++
+   bool rounding_mode_valid() const { return rounding_mode_valid_; }
+ 
+   // FP CSRs.
+diff --git a/riscv/riscv_instruction_helpers.h b/riscv/riscv_instruction_helpers.h
+index 501861d..75f48e3 100644
+--- a/riscv/riscv_instruction_helpers.h
++++ b/riscv/riscv_instruction_helpers.h
+@@ -451,9 +451,13 @@ inline void RiscVBinaryNaNBoxOp(
+     int shift = 8 * (sizeof(RegValue) - sizeof(Result));
+     reg_value = (reg_value << shift) | dest_u_value;
+     reg->data_buffer()->template Set<RegValue>(0, reg_value);
+-    return;
++  } else {
++    reg->data_buffer()->template Set<Result>(0, dest_value);
++  }
++  if (auto* rv_state = static_cast<RiscVState*>(instruction->state());
++      rv_state != nullptr && rv_state->rv_fp() != nullptr) {
++    rv_state->rv_fp()->MarkDirty();
+   }
+-  reg->data_buffer()->template Set<Result>(0, dest_value);
+ }
+ 
+ // Generic helper function for unary instructions with NaN boxing.
+@@ -477,9 +481,13 @@ inline void RiscVUnaryNaNBoxOp(const Instruction* instruction,
+     int shift = 8 * (sizeof(DstRegValue) - sizeof(Result));
+     reg_value = (reg_value << shift) | dest_u_value;
+     reg->data_buffer()->template Set<DstRegValue>(0, reg_value);
+-    return;
++  } else {
++    reg->data_buffer()->template Set<Result>(0, dest_value);
++  }
++  if (auto* rv_state = static_cast<RiscVState*>(instruction->state());
++      rv_state != nullptr && rv_state->rv_fp() != nullptr) {
++    rv_state->rv_fp()->MarkDirty();
+   }
+-  reg->data_buffer()->template Set<Result>(0, dest_value);
+ }
+ 
+ // Generic helper function for unary floating point instructions. The main
+@@ -528,9 +536,10 @@ inline void RiscVUnaryFloatNaNBoxOp(const Instruction* instruction,
+     int shift = 8 * (sizeof(DstRegValue) - sizeof(Result));
+     reg_value = (reg_value << shift) | dest_u_value;
+     reg->data_buffer()->template Set<DstRegValue>(0, reg_value);
+-    return;
++  } else {
++    reg->data_buffer()->template Set<Result>(0, dest_value);
+   }
+-  reg->data_buffer()->template Set<Result>(0, dest_value);
++  rv_fp->MarkDirty();
+ }
+ 
+ // Generic helper function for floating op instructions that do not require
+@@ -562,6 +571,7 @@ inline void RiscVUnaryFloatOp(const Instruction* instruction,
+       static_cast<generic::RegisterDestinationOperand<UInt>*>(dest);
+   auto* reg = reg_dest->GetRegister();
+   reg->data_buffer()->template Set<Result>(0, dest_value);
++  rv_fp->MarkDirty();
+ }
+ 
+ // Generic helper function for floating op instructions that do not require
+@@ -598,6 +608,7 @@ inline void RiscVUnaryFloatWithFflagsOp(
+   auto* flag_db = instruction->Destination(1)->AllocateDataBuffer();
+   flag_db->Set<uint32_t>(0, flag);
+   flag_db->Submit();
++  rv_fp->MarkDirty();
+ }
+ 
+ // Helper to correct RMM (Round to Nearest, Ties to Max Magnitude) rounding
+@@ -677,9 +688,10 @@ inline void RiscVBinaryFloatNaNBoxOp(const Instruction* instruction,
+     int shift = 8 * (sizeof(Register) - sizeof(Result));
+     reg_value = (reg_value << shift) | dest_u_value;
+     reg->data_buffer()->template Set<Register>(0, reg_value);
+-    return;
++  } else {
++    reg->data_buffer()->template Set<Result>(0, dest_value);
+   }
+-  reg->data_buffer()->template Set<Result>(0, dest_value);
++  rv_fp->MarkDirty();
+ }
+ 
+ // Generic helper function for ternary floating point instructions.
+@@ -730,9 +742,10 @@ inline void RiscVTernaryFloatNaNBoxOp(const Instruction* instruction,
+     int shift = 8 * (sizeof(Register) - sizeof(Result));
+     reg_value = (reg_value << shift) | dest_u_value;
+     reg->data_buffer()->template Set<Register>(0, reg_value);
+-    return;
++  } else {
++    reg->data_buffer()->template Set<Result>(0, dest_value);
+   }
+-  reg->data_buffer()->template Set<Result>(0, dest_value);
++  rv_fp->MarkDirty();
+ }
+ 
+ // Helper function to classify floating point values.
+diff --git a/riscv/riscv_register.cc b/riscv/riscv_register.cc
+index 41ee74a..360fde6 100644
+--- a/riscv/riscv_register.cc
++++ b/riscv/riscv_register.cc
+@@ -20,10 +20,12 @@
+ #include <string>
+ #include <vector>
+ 
+-#include "absl/types/span.h"
++#include "riscv/riscv_state.h"
++#include "riscv/riscv_xstatus.h"
+ #include "mpact/sim/generic/data_buffer.h"
+ #include "mpact/sim/generic/register.h"
+-#include "riscv/riscv_state.h"
++#include "mpact/sim/generic/state_item.h"
++#include "absl/types/span.h"
+ 
+ namespace mpact {
+ namespace sim {
+@@ -66,7 +68,7 @@ RV32VectorSourceOperand::RV32VectorSourceOperand(generic::RegisterBase* reg,
+     : op_name_(op_name) {
+   if (reg == nullptr) return;
+ 
+-  vector_size_ = 1;
++  vector_size_ = reg->shape()[0];
+   vector_byte_size_ = vector_size_ * reg->element_size();
+   group_size_ = 1;
+   registers_.push_back(reg);
+@@ -144,13 +146,14 @@ RV32VectorTrueOperand::RV32VectorTrueOperand(RiscVState* state)
+ RV32VectorDestinationOperand::RV32VectorDestinationOperand(
+     absl::Span<generic::RegisterBase*> reg_span, int latency,
+     std::string op_name)
+-    : db_factory_(reg_span[0]->arch_state()->db_factory()),
+-      delay_line_(reg_span[0]->arch_state()->data_buffer_delay_line()),
++    : db_factory_(nullptr),
++      delay_line_(nullptr),
+       latency_(latency),
+       op_name_(op_name) {
+-  if (reg_span.empty()) return;
+-  if (reg_span[0] == nullptr) return;
++  if (reg_span.empty() || reg_span[0] == nullptr) return;
+ 
++  db_factory_ = reg_span[0]->arch_state()->db_factory();
++  delay_line_ = reg_span[0]->arch_state()->data_buffer_delay_line();
+   vector_size_ = reg_span[0]->shape()[0];
+   vector_byte_size_ = vector_size_ * reg_span[0]->element_size();
+   group_size_ = reg_span.size();
+@@ -173,14 +176,20 @@ RV32VectorDestinationOperand::RV32VectorDestinationOperand(
+ 
+ RV32VectorDestinationOperand::RV32VectorDestinationOperand(
+     absl::Span<generic::RegisterBase*> reg_span, int latency)
+-    : RV32VectorDestinationOperand(reg_span, latency, reg_span[0]->name()) {}
++    : RV32VectorDestinationOperand(
++          reg_span, latency, reg_span.empty() ? "" : reg_span[0]->name()) {}
+ 
+ RV32VectorDestinationOperand::RV32VectorDestinationOperand(
+     generic::RegisterBase* reg, int latency, std::string op_name)
+-    : op_name_(op_name) {
++    : db_factory_(nullptr),
++      delay_line_(nullptr),
++      latency_(latency),
++      op_name_(op_name) {
+   if (reg == nullptr) return;
+ 
+-  vector_size_ = 1;
++  db_factory_ = reg->arch_state()->db_factory();
++  delay_line_ = reg->arch_state()->data_buffer_delay_line();
++  vector_size_ = reg->shape()[0];
+   vector_byte_size_ = vector_size_ * reg->element_size();
+   group_size_ = 1;
+   registers_.push_back(reg);
+@@ -224,6 +233,13 @@ void RV32VectorDestinationOperand::InitializeDataBuffer(int i, DataBuffer* db) {
+   db->set_destination(registers_[i]);
+   db->set_latency(latency_);
+   db->set_delay_line(delay_line_);
++  if (auto* rv_state = static_cast<RiscVState*>(registers_[i]->arch_state());
++      rv_state != nullptr && rv_state->mstatus() != nullptr &&
++      rv_state->mstatus()->vs() != RiscVMStatus::kStatusOff &&
++      rv_state->mstatus()->vs() != RiscVMStatus::kStatusDirty) {
++    rv_state->mstatus()->set_vs(RiscVMStatus::kStatusDirty);
++    rv_state->mstatus()->Submit();
++  }
+ }
+ 
+ DataBuffer* RV32VectorDestinationOperand::CopyDataBuffer(int i) {
+@@ -236,6 +252,34 @@ std::any RV32VectorDestinationOperand::GetObject(int i) const {
+   return std::any(registers_[i]);
+ }
+ 
++void RiscVVectorRegister::SetDataBuffer(generic::DataBuffer* db) {
++  const bool was_initialized = (this->data_buffer() != nullptr);
++  StateItem::SetDataBuffer(db);
++  if (was_initialized) {
++    if (auto* rv_state = static_cast<RiscVState*>(this->arch_state());
++        rv_state != nullptr && rv_state->mstatus() != nullptr &&
++        rv_state->mstatus()->vs() != RiscVMStatus::kStatusOff &&
++        rv_state->mstatus()->vs() != RiscVMStatus::kStatusDirty) {
++      rv_state->mstatus()->set_vs(RiscVMStatus::kStatusDirty);
++      rv_state->mstatus()->Submit();
++    }
++  }
++}
++
++void RiscVFpRegister::SetDataBuffer(generic::DataBuffer* db) {
++  const bool was_initialized = (this->data_buffer() != nullptr);
++  StateItem::SetDataBuffer(db);
++  if (was_initialized) {
++    if (auto* rv_state = static_cast<RiscVState*>(this->arch_state());
++        rv_state != nullptr && rv_state->mstatus() != nullptr &&
++        rv_state->mstatus()->fs() != RiscVMStatus::kStatusOff &&
++        rv_state->mstatus()->fs() != RiscVMStatus::kStatusDirty) {
++      rv_state->mstatus()->set_fs(RiscVMStatus::kStatusDirty);
++      rv_state->mstatus()->Submit();
++    }
++  }
++}
++
+ }  // namespace riscv
+ }  // namespace sim
+ }  // namespace mpact
+diff --git a/riscv/riscv_register.h b/riscv/riscv_register.h
+index 1048b19..feaac0e 100644
+--- a/riscv/riscv_register.h
++++ b/riscv/riscv_register.h
+@@ -39,7 +39,6 @@ using RV32Register = generic::Register<uint32_t>;
+ using RV64Register = generic::Register<uint64_t>;
+ 
+ using RVXRegister = RV32Register;
+-using RVFpRegister = RV64Register;
+ 
+ // The RiscV vector registers are treated like a long bit string that can
+ // be divided into byte, half word, word or double word quantities. RiscV
+@@ -144,9 +143,30 @@ class RV32VectorDestinationOperand
+   std::string op_name_;
+ };
+ 
+-using RVVectorRegister =
+-    generic::StateItem<generic::RegisterBase, uint8_t*, RV32VectorSourceOperand,
+-                       RV32VectorDestinationOperand>;
++class RiscVVectorRegister
++    : public generic::StateItem<generic::RegisterBase, uint8_t*,
++                                RV32VectorSourceOperand,
++                                RV32VectorDestinationOperand> {
++ public:
++  using generic::StateItem<generic::RegisterBase, uint8_t*,
++                           RV32VectorSourceOperand,
++                           RV32VectorDestinationOperand>::StateItem;
++  void SetDataBuffer(generic::DataBuffer* db) override;
++};
++
++class RiscVFpRegister
++    : public generic::StateItem<generic::RegisterBase, uint64_t,
++                                generic::RegisterSourceOperand<uint64_t>,
++                                generic::RegisterDestinationOperand<uint64_t>> {
++ public:
++  using generic::StateItem<generic::RegisterBase, uint64_t,
++                           generic::RegisterSourceOperand<uint64_t>,
++                           generic::RegisterDestinationOperand<uint64_t>>::StateItem;
++  void SetDataBuffer(generic::DataBuffer* db) override;
++};
++
++using RVFpRegister = RiscVFpRegister;
++using RVVectorRegister = RiscVVectorRegister;
+ 
+ }  // namespace riscv
+ }  // namespace sim
+diff --git a/riscv/riscv_state.cc b/riscv/riscv_state.cc
+index d1b64c0..6d64a3e 100644
+--- a/riscv/riscv_state.cc
++++ b/riscv/riscv_state.cc
+@@ -53,7 +53,7 @@ struct CsrInfo<uint32_t> {
+   using T = uint32_t;
+   static constexpr T kMhartidRMask = std::numeric_limits<T>::max();
+   static constexpr T kMhartidWMask = 0;
+-  static constexpr T kMstatusInitialValue = 2000;
++  static constexpr T kMstatusInitialValue = 0x3a00;
+   static constexpr T kUstatusRMask = 0x11;
+   static constexpr T kUstatusWMask = 0x11;
+   static constexpr T kSstatusRMask = 0x800d'e133;
+@@ -78,7 +78,7 @@ struct CsrInfo<uint64_t> {
+   using T = uint64_t;
+   static constexpr T kMhartidRMask = std::numeric_limits<T>::max();
+   static constexpr T kMhartidWMask = 0;
+-  static constexpr T kMstatusInitialValue = 0x0000'000a'0000'2000ULL;
++  static constexpr T kMstatusInitialValue = 0x0000'000a'0000'3a00ULL;
+   static constexpr T kUstatusRMask = 0x11;
+   static constexpr T kUstatusWMask = 0x11;
+   static constexpr T kSstatusRMask = 0x8000'0003'000d'e133ULL;
+diff --git a/riscv/riscv_vector_state.cc b/riscv/riscv_vector_state.cc
+index f30434e..41ca351 100644
+--- a/riscv/riscv_vector_state.cc
++++ b/riscv/riscv_vector_state.cc
+@@ -16,9 +16,10 @@
+ 
+ #include <cstdint>
+ 
+-#include "absl/log/log.h"
+ #include "riscv/riscv_csr.h"
+ #include "riscv/riscv_state.h"
++#include "riscv/riscv_xstatus.h"
++#include "absl/log/log.h"
+ 
+ namespace mpact {
+ namespace sim {
+@@ -91,7 +92,10 @@ RiscVVstart::RiscVVstart(RiscVVectorState* vector_state)
+ 
+ uint32_t RiscVVstart::AsUint32() { return vector_state_->vstart(); }
+ 
+-void RiscVVstart::Write(uint32_t value) { vector_state_->set_vstart(value); }
++void RiscVVstart::Write(uint32_t value) {
++  vector_state_->set_vstart(value);
++  vector_state_->MarkDirty();
++}
+ 
+ RiscVVxsat::RiscVVxsat(RiscVVectorState* vector_state)
+     : RiscVSimpleCsr<uint32_t>(kVxsatName, RiscVCsrEnum::kVxsat, kVxsatInitial,
+@@ -101,7 +105,10 @@ RiscVVxsat::RiscVVxsat(RiscVVectorState* vector_state)
+ 
+ uint32_t RiscVVxsat::AsUint32() { return vector_state_->vxsat() ? 1 : 0; }
+ 
+-void RiscVVxsat::Write(uint32_t value) { vector_state_->set_vxsat(value & 1); }
++void RiscVVxsat::Write(uint32_t value) {
++  vector_state_->set_vxsat(value & 1);
++  vector_state_->MarkDirty();
++}
+ 
+ RiscVVxrm::RiscVVxrm(RiscVVectorState* vector_state)
+     : RiscVSimpleCsr<uint32_t>(kVxrmName, RiscVCsrEnum::kVxrm, kVxrmInitial,
+@@ -113,6 +120,7 @@ uint32_t RiscVVxrm::AsUint32() { return vector_state_->vxrm(); }
+ 
+ void RiscVVxrm::Write(uint32_t value) {
+   vector_state_->set_vxrm(value & kVxrmWriteMask);
++  vector_state_->MarkDirty();
+ }
+ 
+ RiscVVcsr::RiscVVcsr(RiscVVectorState* vector_state)
+@@ -132,12 +140,15 @@ void RiscVVcsr::Write(uint32_t value) {
+   const uint32_t vxsat = value & 1;
+   vector_state_->set_vxrm(vxrm);
+   vector_state_->set_vxsat(vxsat);
++  vector_state_->MarkDirty();
+ }
+ 
+ // Constructor for the vector class. Need to pass in the parent RV32 state and
+ // the vector length in bytes.
+-RiscVVectorState::RiscVVectorState(RiscVState* state, int byte_length)
++RiscVVectorState::RiscVVectorState(RiscVState* state, int byte_length,
++                                   int max_elen)
+     : vector_register_byte_length_(byte_length),
++      max_elen_(max_elen),
+       vl_csr_(this),
+       vtype_csr_(this),
+       vlenb_csr_(kVlenbName, RiscVCsrEnum::kVlenb, vector_register_byte_length_,
+@@ -159,28 +170,66 @@ RiscVVectorState::RiscVVectorState(RiscVState* state, int byte_length)
+   LogIfError(state->csr_set()->AddCsr(&vcsr_csr_));
+ }
+ 
++void RiscVVectorState::MarkDirty() {
++  if (state_ != nullptr && state_->mstatus() != nullptr &&
++      state_->mstatus()->vs() != RiscVMStatus::kStatusOff &&
++      state_->mstatus()->vs() != RiscVMStatus::kStatusDirty) {
++    state_->mstatus()->set_vs(RiscVMStatus::kStatusDirty);
++    state_->mstatus()->Submit();
++  }
++}
++
+ // This function parses the vector type, as used in the vset* instructions
+ // and sets the internal vector state accordingly.
+ void RiscVVectorState::SetVectorType(uint32_t vtype) {
+-  static const int lmul8_values[8] = {8, 16, 32, 64, 0, 1, 2, 4};
+-  static const int sew_values[8] = {8, 16, 32, 64, 0, 0, 0, 0};
+-  set_vtype(vtype);
+-  // The vtype field is divided into the following fields:
+-  // [2..0]: vector length multiplier.
+-  // [5..3]: element width specifier.
+-  // [6]:    vector tail agnostic bit.
+-  // [7]:    vector mask agnostic bit.
+-  // Extract the lmul.
+-  set_vector_length_multiplier(lmul8_values[(vtype & 0b111)]);
+-  // Extract the sew and convert from bits to bytes.
+-  set_selected_element_width(sew_values[(vtype >> 3) & 0b111] >> 3);
+-  // Extract the tail and mask agnostic flags.
++  static constexpr int kLmul8Values[8] = {8, 16, 32, 64, 0, 1, 2, 4};
++  static constexpr int kSewValues[8] = {8, 16, 32, 64, 0, 0, 0, 0};
++  static constexpr int kLmulMulValues[8] = {1, 2, 4, 8, 1, 1, 1, 1};
++  static constexpr int kLmulDivValues[8] = {1, 1, 1, 1, 1, 8, 4, 2};
++
++  uint32_t vlmul_enc = vtype & 0b111;
++  uint32_t vsew_enc = (vtype >> 3) & 0b111;
++  uint32_t sew_bits = kSewValues[vsew_enc];
++
++  constexpr uint32_t kReservedMask = 0xFFFFFF00U;
++  bool is_illegal =
++      (vlmul_enc == 4) || (sew_bits == 0) || ((vtype & kReservedMask) != 0);
++
++  if (!is_illegal) {
++    if (static_cast<int>(sew_bits) > max_elen_) {
++      is_illegal = true;
++    }
++  }
++
++  if (!is_illegal) {
++    if (static_cast<int>((sew_bits * kLmulDivValues[vlmul_enc]) /
++                         kLmulMulValues[vlmul_enc]) > max_elen_) {
++      is_illegal = true;
++    }
++  }
++
++  if (is_illegal) {
++    set_vtype(kVillBitMask);
++    set_vector_length_multiplier(0);
++    set_selected_element_width(0);
++    set_vector_tail_agnostic(false);
++    set_vector_mask_agnostic(false);
++    max_vector_length_ = 0;
++    vector_length_ = 0;
++    vstart_ = 0;
++    MarkDirty();
++    return;
++  }
++
++  set_vtype(vtype & ~kVillBitMask);
++  set_vector_length_multiplier(kLmul8Values[vlmul_enc]);
++  set_selected_element_width(sew_bits >> 3);
+   set_vector_tail_agnostic(static_cast<bool>((vtype >> 6) & 0b1));
+   set_vector_mask_agnostic(static_cast<bool>((vtype >> 7) & 0b1));
+-  // Compute the new max vector length.
+   max_vector_length_ = vector_register_byte_length() *
+                        vector_length_multiplier() /
+                        (8 * selected_element_width());
++  MarkDirty();
+ }
+ 
+ }  // namespace riscv
+diff --git a/riscv/riscv_vector_state.h b/riscv/riscv_vector_state.h
+index 0339b59..bc684ba 100644
+--- a/riscv/riscv_vector_state.h
++++ b/riscv/riscv_vector_state.h
+@@ -15,7 +15,7 @@
+ #ifndef MPACT_RISCV_RISCV_RISCV_VECTOR_STATE_H_
+ #define MPACT_RISCV_RISCV_RISCV_VECTOR_STATE_H_
+ 
+-#include <cstdint>
++#include <cstdint>  // NOLINT(misc-include-cleaner)
+ 
+ #include "riscv/riscv_csr.h"
+ 
+@@ -28,6 +28,8 @@ namespace mpact {
+ namespace sim {
+ namespace riscv {
+ 
++inline constexpr uint32_t kVillBitMask = 0x80000000U;
++
+ class RiscVState;
+ class RiscVVectorState;
+ 
+@@ -143,16 +145,30 @@ class RiscVVcsr : public RiscVSimpleCsr<uint32_t> {
+ 
+ class RiscVVectorState {
+  public:
+-  RiscVVectorState(RiscVState* state, int byte_length);
++  RiscVVectorState(RiscVState* state, int byte_length, int max_elen = 64);
+ 
+   void SetVectorType(uint32_t vtype);
++  void MarkDirty();
+ 
+   // Public getters and setters.
++  int max_elen() const { return max_elen_; }
++  void set_max_elen(int elen) { max_elen_ = elen; }
+   int vstart() const { return vstart_; }
+-  void clear_vstart() { vstart_ = 0; }
+-  void set_vstart(int value) { vstart_ = value; }
++  void clear_vstart() {
++    if (vstart_ != 0) {
++      vstart_ = 0;
++      MarkDirty();
++    }
++  }
++  void set_vstart(int value) {
++    vstart_ = value;
++    MarkDirty();
++  }
+   int vector_length() const { return vector_length_; }
+-  void set_vector_length(int value) { vector_length_ = value; }
++  void set_vector_length(int value) {
++    vector_length_ = value;
++    MarkDirty();
++  }
+   bool vector_tail_agnostic() const { return vector_tail_agnostic_; }
+   bool vector_mask_agnostic() const { return vector_mask_agnostic_; }
+   int vector_length_multiplier() const { return vector_length_multiplier_; }
+@@ -162,14 +178,35 @@ class RiscVVectorState {
+   void set_vector_exception() { vector_exception_ = true; }
+   uint32_t vtype() const { return vtype_; }
+   void set_vtype(uint32_t value) { vtype_ = value; }
++  bool is_vill() const { return (vtype_ & kVillBitMask) != 0; }
+   int vector_register_byte_length() const {
+     return vector_register_byte_length_;
+   }
+   int max_vector_length() const { return max_vector_length_; }
+   bool vxsat() const { return vxsat_; }
+-  void set_vxsat(bool value) { vxsat_ = value; }
++  void set_vxsat(bool value) {
++    vxsat_ = value;
++    MarkDirty();
++  }
+   int vxrm() const { return vxrm_; }
+-  void set_vxrm(int value) { vxrm_ = value & 0x3; }
++  void set_vxrm(int value) {
++    vxrm_ = value & 0x3;
++    MarkDirty();
++  }
++
++  // Controls the behavior of tail elements when an instruction operates under
++  // a tail-agnostic policy (either via vtype.vta=1 or implicitly for mask
++  // destination instructions per RISC-V Vector Specification Section 15). The
++  // specification allows an implementation to either leave the tail undisturbed
++  // or overwrite it with 1s. When set to true, tail elements are overwritten
++  // with 1s to match the RTL implementation of CoralNPU / Kelvin. When false,
++  // they remain undisturbed.
++  bool mask_tail_agnostic_writes_ones() const {
++    return mask_tail_agnostic_writes_ones_;
++  }
++  void set_mask_tail_agnostic_writes_ones(bool val) {
++    mask_tail_agnostic_writes_ones_ = val;
++  }
+ 
+   const RiscVState* riscv_state() const { return state_; }
+   RiscVState* riscv_state() { return state_; }
+@@ -187,9 +224,10 @@ class RiscVVectorState {
+   void set_vector_mask_agnostic(bool value) { vector_mask_agnostic_ = value; }
+ 
+   RiscVState* state_ = nullptr;
+-  uint32_t vtype_;
++  uint32_t vtype_ = 0;
+   bool vector_exception_ = false;
+   int vector_register_byte_length_ = 0;
++  int max_elen_ = 64;
+   int vstart_ = 0;
+   int max_vector_length_ = 0;
+   int vector_length_ = 0;
+@@ -198,6 +236,7 @@ class RiscVVectorState {
+   int selected_element_width_ = 1;
+   bool vector_tail_agnostic_ = false;
+   bool vector_mask_agnostic_ = false;
++  bool mask_tail_agnostic_writes_ones_ = false;
+   bool vxsat_ = false;
+   int vxrm_ = 0;
+ 
+diff --git a/riscv/riscv_xstatus.cc b/riscv/riscv_xstatus.cc
+index 8a4d83e..ee1255b 100644
+--- a/riscv/riscv_xstatus.cc
++++ b/riscv/riscv_xstatus.cc
+@@ -16,10 +16,10 @@
+ 
+ #include <cstdint>
+ 
+-#include "mpact/sim/generic/type_helpers.h"
+ #include "riscv/riscv_csr.h"
+ #include "riscv/riscv_misa.h"
+ #include "riscv/riscv_state.h"
++#include "mpact/sim/generic/type_helpers.h"
+ 
+ namespace mpact {
+ namespace sim {
+@@ -28,14 +28,18 @@ namespace riscv {
+ using ::mpact::sim::generic::operator*;  // NOLINT: is used below (clang error).
+ 
+ // Helper functions to convert between 32 and 64 bit views of mstatus.
++constexpr uint64_t kRv32SdBit = uint64_t{1} << 31;
++constexpr uint64_t kRv32NonSdBits = uint64_t{0x7fff'ffff};
++
+ static inline uint64_t StretchMStatus32(uint32_t value) {
+   uint64_t value64 = static_cast<uint64_t>(value);
+-  value64 = ((value64 & 0xc000'0000) << 32) | (value64 & 0x03ff'ffff);
++  value64 = ((value64 & kRv32SdBit) << 32) | (value64 & kRv32NonSdBits);
+   return value64;
+ }
+ 
+ static inline uint32_t CompressMStatus64(uint64_t value) {
+-  uint32_t value32 = ((value >> 32) & 0xc000'0000) | (value & 0x3fff'ffff);
++  uint32_t value32 = static_cast<uint32_t>(((value >> 32) & kRv32SdBit) |
++                                           (value & kRv32NonSdBits));
+   return value32;
+ }
+ 
+@@ -48,30 +52,37 @@ RiscVMStatus::RiscVMStatus(uint32_t initial_value, ArchState* state,
+ 
+ RiscVMStatus::RiscVMStatus(uint64_t initial_value, ArchState* state,
+                            RiscVMIsa* misa)
+-    : RiscVMStatus(initial_value, state, RiscVXlen::RV64, misa) {}
++    : RiscVMStatus(initial_value, state,
++                   (state != nullptr) ? static_cast<RiscVState*>(state)->xlen()
++                                      : RiscVXlen::RV64,
++                   misa) {}
+ 
+ RiscVMStatus::RiscVMStatus(uint64_t initial_value, ArchState* state,
+                            RiscVXlen xlen, RiscVMIsa* misa)
+     : RiscVSimpleCsr<uint64_t>("mstatus", RiscVCsrEnum::kMStatus, initial_value,
+                                kReadMask, kWriteMask, state),
+       misa_(misa) {
+-  // All bits except for uxl and sxl, since that doesn't appear in the 32 bit
+-  // view.
+-  set_mask_from_32_ = 0xffff'fff0'ffff'ffffULL;
+-  // Set UXL and SXL be the current xlen.
+-  uint64_t xlen_val = xlen == RiscVXlen::RV64 ? 0b10 : 0b01;
+-  // If misa doesn't show support for user or supervisor, clear corresponding
+-  // bits from values and read/write masks.
+-  if (misa_->HasSupervisorMode()) {
+-    xlen_val &= 0b0011;
++  // Mask out UXL and SXL when updating from 32-bit views.
++  set_mask_from_32_ = ~(kMstatusSxlMask | kMstatusUxlMask);
++
++  uint64_t initial_mstatus = this->RiscVSimpleCsr<uint64_t>::GetUint64();
++  if (xlen == RiscVXlen::RV64) {
++    if (misa_ != nullptr && misa_->HasSupervisorMode()) {
++      initial_mstatus |= (kXlen64Encoding << kMstatusSxlShift);
++    }
++    if (misa_ != nullptr && misa_->HasUserMode()) {
++      initial_mstatus |= (kXlen64Encoding << kMstatusUxlShift);
++    }
+   }
+-  if (misa_->HasUserMode()) {
+-    xlen_val &= 0b1100;
++  this->RiscVSimpleCsr<uint64_t>::Set(initial_mstatus);
++
++  if (xlen == RiscVXlen::RV32) {
++    read_mask_32_ = CompressMStatus64(read_mask());
++    write_mask_32_ = CompressMStatus64(write_mask());
++  } else {
++    read_mask_32_ = static_cast<uint32_t>(read_mask() & kLower32Mask);
++    write_mask_32_ = static_cast<uint32_t>(write_mask() & kLower32Mask);
+   }
+-  xlen_val <<= 32;
+-  Set(GetUint64() | xlen_val);
+-  read_mask_32_ = CompressMStatus64(read_mask());
+-  write_mask_32_ = CompressMStatus64(write_mask());
+ }
+ 
+ // Override implementations.
+@@ -80,7 +91,25 @@ uint32_t RiscVMStatus::AsUint32() {
+   return GetUint32() & read_mask_32_;
+ }
+ 
+-void RiscVMStatus::Write(uint32_t value) { Set(value & write_mask_32_); }
++uint64_t RiscVMStatus::AsUint64() {
++  if (state() != nullptr &&
++      static_cast<RiscVState*>(state())->xlen() == RiscVXlen::RV32) {
++    return static_cast<uint64_t>(AsUint32());
++  }
++  return GetUint64() & read_mask();
++}
++
++void RiscVMStatus::Write(uint32_t value) {
++  if (state() != nullptr &&
++      static_cast<RiscVState*>(state())->xlen() == RiscVXlen::RV32) {
++    Set(value & write_mask_32_);
++  } else {
++    uint64_t current = GetUint64();
++    uint64_t new_value = (current & ~static_cast<uint64_t>(write_mask_32_)) |
++                         static_cast<uint64_t>(value & write_mask_32_);
++    Set(new_value);
++  }
++}
+ 
+ void RiscVMStatus::SetBits(uint32_t bits) {
+   uint32_t new_value = GetUint32() | (bits & write_mask_32_);
+@@ -93,30 +122,80 @@ void RiscVMStatus::ClearBits(uint32_t bits) {
+ }
+ 
+ uint32_t RiscVMStatus::GetUint32() {
+-  // The value is stored as if xlen is 64, so adjust the layout.
+-  return CompressMStatus64(GetUint64());
++  uint64_t val = RiscVSimpleCsr<uint64_t>::GetUint64();
++  int fs_val = static_cast<int>((val & kMstatusFsMask) >> kMstatusFsShift);
++  int vs_val = static_cast<int>((val & kMstatusVsMask) >> kMstatusVsShift);
++  int xs_val = static_cast<int>((val & kMstatusXsMask) >> kMstatusXsShift);
++  uint32_t val32 = static_cast<uint32_t>(val & kLower32Mask);
++  if (fs_val == kStatusDirty || vs_val == kStatusDirty ||
++      xs_val == kStatusDirty) {
++    val32 |= static_cast<uint32_t>(kMstatusSdMaskRv32);
++  } else {
++    val32 &= ~static_cast<uint32_t>(kMstatusSdMaskRv32);
++  }
++  return val32;
++}
++
++uint64_t RiscVMStatus::GetUint64() {
++  if (state() != nullptr &&
++      static_cast<RiscVState*>(state())->xlen() == RiscVXlen::RV32) {
++    return static_cast<uint64_t>(GetUint32());
++  }
++  uint64_t val = RiscVSimpleCsr<uint64_t>::GetUint64();
++  int fs_val = static_cast<int>((val & kMstatusFsMask) >> kMstatusFsShift);
++  int vs_val = static_cast<int>((val & kMstatusVsMask) >> kMstatusVsShift);
++  int xs_val = static_cast<int>((val & kMstatusXsMask) >> kMstatusXsShift);
++  if (fs_val == kStatusDirty || vs_val == kStatusDirty ||
++      xs_val == kStatusDirty) {
++    val |= kMstatusSdMaskRv64;
++  } else {
++    val &= ~kMstatusSdMaskRv64;
++  }
++  return val;
++}
++
++bool RiscVMStatus::sd() {
++  if (state() != nullptr &&
++      static_cast<RiscVState*>(state())->xlen() == RiscVXlen::RV32) {
++    return (GetUint32() & static_cast<uint32_t>(kMstatusSdMaskRv32)) != 0;
++  }
++  return (GetUint64() & kMstatusSdMaskRv64) != 0;
+ }
+ 
+ void RiscVMStatus::Set(uint32_t value) {
+-  // Keep the sxl and uxl bits in the 64 bit value.
+-  uint64_t new_value = (StretchMStatus32(value) & set_mask_from_32_) |
+-                       (GetUint64() & ~set_mask_from_32_);
+-  Set(new_value);
++  if (state() != nullptr &&
++      static_cast<RiscVState*>(state())->xlen() == RiscVXlen::RV32) {
++    uint64_t new_value = (StretchMStatus32(value) & set_mask_from_32_) |
++                         (GetUint64() & ~set_mask_from_32_);
++    Set(new_value);
++  } else {
++    uint64_t current = GetUint64();
++    uint64_t new_value =
++        (current & kUpper32Mask) | static_cast<uint64_t>(value);
++    Set(new_value);
++  }
+ }
+ 
+ void RiscVMStatus::Set(uint64_t value) {
++  uint64_t old_value = GetUint64();
++  value &= ~(kMstatusSdMaskRv32 | kMstatusSdMaskRv64);
+   this->RiscVSimpleCsr<uint64_t>::Set(value);
+-  // If an interrupt enable might be set, check for interrupts.
+-  if (value & 0xf) {
++  if (state() != nullptr &&
++      (old_value & kInterruptMask) != (value & kInterruptMask)) {
+     state()->CheckForInterrupt();
+   }
+ }
+ 
+ void RiscVMStatus::set_mpp(uint32_t value) {
+   // Don't allow values for unsupported privilege modes.
+-  if ((value == *PrivilegeMode::kUser) && !misa_->HasUserMode()) return;
+-  if ((value == *PrivilegeMode::kSupervisor) && !misa_->HasSupervisorMode())
++  if ((value == *PrivilegeMode::kUser) &&
++      (misa_ != nullptr && !misa_->HasUserMode())) {
+     return;
++  }
++  if ((value == *PrivilegeMode::kSupervisor) &&
++      (misa_ != nullptr && !misa_->HasSupervisorMode())) {
++    return;
++  }
+   SetterHelper<11, 0b11>(value);
+ }
+ 
+@@ -126,14 +205,21 @@ RiscVSStatus::RiscVSStatus(RiscVMStatus* mstatus, RiscVState* state)
+     : RiscVSimpleCsr<uint64_t>("sstatus", RiscVCsrEnum::kSStatus, kReadMask,
+                                kWriteMask, state),
+       mstatus_(mstatus) {
+-  set_mask_from_32_ = 0xffff'fff0'ffff'ffffULL;
++  set_mask_from_32_ =
++      ~(RiscVMStatus::kMstatusSxlMask | RiscVMStatus::kMstatusUxlMask);
+   read_mask_32_ = CompressMStatus64(read_mask());
+   write_mask_32_ = CompressMStatus64(write_mask());
+ }
+ 
+-uint32_t RiscVSStatus::AsUint32() { return CompressMStatus64(AsUint64()); }
++uint32_t RiscVSStatus::AsUint32() {
++  if (state() != nullptr &&
++      static_cast<RiscVState*>(state())->xlen() == RiscVXlen::RV32) {
++    return mstatus_->AsUint32() & read_mask_32_;
++  }
++  return CompressMStatus64(AsUint64()) & read_mask_32_;
++}
+ 
+-uint64_t RiscVSStatus::AsUint64() { return mstatus_->AsUint64(); }
++uint64_t RiscVSStatus::AsUint64() { return mstatus_->AsUint64() & read_mask(); }
+ 
+ void RiscVSStatus::Set(uint32_t value) {
+   uint64_t new_value = StretchMStatus32(value);
+@@ -158,9 +244,17 @@ void RiscVSStatus::ClearBits(uint32_t bits) {
+   Set(new_value);
+ }
+ 
+-uint32_t RiscVSStatus::GetUint32() { return CompressMStatus64(GetUint64()); }
++uint32_t RiscVSStatus::GetUint32() {
++  if (state() != nullptr &&
++      static_cast<RiscVState*>(state())->xlen() == RiscVXlen::RV32) {
++    return mstatus_->GetUint32() & read_mask_32_;
++  }
++  return CompressMStatus64(GetUint64()) & read_mask_32_;
++}
+ 
+-uint64_t RiscVSStatus::GetUint64() { return mstatus_->GetUint64(); }
++uint64_t RiscVSStatus::GetUint64() {
++  return mstatus_->GetUint64() & read_mask();
++}
+ 
+ // RiscVUStatus methods.
+ 
+@@ -168,7 +262,8 @@ RiscVUStatus::RiscVUStatus(RiscVMStatus* mstatus, RiscVState* state)
+     : RiscVSimpleCsr<uint64_t>("ustatus", RiscVCsrEnum::kUStatus, kReadMask,
+                                kWriteMask, state),
+       mstatus_(mstatus) {
+-  set_mask_from_32_ = 0xffff'fff0'ffff'ffffULL;
++  set_mask_from_32_ =
++      ~(RiscVMStatus::kMstatusSxlMask | RiscVMStatus::kMstatusUxlMask);
+   read_mask_32_ = CompressMStatus64(read_mask());
+   write_mask_32_ = CompressMStatus64(write_mask());
+ }
+diff --git a/riscv/riscv_xstatus.h b/riscv/riscv_xstatus.h
+index 9d7354d..7a26c84 100644
+--- a/riscv/riscv_xstatus.h
++++ b/riscv/riscv_xstatus.h
+@@ -17,9 +17,9 @@
+ 
+ #include <cstdint>
+ 
+-#include "mpact/sim/generic/arch_state.h"
+ #include "riscv/riscv_csr.h"
+ #include "riscv/riscv_misa.h"
++#include "mpact/sim/generic/arch_state.h"
+ 
+ // This file defines the classes that implement the hardware status CSR for
+ // machine mode (mstatus), supervisor mode (sstatus), and user mode (ustatus).
+@@ -33,9 +33,36 @@ using ::mpact::sim::generic::ArchState;
+ 
+ class RiscVMStatus : public RiscVSimpleCsr<uint64_t> {
+  public:
++  // Status field states.
++  static constexpr int kStatusOff = 0;
++  static constexpr int kStatusInitial = 1;
++  static constexpr int kStatusClean = 2;
++  static constexpr int kStatusDirty = 3;
++
+   // Read/Write masks.
+-  static constexpr uint64_t kReadMask = 0x8000'000f'007f'f9bbULL;
+-  static constexpr uint64_t kWriteMask = 0x0000'0000'007f'f9bbULL;
++  static constexpr uint64_t kReadMask = uint64_t{0x8000'000f'007f'ffbb};
++  static constexpr uint64_t kWriteMask = uint64_t{0x0000'0000'007f'ffbb};
++  static constexpr uint64_t kVectorStatusMask = uint64_t{0x0600};
++  static constexpr int kVectorStatusShift = 9;
++
++  static constexpr uint64_t kMstatusSdMaskRv32 = uint64_t{1} << 31;
++  static constexpr uint64_t kMstatusSdMaskRv64 = uint64_t{1} << 63;
++  static constexpr uint64_t kMstatusSxlMask = uint64_t{0x3} << 34;
++  static constexpr int kMstatusSxlShift = 34;
++  static constexpr uint64_t kMstatusUxlMask = uint64_t{0x3} << 32;
++  static constexpr int kMstatusUxlShift = 32;
++  static constexpr uint64_t kMstatusXsMask = uint64_t{0x3} << 15;
++  static constexpr int kMstatusXsShift = 15;
++  static constexpr uint64_t kMstatusFsMask = uint64_t{0x3} << 13;
++  static constexpr int kMstatusFsShift = 13;
++  static constexpr uint64_t kMstatusVsMask = uint64_t{0x3} << 9;
++  static constexpr int kMstatusVsShift = 9;
++
++  static constexpr uint64_t kInterruptMask = uint64_t{0xf};
++  static constexpr uint64_t kLower32Mask = uint64_t{0xffff'ffff};
++  static constexpr uint64_t kUpper32Mask = uint64_t{0xffff'ffff'0000'0000};
++  static constexpr uint64_t kXlen64Encoding = uint64_t{0b10};
++
+   // Disable default constructor.
+   RiscVMStatus() = delete;
+   RiscVMStatus(uint32_t initial_value, ArchState* state, RiscVMIsa* misa);
+@@ -45,16 +72,18 @@ class RiscVMStatus : public RiscVSimpleCsr<uint64_t> {
+ 
+   // RiscVSimpleCsr<uint64_t> method overrides.
+   uint32_t AsUint32() override;
++  uint64_t AsUint64() override;
+   void Write(uint32_t value) override;
+   void SetBits(uint32_t bits) override;
+   void ClearBits(uint32_t bits) override;
+   uint32_t GetUint32() override;
++  uint64_t GetUint64() override;
+   void Set(uint32_t value) override;
+   void Set(uint64_t value) override;
+ 
+   // Getters for state info.
+   // Read only dirty bit.
+-  bool sd() { return GetterHelper<31, 0b1>() || GetterHelper<63, 0b1>(); }
++  bool sd();
+   // SXL - supervisor xlen.
+   int sxl() { return GetterHelper<34, 0b11>(); }
+   // UXL - user xlen.
+@@ -75,6 +104,8 @@ class RiscVMStatus : public RiscVSimpleCsr<uint64_t> {
+   int xs() { return GetterHelper<15, 0b11>(); }
+   // FS - fp state dirty.
+   int fs() { return GetterHelper<13, 0b11>(); }
++  // VS - vector extension state dirty.
++  int vs() { return GetterHelper<9, 0b11>(); }
+   // MPP - machine previous privilege level.
+   int mpp() { return GetterHelper<11, 0b11>(); }
+   // SPP - supervisor previous privilege level.
+@@ -99,6 +130,7 @@ class RiscVMStatus : public RiscVSimpleCsr<uint64_t> {
+   void set_mprv(uint32_t value) { SetterHelper<17, 0b1>(value); }
+   void set_xs(uint32_t value) { SetterHelper<15, 0b11>(value); }
+   void set_fs(uint32_t value) { SetterHelper<13, 0b11>(value); }
++  void set_vs(uint32_t value) { SetterHelper<9, 0b11>(value); }
+   void set_mpp(uint32_t value);
+   void set_spp(uint32_t value) { SetterHelper<8, 0b1>(value); }
+   void set_mpie(uint32_t value) { SetterHelper<7, 0b1>(value); }
+@@ -143,8 +175,11 @@ class RiscVMStatus : public RiscVSimpleCsr<uint64_t> {
+ // to access the restricted subset.
+ class RiscVSStatus : public RiscVSimpleCsr<uint64_t> {
+  public:
+-  static constexpr uint64_t kReadMask = 0x8000'0003'000d'e133ULL;
+-  static constexpr uint64_t kWriteMask = 0x0000'0000'000d'e133ULL;
++  static constexpr uint64_t kReadMask = 0x8000'0003'000d'e733ULL;
++  static constexpr uint64_t kWriteMask = 0x0000'0000'000d'e733ULL;
++  static constexpr uint64_t kVectorStatusMask =
++      RiscVMStatus::kVectorStatusMask;
++  static constexpr int kVectorStatusShift = RiscVMStatus::kVectorStatusShift;
+ 
+   RiscVSStatus() = delete;
+   RiscVSStatus(RiscVMStatus* mstatus, RiscVState* state);
+@@ -173,6 +208,8 @@ class RiscVSStatus : public RiscVSimpleCsr<uint64_t> {
+   int xs() { return mstatus_->xs(); }
+   // FS - fp state dirty.
+   int fs() { return mstatus_->fs(); }
++  // VS - vector state dirty.
++  int vs() { return mstatus_->vs(); }
+   // SPP - supervisor previous privilege level.
+   int spp() { return mstatus_->spp(); }
+   // Previous interrupt enable for machine, supervisor, and user level.
+@@ -188,6 +225,7 @@ class RiscVSStatus : public RiscVSimpleCsr<uint64_t> {
+   void set_sum(uint32_t value) { mstatus_->set_sum(value); }
+   void set_xs(uint32_t value) { mstatus_->set_xs(value); }
+   void set_fs(uint32_t value) { mstatus_->set_fs(value); }
++  void set_vs(uint32_t value) { mstatus_->set_vs(value); }
+   void set_spp(uint32_t value) { mstatus_->set_spp(value); }
+   void set_spie(uint32_t value) { mstatus_->set_spie(value); }
+   void set_upie(uint32_t value) { mstatus_->set_upie(value); }
+diff --git a/riscv/riscv_vector_opi_instructions.cc b/riscv/riscv_vector_opi_instructions.cc
+index 548c26f..ff03112 100644
+--- a/riscv/riscv_vector_opi_instructions.cc
++++ b/riscv/riscv_vector_opi_instructions.cc
+@@ -1149,6 +1149,7 @@ void Vmvr(int num_regs, Instruction* inst) {
+     return;
+   }
+   int sew = rv_vector->selected_element_width();
++  if (sew <= 0) sew = 1;
+   int num_elements_per_vector = rv_vector->vector_register_byte_length() / sew;
+   int vstart = rv_vector->vstart();
+   int start_reg = vstart / num_elements_per_vector;

@@ -445,6 +445,7 @@ class SCore(p: Parameters) extends Module {
       rob_io.writeDataFloat.get(i).bits.addr := fRegfile.get.io.write_ports(i).addr
       rob_io.writeDataFloat.get(i).bits.data := fRegfile.get.io.write_ports(i).data.asWord
     })
+    csr.io.float_dirty.get := fRegfile.get.io.write_ports.map(_.valid).reduce(_ || _)
   }
 
   val mluDvuOffset = p.instructionLanes
@@ -543,6 +544,8 @@ class SCore(p: Parameters) extends Module {
     } else {
       csr.io.rvv.get.mtype := 0.U
     }
+    csr.io.rvv_dirty.get := io.rvvcore.get.rd_rob2rt_o.map(_.valid).reduce(_ || _) ||
+      io.rvvcore.get.rd.map(_.valid).reduce(_ || _)
   }
   val isBranching            = bru.map(_.io.taken.valid).reduce(_ || _)
   val hasFetchedInstructions = fetch.io.inst.lanes.map(_.valid).reduce(_ || _)

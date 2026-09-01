@@ -811,23 +811,12 @@ package coralnpu_cosim_checker_pkg;
 
     function automatic logic [31:0] get_csr_compare_mask(int csr_idx);
       case (csr_idx)
-        // mstatus (0x300):
-        // Compare architecturally active control bits:
-        // - MPIE (bit 7): Machine Previous Interrupt Enable
-        // - MIE  (bit 3): Machine Interrupt Enable
-        // Mask out WARL and implementation/config-specific fields:
-        // - SD   (bit 31): Summary dirty bit
-        // - FS   (bits 14:13): Floating-point status (hardwired 01 in RTL; 11 in MPACT)
-        // - MPP  (bits 12:11): Previous mode (hardwired 11 in RTL; 00 in MPACT)
-        // - VS   (bits 10:9): Vector status (hardwired 01 in RTL; 00 in MPACT)
-        12'h300: return 32'h0000_0088;
-
         // mip (0x344):
         // Interrupt pending bits reflect asynchronous external signals (PLIC/timer)
         12'h344: return 32'h0000_0000;
 
         // Default: Exact bit-for-bit check on all standard architectural CSRs
-        // (mscratch, mepc, mcause, mtval, misa, fflags, frm, fcsr, vstart, vxrm, vxsat, tdata1/2, etc.)
+        // (mstatus, mscratch, mepc, mcause, mtval, misa, fflags, frm, fcsr, vstart, vxrm, vxsat, tdata1/2, etc.)
         default: return 32'hffff_ffff;
       endcase
     endfunction
