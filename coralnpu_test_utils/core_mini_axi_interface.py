@@ -772,6 +772,11 @@ class CoreMiniAxiInterface:
         awdata["len"] = burst_len - 1
         awdata["size"] = size
         awdata["burst"] = burst
+        awdata["prot"] = 0
+        awdata["lock"] = 0
+        awdata["cache"] = 0
+        awdata["qos"] = 0
+        awdata["region"] = 0
         await self.slave_awfifo.put(awdata)
 
     async def _wait_write_response(self, delay_bready: int = 0):
@@ -913,6 +918,11 @@ class CoreMiniAxiInterface:
         ardata["len"] = beats - 1
         ardata["size"] = size
         ardata["burst"] = burst
+        ardata["prot"] = 0
+        ardata["lock"] = 0
+        ardata["cache"] = 0
+        ardata["qos"] = 0
+        ardata["region"] = 0
         await self.slave_arfifo.put(ardata)
 
     async def _read_data(self, expected_resp=AxiResp.OKAY, axi_id=0):
@@ -1098,6 +1108,14 @@ class CoreMiniAxiInterface:
         # Release reset
         await self.write_word(coralnpu_reset_csr_addr, 0)
 
+    def _get_timeout_cycles(self, default_timeout_cycles: int) -> int:
+        if "COCOTB_TIMEOUT_CYCLES" in os.environ:
+            try:
+                return int(os.environ["COCOTB_TIMEOUT_CYCLES"])
+            except ValueError:
+                pass
+        return default_timeout_cycles
+
     async def wait_for_wfi(self):
         if self.dut.io_wfi.value != 1:
             await RisingEdge(self.dut.io_wfi)
@@ -1108,15 +1126,17 @@ class CoreMiniAxiInterface:
         self.dut.io_irq.value = 0
 
     async def wait_for_halted(self, timeout_cycles=1000):
+        timeout_cycles = self._get_timeout_cycles(timeout_cycles)
         cycle_count = 0
         while self.dut.io_halted.value != 1 and timeout_cycles > 0:
             await ClockCycles(self.dut.io_aclk, 1)
             timeout_cycles = timeout_cycles - 1
             cycle_count += 1
-        assert timeout_cycles > 0
+        assert timeout_cycles > 0, f"Simulation timed out waiting for halted after {cycle_count} cycles"
         return cycle_count
 
     async def wait_for_halted_semihost(self, elf, timeout_cycles=1000000):
+        timeout_cycles = self._get_timeout_cycles(timeout_cycles)
         tohost = self.lookup_symbol(elf, "tohost")
         assert tohost != None
         initial_rv = await self.read_word(tohost)
@@ -1127,13 +1147,14 @@ class CoreMiniAxiInterface:
                 assert np.sum(rv) == 1
                 break
             timeout_cycles = timeout_cycles - 1
-            assert timeout_cycles > 0
+            assert timeout_cycles > 0, "Simulation timed out waiting for semihosting tohost"
 
     async def wait_for_fault(self, timeout_cycles=1000):
+        timeout_cycles = self._get_timeout_cycles(timeout_cycles)
         cycle_count = 0
         while self.dut.io_fault.value != 1 and timeout_cycles > 0:
             await ClockCycles(self.dut.io_aclk, 1)
             timeout_cycles = timeout_cycles - 1
             cycle_count += 1
-        assert timeout_cycles > 0
+        assert timeout_cycles > 0, f"Simulation timed out waiting for fault after {cycle_count} cycles"
         return cycle_count
