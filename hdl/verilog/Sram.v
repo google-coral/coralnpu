@@ -120,7 +120,7 @@ module Sram #(
   genvar i_wmask;
   generate
     for (i_wmask = 0; i_wmask < 16; i_wmask = i_wmask + 1) begin : gen_wmask
-      assign nwmask[8*i_wmask+:8] = {8{wmask[i_wmask]}};
+      assign nwmask[8*i_wmask+:8] = {8{~wmask[i_wmask]}};
     end
   endgenerate
 
@@ -130,8 +130,8 @@ module Sram #(
         .A(addr),
         .D(wdata[63:0]),
         .WEN(nwmask[63:0]),
-        .GWEN(write),
-        .CEN(enable),
+        .GWEN(~write),
+        .CEN(~enable),
         .CLK(clock),
         .STOV(1'b0),
         .EMA(3'b0),
@@ -146,8 +146,8 @@ module Sram #(
         .A(addr),
         .D(wdata[127:64]),
         .WEN(nwmask[127:64]),
-        .GWEN(write),
-        .CEN(enable),
+        .GWEN(~write),
+        .CEN(~enable),
         .CLK(clock),
         .STOV(1'b0),
         .EMA(3'b0),
@@ -163,8 +163,8 @@ module Sram #(
         .A(addr),
         .D(wdata),
         .WEN(nwmask),
-        .GWEN(write),
-        .CEN(enable),
+        .GWEN(~write),
+        .CEN(~enable),
         .CLK(clock),
         .STOV(1'b0),
         .EMA(3'b0),

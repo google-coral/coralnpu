@@ -76,14 +76,20 @@ VCS_DEFINES = {
     "TSMC_NO_TESTPINS_DEFAULT_VALUE_CHECK": "",
 }
 
+# GF22 standard cell primitives (std_primitives.v) initialize D-flip-flops to 0 by default via
+# SNPS_INIT_DFF_VALUE 1'b0. GF12/TSMC12 cell models do not include built-in initializers.
+# VCS requires +vcs+initreg+random at compile time to instrument state elements,
+# and +vcs+initreg+0 at runtime to force un-reset flip-flops to start at 0.
 VCS_NETLIST_BUILD_ARGS = list(VCS_BUILD_ARGS) + [
     "+vcs+fsdbon",
+    "+vcs+initreg+random",  # Enables VCS compile-time initreg instrumentation
 ]
 
 VCS_NETLIST_TEST_ARGS = list(VCS_TEST_ARGS) + [
     "+vcs+fsdbon",
     "+fsdb+mda",
     "+fsdb+struct",
+    "+vcs+initreg+0",  # Forces runtime register startup values to 0
 ]
 
 VCS_NETLIST_DEFINES = {
