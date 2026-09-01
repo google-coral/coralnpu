@@ -130,6 +130,7 @@ filegroup(
             "@coralnpu_hw//third_party/spike:0003-Dump-GPRs-on-EBREAK.patch",
             "@coralnpu_hw//third_party/spike:0004-Add-custom-CoralNPU-CSRs-and-update-MVENDORID-MARCHI.patch",
             "@coralnpu_hw//third_party/spike:0005-Force-logging-in-vcompress.patch",
+            "@coralnpu_hw//third_party/spike:0006-Hardwire-misa-as-read-only-WARL.patch",
         ],
         patch_args = ["-p1"],
         urls = [

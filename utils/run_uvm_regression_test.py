@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import fnmatch
+import subprocess
 import unittest
+from unittest import mock
 
 from utils import run_uvm_regression
 
@@ -53,6 +55,94 @@ class RunUvmRegressionTest(unittest.TestCase):
                 any(fnmatch.fnmatch(t, pattern) for pattern in denylist),
                 f"Expected target '{t}' to be excluded by DENYLIST"
             )
+
+    def test_spike_isa_uses_xdummy_not_xcoralnpu(self):
+        spike_isa = run_uvm_regression.SPIKE_ISA
+        self.assertIn(
+            "xdummy",
+            spike_isa,
+            "SPIKE_ISA must specify 'xdummy' to set MISA.X without loading external dynamic libraries",
+        )
+        self.assertNotIn(
+            "xcoralnpu",
+            spike_isa,
+            "SPIKE_ISA must not specify 'xcoralnpu' which triggers missing dynamic library errors (code 255)",
+        )
+
+    @mock.patch("subprocess.run")
+    def test_check_spike_sanity_success(self, mock_run):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["spike"], returncode=0, stdout="", stderr=""
+        )
+        result = run_uvm_regression.check_spike_sanity(
+            "/fake/spike", "/fake/elf", 0
+        )
+        self.assertTrue(result)
+        mock_run.assert_called_once()
+        self.assertIn("--instructions=1", mock_run.call_args[0][0])
+        self.assertIn(
+            f"--isa={run_uvm_regression.SPIKE_ISA}", mock_run.call_args[0][0]
+        )
+        self.assertIn("--priv=m", mock_run.call_args[0][0])
+
+    @mock.patch("subprocess.run")
+    def test_check_spike_sanity_failure(self, mock_run):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["spike"],
+            returncode=255,
+            stdout="",
+            stderr="couldn't find shared library",
+        )
+        result = run_uvm_regression.check_spike_sanity(
+            "/fake/spike", "/fake/elf", 0
+        )
+        self.assertFalse(result)
+
+    @mock.patch(
+        "utils.run_uvm_regression.check_spike_sanity", return_value=False
+    )
+    @mock.patch("os.path.exists", return_value=True)
+    @mock.patch("utils.run_uvm_regression.get_entry_point", return_value=0)
+    def test_run_full_regression_aborts_on_preflight_failure(
+        self, mock_entry, mock_exists, mock_sanity
+    ):
+        tests_to_run = [("//examples:hello_world", "/path/to/hello_world.elf")]
+        with self.assertRaises(SystemExit) as cm:
+            run_uvm_regression.run_full_regression(
+                tests_to_run=tests_to_run,
+                spike_bin="/fake/spike",
+                mpact_root="/fake/mpact",
+                mpact_riscv_root=None,
+                temp_elf_dir="/tmp",
+                simulator="vcs",
+            )
+        self.assertEqual(cm.exception.code, 1)
+
+    @mock.patch(
+        "utils.run_uvm_regression.check_spike_sanity", return_value=True
+    )
+    @mock.patch(
+        "utils.run_uvm_regression.generate_spike_log", return_value=False
+    )
+    @mock.patch("os.path.exists", return_value=True)
+    @mock.patch("utils.run_uvm_regression.get_entry_point", return_value=0)
+    @mock.patch("utils.run_uvm_regression.get_tohost_addr", return_value=0)
+    @mock.patch("shutil.copy2")
+    def test_run_full_regression_aborts_on_non_denylisted_spike_failure(
+        self, mock_copy, mock_tohost, mock_entry, mock_exists, mock_gen,
+        mock_sanity
+    ):
+        tests_to_run = [("//examples:hello_world", "/path/to/hello_world.elf")]
+        with self.assertRaises(SystemExit) as cm:
+            run_uvm_regression.run_full_regression(
+                tests_to_run=tests_to_run,
+                spike_bin="/fake/spike",
+                mpact_root="/fake/mpact",
+                mpact_riscv_root=None,
+                temp_elf_dir="/tmp",
+                simulator="vcs",
+            )
+        self.assertEqual(cm.exception.code, 1)
 
 
 if __name__ == "__main__":

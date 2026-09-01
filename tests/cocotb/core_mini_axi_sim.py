@@ -600,7 +600,6 @@ async def core_mini_axi_minstret_test(dut):
 
     # Run the test to halt (mpause)
     await fixture.run_to_halt()
-
     # Read minstret_val from memory
     minstret_val_bytes = await fixture.read_word('minstret_val')
     minstret_val = int.from_bytes(minstret_val_bytes, byteorder='little')
@@ -715,15 +714,11 @@ def check_misa_value(misa_val: int, is_rvv: bool, has_float: bool = True):
         misa_val & (1 << 23)
     ) != 0, f"Expected 'X' extension (bit 23) to be set in 0x{misa_val:08x}"
 
-    # Vector extension: 'V' (bit 21)
-    if is_rvv:
-        assert (
-            misa_val & (1 << 21)
-        ) != 0, f"Expected 'V' extension (bit 21) to be set for RVV core in 0x{misa_val:08x}"
-    else:
-        assert (
-            misa_val & (1 << 21)
-        ) == 0, f"Expected 'V' extension (bit 21) to be clear for non-RVV core in 0x{misa_val:08x}"
+    # Vector extension: 'V' (bit 21) - Per RISC-V Vector spec Ch. 18,
+    # embedded vector extensions (Zve*) do not set misa.V
+    assert (
+        misa_val & (1 << 21)
+    ) == 0, f"Expected 'V' extension (bit 21) to be clear (Zve embedded vector) in 0x{misa_val:08x}"
 
     # Floating-point extension: 'F' (bit 5)
     if has_float:
@@ -737,8 +732,8 @@ def check_misa_value(misa_val: int, is_rvv: bool, has_float: bool = True):
 
     # Unimplemented standard extensions must return 0
     unimplemented_bits = [
-        0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24,
-        25
+        0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+        24, 25
     ]
     for bit in unimplemented_bits:
         char = chr(ord('A') + bit)
@@ -746,10 +741,8 @@ def check_misa_value(misa_val: int, is_rvv: bool, has_float: bool = True):
             misa_val & (1 << bit)
         ) == 0, f"Expected '{char}' extension (bit {bit}) to be 0, got 1 in 0x{misa_val:08x}"
 
-    # Verify complete 32-bit value
+    # Verify complete 32-bit value: RV32 (bit 30) | X (bit 23) | M (bit 12) | I (bit 8)
     expected = (1 << 30) | (1 << 23) | (1 << 12) | (1 << 8)
-    if is_rvv:
-        expected |= (1 << 21)
     if has_float:
         expected |= (1 << 5)
     assert misa_val == expected, f"Expected MISA=0x{expected:08x}, got 0x{misa_val:08x}"

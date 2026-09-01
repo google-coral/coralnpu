@@ -145,7 +145,7 @@ def main():
         f"+REGRESSION_LIST={batch_path}",
         "+TEST_ELF=dummy",
         "+TEST_TIMEOUT=100000",
-        "+MISA_VALUE='h40a01120'",
+        "+MISA_VALUE='h40801120'",
     ]
     results, _ = run_uvm_batch(
         cmd,

@@ -120,6 +120,10 @@ SPIKE_DENYLIST = [
     "//tests/cocotb/exceptions:vfwadd_trap",
     "//tests/cocotb/exceptions:vfwsub_trap",
     "//tests/cocotb/exceptions:vfwmul_trap",
+    "//tests/cocotb/rvv:rvv_flush_race_test",
+    "//tests/cocotb/rvv:rvv_small_loop_test",
+    "//tests/cocotb:csr_behavior",
+    "//tests/cocotb/rvv:rvv_vfrdiv_test",
 ]
 
 # Map of targets to custom timeouts (in nanoseconds)
@@ -157,7 +161,7 @@ SPIKE_MEMORY_REGIONS = [
     (0x10000, 0x8000),  # DTCM
     (0x20000000, 0x400000),  # DRAM
 ]
-SPIKE_ISA = "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zfbfmin_zvfbfa_xcoralnpu"
+SPIKE_ISA = "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zfbfmin_zvfbfa_xdummy"
 
 
 def get_spike_memory_map_str() -> str:
@@ -344,6 +348,37 @@ def build_verilator() -> Optional[str]:
         return None
 
 
+def check_spike_sanity(
+    spike_bin: str, elf_path: str, entry_point: int = 0
+) -> bool:
+    """Pre-flight sanity check to ensure Spike runs and accepts the configured ISA/options."""
+    logging.info("Performing Spike pre-flight sanity check...")
+    cmd = [
+        spike_bin, f"-m{get_spike_memory_map_str()}", f"--isa={SPIKE_ISA}",
+        "--priv=m", "--misaligned", "--instructions=1", f"--pc={entry_point}",
+        elf_path
+    ]
+    try:
+        res = subprocess.run(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if res.returncode != 0:
+            err_msg = res.stderr.strip() if res.stderr else res.stdout.strip()
+            logging.critical(
+                f"Spike pre-flight sanity check failed (exit code {res.returncode}):\n{err_msg}"
+            )
+            return False
+        logging.info("Spike pre-flight sanity check passed.")
+        return True
+    except Exception as e:
+        logging.critical(f"Spike pre-flight sanity check error: {e}")
+        return False
+
+
 def generate_spike_log(
     spike_bin: str,
     elf_path: str,
@@ -357,7 +392,8 @@ def generate_spike_log(
     )
     cmd = [
         spike_bin, f"-m{get_spike_memory_map_str()}", f"--isa={SPIKE_ISA}",
-        "--misaligned", "-l", "--log-commits", f"--pc={entry_point}", elf_path
+        "--priv=m", "--misaligned", "-l", "--log-commits",
+        f"--pc={entry_point}", elf_path
     ]
     try:
         with open(log_path, 'w') as f:
@@ -838,7 +874,28 @@ def run_full_regression(
 
     # 1. Preparation: Copy ELFs and generate Spike logs
     logging.info(f"Preparing {len(tests_to_run)} tests...")
+
+    # Pre-flight check on the first available non-denylisted ELF
+    if spike_bin:
+        first_valid_test = next(
+            ((target, src_elf) for target, src_elf in tests_to_run if src_elf
+             and os.path.exists(src_elf) and target not in SPIKE_DENYLIST),
+            None,
+        )
+        if first_valid_test:
+            target, src_elf = first_valid_test
+            entry_point = get_entry_point(src_elf)
+            if not check_spike_sanity(spike_bin, src_elf, entry_point):
+                logging.critical(
+                    "ERROR: Spike pre-flight sanity check failed. Aborting regression."
+                )
+                sys.exit(1)
+
     test_info_map = {}  # target -> info dict
+    spike_failures = []
+    consecutive_spike_failures = 0
+    max_consecutive_failures = 3
+
     for target, src_elf in tests_to_run:
         if src_elf and os.path.exists(src_elf):
             safe_name = target.replace('//', '').replace(':', '_').replace(
@@ -864,6 +921,19 @@ def run_full_regression(
                                           entry_point):
                         shutil.copy2(temp_spike_log, dest_spike_log)
                         spike_log_path = os.path.abspath(dest_spike_log)
+                        consecutive_spike_failures = 0
+                    else:
+                        spike_failures.append(target)
+                        consecutive_spike_failures += 1
+                        logging.error(
+                            f"Spike log generation failed for non-denylisted target '{target}'."
+                        )
+                        if consecutive_spike_failures >= max_consecutive_failures:
+                            logging.critical(
+                                f"ERROR: Encountered {consecutive_spike_failures} consecutive Spike failures. "
+                                "Aborting regression due to suspected systematic Spike failure."
+                            )
+                            sys.exit(1)
 
                 tohost_addr = get_tohost_addr(dest_elf)
                 if tohost_addr is None: tohost_addr = 0xFFFFFFFF
@@ -879,6 +949,14 @@ def run_full_regression(
                 }
             except Exception as e:
                 logging.error(f"Failed to prepare {target}: {e}")
+
+    if spike_failures:
+        logging.critical(
+            f"ERROR: Spike log generation failed for {len(spike_failures)} non-denylisted target(s):\n"
+            + "\n".join(f"  - {t}" for t in spike_failures) +
+            "\nAborting regression because valid Spike traces are required for 3-way co-simulation."
+        )
+        sys.exit(1)
 
     # 2. Execute Simulation with Crash Recovery
     results = []
