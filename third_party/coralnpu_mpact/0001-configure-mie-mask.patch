@@ -1,0 +1,24 @@
+From 3049a7603024c11c2e2257cc0d79de076386c5ce Mon Sep 17 00:00:00 2001
+From: Alex Van Damme <atv@google.com>
+Date: Tue, 1 Sep 2026 23:00:08 +0000
+Subject: [PATCH] Configure MIE mask in MPACT DPI wrapper
+
+---
+ sim/cosim/coralnpu_cosim_dpi_wrapper.cc | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
+index a7d5010..feedc5a 100644
+--- a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
++++ b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
+@@ -56,6 +56,8 @@ bool MpactHandle::Init(const sim_config_t* cosim_config) {
+       options_.initial_misa_value = cosim_config->initial_misa_value;
+     }
+     simulator_ = std::make_unique<CoralNPUSimulator>(options_);
++    simulator_->state()->mie()->set_read_mask(0x888);
++    simulator_->state()->mie()->set_write_mask(0x888);
+     auto status = simulator_->WriteRegister("pc", options_.itcm_start_address);
+     if (!status.ok()) {
+       LOG(ERROR) << "[DPI] Init: Failed to set initial PC: "
+-- 
+2.43.7

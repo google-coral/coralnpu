@@ -103,6 +103,7 @@ def define_mpact_repos():
         strip_prefix = "coralnpu-mpact-7670ee4c3df4cbc0ea06220c39a19b5d14338ed6",
         workspace_file = "@coralnpu_hw//third_party/coralnpu_mpact:WORKSPACE",
         patches = [
+            "@coralnpu_hw//third_party/coralnpu_mpact:0001-configure-mie-mask.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0003-Hardwire-mtvec-direct-mode.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0004-Fix-mpact-riscv-includes.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0006-Fix-svdpi-includes.patch",

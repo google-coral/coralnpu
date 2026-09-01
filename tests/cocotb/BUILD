@@ -58,6 +58,7 @@ COCOTB_TEST_BINARY_TARGETS = glob(["**/*.elf"]) + glob(["**/*.o"]) + [
     "//tests/cocotb/coralnpu_isa:coralnpu_isa_tests",
     "//tests/cocotb/exceptions:elf_files",
     "//third_party/riscv-tests:all_files",
+    ":csr_behavior.elf",
 ]
 
 VCS_COMMON_DATA = [
@@ -154,6 +155,7 @@ CORE_MINI_AXI_SIM_TESTCASES = [
     "fencei_test",
     "core_mini_axi_misa_test",
     "core_mini_axi_wrap_burst_test",
+    "core_mini_axi_csr_behavior_test",
 ]
 # END_TESTCASES_FOR_core_mini_axi_sim_cocotb
 
@@ -792,6 +794,11 @@ coralnpu_v2_binary(
 coralnpu_v2_binary(
     name = "fencei_test",
     srcs = ["fencei_test.cc"],
+)
+
+coralnpu_v2_binary(
+    name = "csr_behavior",
+    srcs = ["csr_behavior.S"],
 )
 
 cocotb_test_suite(

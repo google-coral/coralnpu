@@ -1072,3 +1072,24 @@ async def core_mini_axi_csr_illegal_write_test(dut):
         assert vtype_val == 0x80000000, (
             f"Expected vtype=0x80000000 (vill=1), got 0x{vtype_val:08x}"
         )
+
+
+@cocotb.test()
+async def core_mini_axi_csr_behavior_test(dut):
+    """Tests verify misc CSR behaviors (e.g. MIE fields)."""
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+    r = runfiles.Create()
+
+    with open(r.Rlocation("coralnpu_hw/tests/cocotb/csr_behavior.elf"),
+              "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+        await core_mini_axi.execute_from(entry_point)
+        await core_mini_axi.wait_for_wfi()
+
+        # Read address 0x10000 (DTCM) where we stored the mie value
+        mie_val = (await core_mini_axi.read(0x10000, 4)).view(np.uint32)[0]
+        # We expect 0x888 (MEIE | MTIE | MSIE).
+        assert mie_val == 0x888, f"MIE register incorrect! Expecting 0x888, got Read value: {hex(mie_val)}"

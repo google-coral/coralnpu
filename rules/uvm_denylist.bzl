@@ -78,6 +78,7 @@ SPIKE_DENYLIST = [
     "//tests/cocotb/exceptions:store_fault_0",
     "//tests/cocotb/rvv/load_store:load_store8_fault",
     "//tests/cocotb/rvv:vill_whole_reg_test",
+    "//tests/cocotb:csr_behavior",
     "//tests/cocotb:loop",
     "//tests/cocotb:registers",
     "//tests/cocotb:software_interrupt_test",
