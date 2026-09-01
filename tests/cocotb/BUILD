@@ -274,6 +274,7 @@ RVV_ASSEMBLY_TESTCASES = [
     "core_mini_rvv_vstart_trap_flush_test",
     "core_mini_rvv_vstart_vmv_scalar_test",
     "core_mini_rvv_vstart_vset_test",
+    "core_mini_rvv_vfrdiv_test",
 ]
 # END_TESTCASES_FOR_rvv_assembly_cocotb_test
 

@@ -98,6 +98,9 @@ template_rule(
         "rvv_vstart_vset_test": {
             "srcs": ["rvv_vstart_vset_test.S"],
         },
+        "rvv_vfrdiv_test": {
+            "srcs": ["rvv_vfrdiv_test.S"],
+        },
     },
 )
 
@@ -108,6 +111,7 @@ filegroup(
         "rvv_flush_race_test.elf",
         "rvv_load.elf",
         "rvv_small_loop_test.elf",
+        "rvv_vfrdiv_test.elf",
         "rvv_vill_loop_trap_test.elf",
         "rvv_vstart_rob_test.elf",
         "rvv_vstart_trap_flush_test.elf",

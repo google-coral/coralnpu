@@ -324,7 +324,7 @@ class SCore(p: Parameters) extends Module {
 
   // RV32F extension
   val floatCore       = Option.when(p.enableFloat)(FloatCore(p))
-  val floatReadPorts  = 3
+  val floatReadPorts  = if (p.enableRvv) 4 else 3
   val floatWritePorts = 2
   val fRegfile        =
     Option.when(p.enableFloat)(Module(new FRegfile(p, floatReadPorts, floatWritePorts)))
@@ -338,16 +338,14 @@ class SCore(p: Parameters) extends Module {
       false.B,
       Seq(
         io.dm.float_rs.get.valid             -> true.B,
-        floatCore.get.io.read_ports(0).valid -> true.B,
-        dispatch.io.frs1Read.get(0).valid    -> true.B
+        floatCore.get.io.read_ports(0).valid -> true.B
       )
     )
     fRegfile.get.io.read_ports(0).addr := MuxCase(
       0.U,
       Seq(
         io.dm.float_rs.get.valid             -> io.dm.float_rs.get.addr,
-        floatCore.get.io.read_ports(0).valid -> floatCore.get.io.read_ports(0).addr,
-        dispatch.io.frs1Read.get(0).valid    -> dispatch.io.frs1Read.get(0).addr
+        floatCore.get.io.read_ports(0).valid -> floatCore.get.io.read_ports(0).addr
       )
     )
     floatCore.get.io.read_ports(0).data := fRegfile.get.io.read_ports(0).data
@@ -357,6 +355,11 @@ class SCore(p: Parameters) extends Module {
       fRegfile.get.io.read_ports(j).valid := floatCore.get.io.read_ports(j).valid
       fRegfile.get.io.read_ports(j).addr  := floatCore.get.io.read_ports(j).addr
       floatCore.get.io.read_ports(j).data := fRegfile.get.io.read_ports(j).data
+    }
+
+    if (p.enableRvv) {
+      fRegfile.get.io.read_ports(3).valid := dispatch.io.frs1Read.get(0).valid
+      fRegfile.get.io.read_ports(3).addr  := dispatch.io.frs1Read.get(0).addr
     }
 
     // Broadcast data back from read port 0 to debug interface
@@ -489,12 +492,12 @@ class SCore(p: Parameters) extends Module {
       // ports work.
       val rvvFrsReg = Reg(Vec(p.instructionLanes, UInt(32.W)))
       for (i <- 0 until p.instructionLanes) {
-        // We use read_ports(0) for all lanes because scalar float operands
+        // We use read_ports(3) for all lanes because scalar float operands
         // are currently restricted to slot 0.
         rvvFrsReg(i) :=
           Mux(
             dispatch.io.frs1Read.get(i).valid,
-            fRegfile.get.io.read_ports(0).data.asWord,
+            fRegfile.get.io.read_ports(3).data.asWord,
             rvvFrsReg(i)
           )
         io.rvvcore.get.frs(i) := rvvFrsReg(i)

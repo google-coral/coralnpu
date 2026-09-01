@@ -363,20 +363,6 @@ class FloatCore(p: Parameters) extends Module {
     }
   }
 
-  for (i <- 0 until FpNewConfig.NUM_OPERANDS) {
-    io.read_ports(i).valid := read_ports_valid(i) && inst.valid
-    if (i == 0) {
-      floatCoreWrapper.io.operands_i(0) :=
-        Mux(
-          (inst.bits.opcode === FloatOpcode.OPFP) && (opfp_operation === FpNewOperation.I2F),
-          io.rs1.data,
-          NanBox(io.read_ports(0).data.asWord, width)
-        )
-    } else {
-      floatCoreWrapper.io.operands_i(i) := NanBox(io.read_ports(i).data.asWord, width)
-    }
-  }
-
   val fmt         = inst.bits.inst(26, 25)
   val is_fmt_fp32 = fmt === 0.U
   val is_fmt_bf16 = (fmt === 2.U) && p.enableZfbfmin.B
@@ -428,6 +414,20 @@ class FloatCore(p: Parameters) extends Module {
   )
   floatCoreWrapper.io.flush_i    := false.B
   floatCoreWrapper.io.in_valid_i := (inst.valid && !fmv) && !fpuActive && rnd_mode.valid
+
+  for (i <- 0 until FpNewConfig.NUM_OPERANDS) {
+    io.read_ports(i).valid := read_ports_valid(i) && inst.valid && (!fpuActive || fmv)
+    if (i == 0) {
+      floatCoreWrapper.io.operands_i(0) :=
+        Mux(
+          (inst.bits.opcode === FloatOpcode.OPFP) && (opfp_operation === FpNewOperation.I2F),
+          io.rs1.data,
+          NanBox(io.read_ports(0).data.asWord, width)
+        )
+    } else {
+      floatCoreWrapper.io.operands_i(i) := NanBox(io.read_ports(i).data.asWord, width)
+    }
+  }
 
   val fmv_fpr_data = Mux(is_fmt_bf16, Cat("hffff".U(16.W), io.rs1.data(15, 0)), io.rs1.data(31, 0))
   io.write_ports(0)

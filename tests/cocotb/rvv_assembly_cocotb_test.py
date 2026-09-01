@@ -2060,3 +2060,37 @@ async def core_mini_rvv_vstart_trap_flush_test(dut):
     assert test_results_trap[
         0
     ] == 5, f"Expected vstart=5 to be preserved after trap flush, got {test_results_trap[0]}"
+
+
+@cocotb.test()
+async def core_mini_rvv_vfrdiv_test(dut):
+    """Testbench to test OPFVF instruction with scalar float register."""
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+    r = runfiles.Create()
+
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/rvv/rvv_vfrdiv_test.elf")
+    if not elf_path:
+        raise ValueError("elf_path must consist a valid path")
+    with open(elf_path, "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+    with open(elf_path, "rb") as f:
+        v18_result_addr = core_mini_axi.lookup_symbol(f, "v18_result")
+
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_wfi()
+
+    v18_result = (await core_mini_axi.read(v18_result_addr,
+                                           16)).view(np.uint32)
+    dut._log.info(f"v18_result: {[hex(x) for x in v18_result]}")
+
+    # Expected: 0x8000000080000000dd6762d400000000 -> words in LE order:
+    # word 0: 0x00000000, word 1: 0xdd6762d4, word 2: 0x80000000, word 3: 0x80000000
+    expected_v18 = np.array([0x00000000, 0xdd6762d4, 0x80000000, 0x80000000],
+                            dtype=np.uint32)
+    assert np.array_equal(
+        v18_result, expected_v18
+    ), f"v18 mismatch: got {[hex(x) for x in v18_result]}, expected {[hex(x) for x in expected_v18]}"
