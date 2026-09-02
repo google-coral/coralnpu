@@ -59,6 +59,7 @@ chisel_library(
         "TlulSocketM1.scala",
         "TlulToSram.scala",
         "TlulWidthBridge.scala",
+        "TransposeBuffer.scala",
     ],
     deps = [
         "//hdl/chisel/src/common",
@@ -225,6 +226,21 @@ verilator_cocotb_model(
     hdl_toplevel = "TlulToSram",
     trace = True,
     verilog_source = "//hdl/chisel/src/bus:TlulToSram.sv",
+)
+
+chisel_cc_library(
+    name = "transpose_buffer_cc_library",
+    chisel_lib = ":bus",
+    emit_class = "bus.TransposeBufferEmitter",
+    module_name = "TransposeBuffer",
+)
+
+verilator_cocotb_model(
+    name = "transpose_buffer_model",
+    cflags = VERILATOR_BUILD_ARGS,
+    hdl_toplevel = "TransposeBuffer",
+    trace = True,
+    verilog_source = "//hdl/chisel/src/bus:TransposeBuffer.sv",
 )
 
 chisel_cc_library(

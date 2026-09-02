@@ -647,6 +647,29 @@ cocotb_test_suite(
     verilator_model = "//hdl/chisel/src/bus:tlul_to_sram_model",
 )
 
+# BEGIN_TESTCASES_FOR_transpose_buffer_cocotb_test
+TRANSPOSE_BUFFER_TESTCASES = [
+    "test_transpose_buffer_randomized",
+]
+# END_TESTCASES_FOR_transpose_buffer_cocotb_test
+
+cocotb_test_suite(
+    name = "transpose_buffer_cocotb_test",
+    simulators = [
+        "verilator",
+    ],
+    testcases = TRANSPOSE_BUFFER_TESTCASES,
+    testcases_vname = "TRANSPOSE_BUFFER_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "TransposeBuffer",
+        "test_module": ["test_transpose_buffer.py"],
+        "waves": True,
+        "default_testcase_size": "medium",
+        "size": "medium",
+    },
+    verilator_model = "//hdl/chisel/src/bus:transpose_buffer_model",
+)
+
 # BEGIN_TESTCASES_FOR_tlul_local_xbar_cocotb_test
 TLUL_LOCAL_XBAR_TESTCASES = [
     "test_concurrent_access",
