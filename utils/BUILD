@@ -25,8 +25,12 @@ py_binary(
 py_library(
     name = "run_uvm_regression",
     srcs = ["run_uvm_regression.py"],
+    data = ["//rules:uvm_denylist.bzl"],
     imports = ["."],
-    deps = [requirement("pyelftools")],
+    deps = [
+        requirement("pyelftools"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
 )
 
 py_test(
@@ -35,9 +39,11 @@ py_test(
         "run_uvm_regression.py",
         "run_uvm_regression_test.py",
     ],
+    data = ["//rules:uvm_denylist.bzl"],
     main = "run_uvm_regression_test.py",
     deps = [
         requirement("pyelftools"),
+        "@bazel_tools//tools/python/runfiles",
     ],
 )
 

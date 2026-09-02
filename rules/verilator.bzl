@@ -8,26 +8,7 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_hdl//verilator:defs.bzl", "verilator_cc_library")
 load("@rules_hdl//verilog:providers.bzl", "VerilogInfo", "verilog_library")
-
-# List of targets to exclude from Spike co-simulation (e.g. tests requiring external IRQs)
-SPIKE_DENYLIST = [
-    "//hw_sim:mailbox_example",
-    "//tests/cocotb/exceptions:store_fault_0",
-    "//tests/cocotb/rvv:rvv_add",
-    "//tests/cocotb/rvv:rvv_load",
-    "//tests/cocotb/rvv:vstart_store",
-    "//tests/cocotb:loop",
-    "//tests/cocotb:registers",
-    "//tests/cocotb:software_interrupt_test",
-    "//tests/cocotb:stress_test",
-    "//tests/cocotb:wfi_slot_0",
-    "//tests/cocotb:wfi_slot_1",
-    "//tests/cocotb:wfi_slot_2",
-    "//tests/cocotb:wfi_slot_3",
-    "//tests/cocotb/exceptions:vfwadd_trap",
-    "//tests/cocotb/exceptions:vfwsub_trap",
-    "//tests/cocotb/exceptions:vfwmul_trap",
-]
+load("//rules:uvm_denylist.bzl", "SPIKE_DENYLIST")
 
 def _verilator_model_impl(ctx):
     hdl_toplevel = ctx.attr.hdl_toplevel
