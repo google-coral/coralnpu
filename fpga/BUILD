@@ -561,7 +561,7 @@ NEXUS_COMMON_CORES = [
     "//fpga/ip/ispyocto:ispyocto_core",
 ] + DDR_CORES
 
-# Generate Nexus build targets (bitstream and synth_only)
+# Generate Nexus build targets (bitstream, synth_only, and elab_only)
 _NEXUS_NAME_MAP = {
     "build_chip_nexus_" + build_type + m["suffix"] + b["suffix"]: {
         "cores": CORALNPU_SOC_CORES_COMMON + NEXUS_COMMON_CORES + [m["chisel_core"]],
@@ -576,13 +576,15 @@ _NEXUS_NAME_MAP = {
             "--EnableAutoboot=1",
             "--MemInitFile=" + m["rom_vmem_file"],
             "--BootAddr=268435456",
-        ] if b["is_rom"] else []) + (["--pnr=none"] if build_type == "synth_only" else []),
+        ] if b["is_rom"] else []) + (["--pnr=none"] if build_type in ("synth_only", "elab_only") else []),
+        "target": "elab" if build_type == "elab_only" else "synth",
     }
     for m in _MEM_CONFIGS
     for b in _BOOT_MODES
     for build_type in [
         "bitstream",
         "synth_only",
+        "elab_only",
     ]
 }
 
@@ -594,7 +596,6 @@ template_rule(
     },
     systems = ["com.google.coralnpu:fpga:chip_nexus:0.1"],
     tags = ["manual"],
-    target = "synth",
 )
 
 filegroup(

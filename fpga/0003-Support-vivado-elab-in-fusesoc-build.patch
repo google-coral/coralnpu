@@ -1,0 +1,99 @@
+From 8e7f6d5c4b3a210987654321fedcba0987654321 Mon Sep 17 00:00:00 2001
+From: Alex Van Damme <atv@google.com>
+Date: Wed, 2 Sep 2026 10:50:00 -0700
+Subject: [PATCH] Support vivado elab in fusesoc_build
+
+Support target="elab" in fusesoc_build by running fusesoc in setup-only
+mode to generate the Vivado project, followed by running Vivado in batch
+mode to execute RTL elaboration (synth_design -rtl -name rtl_1).
+---
+ rules/fusesoc.bzl | 44 +++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 41 insertions(+), 3 deletions(-)
+
+--- a/rules/fusesoc.bzl
++++ b/rules/fusesoc.bzl
+@@ -72,11 +72,14 @@
+     )
+ 
+     args.add("run")
+-    args.add(ctx.attr.target, format = "--target=%s")
+-    args.add_all([
+-        "--setup",
+-        "--build",
+-    ])
++    args.add("synth" if ctx.attr.target == "elab" else ctx.attr.target, format = "--target=%s")
++    if ctx.attr.target == "elab":
++        args.add("--setup")
++    else:
++        args.add_all([
++            "--setup",
++            "--build",
++        ])
+     args.add(out_dir, format = "--build-root=%s")
+ 
+     args.add_all(ctx.attr.systems)
+@@ -143,14 +146,14 @@
+             transitive = [extra_inputs, cc_toolchain.all_files, ctx.attr._python_files.files],
+         )
+         path = verilator_wrapper.dirname + ":/bin:/usr/bin:/usr/local/bin"
+-    elif ctx.attr.target == "synth":
++    elif ctx.attr.target in ("synth", "elab"):
+         path = BIN_PATHS["vivado"] + ":/bin:/usr/bin:/usr/local/bin"
+     else:
+         path = BIN_PATHS["verilator"] + ":/bin:/usr/bin:/usr/local/bin"
+ 
+     env = dicts.add(
+         # Verilator build doesn't need nonhermetic environment variables
+-        ENV if ctx.attr.target == "synth" else {},
++        ENV if ctx.attr.target in ("synth", "elab") else {},
+         extra_env,
+         {
+             "HOME": home_dir,
+@@ -185,6 +188,45 @@
+             arguments = [args],
+             use_default_shell_env = False,
+             env = env,
++            tools = [ctx.executable._fusesoc],
++        )
++    elif ctx.attr.target == "elab":
++        system_name_sanitized = ctx.attr.systems[0].replace(":", "_")
++        work_dir = "{}/{}/synth-vivado".format(out_dir, system_name_sanitized)
++        elab_cmd = """\
++set -e
++{fusesoc_bin} "$@"
++cd {work_dir}
++cat << 'EOF' > run_elab.tcl
++source {system_name}.tcl
++if {{[catch {{synth_design -rtl -name rtl_1}} err]}} {{
++    puts "ERROR: Elaboration failed: $err"
++    exit 1
++}}
++puts "=========================================================="
++puts "=== VIVADO RTL ELABORATION COMPLETED SUCCESSFULLY ==="
++puts "=========================================================="
++EOF
++vivado -notrace -mode batch -source run_elab.tcl
++cp -f vivado.log ../elab.log
++echo "Elaboration log: {out_dir}/{system_name}/elab.log"
++""".format(
++            fusesoc_bin = ctx.executable._fusesoc.path,
++            work_dir = work_dir,
++            system_name = system_name_sanitized,
++            out_dir = out_dir,
++        )
++        ctx.actions.run_shell(
++            mnemonic = "VivadoElab",
++            outputs = outputs,
++            inputs = depset(
++                ctx.files.srcs + ctx.files.cores + ctx.files._fusesoc + [cfg_file],
++                transitive = [extra_inputs],
++            ),
++            command = elab_cmd,
++            arguments = [args],
++            use_default_shell_env = False,
++            env = env,
+             tools = [ctx.executable._fusesoc],
+         )
+     else:
+-- 
+2.39.5
