@@ -52,7 +52,7 @@ jobs:
       CI_RUNS_ON: ubuntu-24.04
       CI_OS_NAME: linux
       CI_TMPDIR: /tmp
-      CI_CORALNPU_MPACT_COMMIT: 61a6317aca4de62a4862181d24dc22a1795bda43
+      CI_CORALNPU_MPACT_COMMIT: e2a26e6d983f13d4c10875e4e5878a6171c04a06
     steps:
       - uses: actions/checkout@v5
         with:

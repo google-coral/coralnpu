@@ -14,6 +14,7 @@ build --conlyopt='-std=gnu11'
 
 # Disable the low signal-to-noise ratio warnings
 build --copt=-Wno-unused-function
+build --copt=-iquote.
 
 # Disable tool build warnings. The tools are fetched/generated from OSS repos
 build --host_copt=-Wno-unused-variable

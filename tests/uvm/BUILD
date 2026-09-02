@@ -77,7 +77,7 @@ filter_files_by_extension(
 
 filter_files_by_extension(
     name = "coralnpu_cosim_lib_static_archive",
-    src = "@coralnpu-mpact-verilator//sim/cosim:coralnpu_cosim_lib_static",
+    src = "@coralnpu_mpact//sim/cosim:coralnpu_cosim_lib_static",
     extensions = ["a"],
 )
 
