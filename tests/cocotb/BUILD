@@ -80,6 +80,7 @@ verilator_cocotb_model(
     hdl_toplevel = "RvvCoreMiniAxi",
     trace = False,
     verilog_source = "//hdl/chisel/src/coralnpu:RvvCoreMiniAxi.sv",
+    vlt_tpl = "//coralnpu_test_utils:dispatch.vlt.tpl",
     deps = [
         "//hdl/verilog:sram_backdoor",
     ],
@@ -470,6 +471,7 @@ cocotb_test_suite(
         "test_module": ["rvv_assembly_cocotb_test.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
+            "//coralnpu_test_utils:dispatch_verifier",
             "//coralnpu_test_utils:rvv_type_util",
             "//coralnpu_test_utils:sim_test_fixture",
             requirement("tqdm"),
@@ -1256,6 +1258,7 @@ vcs_test_macro_smoke_test(
     waves = False,
     deps = [
         "//coralnpu_test_utils:core_mini_axi_sim_interface",
+        "//coralnpu_test_utils:dispatch_verifier",
     ],
 )
 

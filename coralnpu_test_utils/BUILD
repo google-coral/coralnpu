@@ -240,6 +240,21 @@ py_library(
     ],
 )
 
+exports_files(["dispatch.vlt.tpl"])
+
+py_library(
+    name = "dispatch_verifier",
+    srcs = [
+        "dispatch_verifier/disasm.py",
+        "dispatch_verifier/monitor.py",
+        "dispatch_verifier/terminal_ui.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("cocotb"),
+    ],
+)
+
 py_binary(
     name = "rvv_cpp_util_header_generator",
     srcs = [

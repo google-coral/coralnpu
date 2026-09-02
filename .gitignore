@@ -28,3 +28,4 @@ toolchain/build_scripts/*.tar.*
 # UVM outputs
 uvm_regression_*/
 uvm_regression_*.zip
+dispatch.log
