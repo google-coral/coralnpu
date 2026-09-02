@@ -4,14 +4,14 @@ Date: Tue, 25 Aug 2026 20:45:30 +0000
 Subject: [PATCH] Patch mpact_riscv WORKSPACE
 
 ---
- WORKSPACE | 7 +++++++
+ WORKSPACE | 9 +++++++++
  1 file changed, 7 insertions(+)
 
 diff --git a/WORKSPACE b/WORKSPACE
 index 6900273..8770e89 100644
 --- a/WORKSPACE
 +++ b/WORKSPACE
-@@ -28,6 +28,13 @@ http_archive(
+@@ -28,6 +28,15 @@ http_archive(
      sha256 = "38faef26745f34a82de0daf3b65a207c8d2ecf825f37484a4a27132512583574",
      strip_prefix = "mpact-riscv-cb68bd4a2cb80dea24d9760dc6397b5854ea41bd",
      url = "https://github.com/google/mpact-riscv/archive/cb68bd4a2cb80dea24d9760dc6397b5854ea41bd.tar.gz",
@@ -20,6 +20,8 @@ index 6900273..8770e89 100644
 +        "@coralnpu_hw//third_party/patches:mpact_riscv_vector_memory.patch",
 +        "@coralnpu_hw//third_party/patches:mpact_riscv_vrgather.patch",
 +        "@coralnpu_hw//third_party/patches:mpact_riscv_fma_underflow.patch",
++        "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_helpers.patch",
++        "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_f_instructions.patch",
 +    ],
 +    patch_args = ["-p1"],
  )
