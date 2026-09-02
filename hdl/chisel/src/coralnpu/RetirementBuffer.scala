@@ -106,6 +106,16 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     .fire && (io.fault.bits.mcause =/= 7.U) && (io.fault.bits.mcause =/= 5.U))
   val faultPc = io.fault.bits.mepc
 
+  // Registered copy of the fault for the retirement scan. The same-cycle
+  // io.fault (combinational from dispatch fires/faults) may only be used to
+  // enqueue: if the scan retired a trap from it, trapRetired would depend
+  // combinationally on dispatch, closing a loop through the RVV flush, the
+  // command-queue credit, and dispatch ready. The enqueued entry carries the
+  // trap flag, so retiring it one cycle later loses nothing, and the BRU
+  // fault interlock stalls dispatch during that cycle.
+  val faultRetire        = Pipe(io.fault)
+  val noFire0FaultRetire = RegNext(noFire0Fault, false.B)
+
   // Mini-mode optimization state: Track the expected PC of the next instruction across dispatch cycles.
   // These are used to verify control flow continuity (linkOk) for the first instruction of a dispatch group.
   // If the fetcher sends an instruction that doesn't match the expected target (e.g. due to mis-prediction
@@ -384,12 +394,14 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         )
       )
       .getOrElse(Seq(false.B))
-    // Check if this entry is the faulting instruction
+    // Check if this entry is the faulting instruction. Matched against the
+    // registered fault so the scan has no same-cycle dependence on dispatch.
     val isRvvFault =
-      if (p.enableRvv) io.fault.valid && io.fault.bits.is_rvv.getOrElse(false.B) else false.B
+      if (p.enableRvv) faultRetire.valid && faultRetire.bits.is_rvv.getOrElse(false.B) else false.B
     val rvvTagMatch =
-      if (p.enableRvv) (io.fault.bits.rob_tag.getOrElse(0.U) === pIdx) else false.B
-    val faultingInstr = io.fault.valid && Mux(isRvvFault, rvvTagMatch, bufferEntry.addr === faultPc)
+      if (p.enableRvv) (faultRetire.bits.rob_tag.getOrElse(0.U) === pIdx) else false.B
+    val faultingInstr =
+      faultRetire.valid && Mux(isRvvFault, rvvTagMatch, bufferEntry.addr === faultRetire.bits.mepc)
     // The entry is active if it's validly enqueued.
     val validBufferEntry = (i.U < instBuffer.io.nEnqueued)
 
@@ -465,14 +477,15 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     // So we treat nextValid as false.
     val nextValid = if (i < bufferSize - 1) ((i.U +& 1.U) < instBuffer.io.nEnqueued) else false.B
     val nextAddr  = if (i < bufferSize - 1) instBuffer.io.dataOut(i + 1).addr else 0.U
-    val nextAddrValid = nextValid || noFire0Fault || io.inst(0).valid
+    // No same-cycle fault bypass here: a no-fire fault is enqueued this cycle
+    // and the scan sees it as the next buffer entry from the following cycle,
+    // keeping trapRetired free of combinational paths from dispatch.
+    val nextAddrValid = nextValid || io.inst(0).valid
 
     val lane0LinkOk = regAfterFlush || (io
       .inst(0)
       .bits
       .addr === regLastTarget) || (regLastIsBranch && io.inst(0).bits.addr === regLastAddr + 4.U)
-    val faultLinkOk = regAfterFlush ||
-      (io.fault.bits.mepc === regLastTarget) || (regLastIsBranch && io.fault.bits.mepc === regLastAddr + 4.U)
     val fallthrough = bufferEntry.addr + 4.U
 
     // Check next instruction's linkOk bit to verify control flow continuity.
@@ -484,7 +497,6 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       true.B,
       Seq(
         (nextValid && (i.U < (bufferSize - 1).U)) -> nextLinkOk,
-        noFire0Fault                              -> faultLinkOk,
         io.inst(0).valid                          -> lane0LinkOk
       )
     )
@@ -492,7 +504,6 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       nextAddr,
       Seq(
         nextValid        -> nextAddr,
-        noFire0Fault     -> io.fault.bits.mepc,
         io.inst(0).valid -> io.inst(0).bits.addr
       )
     ) === fallthrough)
@@ -509,11 +520,16 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     val prevCfDone   = resultBuffer(i).valid && resultBuffer(i).bits.cfDone
 
     // Only allow new data/cf updates if the entry is actually valid in instBuffer
-    val newCfDone   = validBufferEntry && cfReady
-    val isMpause    = bufferEntry.isMpause
+    val newCfDone = validBufferEntry && cfReady
+    val isMpause  = bufferEntry.isMpause
+    // A no-fire fault is attributed as a trap on the control-flow instruction
+    // that preceded it (its retirement then flushes the enqueued fault entry,
+    // keeping it out of the retire stream). The registered flag preserves that
+    // attribution one cycle later, when the fault entry has entered the buffer
+    // and provides nextValid/nextLinkOk.
     val currentTrap = resultBuffer(
       i
-    ).bits.trap || faultingInstr || (validBufferEntry && bufferEntry.trap) || (validBufferEntry && isControlFlow && newCfDone && (!cfMatch || noFire0Fault) && !isMpause)
+    ).bits.trap || faultingInstr || (validBufferEntry && bufferEntry.trap) || (validBufferEntry && isControlFlow && newCfDone && (!cfMatch || noFire0FaultRetire) && !isMpause)
 
     val trapReady =
       bufferEntry.trap || (isControlFlow && newCfDone) || (faultingInstr && (!bufferEntry.isVector || isRvvFault))
@@ -556,7 +572,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         resultBuffer(i).bits.result
       )
 
-      val allowWritebackTrap = validBufferEntry && isControlFlow && newCfDone && noFire0Fault
+      val allowWritebackTrap = validBufferEntry && isControlFlow && newCfDone && noFire0FaultRetire
       resultUpdate(i).bits.result := Mux(currentTrap && !allowWritebackTrap, 0.U, result)
     }
   }
@@ -650,7 +666,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     for (i <- 0 until p.retirementLanes) {
       val valid      = (i.U < instBuffer.io.deqReady)
       val allowDebug =
-        resultUpdate(i).bits.trap && instBuffer.io.dataOut(i).isControlFlow && noFire0Fault
+        resultUpdate(i).bits.trap && instBuffer.io.dataOut(i).isControlFlow && noFire0FaultRetire
       debug.inst(i).valid     := valid
       debug.inst(i).bits.pc   := MuxOR(valid, instBuffer.io.dataOut(i).addr)
       debug.inst(i).bits.inst := MuxOR(valid && !mini.B, instBuffer.io.dataOut(i).inst)

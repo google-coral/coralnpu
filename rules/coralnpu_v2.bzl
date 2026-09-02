@@ -393,6 +393,8 @@ DENYLIST = [
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_itcm512kb_dtcm512kb",
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem",
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_itcm512kb_dtcm512kb",
+    "//tests/cocotb/vme_test:vme_matmul_test_program",
+    "//tests/cocotb/vme_test:vme_test_program",
 ]
 
 # Map of targets to custom timeouts (in nanoseconds)

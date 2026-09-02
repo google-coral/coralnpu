@@ -566,7 +566,6 @@ chisel_cc_library(
 CORE_MINI_AXI_VOPTS = [
     "-DUSE_GENERIC",
     # Warnings that we disable for fpnew
-    "-Wno-UNOPTFLAT",
     "-Wno-ASCRANGE",
     "-Wno-WIDTHEXPAND",
     "-Wno-WIDTHTRUNC",
@@ -792,7 +791,6 @@ template_rule(
         "-Wno-LATCH",
         "-Wno-SIDEEFFECT",
         "-Wno-MULTIDRIVEN",
-        "-Wno-UNOPTFLAT",
         "-Wno-BLKANDNBLK",
         "-Wno-CASEX",
         # FPNEW
@@ -863,7 +861,6 @@ template_rule(
         "-Wno-LATCH",
         "-Wno-SIDEEFFECT",
         "-Wno-MULTIDRIVEN",
-        "-Wno-UNOPTFLAT",
         "-Wno-BLKANDNBLK",
         "-Wno-CASEX",
         # FPNEW

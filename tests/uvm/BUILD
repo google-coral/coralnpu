@@ -90,7 +90,6 @@ verilator_model(
         "+define+ZVE32F_ON",
         "+define+DUMP_WAVES_VCD",
         "-Wno-PINMISSING",
-        "-Wno-UNOPTFLAT",
         "-Wno-lint",
         "-Wno-style",
         "-Wno-fatal",

@@ -80,15 +80,6 @@ module RvvFrontEnd#(parameter N = 4,
   count_t valid_inst_count_q;     // The sum of valid_inst_q
   RVVInstruction inst_q [N-1:0];  // The instruction in the slot
 
-  // Backpressure
-  count_t valid_in_psum [N:0];
-  always_comb begin
-    valid_in_psum[0] = 0;
-    for (int i = 0; i < N; i++) begin
-      valid_in_psum[i+1] = valid_in_psum[i] + inst_valid_i[i];
-    end
-  end
-
   // State, for time being lets do not state forwarding for timing
   logic config_state_reduction;
   always_comb begin
@@ -106,15 +97,19 @@ module RvvFrontEnd#(parameter N = 4,
     queue_capacity = queue_capacity_i - capacity_t'(valid_inst_count_q);
   end
 
+  // Ready depends only on registered queue occupancy, never on inst_valid_i,
+  // so the dispatch valid/ready handshake has no combinational cycle.
+  for (genvar gi = 0; gi < N; gi++) begin : g_ready
+    assign inst_ready_o[gi] = (capacity_t'(gi) < queue_capacity);
+  end
   logic inst_accepted [N-1:0];
   count_t valid_inst_count_d;
   always_comb begin
+    valid_inst_count_d = 0;
     for (int i = 0; i < N; i++) begin
-      inst_accepted[i] = (capacity_t'(valid_in_psum[i]) < queue_capacity) && inst_valid_i[i];
-      inst_ready_o[i] = inst_accepted[i];
+      inst_accepted[i] = inst_ready_o[i] && inst_valid_i[i];
+      valid_inst_count_d += count_t'(inst_accepted[i]);
     end
-    valid_inst_count_d = (capacity_t'(valid_in_psum[N]) < queue_capacity) ?
-        valid_in_psum[N] : count_t'(queue_capacity);
   end
 
   always_ff @(posedge clk or negedge rstn) begin
@@ -530,6 +525,7 @@ module RvvFrontEnd#(parameter N = 4,
     trap_data.pc = '0;
     trap_data.bits = '0;
     trap_data.opcode = RVV;
+    trap_data.rob_tag = '0;
 
     for (int i = 0; i < N; i++) begin
       if (unaligned_trap_valid[i]) begin

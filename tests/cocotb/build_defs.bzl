@@ -24,7 +24,6 @@ VERILATOR_BUILD_ARGS = [
     "-Wno-SIDEEFFECT",
     "-Wno-MULTIDRIVEN",
     "-Wno-SPLITVAR",
-    "-Wno-UNOPTFLAT",
     "-Wno-BLKANDNBLK",
     "-Wno-CASEX",
     # Warnings that we disable for fpnew
