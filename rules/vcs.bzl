@@ -216,7 +216,7 @@ def _vcs_binary_impl(ctx):
         runner_content.append("USER_CM_DIR=0")
         runner_content.append('for arg in "${SIMV_ARGS[@]}"; do')
         runner_content.append('  case "$arg" in')
-        runner_content.append('    -cm_dir|-cm_dir=*) USER_CM_DIR=1 ;;')
+        runner_content.append("    -cm_dir|-cm_dir=*) USER_CM_DIR=1 ;;")
         runner_content.append("  esac")
         runner_content.append("done")
     runner_content.append('RUNNER_DIR=$(dirname "$0")')

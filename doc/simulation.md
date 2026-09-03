@@ -79,6 +79,7 @@ prints where the database was written.
 
 To control where coverage lands yourself, either set an environment variable
 (the same directory is reused across runs, so results accumulate and merge):
+
 ```bash
 VCS_COVERAGE_DIR=$PWD/cov_rvv_add ./bazel-bin/tests/vcs_sim/rvv_core_mini_verification_axi_sim \
     +binary=$ELF +permissive -cm line+cond+fsm+branch+tgl+assert -l run.log
