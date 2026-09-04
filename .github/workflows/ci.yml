@@ -135,15 +135,17 @@ jobs:
           persist-credentials: false
       - name: Free Disk Space
         run: |
-          sudo rm -rf /usr/share/dotnet || true
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /opt/ghc || true
-          sudo rm -rf /usr/local/share/boost || true
+          set -x
+          sudo rm -rf /opt/hostedtoolcache "$AGENT_TOOLSDIRECTORY" || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
+          sudo rm -rf /usr/local/share/powershell /usr/share/swift || true
+          sudo docker system prune -af --volumes || true
           df -h
+          df -i
       - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}
+          disk-cache: false
           repository-cache: true
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - id: id
@@ -176,6 +178,12 @@ jobs:
               --noshow_progress \
               --test_summary=terse \
               //...
+      - name: Report Disk Space After Exclusive Tests
+        if: always()
+        run: |
+          set -x
+          df -i
+          df -h
 
   bazel-test-parallel:
     needs: build-docker
@@ -191,15 +199,17 @@ jobs:
           persist-credentials: false
       - name: Free Disk Space
         run: |
-          sudo rm -rf /usr/share/dotnet || true
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /opt/ghc || true
-          sudo rm -rf /usr/local/share/boost || true
+          set -x
+          sudo rm -rf /opt/hostedtoolcache "$AGENT_TOOLSDIRECTORY" || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
+          sudo rm -rf /usr/local/share/powershell /usr/share/swift || true
+          sudo docker system prune -af --volumes || true
           df -h
+          df -i
       - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}
+          disk-cache: false
           repository-cache: true
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - id: id
@@ -232,3 +242,9 @@ jobs:
               --noshow_progress \
               --test_summary=terse \
               //...
+      - name: Report Disk Space After Non-Exclusive Tests
+        if: always()
+        run: |
+          set -x
+          df -i
+          df -h
