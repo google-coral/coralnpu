@@ -14,8 +14,16 @@
 
 """Bazel functions for VCS."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@coralnpu_hw//rules:verilog.bzl", "collect_verilog_files")
 load("@rules_hdl//verilog:providers.bzl", "VerilogInfo")
+
+def _has_compile_time_coverage(command):
+    """Returns True if the given VCS command enables code coverage (-cm)."""
+    for arg in command:
+        if arg == "-cm" or arg.startswith("-cm="):
+            return True
+    return False
 
 def _vcs_testbench_test_impl(ctx):
     all_files = collect_verilog_files(ctx.attr.deps).to_list()
@@ -153,6 +161,13 @@ def _vcs_binary_impl(ctx):
         vcs_simv_output.path,
     ] + cflags + ctx.attr.build_args
 
+    # Append coverage metrics requested via --//rules:vcs_coverage_types unless
+    # the target already compiles with its own -cm flag.
+    coverage_types = ctx.attr._vcs_coverage_types[BuildSettingInfo].value
+    if coverage_types and not _has_compile_time_coverage(vcs_command):
+        vcs_command.extend(["-cm", "+".join(coverage_types)])
+    coverage_enabled = _has_compile_time_coverage(vcs_command)
+
     package_files = []
     other_files = []
     for file in verilog_files:
@@ -195,8 +210,34 @@ def _vcs_binary_impl(ctx):
         '    SIMV_ARGS+=("$arg")',
         "  fi",
         "done",
-        'RUNNER_DIR=$(dirname "$0")',
-        "# Filter out Synopsys noise!",
+    ]
+    if coverage_enabled:
+        runner_content.append("# Detect a user-supplied -cm_dir (accepts \"-cm_dir path\" and \"-cm_dir=path\").")
+        runner_content.append("USER_CM_DIR=0")
+        runner_content.append('for arg in "${SIMV_ARGS[@]}"; do')
+        runner_content.append('  case "$arg" in')
+        runner_content.append("    -cm_dir|-cm_dir=*) USER_CM_DIR=1 ;;")
+        runner_content.append("  esac")
+        runner_content.append("done")
+    runner_content.append('RUNNER_DIR=$(dirname "$0")')
+    if coverage_enabled:
+        runner_content += [
+            "",
+            "# Code coverage is compiled into this simv (-cm). VCS derives the default",
+            "# coverage database from argv[0], which points into bazel-out; a leftover",
+            "# database there from an earlier build makes the simv abort at startup",
+            "# with Error-[MON-ICDF] (Incompatible Code Coverage Directory).",
+            "# Remove any stale database and redirect -cm_dir to a writable per-run",
+            "# directory instead (override with VCS_COVERAGE_DIR to accumulate runs).",
+            'rm -rf "$RUNNER_DIR/%s_simv.vdb"' % ctx.attr.name,
+            'COV_DB_DIR=""',
+            'if [[ "$USER_CM_DIR" -eq 0 ]]; then',
+            "  COV_DB_DIR=\"${VCS_COVERAGE_DIR:-${TEST_TMPDIR:-$PWD}/" + ctx.attr.name + "_coverage.$$_$(date +%s)}\"",
+            '  SIMV_ARGS+=("-cm_dir" "$COV_DB_DIR")',
+            "fi",
+        ]
+    runner_content.append("# Filter out Synopsys noise!")
+    runner_content += [
         '"$RUNNER_DIR/%s_simv" "${SIMV_ARGS[@]}" 2>&1 | grep -v -E \\' % ctx.attr.name,
         '  -e "^Chronologic VCS simulator" \\',
         '  -e "^Contains Synopsys proprietary" \\',
@@ -210,6 +251,13 @@ def _vcs_binary_impl(ctx):
         '  -e "^[A-Za-z]{3} [A-Za-z]{3} [ 0-9]{2}" \\',
         '  -e "^           V C S   S i m u l a t i o n" || true',
     ]
+    if coverage_enabled:
+        runner_content += [
+            'if [[ -n "$COV_DB_DIR" ]]; then',
+            '  echo "VCS coverage database written under: $COV_DB_DIR"',
+            '  echo "Coverage report: urg -dir \\"$COV_DB_DIR\\"/<simv>.vdb -report \\"$COV_DB_DIR\\"/urgReport"',
+            "fi",
+        ]
     ctx.actions.write(vcs_binary_output, "\n".join(runner_content), is_executable = True)
 
     headers_depset = depset([], transitive = headers_depsets)
@@ -241,6 +289,10 @@ _vcs_binary = rule(
             providers = [CcInfo],
         ),
         "build_args": attr.string_list(allow_empty = True),
+        "_vcs_coverage_types": attr.label(
+            doc = "Coverage metrics flag (--//rules:vcs_coverage_types).",
+            default = Label("//rules:vcs_coverage_types"),
+        ),
         "_cc_toolchain": attr.label(
             doc = "CC compiler.",
             default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
