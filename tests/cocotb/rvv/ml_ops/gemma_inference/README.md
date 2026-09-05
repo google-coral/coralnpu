@@ -285,3 +285,11 @@ threads only 4% more, so the model is built with 2 and four tiers run in
 parallel on the 8-vCPU host; `TB_SUPPORT` only threads a uop PC through the
 vector pipeline and is not worth removing. Multi-token generation belongs on
 the FPGA (50 MHz: about 0.65 s per token) rather than in RTL simulation.
+
+Arcilator was probed as an alternative kernel (CIRCT `circt-verilog --ir-hw`
+on the emitted core plus the SimMem wrapper, `-DXSIM` to skip the SVA
+blocks and keep the behavioral SRAM). Parsing and elaboration of the 13 MB
+design take 80 s, but the Moore-to-core lowering did not finish in 3 h of
+single-threaded CPU (2.4 GB), so no arcilator model could be built. That
+path needs work on the CIRCT side (or per-module lowering) before it can
+be evaluated; see docs/gemma3-sim-report.
