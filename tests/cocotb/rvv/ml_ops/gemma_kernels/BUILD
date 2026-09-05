@@ -31,6 +31,21 @@ cc_library(
     target_compatible_with = ["//platforms/cpu:coralnpu_v2"],
 )
 
+# The kernel set as a library, so other packages (gemma_inference) can link
+# the same code the per-kernel tests above exercise.
+cc_library(
+    name = "gemma_kernels",
+    srcs = [
+        "rvv_flashattention_kernel.cc",
+        "rvv_int8_matmul.cc",
+        "rvv_residual_add.cc",
+        "rvv_rms_norm.cc",
+        "rvv_tanh_gelu_mul.cc",
+    ],
+    target_compatible_with = ["//platforms/cpu:coralnpu_v2"],
+    deps = [":rvv_common_vec"],
+)
+
 # Compile binary for NPU simulation
 template_rule(
     coralnpu_v2_binary,

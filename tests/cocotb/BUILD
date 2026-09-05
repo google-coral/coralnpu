@@ -105,6 +105,46 @@ verilator_cocotb_model(
     ],
 )
 
+# Highmem core with the external memory inside the RTL (axi_sim_mem behind a
+# DPI backdoor) instead of the Python AXI memory model. Weight streaming for
+# ML workloads then never enters cocotb, which is ~50x faster per cycle. The
+# cocotb interface detects the missing io_axi_master_* ports automatically.
+genrule(
+    name = "rvv_core_mini_highmem_axi_simmem_sv",
+    srcs = ["//hdl/chisel/src/coralnpu:RvvCoreMiniHighmemAxi.sv"],
+    outs = ["RvvCoreMiniHighmemAxiSimMem.sv"],
+    cmd = "$(location //hdl/verilog:gen_axi_sim_mem_wrapper) " +
+          "$(location //hdl/chisel/src/coralnpu:RvvCoreMiniHighmemAxi.sv) RvvCoreMiniHighmemAxi $@",
+    tools = ["//hdl/verilog:gen_axi_sim_mem_wrapper"],
+)
+
+verilator_cocotb_model(
+    name = "rvv_core_mini_highmem_axi_simmem_model",
+    # Two Verilator threads: 1.5x over single-threaded on this design; four
+    # threads add only 4% more. -O3 and fast X-init add ~9% (measured,
+    # gemma_inference/README.md section 8). -march=native is not used so the
+    # cached model stays portable across hosts.
+    cflags = VERILATOR_BUILD_ARGS + [
+        "--threads",
+        "2",
+        "-Wno-UNOPTTHREADS",
+        "-O3",
+        "--x-initial",
+        "fast",
+    ],
+    hdl_toplevel = "RvvCoreMiniHighmemAxiSimMem",
+    trace = False,
+    verilog_source = ":RvvCoreMiniHighmemAxiSimMem.sv",
+    verilog_sources = [
+        "//hdl/chisel/src/coralnpu:RvvCoreMiniHighmemAxi.sv",
+        "//hdl/verilog:axi_sim_mem.sv",
+    ],
+    deps = [
+        "//hdl/verilog:ddr_sim_mem",
+        "//hdl/verilog:sram_backdoor",
+    ],
+)
+
 # VME (Zvt) variant. Adds -DZVT_ON so the SystemVerilog `RVVConfigState`
 # struct gets the matrix-extension fields it needs.
 verilator_cocotb_model(
