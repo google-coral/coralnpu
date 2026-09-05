@@ -43,6 +43,18 @@
 // Gemma 3 270M hyperparameters (google/gemma-3-270m config.json, verified
 // 2026-09-05). Changing any of these means a different model; the descriptor
 // carries them so the runner can assert the test and the ELF agree.
+#ifdef QWEN3_MODEL
+// Qwen/Qwen3-0.6B. The descriptor layout is shared, but the magic prevents
+// accidentally running one architecture with the other architecture's ELF.
+#define GEMMA3_MAGIC 0x51334D30u  // "Q3M0"
+#define GEMMA3_HIDDEN 1024
+#define GEMMA3_FFN 3072
+#define GEMMA3_HEADS 16
+#define GEMMA3_KV_HEADS 8
+#define GEMMA3_HEAD_DIM 128
+#define GEMMA3_LAYERS 28
+#define GEMMA3_VOCAB 151936
+#else
 #define GEMMA3_MAGIC 0x47334D30u  // "G3M0"
 #define GEMMA3_HIDDEN 640
 #define GEMMA3_FFN 2048
@@ -50,10 +62,13 @@
 #define GEMMA3_KV_HEADS 1
 #define GEMMA3_HEAD_DIM 256
 #define GEMMA3_LAYERS 18
+#define GEMMA3_VOCAB 262144
+#endif
 #define GEMMA3_Q_DIM (GEMMA3_HEADS * GEMMA3_HEAD_DIM)      // 1024
 #define GEMMA3_KV_DIM (GEMMA3_KV_HEADS * GEMMA3_HEAD_DIM)  // 256
 #define GEMMA3_RMS_EPS 1e-6f
-#define GEMMA3_VOCAB 262144
+#define GEMMA3_MAX_SEQ 1024  // FlashAttentionRVV's score buffer
+#define GEMMA3_SLIDING_WINDOW 512
 
 // Largest lm_head slice the runner will score in one command. Full-vocab
 // logits (262 144 rows) are scored in chunks of this size by the testbench.

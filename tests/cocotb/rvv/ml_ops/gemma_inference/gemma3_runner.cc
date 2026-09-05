@@ -36,8 +36,14 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <math.h>
 
+#ifdef CORALNPU_HOST_TEST
+extern uint64_t mcycle_read();
+extern void *host_ddr_pointer(uint32_t addr);
+#else
 #include "sw/utils/utils.h"
+#endif
 #include "tests/cocotb/rvv/ml_ops/gemma_inference/gemma3_model.h"
 
 extern "C" {
@@ -62,17 +68,38 @@ void gemma3_rope_inplace(float *__restrict__ x, size_t n_heads, size_t head_dim,
 uint32_t gemma3_argmax_f32(const float *x, size_t n);
 
 // ---- Testbench-visible symbols (DTCM .data) --------------------------------
-Gemma3Model model __attribute__((section(".data"), used, retain, aligned(16)));
-Gemma3Control ctrl __attribute__((section(".data"), used, retain, aligned(16)));
-float x_in[GEMMA3_HIDDEN] __attribute__((section(".data"), used, retain, aligned(16)));
-float x_out[GEMMA3_HIDDEN] __attribute__((section(".data"), used, retain, aligned(16)));
+#ifdef CORALNPU_HOST_TEST
+#define NPU_DATA __attribute__((aligned(16)))
+#else
+#define NPU_DATA __attribute__((section(".data"), used, retain, aligned(16)))
+#endif
+Gemma3Model model NPU_DATA;
+// Read by the blob builder to bind the firmware to its model architecture.
+extern const uint32_t model_magic __attribute__((used, retain)) = GEMMA3_MAGIC;
+Gemma3Control ctrl NPU_DATA;
+float x_in[GEMMA3_HIDDEN] NPU_DATA;
+float x_out[GEMMA3_HIDDEN] NPU_DATA;
 // Debug taps: last layer's intermediate tensors, for localizing a mismatch.
-float dbg_q[GEMMA3_Q_DIM] __attribute__((section(".data"), used, retain, aligned(16)));
-float dbg_attn[GEMMA3_Q_DIM] __attribute__((section(".data"), used, retain, aligned(16)));
-float dbg_ffn[GEMMA3_FFN] __attribute__((section(".data"), used, retain, aligned(16)));
+float dbg_q[GEMMA3_Q_DIM] NPU_DATA;
+float dbg_attn[GEMMA3_Q_DIM] NPU_DATA;
+float dbg_ffn[GEMMA3_FFN] NPU_DATA;
 }
 
 // ---- Scratch (DTCM .bss) ----------------------------------------------------
+#ifdef QWEN3_MODEL
+// Qwen norm weights multiply directly; Gemma's RmsNormF applies (1 + w).
+static void qwen_rms_norm(size_t rows, size_t dim, float eps, const float *in,
+                          const float *weight, float *out) {
+  for (size_t r = 0; r < rows; ++r) {
+    float sum = 0;
+    for (size_t i = 0; i < dim; ++i) sum += in[r * dim + i] * in[r * dim + i];
+    float inv = 1.0f / sqrtf(sum / dim + eps);
+    for (size_t i = 0; i < dim; ++i) out[r * dim + i] = (in[r * dim + i] * inv) * weight[i];
+  }
+}
+#define RmsNormF qwen_rms_norm
+#endif
+
 static float x[GEMMA3_HIDDEN] __attribute__((aligned(16)));
 static float h[GEMMA3_HIDDEN] __attribute__((aligned(16)));
 static float q[GEMMA3_Q_DIM] __attribute__((aligned(16)));
@@ -87,7 +114,11 @@ static int32_t acc[GEMMA3_MAX_VOCAB_ROWS] __attribute__((aligned(16)));
 
 template <typename T>
 static inline T *P(uint32_t addr) {
+#ifdef CORALNPU_HOST_TEST
+  return static_cast<T *>(host_ddr_pointer(addr));
+#else
   return reinterpret_cast<T *>(addr);
+#endif
 }
 
 #define TIMED(op, stmt)                                  \
@@ -144,27 +175,52 @@ static void decoder_layer(const Gemma3LayerWeights &L, uint32_t pos) {
 
   float *kc = P<float>(L.k_cache);
   float *vc = P<float>(L.v_cache);
-  for (size_t i = 0; i < KD; ++i) {
-    kc[pos * KD + i] = k[i];
-    vc[pos * KD + i] = v[i];
+  // Head-major caches with a fixed max_seq stride. Invoke attention once per
+  // KV group: its packed KV_len stride and modulo head mapping cannot express
+  // a partially filled multi-head cache or HF repeat_kv grouping.
+  const size_t group = GEMMA3_HEADS / GEMMA3_KV_HEADS;
+  const size_t start = (!L.is_global && pos >= GEMMA3_SLIDING_WINDOW)
+                           ? pos + 1 - GEMMA3_SLIDING_WINDOW : 0;
+  for (size_t kh = 0; kh < GEMMA3_KV_HEADS; ++kh) {
+    const size_t off = kh * model.max_seq * D;
+    for (size_t i = 0; i < D; ++i) {
+      kc[off + pos * D + i] = k[kh * D + i];
+      vc[off + pos * D + i] = v[kh * D + i];
+    }
+    TIMED(GEMMA3_OP_ATTENTION,
+          FlashAttentionRVV(group, 1, 1, pos + 1 - start, D, q + kh * group * D,
+                            kc + off + start * D, vc + off + start * D,
+                            attn + kh * group * D));
   }
-  // Q_len = 1 over KV rows 0..pos: causal by construction, no mask needed.
-  TIMED(GEMMA3_OP_ATTENTION,
-        FlashAttentionRVV(GEMMA3_HEADS, GEMMA3_KV_HEADS, 1, pos + 1, D, q, kc, vc, attn));
   for (size_t i = 0; i < QD; ++i) dbg_attn[i] = attn[i];
 
   linear_int8(attn, QD, L.wo, L.so, H, h, GEMMA3_OP_O_GEMV);
+#ifndef QWEN3_MODEL
   TIMED(GEMMA3_OP_NORM, rms_norm_inplace(1, H, h, P<const float>(L.post_attn_norm)));
+#endif
   TIMED(GEMMA3_OP_RESIDUAL, residual_add_inplace(x, h, H));
 
   // --- MLP block ---
   TIMED(GEMMA3_OP_NORM, RmsNormF(1, H, GEMMA3_RMS_EPS, x, P<const float>(L.pre_ffn_norm), h));
   linear_int8(h, H, L.wgate, L.sgate, F, gate, GEMMA3_OP_GATE_UP_GEMV);
   linear_int8(h, H, L.wup, L.sup, F, up, GEMMA3_OP_GATE_UP_GEMV);
+#ifdef QWEN3_MODEL
+  TIMED(GEMMA3_OP_GELU_MUL, {
+    for (size_t i = 0; i < F; ++i) {
+      // Stable SiLU, including large negative inputs (no exp overflow).
+      float e = expf(-fabsf(gate[i]));
+      float sigmoid = gate[i] >= 0 ? 1.0f / (1.0f + e) : e / (1.0f + e);
+      tmp[i] = (gate[i] * sigmoid) * up[i];
+    }
+  });
+#else
   TIMED(GEMMA3_OP_GELU_MUL, rvv_tanh_gelu_mul_f32(gate, up, tmp, F));
+#endif
   for (size_t i = 0; i < F; ++i) dbg_ffn[i] = tmp[i];
   linear_int8(tmp, F, L.wdown, L.sdown, H, h, GEMMA3_OP_DOWN_GEMV);
+#ifndef QWEN3_MODEL
   TIMED(GEMMA3_OP_NORM, rms_norm_inplace(1, H, h, P<const float>(L.post_ffn_norm)));
+#endif
   TIMED(GEMMA3_OP_RESIDUAL, residual_add_inplace(x, h, H));
 }
 
@@ -191,7 +247,9 @@ static uint32_t validate() {
   if (model.magic != GEMMA3_MAGIC) return GEMMA3_STATUS_BAD_MAGIC;
   if (model.n_layers != GEMMA3_LAYERS || model.hidden != GEMMA3_HIDDEN || model.ffn != GEMMA3_FFN ||
       model.n_heads != GEMMA3_HEADS || model.n_kv_heads != GEMMA3_KV_HEADS ||
-      model.head_dim != GEMMA3_HEAD_DIM || model.vocab_rows > GEMMA3_MAX_VOCAB_ROWS)
+      model.head_dim != GEMMA3_HEAD_DIM || !model.vocab_rows ||
+      model.vocab_rows > GEMMA3_MAX_VOCAB_ROWS || !model.max_seq ||
+      model.max_seq > GEMMA3_MAX_SEQ)
     return GEMMA3_STATUS_BAD_SHAPE;
   if (ctrl.pos >= model.max_seq) return GEMMA3_STATUS_POS_OVERFLOW;
   if (ctrl.cmd > GEMMA3_CMD_FORWARD) return GEMMA3_STATUS_BAD_CMD;

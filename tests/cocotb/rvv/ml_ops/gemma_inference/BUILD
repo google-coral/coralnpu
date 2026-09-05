@@ -32,11 +32,22 @@ coralnpu_v2_binary(
     dtcm_size_kbytes = 1024,
     enable_vmem = False,
     itcm_size_kbytes = 1024,
-    stack_size_bytes = 4096,
+    stack_size_bytes = 16384,
     deps = [
         "//sw/utils:utils",
         "//tests/cocotb/rvv/ml_ops/gemma_kernels",
     ],
+)
+
+coralnpu_v2_binary(
+    name = "qwen3_runner",
+    srcs = ["gemma3_aux_kernels.cc", "gemma3_model.h", "gemma3_runner.cc"],
+    defines = ["QWEN3_MODEL"],
+    dtcm_size_kbytes = 1024,
+    enable_vmem = False,
+    itcm_size_kbytes = 1024,
+    stack_size_bytes = 16384,
+    deps = ["//sw/utils:utils", "//tests/cocotb/rvv/ml_ops/gemma_kernels"],
 )
 
 # Strict NumPy reference + DDR image builder, shared by the test and the dump.
@@ -129,5 +140,4 @@ cocotb_test_suite(
     tests_kwargs = _COMMON_TEST_KWARGS,
     verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_simmem_model",
 )
-
 

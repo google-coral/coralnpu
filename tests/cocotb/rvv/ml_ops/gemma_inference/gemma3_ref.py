@@ -24,6 +24,7 @@ Two references are used by the tests:
 """
 
 import struct
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -42,7 +43,37 @@ VOCAB = 262144
 MAX_VOCAB_ROWS = 4096
 ROPE_LOCAL_BASE = 10000.0
 ROPE_GLOBAL_BASE = 1000000.0
-SLIDING_WINDOW = 512  # tests must keep pos < SLIDING_WINDOW (see README)
+SLIDING_WINDOW = 512
+MAX_SEQ = 1024
+
+
+@dataclass(frozen=True)
+class ModelConfig:
+    name: str = "gemma3"
+    magic: int = MAGIC
+    hidden: int = HIDDEN
+    ffn: int = FFN
+    heads: int = HEADS
+    kv_heads: int = KV_HEADS
+    head_dim: int = HEAD_DIM
+    layers: int = LAYERS
+    vocab: int = VOCAB
+    eos: int = 1
+
+    @property
+    def proj_shapes(self):
+        h, f, q, k = self.hidden, self.ffn, self.heads * self.head_dim, self.kv_heads * self.head_dim
+        return dict(q=(h, q), k=(h, k), v=(h, k), o=(q, h),
+                    gate=(h, f), up=(h, f), down=(f, h))
+
+    def is_global(self, i):
+        return self.name == "qwen3" or is_global_layer(i)
+
+
+MODELS = {
+    "gemma3": ModelConfig(),
+    "qwen3": ModelConfig("qwen3", 0x51334D30, 1024, 3072, 16, 8, 128, 28, 151936, 151645),
+}
 
 CMD_LAYERS, CMD_LM_HEAD, CMD_FORWARD = 0, 1, 2
 STATUS_NAMES = {
@@ -225,7 +256,9 @@ class QuantizedGemma3:
     lm_head_ids [n_rows] (vocab ids of those columns).
     """
 
-    def __init__(self, layers, final_norm, lm_head_i8, lm_head_s, lm_head_ids):
+    def __init__(self, layers, final_norm, lm_head_i8, lm_head_s, lm_head_ids,
+                 config=MODELS["gemma3"]):
+        self.config = config
         self.layers = layers
         self.final_norm = final_norm.astype(np.float32)
         self.lm_head_i8 = lm_head_i8
@@ -254,15 +287,15 @@ class QuantizedGemma3:
 
     @classmethod
     def from_npz(cls, weights_npz, lm_head_i8=None, lm_head_s=None,
-                 lm_head_ids=None):
+                 lm_head_ids=None, config=MODELS["gemma3"]):
         """Load dump_gemma3_model.py output. lm_head_* default to the
         candidate columns stored in the npz; pass full arrays for the
         full-vocab test."""
         z = weights_npz
         layers = []
-        for i in range(LAYERS):
-            d = {"is_global": int(is_global_layer(i))}
-            for p in PROJ_SHAPES:
+        for i in range(config.layers):
+            d = {"is_global": int(config.is_global(i))}
+            for p in config.proj_shapes:
                 d["w" + p] = z[f"layer{i}.w{p}_i8"]
                 d["s" + p] = z[f"layer{i}.s{p}"]
             for n in NORMS:
@@ -272,52 +305,75 @@ class QuantizedGemma3:
             lm_head_i8 = z["cand_lm_head_i8"]
             lm_head_s = z["cand_lm_head_s"]
             lm_head_ids = z["cand_ids"]
-        return cls(layers, z["final_norm"], lm_head_i8, lm_head_s, lm_head_ids)
+        return cls(layers, z["final_norm"], lm_head_i8, lm_head_s, lm_head_ids, config)
 
     def select_rows(self, row_ids: np.ndarray, full_i8: np.ndarray,
                     full_s: np.ndarray):
         """Return a copy scoring only vocab rows row_ids (full_i8 is [HIDDEN, VOCAB])."""
         return QuantizedGemma3(self.layers, self.final_norm,
                                np.ascontiguousarray(full_i8[:, row_ids]),
-                               full_s[row_ids], row_ids)
+                               full_s[row_ids], row_ids, self.config)
 
 
 class Gemma3Reference:
     """Strict reference: replays the runner's dataflow with the same weights."""
 
     def __init__(self, model: QuantizedGemma3, max_seq: int):
+        if not 1 <= max_seq <= MAX_SEQ:
+            raise ValueError(f"max_seq must be in [1, {MAX_SEQ}]")
         self.m = model
+        self.c = model.config
         self.max_seq = max_seq
-        self.cos_l, self.sin_l = rope_tables(max_seq, ROPE_LOCAL_BASE)
-        self.cos_g, self.sin_g = rope_tables(max_seq, ROPE_GLOBAL_BASE)
-        self.k_cache = np.zeros((LAYERS, max_seq, KV_DIM), np.float32)
-        self.v_cache = np.zeros((LAYERS, max_seq, KV_DIM), np.float32)
+        self.cos_l, self.sin_l = rope_tables(max_seq, ROPE_LOCAL_BASE, self.c.head_dim)
+        self.cos_g, self.sin_g = rope_tables(max_seq, ROPE_GLOBAL_BASE, self.c.head_dim)
+        # Keep the legacy Gemma shape for existing cocotb consumers.
+        self.k_cache = np.zeros((self.c.layers, max_seq, self.c.kv_heads * self.c.head_dim), np.float32)
+        self.v_cache = np.zeros_like(self.k_cache)
+
+    def norm(self, x, w):
+        if self.c.name != "qwen3":
+            return rms_norm(x, w)
+        inv = F32(1) / np.sqrt(np.mean(x * x, axis=-1, keepdims=True, dtype=F32) + F32(RMS_EPS))
+        return ((x * inv) * w).astype(F32)
 
     def layer(self, x: np.ndarray, i: int, pos: int):
         """One decoder layer at position pos. Returns (x_new, taps)."""
         L = self.m.layers[i]
+        if not 0 <= pos < self.max_seq:
+            raise ValueError("token position outside KV cache")
+        c = self.c
         x = x.astype(np.float32)
-        h = rms_norm(x, L["input_norm"])
-        q = linear_int8(h, L["wq"], L["sq"]).reshape(HEADS, HEAD_DIM)
-        k = linear_int8(h, L["wk"], L["sk"]).reshape(KV_HEADS, HEAD_DIM)
-        v = linear_int8(h, L["wv"], L["sv"]).reshape(KV_HEADS, HEAD_DIM)
-        q = rms_norm(q, L["q_norm"])
-        k = rms_norm(k, L["k_norm"])
+        h = self.norm(x, L["input_norm"])
+        q = linear_int8(h, L["wq"], L["sq"]).reshape(c.heads, c.head_dim)
+        k = linear_int8(h, L["wk"], L["sk"]).reshape(c.kv_heads, c.head_dim)
+        v = linear_int8(h, L["wv"], L["sv"]).reshape(c.kv_heads, c.head_dim)
+        q = self.norm(q, L["q_norm"])
+        k = self.norm(k, L["k_norm"])
         cos, sin = (self.cos_g, self.sin_g) if L["is_global"] else (self.cos_l, self.sin_l)
         q = rope(q, cos[pos], sin[pos])
         k = rope(k, cos[pos], sin[pos])
-        self.k_cache[i, pos] = k[0]
-        self.v_cache[i, pos] = v[0]
-        a = attention_decode(q, self.k_cache[i], self.v_cache[i], pos)
-        o = linear_int8(a.reshape(Q_DIM), L["wo"], L["so"])
-        x = x + rms_norm(o, L["post_attn_norm"])
-        h = rms_norm(x, L["pre_ffn_norm"])
+        self.k_cache[i, pos] = k.ravel()
+        self.v_cache[i, pos] = v.ravel()
+        start = 0 if L["is_global"] else max(0, pos + 1 - SLIDING_WINDOW)
+        kc = self.k_cache[i].reshape(self.max_seq, c.kv_heads, c.head_dim)
+        vc = self.v_cache[i].reshape(self.max_seq, c.kv_heads, c.head_dim)
+        group = c.heads // c.kv_heads
+        a = np.concatenate([attention_decode(q[j * group:(j + 1) * group],
+                           kc[start:, j], vc[start:, j], pos - start)
+                            for j in range(c.kv_heads)])
+        o = linear_int8(a.ravel(), L["wo"], L["so"])
+        x = x + (o if c.name == "qwen3" else self.norm(o, L["post_attn_norm"]))
+        h = self.norm(x, L["pre_ffn_norm"])
         g = linear_int8(h, L["wgate"], L["sgate"])
         u = linear_int8(h, L["wup"], L["sup"])
-        f = gelu_tanh_mul(g, u)
+        if c.name == "qwen3":
+            e = np.exp(-np.abs(g)).astype(F32)
+            f = ((g * np.where(g >= 0, F32(1) / (F32(1) + e), e / (F32(1) + e))) * u).astype(F32)
+        else:
+            f = gelu_tanh_mul(g, u)
         d = linear_int8(f, L["wdown"], L["sdown"])
-        x = x + rms_norm(d, L["post_ffn_norm"])
-        taps = {"q": q.reshape(Q_DIM), "attn": a.reshape(Q_DIM), "ffn": f}
+        x = x + (d if c.name == "qwen3" else self.norm(d, L["post_ffn_norm"]))
+        taps = {"q": q.ravel(), "attn": a.ravel(), "ffn": f}
         return x.astype(np.float32), taps
 
     def layers(self, x: np.ndarray, lo: int, hi: int, pos: int):
@@ -327,12 +383,12 @@ class Gemma3Reference:
         return x, taps
 
     def lm_head(self, x: np.ndarray):
-        h = rms_norm(x, self.m.final_norm)
+        h = self.norm(x, self.m.final_norm)
         logits = linear_int8(h, self.m.lm_head_i8, self.m.lm_head_s)
         return logits, int(np.argmax(logits))
 
     def forward(self, x: np.ndarray, pos: int):
-        x, _ = self.layers(x, 0, LAYERS, pos)
+        x, _ = self.layers(x, 0, self.c.layers, pos)
         logits, am = self.lm_head(x)
         return x, logits, am
 
@@ -359,7 +415,7 @@ class ModelImage:
 
     def add(self, name: str, arr: np.ndarray) -> int:
         self._pad()
-        b = np.ascontiguousarray(arr).view(np.uint8).reshape(-1)
+        b = np.ascontiguousarray(arr, dtype=arr.dtype.newbyteorder("<")).view(np.uint8).reshape(-1)
         addr = self.base + self.size
         self.chunks.append(b)
         self.size += b.size
@@ -376,15 +432,28 @@ class ModelImage:
 
 def build_image(model: QuantizedGemma3, base: int, max_seq: int):
     """Lay the whole model out in DDR; return (image, descriptor words)."""
+    if not 1 <= max_seq <= MAX_SEQ:
+        raise ValueError(f"max_seq must be in [1, {MAX_SEQ}]")
+    c = model.config
+    if len(model.layers) != c.layers:
+        raise ValueError("wrong number of layers")
+    def vector(a, size, name, positive=False):
+        if a.shape != (size,) or not np.isfinite(a).all() or (positive and np.any(a <= 0)):
+            raise ValueError(f"invalid {name} shape/values")
+    vector(model.final_norm, c.hidden, "final norm")
+    if model.lm_head_i8.dtype != np.int8 or model.lm_head_i8.shape[0] != c.hidden:
+        raise ValueError("invalid lm_head shape/dtype")
+    vector(model.lm_head_s, model.lm_head_i8.shape[1], "lm_head scale", True)
     img = ModelImage(base)
     desc = {
-        "magic": MAGIC, "n_layers": LAYERS, "hidden": HIDDEN, "ffn": FFN,
-        "n_heads": HEADS, "n_kv_heads": KV_HEADS, "head_dim": HEAD_DIM,
+        "magic": c.magic, "n_layers": c.layers, "hidden": c.hidden, "ffn": c.ffn,
+        "n_heads": c.heads, "n_kv_heads": c.kv_heads, "head_dim": c.head_dim,
         "max_seq": max_seq, "vocab_rows": int(model.lm_head_i8.shape[1])
     }
-    assert desc["vocab_rows"] <= MAX_VOCAB_ROWS
-    cos_l, sin_l = rope_tables(max_seq, ROPE_LOCAL_BASE)
-    cos_g, sin_g = rope_tables(max_seq, ROPE_GLOBAL_BASE)
+    if not 1 <= desc["vocab_rows"] <= MAX_VOCAB_ROWS:
+        raise ValueError("invalid lm_head chunk size")
+    cos_l, sin_l = rope_tables(max_seq, ROPE_LOCAL_BASE, c.head_dim)
+    cos_g, sin_g = rope_tables(max_seq, ROPE_GLOBAL_BASE, c.head_dim)
     desc["rope_cos_local"] = img.add("rope_cos_local", cos_l)
     desc["rope_sin_local"] = img.add("rope_sin_local", sin_l)
     desc["rope_cos_global"] = img.add("rope_cos_global", cos_g)
@@ -396,18 +465,24 @@ def build_image(model: QuantizedGemma3, base: int, max_seq: int):
     layer_words = []
     for i, L in enumerate(model.layers):
         d = {}
-        for p, (K, N) in PROJ_SHAPES.items():
-            assert L["w" + p].shape == (K, N), (i, p, L["w" + p].shape)
+        for p, (K, N) in c.proj_shapes.items():
+            if L["w" + p].shape != (K, N) or L["w" + p].dtype != np.int8 or np.any(L["w" + p] == -128):
+                raise ValueError(f"invalid layer {i} projection {p} shape/dtype/range")
+            vector(L["s" + p], N, f"layer {i} scale {p}", True)
             d["w" + p] = img.add(f"l{i}.w{p}", L["w" + p])
             d["s" + p] = img.add(f"l{i}.s{p}", L["s" + p].astype(np.float32))
         for n in NORMS:
+            vector(L[n], c.head_dim if n in ("q_norm", "k_norm") else c.hidden, f"layer {i} {n}")
             d[n] = img.add(f"l{i}.{n}", L[n].astype(np.float32))
-        d["k_cache"] = img.reserve(f"l{i}.k_cache", 4 * max_seq * KV_DIM)
-        d["v_cache"] = img.reserve(f"l{i}.v_cache", 4 * max_seq * KV_DIM)
+        d["k_cache"] = img.reserve(f"l{i}.k_cache", 4 * max_seq * c.kv_heads * c.head_dim)
+        d["v_cache"] = img.reserve(f"l{i}.v_cache", 4 * max_seq * c.kv_heads * c.head_dim)
         d["is_global"] = int(L["is_global"])
+        if d["is_global"] != int(c.is_global(i)):
+            raise ValueError(f"invalid attention type for layer {i}")
         layer_words += [d[f] for f in LAYER_FIELDS]
     words = [desc[f] for f in MODEL_FIELDS] + layer_words
-    assert len(words) == MODEL_WORDS
+    if base < 0 or base % 16 or base + (img.size + 15) // 16 * 16 > 2**32:
+        raise ValueError("model image exceeds the NPU's 32-bit address space")
     return img, np.array(words, dtype=np.uint32)
 
 
