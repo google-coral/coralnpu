@@ -19,11 +19,12 @@ import numpy as np
 import os
 import random
 
-from coralnpu_test_utils.backdoor import backdoor_load
+from coralnpu_test_utils.backdoor import backdoor_load, DdrBackdoorMemory
 from cocotb.clock import Clock
 from cocotb.handle import LogicObject, LogicArrayObject, Immediate
 from cocotb.queue import Queue
-from cocotb.triggers import Timer, ClockCycles, RisingEdge, FallingEdge
+from cocotb.triggers import Timer, ClockCycles, RisingEdge, FallingEdge, First, Event
+from cocotb.utils import get_sim_time
 from elftools.elf.elffile import ELFFile
 
 
@@ -192,6 +193,16 @@ class CoreMiniAxiInterface:
             clock_ns = float(os.environ["COCOTB_CLOCK_NS"])
 
         self.dut = dut
+        # External memory lives in the RTL (axi_sim_mem via a *SimMem wrapper
+        # top) when the DUT exposes no AXI master port. Then the Python memory
+        # model and master agents are replaced by the DDR DPI backdoor, and
+        # the bus monitor sleeps whenever no testbench transaction is in
+        # flight, so long compute phases run at native Verilator speed.
+        self.ext_mem_in_rtl = kwargs.pop("ext_mem_in_rtl", None)
+        if self.ext_mem_in_rtl is None:
+            self.ext_mem_in_rtl = not hasattr(dut, "io_axi_master_read_data_valid")
+        self._slave_inflight = 0
+        self._slave_wake = Event()
         self.dut.io_aclk.value = 0
         self.dut.io_irq.value = 0
         self.dut.io_timer_irq.value = 0
@@ -215,19 +226,26 @@ class CoreMiniAxiInterface:
         )
         self.axi_slave_write_data.clear_valid()
         self.dut.io_axi_slave_write_resp_ready.value = 0
-        self.axi_master_read_data = ReadyValidInterface(
-            self.dut, "io_axi_master_read_data"
-        )
-        self.axi_master_read_data.clear_valid()
-        self.axi_master_write_resp = ReadyValidInterface(
-            self.dut, "io_axi_master_write_resp"
-        )
-        self.axi_master_write_resp.clear_valid()
+        if self.ext_mem_in_rtl:
+            self.axi_master_read_data = None
+            self.axi_master_write_resp = None
+        else:
+            self.axi_master_read_data = ReadyValidInterface(
+                self.dut, "io_axi_master_read_data"
+            )
+            self.axi_master_read_data.clear_valid()
+            self.axi_master_write_resp = ReadyValidInterface(
+                self.dut, "io_axi_master_write_resp"
+            )
+            self.axi_master_write_resp.clear_valid()
         self.clock_ns = clock_ns
         self.clock = _SafeClock(dut.io_aclk, clock_ns, unit="ns")
         self.csr_base_addr = csr_base_addr
         self.memory_base_addr = ext_mem_base_addr
-        self.memory = np.zeros([ext_mem_size], dtype=np.uint8)
+        if self.ext_mem_in_rtl:
+            self.memory = DdrBackdoorMemory(ext_mem_base_addr, ext_mem_size)
+        else:
+            self.memory = np.zeros([ext_mem_size], dtype=np.uint8)
         self.master_arfifo = Queue()
         self.master_awfifo = Queue()
         self.master_rfifo = Queue()
@@ -243,14 +261,24 @@ class CoreMiniAxiInterface:
     def _start_agents(self):
         self._agents = [
             cocotb.start_soon(self._monitor_agent()),
-            cocotb.start_soon(self.master_ragent()),
-            cocotb.start_soon(self.master_bagent()),
             cocotb.start_soon(self.slave_awagent()),
             cocotb.start_soon(self.slave_wagent()),
             cocotb.start_soon(self.slave_aragent()),
-            cocotb.start_soon(self.memory_write_agent()),
-            cocotb.start_soon(self.memory_read_agent()),
         ]
+        if not self.ext_mem_in_rtl:
+            self._agents += [
+                cocotb.start_soon(self.master_ragent()),
+                cocotb.start_soon(self.master_bagent()),
+                cocotb.start_soon(self.memory_write_agent()),
+                cocotb.start_soon(self.memory_read_agent()),
+            ]
+
+    def _slave_begin(self):
+        self._slave_inflight += 1
+        self._slave_wake.set()
+
+    def _slave_end(self):
+        self._slave_inflight -= 1
 
     async def init(self):
         cocotb.start_soon(self.clock.start())
@@ -317,10 +345,16 @@ class CoreMiniAxiInterface:
     async def _monitor_agent(self):
         self.dut.io_axi_slave_write_resp_ready.value = 1
         self.dut.io_axi_slave_read_data_ready.value = 1
-        self.dut.io_axi_master_read_addr_ready.value = 1
-        self.dut.io_axi_master_write_addr_ready.value = 1
-        self.dut.io_axi_master_write_data_ready.value = 1
+        if not self.ext_mem_in_rtl:
+            self.dut.io_axi_master_read_addr_ready.value = 1
+            self.dut.io_axi_master_write_addr_ready.value = 1
+            self.dut.io_axi_master_write_data_ready.value = 1
         while True:
+            if self.ext_mem_in_rtl and self._slave_inflight == 0:
+                # Nothing can appear on the slave channels unless the
+                # testbench starts a transaction: sleep instead of polling.
+                self._slave_wake.clear()
+                await self._slave_wake.wait()
             await RisingEdge(self.dut.io_aclk)
             # slave_bagent
             if self.dut.io_axi_slave_write_resp_valid.value == 1:
@@ -359,6 +393,9 @@ class CoreMiniAxiInterface:
                     await self.slave_rfifo.put(rdata)
                 except Exception as e:
                     print("X seen in slave_ragent: " + str(e))
+
+            if self.ext_mem_in_rtl:
+                continue
 
             # master_aragent
             if self.dut.io_axi_master_read_addr_valid.value == 1:
@@ -560,8 +597,9 @@ class CoreMiniAxiInterface:
         self.axi_slave_read_addr.clear_valid()
         self.axi_slave_write_addr.clear_valid()
         self.axi_slave_write_data.clear_valid()
-        self.axi_master_read_data.clear_valid()
-        self.axi_master_write_resp.clear_valid()
+        if not self.ext_mem_in_rtl:
+            self.axi_master_read_data.clear_valid()
+            self.axi_master_write_resp.clear_valid()
 
         # 4. Assert hardware reset synchronously on falling edge
         await FallingEdge(self.dut.io_aclk)
@@ -855,13 +893,17 @@ class CoreMiniAxiInterface:
         # TODO(derekjchow): Fuzz element size?
         write_addr_size = math.ceil(math.log2(len(data)))
         write_addr_size = min(write_addr_size, 4)  # Size of 16 for increment
-        write_addr_task = self._write_addr(
-            addr, write_addr_size, beats, axi_id, burst
-        )
-        write_data_task = self._write_data(addr, data, masks, beats)
-        await write_addr_task
-        await write_data_task
-        bdata = await self.slave_bfifo.get()
+        self._slave_begin()
+        try:
+            write_addr_task = self._write_addr(
+                addr, write_addr_size, beats, axi_id, burst
+            )
+            write_data_task = self._write_data(addr, data, masks, beats)
+            await write_addr_task
+            await write_data_task
+            bdata = await self.slave_bfifo.get()
+        finally:
+            self._slave_end()
         assert bdata["id"] == axi_id
 
     async def _axi_valid_memory_addr(self, addr, data_len) -> bool:
@@ -948,21 +990,25 @@ class CoreMiniAxiInterface:
         start_line = start_addr // 16
         end_line = end_addr // 16
         beats = (end_line - start_line) + 1
-        await self._read_addr(start_line * 16, 4, beats, axi_id, burst)
-        data = []
-        bytes_remaining = bytes_to_read
-        for beat in range(beats):
-            base_addr = (addr // 16) * 16
-            sub_addr = addr - base_addr
-            (last, beat_data) = await self._read_data(expected_resp, axi_id)
-            beat_data = beat_data[sub_addr:]
-            if len(beat_data) > bytes_remaining:
-                beat_data = beat_data[0:bytes_remaining]
-            data.append(beat_data)
-            bytes_remaining = bytes_remaining - len(beat_data)
-            addr = addr + len(beat_data)
-            if beat == (beats - 1):
-                assert last
+        self._slave_begin()
+        try:
+            await self._read_addr(start_line * 16, 4, beats, axi_id, burst)
+            data = []
+            bytes_remaining = bytes_to_read
+            for beat in range(beats):
+                base_addr = (addr // 16) * 16
+                sub_addr = addr - base_addr
+                (last, beat_data) = await self._read_data(expected_resp, axi_id)
+                beat_data = beat_data[sub_addr:]
+                if len(beat_data) > bytes_remaining:
+                    beat_data = beat_data[0:bytes_remaining]
+                data.append(beat_data)
+                bytes_remaining = bytes_remaining - len(beat_data)
+                addr = addr + len(beat_data)
+                if beat == (beats - 1):
+                    assert last
+        finally:
+            self._slave_end()
         return np.concatenate(data)
 
     async def read(self, addr, bytes_to_read, burst: AxiBurst = AxiBurst.INCR):
@@ -992,8 +1038,12 @@ class CoreMiniAxiInterface:
         axi_id = random.randint(0, 63)
         data = []
         offset = addr % 16
-        await self._read_addr(addr, 4, 1, axi_id)
-        (last, beat_data) = await self._read_data(expected_resp, axi_id)
+        self._slave_begin()
+        try:
+            await self._read_addr(addr, 4, 1, axi_id)
+            (last, beat_data) = await self._read_data(expected_resp, axi_id)
+        finally:
+            self._slave_end()
         assert (last == True)
         data.append(beat_data[offset:offset + 4])
         return np.concatenate(data)
@@ -1126,13 +1176,21 @@ class CoreMiniAxiInterface:
         self.dut.io_irq.value = 0
 
     async def wait_for_halted(self, timeout_cycles=1000):
+        """Waits for io_halted without a per-cycle Python wakeup.
+
+        Blocks on the rising edge of io_halted with a Timer-based timeout, so
+        the simulator runs at native speed in between. Returns the number of
+        clock cycles elapsed, like the previous polling implementation.
+        """
         timeout_cycles = self._get_timeout_cycles(timeout_cycles)
-        cycle_count = 0
-        while self.dut.io_halted.value != 1 and timeout_cycles > 0:
-            await ClockCycles(self.dut.io_aclk, 1)
-            timeout_cycles = timeout_cycles - 1
-            cycle_count += 1
-        assert timeout_cycles > 0, f"Simulation timed out waiting for halted after {cycle_count} cycles"
+        t0 = get_sim_time("ns")
+        if self.dut.io_halted.value != 1:
+            await First(
+                RisingEdge(self.dut.io_halted),
+                Timer(timeout_cycles * self.clock_ns, "ns"),
+            )
+        cycle_count = int(round((get_sim_time("ns") - t0) / self.clock_ns))
+        assert self.dut.io_halted.value == 1, f"Simulation timed out waiting for halted after {cycle_count} cycles"
         return cycle_count
 
     async def wait_for_halted_semihost(self, elf, timeout_cycles=1000000):

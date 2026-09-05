@@ -24,6 +24,8 @@ exports_files(
         "TlulAdapterSram.sv",
         "Uart.sv",
         "sram_backdoor.core",
+        "axi_sim_mem.sv",
+        "gen_axi_sim_mem_wrapper.py",
     ],
     visibility = ["//visibility:public"],
 )
@@ -76,4 +78,19 @@ cc_library(
     hdrs = ["sram_backdoor.h"],
     visibility = ["//visibility:public"],
     deps = ["@verilator//:svdpi"],
+)
+
+# Backing store + DPI for axi_sim_mem.sv (simulation-only external memory).
+cc_library(
+    name = "ddr_sim_mem",
+    srcs = ["ddr_sim_mem.cc"],
+    hdrs = ["ddr_sim_mem.h"],
+    visibility = ["//visibility:public"],
+    deps = ["@verilator//:svdpi"],
+)
+
+py_binary(
+    name = "gen_axi_sim_mem_wrapper",
+    srcs = ["gen_axi_sim_mem_wrapper.py"],
+    visibility = ["//visibility:public"],
 )

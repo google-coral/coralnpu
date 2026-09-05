@@ -1,0 +1,332 @@
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{siunitx}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,columns=fullflexible}
+\sisetup{group-separator={,},group-minimum-digits=4}
+\hypersetup{colorlinks,linkcolor=blue!60!black,urlcolor=blue!60!black,citecolor=blue!60!black}
+
+\title{RTL Simulation of Gemma~3 270M Inference on the Coral NPU:\\
+Test Design, Numerics, Cycle Accounting and Simulator Throughput}
+\author{Rachit Tibrewal \\ \small ergodex / coralnpu working tree, branch \texttt{feature/model-configurable-npu}}
+\date{5 September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We report the first end-to-end, cycle-accurate RTL simulation of Gemma~3 270M
+decoder inference on the Coral NPU (\texttt{RvvCoreMiniHighmemAxi}: RV32IMF +
+Zve32f, VLEN\,=\,128, 1\,MB ITCM, 1\,MB DTCM). A six-tier cocotb test package
+composes the repository's per-kernel RVV Gemma kernels into a full decoder
+layer, an 18-layer forward pass and greedy generation, checked against a
+bit-faithful NumPy replay and against the bf16 HuggingFace model. With real
+weights, one decoder layer matches the strict reference to a relative error of
+$2.6\times10^{-9}$ on the residual stream and the HF bf16 hidden state at
+cosine 0.999995. One layer costs \num{2132836} cycles at 2.61 int8 MAC/cycle,
+93\,\% of which is the int8 GEMV path, so a full token is $\approx$38\,M
+cycles. The initial simulator throughput of 7.2\,k cycles/s was set entirely by
+Python-in-the-loop bus modelling; moving external memory into the RTL behind a
+DPI backdoor and removing per-cycle cocotb wake-ups raises it to
+16.5\,k cycles/s single-threaded and 24.8\,k cycles/s with
+Verilator threads, i.e.\ about 22 minutes per token instead
+of 90. We give the resulting per-token latency
+projections for the 50\,MHz FPGA and the 1\,GHz datasheet target and the
+implications for the GR-288 accelerator work.
+\end{abstract}
+
+\section{Introduction}
+The Coral NPU repository ships RVV kernels for every Gemma~3 building block
+(int8/fp32/bf16 GEMV and matmul, FlashAttention, RMSNorm, tanh-GELU$\times$up,
+residual add) and cocotb tests that check each in isolation against NumPy
+golden values on tensors dumped from HuggingFace. What did not exist was a
+test that runs the \emph{model}: weights for all 18 layers in external memory,
+a KV cache that grows across tokens, RoPE at non-zero positions, and a
+next-token prediction compared with the reference model. This report describes
+that test package (\texttt{tests/cocotb/rvv/ml\_ops/gemma\_inference/}), the
+numerical results obtained on an EC2 dev host, the cycle budget of one token on
+the baseline core, and the simulator engineering needed to make multi-token
+runs practical.
+
+Gemma~3 270M (\texttt{config.json}, verified) has 18 decoder layers, hidden
+size 640, FFN width 2048, 4 query heads and 1 KV head of dimension 256,
+\texttt{query\_pre\_attn\_scalar}\,=\,256, a 262\,144-entry vocabulary tied to
+the embedding table, sliding-window attention (512) on five of every six layers
+and global attention on layers 5, 11 and 17, RoPE bases of $10^4$ (local) and
+$10^6$ (global), Gemma-style RMSNorm $x\cdot\mathrm{rsqrt}(\overline{x^2}+\epsilon)\cdot(1+w)$
+with $\epsilon=10^{-6}$, q/k head norms, and \texttt{gelu\_pytorch\_tanh}. No
+logit softcapping is configured.
+
+\section{Numerics under test}
+Every projection ($W_q,W_k,W_v,W_o,W_{gate},W_{up},W_{down}$ and the lm\_head)
+is executed as int8$\times$int8$\to$int32 on \texttt{rvv\_gemv\_int8}. Weights
+are quantised per output channel (symmetric, round-to-nearest-even, clipped to
+$\pm127$); activations are quantised per token at run time with the same rule.
+The kernel's contract that $-128$ never appears on both operands is satisfied by
+construction. Everything else is fp32: norms, RoPE, attention (the existing
+unmasked FlashAttention kernel with a Taylor exponential), GELU (rational tanh),
+the residual stream, the K/V caches and the logits. Prefill is executed as
+sequential decode: with $Q_{\text{len}}=1$ over a cache holding positions
+$0..p$, the unmasked kernel is exactly causal, which removes the need for a
+masked prefill kernel at the cost of throughput.
+
+Two references are used. The \emph{strict} reference (\texttt{gemma3\_ref.py})
+replays the runner's dataflow in NumPy with the same int8 weights and
+quantiser and exact $\exp$/$\tanh$; int8 GEMV results are bit-exact and every
+fp32 stage is checked on a tap (post-RoPE $q$, attention output,
+$\mathrm{gelu}\times\mathrm{up}$, residual, logits). The \emph{HF bf16}
+reference (\texttt{dump\_gemma3\_model.py}) runs the model in its native
+bfloat16 and stores hidden states after every layer, the last-position logits,
+per-position top-$k$ ids and the greedy continuation. The strict reference
+attributes a failure to one stage; the HF reference measures the quantisation
+scheme itself, which is the gate the project's numerics rule requires.
+
+\section{Test architecture}
+\paragraph{DUT program.} \texttt{gemma3\_runner.cc} executes one command per
+run for one token position: \texttt{CMD\_LAYERS} (a layer range on the
+residual vector), \texttt{CMD\_LM\_HEAD} (final norm + lm\_head + argmax) or
+\texttt{CMD\_FORWARD}. It never allocates weights: a 431-word descriptor in
+DTCM holds a DDR address for every tensor (\texttt{gemma3\_model.h}), so the
+ELF is 13.6\,KB of code and independent of the model image, the candidate
+vocabulary or the sequence length. \texttt{mcycle} is read around every kernel
+call and accumulated into twelve op buckets.
+
+\paragraph{Memory image.} The test packs all weights into one 96.8\,MiB image
+(\texttt{ModelImage}) and writes it directly into the testbench memory model:
+at 16\,B per AXI beat, loading it over the bus would take longer than the
+inference. The core fetches weights through its AXI master exactly as it would
+from DDR. The 168\,MB embedding table stays host-side; the test supplies the
+scaled embedding vector per token and scores the lm\_head on a chosen column
+set ($\le 4096$ per run, 530 candidates in the default configuration, the whole
+vocabulary in 64 chunks for tier~6).
+
+\paragraph{Tiers.} T1 one layer at position 0 (every kernel once); T2 each
+layer in isolation, fed HF's residual stream at its input (localises a failure,
+covers both RoPE bases); T3 layer 0 over positions $0..N{-}1$ (cache growth,
+RoPE at $p>0$, softmax over $N$ keys); T4 full forward over the prompt with
+candidate logits and a top-1 check against HF; T5 greedy generation compared
+token-by-token; T6 full-vocabulary logits.
+
+\section{Results with real weights}
+\subsection{Accuracy}
+Table~\ref{tab:acc} lists the T1 taps for layer~0 at position~0 on the prompt
+``The capital of France is''. The int8 GEMV stages are exact; the attention
+output agrees to fp32 rounding because a single key makes the softmax trivial;
+the only stage with visible error is the rational-tanh GELU
+($4.8\times10^{-4}$ relative to the maximum). The residual stream after the
+layer matches the strict reference to $2.6\times10^{-9}$ and the HF bf16
+hidden state at cosine 0.999995. On a synthetic model with $\mathcal N(0,0.02)$
+weights the GELU error was 20$\times$ larger ($1.0\times10^{-2}$), which
+bounds the approximation on adversarial inputs.
+With external memory in the RTL the results are bit-identical
+(Table~\ref{tab:acc} was reproduced on both models).
+
+The first multi-position runs taught two things. First, the strict reference
+must replay the kernels' approximations, not exact functions: the
+FlashAttention exponential is a range-reduced cubic Taylor polynomial
+($8\times10^{-4}$ relative) and the GELU tanh is $y(y^2+27)/(9y^2+27)$ on
+$\mathrm{clamp}(z,-3,3)$ ($2.4\times10^{-2}$ absolute). Because the FFN
+intermediate is int8-quantised per tensor with Gemma's outliers, a
+$10^{-3}$ difference in GELU flips int8 codes whose step is large, and the
+residual diverged by $3.6\times10^{-2}$ at prefill position~2 although the
+attention output matched to $3\times10^{-5}$. With the kernel arithmetic in
+the reference, T3 passes all six prefill positions with every tap within
+$\sim\!10^{-7}$ and HF bf16 cosines between 0.9972 and 0.9995. Second,
+HuggingFace's last entry in \texttt{output\_hidden\_states} is taken after
+the final RMSNorm, so the last-layer residual is compared after the final
+norm; the raw comparison reads as cosine 0.15 and looks like a broken layer.
+With both fixes, T2 passes: each of the 18 layers, fed HF's residual at its
+input, matches the strict reference at cosine 1.000000 (relative error
+$8\times10^{-8}$ to $1.2\times10^{-3}$) and HF bf16 at cosine $\geq 0.99999$,
+on both RoPE bases. The first full 18-layer forward matches the strict
+reference to $1.2\times10^{-7}$ on the residual and $6.6\times10^{-7}$ on the
+candidate logits, so the DUT executes the int8 model exactly; the int8 model
+itself drifts from bf16 HF to cosine 0.9875 after the final norm, the
+accumulated cost of per-tensor activation quantisation. A complete token
+(18 layers plus a 530-column lm\_head) measures \num{32011264} cycles at
+3.14 MAC/cycle, 21 minutes of wall time on the two-thread model; the first
+predicted token agrees with the strict reference. The top-1 comparison over
+the six-token prompt was running when this report was written.
+
+\begin{table}[t]
+\centering\small
+\caption{T1, layer 0, position 0, real weights. ``strict'' is the NumPy replay,
+``HF'' the bf16 model.}
+\label{tab:acc}
+\begin{tabular}{lccc}
+\toprule
+Tap & cos (strict) & rel.\ max err & cos (HF) \\
+\midrule
+$q$ after norm+RoPE & 1.000000 & $1.1\times10^{-7}$ & -- \\
+attention output & 1.000000 & $6.0\times10^{-8}$ & -- \\
+gelu(gate)$\times$up & 0.999995 & $4.8\times10^{-4}$ & -- \\
+residual out & 1.000000 & $2.6\times10^{-9}$ & 0.999995 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cycle accounting}
+One decoder layer takes \num{2132836} cycles for \num{5570560} int8 MACs,
+2.61 MAC/cycle, with the Python AXI memory model (Table~\ref{tab:cyc}); with
+the one-cycle RTL memory of Section~6 the same layer takes \num{1780644}
+cycles (3.13 MAC/cycle), which shows that about 17\,\% of the original
+layer time was external-memory latency rather than compute. The three GEMV buckets are 93\,\% of the
+layer; the fp32 glue (norms, quantise, dequantise, RoPE, GELU, residual) is
+4.2\,\% and single-key attention 0.5\,\%. Multiplying out, an 18-layer token is
+32 to 38\,M cycles before the lm\_head depending on memory latency, and the lm\_head over the full
+vocabulary (168\,M MACs) would add a further $\approx 64$\,M cycles at the same
+rate: for a decode step the tied embedding matrix costs more than the
+transformer body.
+
+\begin{table}[t]
+\centering\small
+\caption{Per-op cycles, layer 0, real weights (int8 MAC/cycle in
+parentheses).}
+\label{tab:cyc}
+\begin{tabular}{lrr}
+\toprule
+Op & Cycles & Share \\
+\midrule
+gate/up GEMV (2$\times$640$\times$2048) & \num{933844} & 43.8\,\% (2.81) \\
+down GEMV (2048$\times$640) & \num{466262} & 21.9\,\% (2.81) \\
+q/k/v GEMV (640$\times$1536) & \num{350286} & 16.4\,\% (2.81) \\
+o GEMV (1024$\times$640) & \num{233302} & 10.9\,\% (2.81) \\
+RMSNorm ($\times$7) & \num{31711} & 1.5\,\% \\
+gelu$\times$up & \num{15317} & 0.7\,\% \\
+dequantise & \num{14173} & 0.7\,\% \\
+quantise & \num{12747} & 0.6\,\% \\
+residual add ($\times$2) & \num{11605} & 0.5\,\% \\
+attention (1 key) & \num{9777} & 0.5\,\% \\
+RoPE & \num{3397} & 0.2\,\% \\
+\midrule
+total & \num{2132836} & 100\,\% (2.61) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The GEMV rate of 2.8 MAC/cycle is far from the vector unit's peak (about 32
+int8 ALU lanes per cycle per unit pair): with VLEN\,=\,128, one \texttt{e8m4}
+group is 64 bytes, the reduction per output column serialises on
+\texttt{vredsum}, and every weight byte crosses the single 16\,B/cycle LSU port
+from external memory. Weight bandwidth alone bounds a layer at
+$5.57\,\text{M}/16 = 348$\,k cycles, so the kernel is compute/issue bound, not
+memory bound, at this size.
+
+\subsection{Projected latency}
+Taking the one-cycle-memory figure, a token is 32\,M cycles plus lm\_head:
+\SI{0.64}{s} at 50\,MHz (Nexus FPGA) and \SI{32}{ms} at the 1\,GHz datasheet
+clock for the body alone, i.e.\ 1.6 and 31 tokens/s; with a full-vocabulary
+lm\_head (a further $\approx$60\,M cycles) 0.5 and 11 tokens/s. These are the numbers the GR-288 design point
+(16\,384 MAC/cycle, model-resident SRAM) is meant to improve by three orders of
+magnitude; the per-op table above is the baseline it is measured against.
+
+\section{Simulator throughput}
+\subsection{Diagnosis}
+The first runs on a c7i.2xlarge (8 vCPU) EC2 host executed T1 in 300\,s of
+wall time for 2.13\,M cycles: 7.2\,k cycles/s, and hence about 90 minutes per
+token. Verilator itself is not that slow for this design. The cost is in the
+cocotb testbench: (i) the AXI bus monitor and the halt poller each wake a
+Python coroutine on every clock edge and read half a dozen VPI signals;
+(ii) every 16-byte weight beat requested by the core is served by a chain of
+Python coroutines (address monitor, memory model, data driver), and a token
+pulls 100\,MB of weights, i.e.\ $6.25$\,M beats. Removing the idle-cycle
+polling alone would leave the beat path, which at $\sim$100\,\si{\micro\second}
+per beat is still tens of minutes per token.
+
+\subsection{Fix: external memory in the RTL}
+We added \texttt{axi\_sim\_mem.sv}, a simulation-only AXI4 slave whose storage
+lives in C++ (\texttt{ddr\_sim\_mem.cc}) behind DPI, and a generated wrapper
+top \texttt{RvvCoreMiniHighmemAxiSimMem} that instantiates the emitted core and
+connects its AXI master to that memory; all other ports pass through
+unchanged. The test loads and inspects the memory through exported C
+functions (\texttt{ddr\_backdoor\_*\_c}, via \texttt{ctypes}, the same
+mechanism as the existing SRAM backdoor), so weight traffic never enters
+Python. In the cocotb interface, \texttt{wait\_for\_halted} now blocks on the
+rising edge of \texttt{io\_halted} with a \texttt{Timer} timeout, and the bus
+monitor sleeps on an \texttt{Event} whenever no testbench-initiated transaction
+is in flight. The wrapper is detected automatically (no
+\texttt{io\_axi\_master\_*} ports), so the change is backward compatible with
+every existing test. Per-cycle Python work during compute is now zero.
+
+One pitfall cost an iteration: the Verilator configuration template marks
+every \texttt{io\_*} variable of the top module public, so a wrapper whose
+internal nets were named \texttt{io\_axi\_master\_*} still exposed them to
+cocotb, the interface concluded the Python memory model was in use, and two
+drivers fought over the read-data channel (one AR, two R beats, the first a
+SLVERR). Renaming the internal nets fixed it; the interface now also logs which
+memory mode is active.
+
+Table~\ref{tab:speed} gives the measured throughput for T1 (2.27\,M
+simulated cycles including reset and loading). The RTL memory alone gives
+2.3$\times$; the cocotb clock is already C-implemented, and profiling
+attributes the remaining $\sim$60\,\si{\micro\second} per cycle to
+Verilator's evaluation of the core plus the hand-written vector backend.
+Verilator's thread scheduler rejects \texttt{--threads 4} for this design
+(\texttt{UNOPTTHREADS}); forcing threads anyway gives the last two rows.
+
+\begin{table}[t]
+\centering\small
+\caption{Simulator throughput for T1 on c7i.2xlarge (3.2\,GHz).}
+\label{tab:speed}
+\begin{tabular}{lrrr}
+\toprule
+Configuration & ns/s & cycles/s & min/token \\
+\midrule
+stock model, Python AXI memory & \num{9014} & 7.2\,k & 89 \\
+RTL memory, event-driven cocotb & \num{20660} & 16.5\,k & 32 \\
+\quad + \texttt{--threads 2} & \num{30960} & 24.8\,k & 22 \\
+\quad + \texttt{--threads 4} & \num{32384} & 25.9\,k & 21 \\
+\quad + \texttt{-O3 --x-initial fast -march=native} (2 thr., A/B) & \num{33026} vs \num{30217} & +9\,\% & 20 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Machine choice}
+Two Verilator threads are the efficient operating point: 1.5$\times$ for
+2 cores, while four threads add 4\,\% for twice the cores. Four test tiers
+running concurrently at two threads each therefore fill the existing
+c7i.2xlarge (8 vCPU, \$0.36/h) exactly; a c7i.4xlarge (\$0.71/h) would only
+help if more than four simulations run at once, and a c7a.2xlarge (3.7\,GHz
+versus 3.2\,GHz, \$0.41/h) would buy roughly 15\,\% single-thread speed for a
+15\,\% higher rate plus a re-bootstrap of the host. Neither changes the
+conclusion that a token is tens of minutes in RTL simulation, so the instance
+was kept. The gains that matter came from removing Python from the per-cycle
+and per-beat paths (3.4$\times$ end to end at two threads); anything beyond
+that needs the FPGA (about \SI{0.65}{s} per token at 50\,MHz) or a faster
+simulator kernel. Arcilator (CIRCT) was considered and not pursued:
+it has no VPI/cocotb integration, and the vector backend is hand-written
+SystemVerilog with DPI hooks whose coverage under \texttt{circt-verilog} is
+unverified; the Verilator fix above recovers the dominant loss without
+changing simulators.
+
+\section{Limitations and next steps}
+Positions stay below 512, so sliding-window layers are exercised as full
+attention. Prefill is sequential decode; a causal-tiled prefill kernel would
+recover the 2-D matmul paths. Activation quantisation is per token and per
+tensor; if T4/T6 show logits drifting from HF, per-group scales on the
+down-projection input are the first thing to try, and both references go
+through one function each. Three different $\exp$ approximations coexist in the
+kernel set; the $2\times10^{-2}$ strict tolerance exists to absorb them and
+should be tightened from the measured margins. The lm\_head dominates decode
+cost at this MAC rate; a model-resident, higher-throughput GEMV is the largest
+single lever, exactly as the GR-288 spec assumes.
+
+\section*{Reproduction}
+\begin{lstlisting}
+bazel run //tests/cocotb/rvv/ml_ops/gemma_inference:dump_gemma3_model -- \
+  --model_id unsloth/gemma-3-270m-it --out_dir .../test_data --full_lm_head
+bazel test //tests/cocotb/rvv/ml_ops/gemma_inference:gemma3_inference_cocotb_test_gemma3_layer0_decode_step
+bazel test //tests/cocotb/rvv/ml_ops/gemma_inference:gemma3_inference_cocotb_test_gemma3_next_token_candidates \
+  --test_timeout=30000 --test_env=GEMMA3_PROMPT_TOKENS=6
+\end{lstlisting}
+Host: EC2 c7i.2xlarge, Ubuntu 24.04, Verilator 5.050, Bazel 8.6 via
+\texttt{tools/dev/bazel-docker.sh}; reference model
+\texttt{unsloth/gemma-3-270m-it} (ungated mirror of
+\texttt{google/gemma-3-270m-it}), transformers 5.12.1, torch 2.12 CPU.
+\end{document}
