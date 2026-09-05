@@ -684,6 +684,13 @@ coralnpu_v2_binary(
     ],
 )
 
+coralnpu_v2_binary(
+    name = "isa_cycle_bench",
+    srcs = [
+        "isa_cycle_bench.cc",
+    ],
+)
+
 # This test is used for baseline vector power analysis.
 coralnpu_v2_binary(
     name = "nop_test",
@@ -888,6 +895,32 @@ cocotb_test_suite(
     vcs_defines = VCS_DEFINES,
     vcs_test_args = VCS_TEST_ARGS,
     vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
+    verilator_model = ":rvv_core_mini_axi_model",
+)
+
+cocotb_test_suite(
+    name = "isa_cycle_bench_test",
+    simulators = [
+        "verilator",
+    ],
+    testcases = [
+        "isa_cycle_bench_test",
+    ],
+    testcases_vname = "ISA_CYCLE_BENCH_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniAxi",
+        "waves": False,
+        "seed": "42",
+        "test_module": ["isa_cycle_bench_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        "data": [
+            ":isa_cycle_bench.elf",
+        ],
+        "size": "medium",
+    },
     verilator_model = ":rvv_core_mini_axi_model",
 )
 
