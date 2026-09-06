@@ -1,0 +1,3 @@
+# Profiling generates large data on each run; keep source and documentation,
+# but do not commit generated artifacts.
+results/

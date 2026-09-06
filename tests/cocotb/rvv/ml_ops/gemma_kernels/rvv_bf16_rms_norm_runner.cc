@@ -21,9 +21,18 @@
 #define MAX_WEIGHT_SIZE 4096
 
 extern "C" {
-__bf16 rms_input[MAX_INPUT_SIZE] __attribute__((section(".extmem"), used, retain, aligned(16)));
-__bf16 rms_weight[MAX_WEIGHT_SIZE] __attribute__((section(".extmem"), used, retain, aligned(16)));
-__bf16 rms_output[MAX_INPUT_SIZE] __attribute__((section(".extmem"), used, retain, aligned(16)));
+// Match the Gemma decoder-layer and sibling runners by placing tensors in DDR.
+// `.ddr_bss` reserves address space in DDR without putting uninitialized large
+// arrays in the ELF loadable segment; otherwise backdoor loading would write
+// the entire zero-filled region. `.extmem` has different access latency from
+// DDR, so standalone RMSNorm cycles cannot be summed with decoder stages under
+// equivalent conditions.
+__bf16 rms_input[MAX_INPUT_SIZE]
+    __attribute__((section(".ddr_bss"), used, retain, aligned(16)));
+__bf16 rms_weight[MAX_WEIGHT_SIZE]
+    __attribute__((section(".ddr_bss"), used, retain, aligned(16)));
+__bf16 rms_output[MAX_INPUT_SIZE]
+    __attribute__((section(".ddr_bss"), used, retain, aligned(16)));
 
 // Parameters
 uint32_t active_seq_len __attribute__((section(".data"), used, retain))     = 1;

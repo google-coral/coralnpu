@@ -57,4 +57,34 @@ inline void rvv_store_vec<__bf16>(__bf16 *ptr, vfloat32m8_t v, size_t vl) {
   __riscv_vse16_v_bf16m4(ptr, v_bf16, vl);
 }
 
+// LMUL=4 variants for kernels with enough simultaneously-live vectors to
+// otherwise force whole-register spills at LMUL=8.
+template <typename T>
+inline vfloat32m4_t rvv_load_vec_m4(const T *ptr, size_t vl);
+
+template <>
+inline vfloat32m4_t rvv_load_vec_m4<float>(const float *ptr, size_t vl) {
+  return __riscv_vle32_v_f32m4(ptr, vl);
+}
+
+template <>
+inline vfloat32m4_t rvv_load_vec_m4<__bf16>(const __bf16 *ptr, size_t vl) {
+  vbfloat16m2_t v_bf16 = __riscv_vle16_v_bf16m2(ptr, vl);
+  return __riscv_vfwcvtbf16_f_f_v_f32m4(v_bf16, vl);
+}
+
+template <typename T>
+inline void rvv_store_vec_m4(T *ptr, vfloat32m4_t v, size_t vl);
+
+template <>
+inline void rvv_store_vec_m4<float>(float *ptr, vfloat32m4_t v, size_t vl) {
+  __riscv_vse32_v_f32m4(ptr, v, vl);
+}
+
+template <>
+inline void rvv_store_vec_m4<__bf16>(__bf16 *ptr, vfloat32m4_t v, size_t vl) {
+  vbfloat16m2_t v_bf16 = __riscv_vfncvtbf16_f_f_w_bf16m2(v, vl);
+  __riscv_vse16_v_bf16m2(ptr, v_bf16, vl);
+}
+
 #endif  // TESTS_COCOTB_RVV_ML_OPS_GEMMA_KERNELS_RVV_COMMON_VEC_H_
