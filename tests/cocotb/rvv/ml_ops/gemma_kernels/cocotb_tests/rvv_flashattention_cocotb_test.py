@@ -406,6 +406,15 @@ async def core_mini_rvv_bf16_flashattention_test(dut):
     # Test configs for Gemma 3 (Prefill and Decode)
     test_configs = [
         {
+            # mytest 使用 cache_length=3，追加当前 token 后 KV 长度为 4。
+            "name": "Decoder Layer Exact Shape",
+            "q_heads": 4,
+            "kv_heads": 1,
+            "q_seq": 1,
+            "kv_seq": 4,
+            "dim": 256
+        },
+        {
             "name": "Decode Fast Path (Dim <= 32)",
             "q_heads": 4,
             "kv_heads": 1,
@@ -438,6 +447,8 @@ async def core_mini_rvv_bf16_flashattention_test(dut):
             "dim": 256
         },
     ]
+    if os.environ.get("GEMMA_PROFILE_ONLY"):
+        test_configs = test_configs[:1]
 
     rng = np.random.default_rng(seed=42)
 

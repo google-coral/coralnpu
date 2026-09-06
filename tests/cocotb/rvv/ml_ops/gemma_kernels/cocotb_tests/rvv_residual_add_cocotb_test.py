@@ -53,7 +53,6 @@ async def core_mini_rvv_residual_add_test(dut):
         (1, 2048),
         (2, 2048),
     ]
-
     rng = np.random.default_rng(seed=42)
 
     for token_count, hidden_size in test_shapes:
@@ -128,6 +127,8 @@ async def core_mini_rvv_bf16_residual_add_test(dut):
         (1, 2048),
         (2, 2048),
     ]
+    if os.environ.get("GEMMA_PROFILE_ONLY"):
+        test_shapes = [(1, 640)]
 
     rng = np.random.default_rng(seed=42)
 

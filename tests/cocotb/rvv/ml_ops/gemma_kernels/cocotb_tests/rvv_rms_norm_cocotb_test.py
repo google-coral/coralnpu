@@ -32,7 +32,14 @@ def golden_rms_norm(x, w, eps=1e-6):
 async def core_mini_rvv_rms_norm_test(dut):
     """FP32 RMSNorm Test."""
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut, highmem=True)
+    # RMSNorm 张量与完整 Decoder 一样位于 0x80000000 起始的 DDR 区域。
+    # 必须显式告诉 Fixture 该地址窗口，否则 AXI 访问会返回 DECERR(0b10)。
+    fixture = await Fixture.Create(
+        dut,
+        highmem=True,
+        ext_mem_base_addr=0x80000000,
+        ext_mem_size=32 * 1024 * 1024,
+    )
 
     elf_name = "rvv_rms_norm.elf"
     elf_path = r.Rlocation(
@@ -56,7 +63,6 @@ async def core_mini_rvv_rms_norm_test(dut):
         (1, 2048),
         (2, 2048),
     ]
-
     rng = np.random.default_rng(seed=42)
 
     for seq_len, hidden_size in test_shapes:
@@ -114,7 +120,14 @@ async def core_mini_rvv_bf16_rms_norm_test(dut):
     import ml_dtypes
 
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut, highmem=True)
+    # RMSNorm 张量与完整 Decoder 一样位于 0x80000000 起始的 DDR 区域。
+    # 必须显式告诉 Fixture 该地址窗口，否则 AXI 访问会返回 DECERR(0b10)。
+    fixture = await Fixture.Create(
+        dut,
+        highmem=True,
+        ext_mem_base_addr=0x80000000,
+        ext_mem_size=32 * 1024 * 1024,
+    )
 
     elf_name = "rvv_bf16_rms_norm.elf"
     elf_path = r.Rlocation(
@@ -134,10 +147,15 @@ async def core_mini_rvv_bf16_rms_norm_test(dut):
     test_shapes = [
         (11, 640),
         (1, 640),
+        # Decoder Layer 中 Q/K 归一化使用的精确形状。
+        (4, 256),
+        (1, 256),
         (5, 643),
         (1, 2048),
         (2, 2048),
     ]
+    if os.environ.get("GEMMA_PROFILE_ONLY"):
+        test_shapes = [(1, 640), (4, 256), (1, 256)]
 
     rng = np.random.default_rng(seed=42)
 
