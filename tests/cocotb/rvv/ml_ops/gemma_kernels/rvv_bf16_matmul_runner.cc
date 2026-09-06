@@ -54,8 +54,8 @@ void rvv_gemv_1d_bf16_segment2_a_cache(const __bf16 *__restrict__ A,
 #endif
 }
 
-// 覆盖 Gemma 3 270M Decoder Layer 的最大 MLP 投影形状：
-// 1x2048 乘 2048x640，以及 1x640 乘 640x2048。
+// Cover the largest Gemma 3 270M decoder-layer MLP projection shapes:
+// 1x2048 times 2048x640 and 1x640 times 640x2048.
 #define MAX_M 256
 #define MAX_K 2048
 #define MAX_N 2048

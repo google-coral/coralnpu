@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Gemma 3 270M 单个 decoder layer 的 BF16 端到端测试与 cycle 对比。"""
+"""End-to-end BF16 and cycle-comparison tests for one Gemma 3 270M decoder layer."""
 
 import json
 import os
@@ -35,7 +35,7 @@ MAX_CACHE_LENGTH = 64
 EPSILON = np.float32(1e-6)
 ROPE_THETA = np.float32(10000.0)
 
-# 顺序必须与 C++ 头文件 DecoderLayerStage 保持一致。
+# Keep this order identical to the C++ DecoderLayerStage enum.
 DECODER_STAGE_NAMES = (
     "input_rms_norm",
     "q_projection",
@@ -67,12 +67,12 @@ RUN_MODE_NAMES = {
 
 
 def _stage_macs(cache_length):
-    """返回第 0 层每个矩阵类阶段的算法 MAC 数。
+    """Return algorithmic MAC counts for matrix stages in layer 0.
 
-    矩阵乘的 MAC 定义为 M*K*N；decode 阶段 M=1。FlashAttention 同时
-    包含 QK^T 和 probability*V 两次乘加，因此是
-    2*q_heads*q_len*kv_len*head_dim。RMSNorm、RoPE、GELU 和残差加不是
-    纯矩阵乘，不把它们伪装成 MAC，而是另外报告 cycles/element。
+    A matrix multiply has M*K*N MACs; decode uses M=1. FlashAttention
+    includes both QK^T and probability*V, so its count is
+    2*q_heads*q_len*kv_len*head_dim. RMSNorm, RoPE, GELU, and residual add
+    are not pure matrix multiplies, so report them as cycles/element instead.
     """
     attention_length = cache_length + 1
     return {
@@ -352,7 +352,7 @@ def _golden_layer(weights, hidden_input, k_cache, v_cache, cache_length, positio
 
 
 def _write_extmem(fixture, symbol, value):
-    """按 ELF 符号地址把连续张量的原始字节直接写入模拟 AXI DDR。"""
+    """Write contiguous tensor bytes to simulated AXI DDR at an ELF symbol address."""
     byte_view = np.ascontiguousarray(value).view(np.uint8).reshape(-1)
     address = fixture.symbols[symbol]
     offset = address - fixture.core_mini_axi.memory_base_addr
@@ -379,11 +379,12 @@ async def _run_decoder_layer(
     hf_layer_output=None,
     run_modes=(RUN_MODE_PROFILED_STAGES,),
 ):
-    """用同一个 ELF、相同 DDR 地址和相同数据执行一种或两种计时模式。
+    """Run one or two timing modes with the same ELF, DDR addresses, and data.
 
-    当 ``run_modes`` 同时包含完整层和逐阶段模式时，每次运行前都会复位整个
-    DUT，并重新写入全部输入、真实权重、初始 K/V cache 和输出缓冲区。这样
-    两次运行的差别只剩 C++ 入口路径本身，不会混入不同权重或不同地址。
+    When ``run_modes`` contains both whole-layer and profiled-stage modes, reset
+    the complete DUT and rewrite all inputs, real weights, initial K/V caches,
+    and output buffers before each run. The only difference is then the C++
+    entry path rather than weights or addresses.
     """
     r = runfiles.Create()
     fixture = await Fixture.Create(
@@ -396,7 +397,7 @@ async def _run_decoder_layer(
         "GEMMA_PROFILE_ELF", "rvv_bf16_gemma_decoder_layer_profile.elf"
     )
     elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/profiling/mytest/"
+        "coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/profiling/profiled_decoder_layer/"
         f"{elf_name}"
     )
     if not elf_path or not os.path.exists(elf_path):
@@ -450,8 +451,8 @@ async def _run_decoder_layer(
             raise ValueError(f"Unknown decoder run mode: {run_mode}")
         mode_name = RUN_MODE_NAMES[run_mode]
 
-        # 完整复位会清空 core/cache 状态；随后重新写入相同 DDR 内容。输出缓冲
-        # 也显式清零，避免第二次运行看到第一次留下的数据。
+        # A full reset clears core/cache state. Rewrite the same DDR contents and
+        # explicitly clear output buffers so later runs see no stale data.
         await fixture.core_mini_axi.reset()
         _write_extmem(fixture, "gemma_hidden_input", hidden_input)
         pack_projections = bool(os.environ.get("GEMMA_PACKED_PROJECTIONS"))
@@ -650,8 +651,9 @@ async def _run_decoder_layer(
     ):
         whole = results[RUN_MODE_WHOLE]
         profiled = results[RUN_MODE_PROFILED_STAGES]
-        # 两条路径调用完全相同的 kernel，输出应逐 bit 一致。cycle 允许存在很小
-        # 的函数控制流差异，但不允许用数值误差掩盖执行路径不一致。
+        # Both paths invoke exactly the same kernels, so outputs must match bit
+        # for bit. A small cycle difference from control flow is acceptable, but
+        # numerical tolerances must not hide a path mismatch.
         np.testing.assert_array_equal(
             whole["layer_output_bits"], profiled["layer_output_bits"]
         )
@@ -672,15 +674,16 @@ async def _run_decoder_layer(
             f"profiled_outer_corrected={profiled['cycles_corrected']} "
             f"profiling_bookkeeping={profiling_bookkeeping}"
         )
-        # 这是性能一致性防线，不要求数学上的 0 cycle；函数入口、配置检查和
-        # 分阶段数组写回不会全部落在各 kernel 的计时窗口中。
+        # This guards performance consistency; mathematical zero cycles are not
+        # required because function entry, configuration checks, and stage-array
+        # writes do not all fall inside individual kernel timing windows.
         assert abs(relative) < 0.01
 
     return results
 
 
 @cocotb.test()
-async def core_mini_rvv_bf16_gemma_decoder_layer_test(dut):
+async def core_mini_rvv_bf16_gemma_decoder_layer_profile_test(dut):
     if os.environ.get("GEMMA_LAYER0_DATA"):
         dut._log.info("Real Gemma data selected; skipping synthetic layer run")
         return
@@ -705,7 +708,7 @@ async def core_mini_rvv_bf16_gemma_decoder_layer_test(dut):
 
 
 def _load_bf16_npy(path):
-    """读取准备脚本保存的 uint16，并按位恢复为 BF16，不改变任何 bit。"""
+    """Load uint16 data from the preparation script and reinterpret it as BF16 bits."""
     data = np.load(path)
     if data.dtype != np.uint16:
         raise ValueError(f"Expected uint16 BF16 data in {path}, got {data.dtype}")

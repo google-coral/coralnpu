@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "rvv_gemma_decoder_layer_mytest.h"
+#include "rvv_gemma_decoder_layer_profile.h"
 
 #include <cmath>
 
@@ -60,8 +60,9 @@ namespace {
 
 using namespace gemma_270m;
 
-// 每次只包住一个真实阶段。数组中的值是该阶段内部 mcycle 差值；整层
-// cycle_count 由 runner 在函数外层读取，所以能够进一步计算未归因开销。
+// Each invocation surrounds one real stage. The array stores the stage-local
+// mcycle delta; the runner reads the whole-layer cycle_count outside the
+// function so unattributed overhead can be calculated.
 #define PROFILE_STAGE(stage, ...)                    \
   do {                                               \
     uint32_t stage_start_cycles = mcycle_read();     \
@@ -104,9 +105,10 @@ void AppendToCache(const __bf16 *current, __bf16 *cache, size_t cache_length) {
 
 }  // namespace
 
-// 完整层基准路径：执行顺序、kernel、张量地址都与下方逐阶段路径一致，
-// 唯一差别是内部没有 mcycle_read() 和 gemma_stage_cycles 数组写回。
-// runner 仍会在函数最外层读取一次起止 cycle，因此这里测到的是完整层总耗时。
+// Whole-layer baseline path: the execution order, kernels, and tensor
+// addresses match the profiled path below. The only difference is that this
+// path does not call mcycle_read() internally or write gemma_stage_cycles.
+// The runner still reads outer start/end cycles, measuring the whole layer.
 extern "C" int Gemma270mDecoderLayerBf16Whole(
     const __bf16 *hidden_input, const DecoderLayerWeightsBf16 *weights,
     DecoderLayerBuffersBf16 *buffers, const DecoderLayerConfig *config) {
@@ -170,8 +172,9 @@ extern "C" int Gemma270mDecoderLayerBf16Whole(
   return 0;
 }
 
-// 逐算子路径：每个阶段用一对 mcycle_read() 包围，便于把 19 个阶段相加。
-// 这个函数保留原来的名字，避免破坏已经存在的 mytest/Bazel 目标。
+// Per-stage path: surround each stage with mcycle_read() so the 19 stages can
+// be summed.
+// Keep the public entry point stable so the profiling runner can select it.
 extern "C" int Gemma270mDecoderLayerBf16(const __bf16 *hidden_input,
                                           const DecoderLayerWeightsBf16 *weights,
                                           DecoderLayerBuffersBf16 *buffers,

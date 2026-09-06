@@ -31,15 +31,15 @@ template_rule(
     {
         "rvv_bf16_gemma_decoder_layer": {
             "srcs": [
-                "rvv_bf16_gemma_decoder_layer_runner_mytest.cc",
-                "rvv_gemma_decoder_layer_mytest.cc",
+                "rvv_bf16_gemma_decoder_layer_runner.cc",
+                "rvv_gemma_decoder_layer.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_bf16_matmul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_rms_norm.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_tanh_gelu_mul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_residual_add.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_flashattention_kernel.cc",
             ],
-            "hdrs": ["rvv_gemma_decoder_layer_mytest.h"],
+            "hdrs": ["rvv_gemma_decoder_layer.h"],
             "deps": [
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_common_vec",
                 "//sw/utils:utils",
@@ -53,8 +53,8 @@ template_rule(
 
 py_binary(
     name = "prepare_real_gemma_layer",
-    main = "prepare_real_gemma_layer_mytest.py",
-    srcs = ["prepare_real_gemma_layer_mytest.py"],
+    main = "prepare_real_gemma_layer.py",
+    srcs = ["prepare_real_gemma_layer.py"],
     tags = ["manual"],
     deps = [
         gemma_requirement("numpy"),
@@ -65,7 +65,7 @@ py_binary(
 )
 
 _DECODER_LAYER_TESTCASES = [
-    "core_mini_rvv_bf16_gemma_decoder_layer_test",
+    "core_mini_rvv_bf16_gemma_decoder_layer_synthetic_test",
 ]
 
 _REAL_DECODER_LAYER_TESTCASES = [
@@ -77,7 +77,7 @@ _COMMON_TEST_KWARGS = {
     "waves": False,
     "seed": "42",
     "tags": ["manual"],
-    "test_module": ["cocotb_tests/rvv_gemma_decoder_layer_cocotb_test_mytest.py"],
+    "test_module": ["cocotb_tests/rvv_gemma_decoder_layer_cocotb_test.py"],
     "deps": [
         "//coralnpu_test_utils:sim_test_fixture",
         "@bazel_tools//tools/python/runfiles",

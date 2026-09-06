@@ -1,2 +1,3 @@
-# Profiling 每次运行生成的数据较大，保留源码和文档，不提交运行产物。
+# Profiling generates large data on each run; keep source and documentation,
+# but do not commit generated artifacts.
 results/

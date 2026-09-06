@@ -70,9 +70,9 @@ async def _run_f32_matmul_test_impl(dut, shapes, test_label_prefix):
             np.zeros_like(golden_output).flatten()
         )
 
-        # 256x256x512 的 FP32 MatMul 约有 3,355 万次 MAC，实测预期运行
-        # 时间会超过原来的 2,000 万 cycle 限制；留出余量以避免正常大矩阵
-        # 被误判为仿真超时。
+        # A 256x256x512 FP32 MatMul has about 33.55 million MACs and is
+        # expected to exceed the original 20-million-cycle limit. Leave enough
+        # headroom so a normal large matrix is not mistaken for a timeout.
         await fixture.run_to_halt(timeout_cycles=40000000)
 
         npu_cycles = int((await fixture.read('cycle_count',
@@ -221,8 +221,9 @@ async def core_mini_rvv_bf16_matmul_lhs_1d_test(dut):
         (1, 64, 64),
         (1, 1024, 64),
         (1, 256, 512),
-        # 以下五个唯一形状覆盖 Gemma 3 270M Decoder Layer 的七次投影；
-        # K/V 投影和 Gate/Up 投影各自共享一个形状，汇总时按调用次数计入。
+        # These five unique shapes cover the seven projections in the Gemma 3
+        # 270M decoder layer. K/V and Gate/Up projections share shapes and are
+        # multiplied by their call counts in the summary.
         (1, 640, 1024),
         (1, 640, 256),
         (1, 1024, 640),

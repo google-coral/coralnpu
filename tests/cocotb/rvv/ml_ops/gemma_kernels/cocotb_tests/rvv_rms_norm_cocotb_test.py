@@ -32,8 +32,8 @@ def golden_rms_norm(x, w, eps=1e-6):
 async def core_mini_rvv_rms_norm_test(dut):
     """FP32 RMSNorm Test."""
     r = runfiles.Create()
-    # RMSNorm 张量与完整 Decoder 一样位于 0x80000000 起始的 DDR 区域。
-    # 必须显式告诉 Fixture 该地址窗口，否则 AXI 访问会返回 DECERR(0b10)。
+    # RMSNorm tensors use the same DDR window as the full decoder, starting at
+    # 0x80000000. The window must be explicit or AXI returns DECERR(0b10).
     fixture = await Fixture.Create(
         dut,
         highmem=True,
@@ -120,8 +120,8 @@ async def core_mini_rvv_bf16_rms_norm_test(dut):
     import ml_dtypes
 
     r = runfiles.Create()
-    # RMSNorm 张量与完整 Decoder 一样位于 0x80000000 起始的 DDR 区域。
-    # 必须显式告诉 Fixture 该地址窗口，否则 AXI 访问会返回 DECERR(0b10)。
+    # RMSNorm tensors use the same DDR window as the full decoder, starting at
+    # 0x80000000. The window must be explicit or AXI returns DECERR(0b10).
     fixture = await Fixture.Create(
         dut,
         highmem=True,
@@ -147,7 +147,7 @@ async def core_mini_rvv_bf16_rms_norm_test(dut):
     test_shapes = [
         (11, 640),
         (1, 640),
-        # Decoder Layer 中 Q/K 归一化使用的精确形状。
+        # Exact shapes used by Q/K normalization in the decoder layer.
         (4, 256),
         (1, 256),
         (5, 643),

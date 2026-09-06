@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "rvv_gemma_decoder_layer_mytest.h"
+#include "rvv_gemma_decoder_layer.h"
 
 #include <cmath>
 

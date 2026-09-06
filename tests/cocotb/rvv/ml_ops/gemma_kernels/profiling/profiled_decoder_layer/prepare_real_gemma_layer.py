@@ -11,11 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""为 CoralNPU 测试准备真实 Gemma 3 270M 第 0 层数据。
+"""Prepare real Gemma 3 270M layer-0 data for CoralNPU tests.
 
-本脚本只从 ``--model_dir`` 指定的本地 Hugging Face 模型目录读取数据，不会从
-网络下载权重。输出目录中的权重、hidden input、K/V cache 和参考输出全部保存为
-NumPy 文件；``manifest.json`` 同时记录每个文件来自哪个 Hugging Face 参数。
+This script reads only from the local Hugging Face model directory provided by
+``--model_dir`` and never downloads weights. Weights, hidden input, K/V cache,
+and reference output are saved as NumPy files; ``manifest.json`` records the
+source Hugging Face parameter for every file.
 """
 
 import argparse
@@ -28,8 +29,9 @@ import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# 左边是 C++ ELF 中的全局符号名，右边是 Hugging Face state_dict 的参数名。
-# 这个映射是所有真实权重的来源清单，测试不会再用随机权重覆盖这些数据。
+# The keys are C++ ELF global symbols and the values are Hugging Face
+# state_dict parameter names. This map is the source of every real weight; the
+# test never overwrites these weights with random data.
 WEIGHT_MAP = {
     "gemma_input_layernorm_weight":
         "model.layers.0.input_layernorm.weight",
@@ -50,9 +52,10 @@ WEIGHT_MAP = {
     "gemma_down_proj_weight": "model.layers.0.mlp.down_proj.weight",
 }
 
-# Hugging Face Linear 层的权重 shape 是 [out_features, in_features]，而当前
-# CoralNPU BF16 matmul kernel 按 [K, N] 连续读取。这里列出的矩阵在保存前必须
-# 转置；RMSNorm 权重是一维向量，不需要转置。
+# Hugging Face Linear weights have shape [out_features, in_features], while the
+# CoralNPU BF16 matmul kernel reads contiguous [K, N] data. The matrices below
+# must be transposed before saving; RMSNorm weights are vectors and need no
+# transpose.
 MATRIX_SYMBOLS = {
     "gemma_q_proj_weight",
     "gemma_k_proj_weight",
@@ -65,21 +68,22 @@ MATRIX_SYMBOLS = {
 
 
 def _to_bf16_u16(tensor):
-    """把 PyTorch tensor 转成连续 BF16，并返回完全相同位型的 uint16 数组。
+    """Convert a PyTorch tensor to contiguous BF16 bits represented as uint16.
 
-    ``view`` 只重新解释底层 16 bit，不进行第二次数值转换。因此写入 ``.npy`` 的
-    每个 uint16 就是随后写入模拟 DDR 的 BF16 bit pattern。
+    ``view`` only reinterprets the underlying 16-bit values; it does not perform
+    a second numerical conversion. Each uint16 written to the ``.npy`` file is
+    therefore the BF16 bit pattern later written to simulated DDR.
     """
     tensor = tensor.detach().to(torch.bfloat16).contiguous().cpu()
     return tensor.view(torch.int16).numpy().view(np.uint16)
 
 
 def _extract_layer_cache(cache, layer_index):
-    """兼容不同 Transformers 版本的 cache 容器并取出指定层 K/V。
+    """Read one layer's K/V cache across supported Transformers cache layouts.
 
-    Transformers 的 cache API 曾使用 ``layers[i].keys/values``、
-    ``key_cache/value_cache`` 或 tuple 三种布局。这里只改变容器访问方式，不改变
-    cache 张量内容。
+    Transformers cache APIs have used ``layers[i].keys/values``,
+    ``key_cache/value_cache``, and tuple layouts. Only the container access
+    changes here; the cache tensor contents are preserved.
     """
     if hasattr(cache, "layers"):
         layer = cache.layers[layer_index]
@@ -98,7 +102,7 @@ def _extract_layer_cache(cache, layer_index):
 
 
 def _validate_config(config):
-    """确认本地模型 shape 与 C++ Gemma 270M 固定缓冲区完全一致。"""
+    """Verify that the local model shapes match the fixed C++ buffers."""
     expected = {
         "hidden_size": 640,
         "intermediate_size": 2048,
@@ -113,17 +117,17 @@ def _validate_config(config):
 
 
 def prepare_layer(model_dir, output_dir, prompt):
-    """读取本地模型，生成单 token decode 所需的第 0 层完整测试夹具。
+    """Load a local model and generate a complete layer-0 decode fixture.
 
-    前三个 token 用 Hugging Face 执行得到历史 K/V cache；第四个 token 再进行
-    decode。decode 的 ``hidden_states[0]`` 是进入第 0 层之前的输入，
-    ``hidden_states[1]`` 是离开第 0 层后的参考输出。这样 CoralNPU 接收到的层输入
-    和 cache 与 Hugging Face 在同一个 token、同一个 position 上完全对应。
+    Hugging Face runs the first three tokens to obtain the historical K/V
+    cache, then decodes the fourth token. ``hidden_states[0]`` is the input
+    before layer 0 and ``hidden_states[1]`` is the reference output after it,
+    so CoralNPU receives inputs and caches for the same token and position.
     """
     with open(os.path.join(model_dir, "config.json")) as config_file:
         raw_config = json.load(config_file)
 
-    # local_files_only=True 是数据来源约束：只允许读取 model_dir，不访问网络。
+    # local_files_only=True ensures that model_dir is the only data source.
     tokenizer = AutoTokenizer.from_pretrained(
         model_dir, local_files_only=True
     )
@@ -146,7 +150,7 @@ def prepare_layer(model_dir, output_dir, prompt):
 
     backbone = causal_lm.model
     with torch.no_grad():
-        # 第一次运行前三个 token，专门取得第 0 层的历史 K/V cache。
+        # Run the first three tokens to obtain layer 0's historical K/V cache.
         prefix_output = backbone(
             input_ids=prefix_ids,
             attention_mask=torch.ones_like(prefix_ids),
@@ -160,8 +164,8 @@ def prepare_layer(model_dir, output_dir, prompt):
         layer0_k_cache = layer0_k_cache.clone()
         layer0_v_cache = layer0_v_cache.clone()
 
-        # 第二次只输入第四个 token，同时复用前三个 token 的 cache。这里得到的
-        # hidden_states[0]/[1] 正好包住 decoder layer 0。
+        # Decode only the fourth token while reusing the first three tokens'
+        # cache. The resulting hidden_states[0]/[1] bracket decoder layer 0.
         decode_output = backbone(
             input_ids=decode_id,
             attention_mask=torch.ones(
@@ -183,7 +187,7 @@ def prepare_layer(model_dir, output_dir, prompt):
         tensor = state_dict[state_name]
         source_shape = list(tensor.shape)
         if symbol in MATRIX_SYMBOLS:
-            # [out, in] -> [K=in, N=out]，匹配 CoralNPU matmul 的内存布局。
+            # [out, in] -> [K=in, N=out], matching the CoralNPU matmul layout.
             tensor = tensor.transpose(0, 1).contiguous()
         data = _to_bf16_u16(tensor)
         filename = f"{symbol}.npy"
@@ -216,8 +220,8 @@ def prepare_layer(model_dir, output_dir, prompt):
         input_ids.cpu().numpy().astype(np.int64),
     )
 
-    # manifest 是可审计的数据索引：测试通过它查到每个 .npy 文件，同时可反查
-    # Hugging Face state_dict 参数名和转置前后的 shape。
+    # The manifest is an auditable data index: tests use it to locate each .npy
+    # file and to recover the Hugging Face parameter name and both shapes.
     manifest = {
         "model_dir": os.path.abspath(model_dir),
         "prompt": prompt,

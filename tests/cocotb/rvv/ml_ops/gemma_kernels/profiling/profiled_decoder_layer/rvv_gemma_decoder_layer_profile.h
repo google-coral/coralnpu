@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TESTS_COCOTB_RVV_ML_OPS_GEMMA_KERNELS_PROFILING_MYTEST_RVV_GEMMA_DECODER_LAYER_H_
-#define TESTS_COCOTB_RVV_ML_OPS_GEMMA_KERNELS_PROFILING_MYTEST_RVV_GEMMA_DECODER_LAYER_H_
+#ifndef TESTS_COCOTB_RVV_ML_OPS_GEMMA_KERNELS_PROFILING_PROFILED_DECODER_LAYER_RVV_GEMMA_DECODER_LAYER_PROFILE_H_
+#define TESTS_COCOTB_RVV_ML_OPS_GEMMA_KERNELS_PROFILING_PROFILED_DECODER_LAYER_RVV_GEMMA_DECODER_LAYER_PROFILE_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -29,16 +29,17 @@ constexpr size_t kQuerySize        = kNumQueryHeads * kHeadDim;
 constexpr size_t kKvSize           = kNumKvHeads * kHeadDim;
 constexpr size_t kMaxCacheLength   = 64;
 
-// 两种模式编译进同一个 ELF，并使用完全相同的输入、权重、缓存和输出地址。
-// Cocotb 会在两次运行之间复位整个 DUT，从而让整层路径和逐算子路径都从
-// 冷启动状态开始，避免拿不同 ELF 或不同 DDR 布局下的数据直接相减。
+// Both modes are compiled into the same ELF and use identical inputs, weights,
+// caches, and output addresses. Cocotb resets the complete DUT between runs so
+// both paths start cold and are not compared across different ELF or DDR layouts.
 enum DecoderLayerRunMode : uint32_t {
   kRunWholeLayer = 0,
   kRunProfiledStages = 1,
 };
 
-// 分阶段计时顺序与 Decoder Layer 的真实执行顺序完全一致。整层总 cycle
-// 仍由 runner 外层的 cycle_count 记录；此数组用于解释各算子的占比。
+// The stage-timing order matches the decoder layer's execution order. The
+// runner records whole-layer cycles in cycle_count; this array explains the
+// contribution of each operator.
 enum DecoderLayerStage : size_t {
   kStageInputRmsNorm = 0,
   kStageQProjection,
@@ -118,11 +119,11 @@ extern "C" int Gemma270mDecoderLayerBf16(
     gemma_270m::DecoderLayerBuffersBf16 *buffers,
     const gemma_270m::DecoderLayerConfig *config);
 
-// 无内部 mcycle_read() 的完整层路径。它用于测量“完整算子”本身，避免
-// 19 组阶段计时改变完整层的 cycle。
+// Whole-layer path without internal mcycle_read() calls. It measures the
+// uninstrumented layer and avoids changing its cycles with 19 stage timers.
 extern "C" int Gemma270mDecoderLayerBf16Whole(
     const __bf16 *hidden_input, const gemma_270m::DecoderLayerWeightsBf16 *weights,
     gemma_270m::DecoderLayerBuffersBf16 *buffers,
     const gemma_270m::DecoderLayerConfig *config);
 
-#endif  // TESTS_COCOTB_RVV_ML_OPS_GEMMA_KERNELS_PROFILING_MYTEST_RVV_GEMMA_DECODER_LAYER_H_
+#endif  // TESTS_COCOTB_RVV_ML_OPS_GEMMA_KERNELS_PROFILING_PROFILED_DECODER_LAYER_RVV_GEMMA_DECODER_LAYER_PROFILE_H_

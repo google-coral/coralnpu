@@ -14,7 +14,7 @@
 
 #include <cstdint>
 
-#include "rvv_gemma_decoder_layer_mytest.h"
+#include "rvv_gemma_decoder_layer_profile.h"
 #include "sw/utils/utils.h"
 
 using namespace gemma_270m;
@@ -64,9 +64,40 @@ uint32_t active_position __attribute__((section(".data"), used, retain))     = 0
 uint32_t active_cache_length __attribute__((section(".data"), used, retain)) = 0;
 float active_epsilon __attribute__((section(".data"), used, retain))         = 1e-6f;
 float active_rope_theta __attribute__((section(".data"), used, retain))      = 10000.0f;
+uint32_t active_run_mode __attribute__((section(".data"), used, retain)) =
+    kRunProfiledStages;
 uint32_t cycle_count __attribute__((section(".data"), used, retain))         = 0;
+uint32_t cycle_count_corrected __attribute__((section(".data"), used, retain)) = 0;
+uint32_t mcycle_read_overhead_cycles
+    __attribute__((section(".data"), used, retain)) = 0;
+uint32_t stage_cycle_sum_raw __attribute__((section(".data"), used, retain)) = 0;
+uint32_t stage_cycle_sum_corrected
+    __attribute__((section(".data"), used, retain)) = 0;
 int32_t layer_status __attribute__((section(".data"), used, retain))         = 0;
+uint32_t gemma_stage_cycles[kDecoderLayerStageCount]
+    __attribute__((section(".data"), used, retain)) = {};
 }
+
+namespace {
+
+// Read mcycle twice and keep the minimum of 32 measurements. This estimates
+// the minimum cost of an empty measurement interval: trailing instructions
+// after the first read plus instructions before the second sample. The minimum
+// avoids occasional cache or pipeline stalls.
+uint32_t MeasureMcycleReadOverhead() {
+  uint64_t minimum = ~uint64_t{0};
+  for (int i = 0; i < 32; ++i) {
+    const uint64_t start = mcycle_read();
+    const uint64_t end = mcycle_read();
+    const uint64_t delta = end - start;
+    if (delta < minimum) {
+      minimum = delta;
+    }
+  }
+  return static_cast<uint32_t>(minimum);
+}
+
+}  // namespace
 
 int main() {
   DecoderLayerWeightsBf16 weights = {
@@ -112,10 +143,44 @@ int main() {
       active_rope_theta,
   };
 
-  uint32_t start_cycles = mcycle_read();
-  layer_status = Gemma270mDecoderLayerBf16(gemma_hidden_input, &weights, &buffers, &config);
-  uint32_t end_cycles = mcycle_read();
-  cycle_count = end_cycles - start_cycles;
+  // Clear results for every ELF invocation so a DUT reset cannot expose values
+  // left by a previous whole-layer or per-stage run.
+  cycle_count = 0;
+  cycle_count_corrected = 0;
+  stage_cycle_sum_raw = 0;
+  stage_cycle_sum_corrected = 0;
+  for (size_t i = 0; i < kDecoderLayerStageCount; ++i) {
+    gemma_stage_cycles[i] = 0;
+  }
+
+  mcycle_read_overhead_cycles = MeasureMcycleReadOverhead();
+  const uint64_t start_cycles = mcycle_read();
+  if (active_run_mode == kRunWholeLayer) {
+    layer_status = Gemma270mDecoderLayerBf16Whole(
+        gemma_hidden_input, &weights, &buffers, &config);
+  } else if (active_run_mode == kRunProfiledStages) {
+    layer_status = Gemma270mDecoderLayerBf16(
+        gemma_hidden_input, &weights, &buffers, &config);
+  } else {
+    layer_status = -2;
+  }
+  const uint64_t end_cycles = mcycle_read();
+  cycle_count = static_cast<uint32_t>(end_cycles - start_cycles);
+  cycle_count_corrected =
+      cycle_count > mcycle_read_overhead_cycles
+          ? cycle_count - mcycle_read_overhead_cycles
+          : 0;
+
+  if (active_run_mode == kRunProfiledStages) {
+    for (size_t i = 0; i < kDecoderLayerStageCount; ++i) {
+      const uint32_t raw = gemma_stage_cycles[i];
+      stage_cycle_sum_raw += raw;
+      stage_cycle_sum_corrected +=
+          raw > mcycle_read_overhead_cycles
+              ? raw - mcycle_read_overhead_cycles
+              : 0;
+    }
+  }
   return layer_status;
 }
 

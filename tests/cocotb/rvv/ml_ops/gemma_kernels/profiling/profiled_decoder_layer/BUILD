@@ -33,15 +33,15 @@ template_rule(
     {
         "rvv_bf16_gemma_decoder_layer_profile": {
             "srcs": [
-                "rvv_bf16_gemma_decoder_layer_runner_mytest.cc",
-                "rvv_gemma_decoder_layer_mytest.cc",
+                "rvv_bf16_gemma_decoder_layer_profile_runner.cc",
+                "rvv_gemma_decoder_layer_profile.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_bf16_matmul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_rms_norm.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_tanh_gelu_mul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_residual_add.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_flashattention_kernel.cc",
             ],
-            "hdrs": ["rvv_gemma_decoder_layer_mytest.h"],
+            "hdrs": ["rvv_gemma_decoder_layer_profile.h"],
             "deps": [
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_common_vec",
                 "//sw/utils:utils",
@@ -52,15 +52,15 @@ template_rule(
         },
         "rvv_bf16_gemma_decoder_layer_profile_seg2": {
             "srcs": [
-                "rvv_bf16_gemma_decoder_layer_runner_mytest.cc",
-                "rvv_gemma_decoder_layer_mytest.cc",
+                "rvv_bf16_gemma_decoder_layer_profile_runner.cc",
+                "rvv_gemma_decoder_layer_profile.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_bf16_matmul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_rms_norm.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_tanh_gelu_mul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_residual_add.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_flashattention_kernel.cc",
             ],
-            "hdrs": ["rvv_gemma_decoder_layer_mytest.h"],
+            "hdrs": ["rvv_gemma_decoder_layer_profile.h"],
             "deps": [
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_common_vec",
                 "//sw/utils:utils",
@@ -72,15 +72,15 @@ template_rule(
         },
         "rvv_bf16_gemma_decoder_layer_profile_block_seg2": {
             "srcs": [
-                "rvv_bf16_gemma_decoder_layer_runner_mytest.cc",
-                "rvv_gemma_decoder_layer_mytest.cc",
+                "rvv_bf16_gemma_decoder_layer_profile_runner.cc",
+                "rvv_gemma_decoder_layer_profile.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_bf16_matmul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_rms_norm.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_tanh_gelu_mul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_residual_add.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_flashattention_kernel.cc",
             ],
-            "hdrs": ["rvv_gemma_decoder_layer_mytest.h"],
+            "hdrs": ["rvv_gemma_decoder_layer_profile.h"],
             "deps": [
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_common_vec",
                 "//sw/utils:utils",
@@ -92,15 +92,15 @@ template_rule(
         },
         "rvv_bf16_gemma_decoder_layer_profile_block_seg2_a_cache": {
             "srcs": [
-                "rvv_bf16_gemma_decoder_layer_runner_mytest.cc",
-                "rvv_gemma_decoder_layer_mytest.cc",
+                "rvv_bf16_gemma_decoder_layer_profile_runner.cc",
+                "rvv_gemma_decoder_layer_profile.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_bf16_matmul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_rms_norm.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_tanh_gelu_mul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_residual_add.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_flashattention_kernel.cc",
             ],
-            "hdrs": ["rvv_gemma_decoder_layer_mytest.h"],
+            "hdrs": ["rvv_gemma_decoder_layer_profile.h"],
             "deps": [
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_common_vec",
                 "//sw/utils:utils",
@@ -112,15 +112,15 @@ template_rule(
         },
         "rvv_bf16_gemma_decoder_layer_profile_seg2_a_cache": {
             "srcs": [
-                "rvv_bf16_gemma_decoder_layer_runner_mytest.cc",
-                "rvv_gemma_decoder_layer_mytest.cc",
+                "rvv_bf16_gemma_decoder_layer_profile_runner.cc",
+                "rvv_gemma_decoder_layer_profile.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_bf16_matmul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_rms_norm.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_tanh_gelu_mul.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_residual_add.cc",
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_flashattention_kernel.cc",
             ],
-            "hdrs": ["rvv_gemma_decoder_layer_mytest.h"],
+            "hdrs": ["rvv_gemma_decoder_layer_profile.h"],
             "deps": [
                 "//tests/cocotb/rvv/ml_ops/gemma_kernels:rvv_common_vec",
                 "//sw/utils:utils",
@@ -134,7 +134,7 @@ template_rule(
 )
 
 _PROFILE_TESTCASES = [
-    "core_mini_rvv_bf16_gemma_decoder_layer_test",
+    "core_mini_rvv_bf16_gemma_decoder_layer_profile_test",
 ]
 
 cocotb_test_suite(
@@ -147,7 +147,7 @@ cocotb_test_suite(
         "waves": False,
         "seed": "42",
         "tags": ["manual"],
-        "test_module": ["cocotb_tests/rvv_gemma_decoder_layer_cocotb_test_mytest.py"],
+        "test_module": ["cocotb_tests/rvv_gemma_decoder_layer_profile_cocotb_test.py"],
         "deps": [
             "//coralnpu_test_utils:sim_test_fixture",
             "@bazel_tools//tools/python/runfiles",

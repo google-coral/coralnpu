@@ -401,7 +401,7 @@ async def _run_decoder_layer(
 
 
 @cocotb.test()
-async def core_mini_rvv_bf16_gemma_decoder_layer_test(dut):
+async def core_mini_rvv_bf16_gemma_decoder_layer_synthetic_test(dut):
     if os.environ.get("GEMMA_LAYER0_DATA"):
         dut._log.info("Real Gemma data selected; skipping synthetic layer run")
         return

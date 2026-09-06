@@ -21,11 +21,12 @@
 #define MAX_WEIGHT_SIZE 4096
 
 extern "C" {
-// 与 Gemma Decoder Layer 以及同目录其他算子的 runner 保持一致，将张量放在
-// DDR。`.ddr_bss` 只在 DDR 中保留地址空间，不把未初始化的大数组塞进 ELF
-// 的可加载数据段；否则 backdoor 装载会尝试一次写入整块零数据。与此同时，
-// `.extmem` 与 DDR 的访存延迟不同，独立 RMSNorm cycle
-// 不能和完整 Decoder 内部阶段做同条件求和比较。
+// Match the Gemma decoder-layer and sibling runners by placing tensors in DDR.
+// `.ddr_bss` reserves address space in DDR without putting uninitialized large
+// arrays in the ELF loadable segment; otherwise backdoor loading would write
+// the entire zero-filled region. `.extmem` has different access latency from
+// DDR, so standalone RMSNorm cycles cannot be summed with decoder stages under
+// equivalent conditions.
 __bf16 rms_input[MAX_INPUT_SIZE]
     __attribute__((section(".ddr_bss"), used, retain, aligned(16)));
 __bf16 rms_weight[MAX_WEIGHT_SIZE]

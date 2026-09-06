@@ -406,7 +406,8 @@ async def core_mini_rvv_bf16_flashattention_test(dut):
     # Test configs for Gemma 3 (Prefill and Decode)
     test_configs = [
         {
-            # mytest 使用 cache_length=3，追加当前 token 后 KV 长度为 4。
+            # The decoder-layer shape uses cache_length=3; appending the current
+            # token produces a KV sequence length of 4.
             "name": "Decoder Layer Exact Shape",
             "q_heads": 4,
             "kv_heads": 1,
