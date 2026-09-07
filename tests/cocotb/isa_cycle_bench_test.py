@@ -2,6 +2,7 @@
 #
 
 import os
+import json
 
 import cocotb
 from bazel_tools.tools.python.runfiles import runfiles
@@ -61,11 +62,11 @@ BENCHMARKS = [
 ]
 
 
-def _markdown_output_path():
+def _compute_output_path(filename):
     out_dir = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
     if not out_dir:
         return None
-    return os.path.join(out_dir, "measured_instruction_cycles.md")
+    return os.path.join(out_dir, filename)
 
 
 @cocotb.test()
@@ -75,7 +76,8 @@ async def isa_cycle_bench_test(dut):
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/isa_cycle_bench.elf")
 
-    md_path = _markdown_output_path()
+    md_path = _compute_output_path("measured_instruction_cycles.md")
+    stats_path = _compute_output_path("measured_instruction_cycles.json")
     md_file = open(md_path, "w") if md_path else None  # noqa: SIM115
 
     def emit(line):
@@ -109,7 +111,10 @@ async def isa_cycle_bench_test(dut):
         raw_data_normalized = raw_delta - 2
         cycles_per_instr = raw_data_normalized / REPS
 
-        rows.append((mnemonic, category, raw_delta, cycles_per_instr))
+        rows.append((
+            mnemonic, category, raw_delta, raw_data_normalized,
+            cycles_per_instr
+        ))
         emit(
             f"| `{mnemonic}` | {category} | {raw_delta} | {raw_data_normalized} | {cycles_per_instr:.2f} |"
         )
@@ -117,5 +122,18 @@ async def isa_cycle_bench_test(dut):
     if md_file:
         md_file.close()
         dut._log.info(f"Wrote {md_path}")
+
+    if stats_path:
+        with open(stats_path, "w") as stats_file:
+            stats = {
+                row[0]: {
+                    "category": row[1],
+                    "raw_delta": row[2],
+                    "raw_delta_normalized": row[3],
+                    "cycles_per_instr": row[4],
+                }
+                for row in rows
+            }
+            json.dump(stats, stats_file, indent=2)
 
     assert len(rows) == len(BENCHMARKS)
