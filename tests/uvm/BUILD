@@ -4,11 +4,10 @@ load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-load("@rules_hdl//verilator:defs.bzl", "verilator_cc_library")
-load("@rules_hdl//verilog:providers.bzl", "VerilogInfo", "verilog_library")
 load("//rules:utils.bzl", "filter_files_by_extension")
 load("//rules:vcs.bzl", "vcs_model")
 load("//rules:verilator.bzl", "verilator_model")
+load("//rules:verilog.bzl", "VerilogInfo", "verilog_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -82,6 +81,11 @@ filter_files_by_extension(
     extensions = ["a"],
 )
 
+alias(
+    name = "uvm_dpi",
+    actual = "@uvm//:uvm_dpi",
+)
+
 verilator_model(
     name = "uvm_sim_verilator",
     cflags = [
@@ -89,7 +93,6 @@ verilator_model(
         "+define+TB_SUPPORT",
         "+define+VLEN_128",
         "+define+ZVE32F_ON",
-        "+define+DUMP_WAVES_VCD",
         "-Wno-PINMISSING",
         "-Wno-lint",
         "-Wno-style",
@@ -97,7 +100,6 @@ verilator_model(
         "--timing",
         "--timescale 1ns/1ps",
     ],
-    coralnpu_mpact_lib = ":coralnpu_cosim_lib_static_archive",
     hdl_toplevel = "coralnpu_tb_top",
     include_dirs = [":include_dirs"],
     verilog_sources = [
@@ -106,7 +108,9 @@ verilator_model(
     ],
     deps = [
         ":include_dirs_deps",
-        "//hdl/verilog:dpi_files",
+        ":uvm_dpi",
+        "//hdl/verilog:sram_backdoor",
+        "@coralnpu_mpact//sim/cosim:coralnpu_cosim_lib",
     ],
 )
 

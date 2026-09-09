@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Common generator flags shared between simulation and production targets."""
+"""Common generator flags and Verilator options shared between simulation and production targets."""
 
 RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS = [
     "--enableFetchL0=False",
@@ -27,4 +27,41 @@ RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS = [
 
 VME_CORE_MINI_AXI_COMMON_GEN_FLAGS = RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS + [
     "--enableVme=True",
+]
+
+CORE_MINI_AXI_VOPTS = [
+    "-DUSE_GENERIC",
+    # Warnings that we disable for fpnew
+    "-Wno-ASCRANGE",
+    "-Wno-WIDTHEXPAND",
+    "-Wno-WIDTHTRUNC",
+    "-Wno-UNSIGNED",
+    "-Wno-BLKANDNBLK",
+    "-Wno-BLKSEQ",
+]
+
+RVV_CORE_MINI_AXI_VOPTS = [
+    "-DUSE_GENERIC",
+    # RVV
+    "-DTB_SUPPORT",
+    "-DVLEN_128",
+    "-DZVE32F_ON",
+    "-Wno-WIDTH",
+    "-Wno-CASEINCOMPLETE",
+    "-Wno-LATCH",
+    "-Wno-SIDEEFFECT",
+    "-Wno-MULTIDRIVEN",
+    "-Wno-BLKANDNBLK",
+    "-Wno-CASEX",
+    # FPNEW
+    "-Wno-ASCRANGE",
+    "-Wno-WIDTHEXPAND",
+    "-Wno-WIDTHTRUNC",
+    "-Wno-UNSIGNED",
+    "-Wno-WIDTHCONCAT",
+    "-Ihdl/verilog/rvv/design/FPnew/common_cells/inc",
+]
+
+VME_CORE_MINI_AXI_VOPTS = RVV_CORE_MINI_AXI_VOPTS + [
+    "-DZVT_ON",
 ]

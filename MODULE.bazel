@@ -8,7 +8,6 @@ bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "rules_cc", version = "0.2.14")
 bazel_dep(name = "rules_python", version = "1.6.3")
 bazel_dep(name = "rules_scala", version = "7.2.6", repo_name = "io_bazel_rules_scala")
-bazel_dep(name = "rules_hdl", version = "0.0.1")
 bazel_dep(name = "rules_jvm_external", version = "6.6")
 bazel_dep(name = "rules_java", version = "7.10.0")
 bazel_dep(name = "rules_pkg", version = "0.10.1")
@@ -72,13 +71,17 @@ use_repo(
     "chipsalliance_diplomacy",
     "chipsalliance_rocket_chip",
     "common_cells",
+    "com_github_westes_flex",
     "coralnpu_host_cpus",
     "cvfpu",
     "fpu_div_sqrt_mvp",
     "llvm_firtool",
+    "net_zlib",
+    "org_gnu_bison",
+    "org_gnu_gnulib",
+    "org_gnu_m4",
     "riscv_isa_sim",
+    "rules_hdl",
+    "uvm",
+    "verilator",
 )
-
-# Import verilator from rules_hdl
-rules_hdl_deps = use_extension("@rules_hdl//:extensions.bzl", "rules_hdl_deps")
-use_repo(rules_hdl_deps, "verilator")

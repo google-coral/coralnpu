@@ -377,7 +377,7 @@ def collect_coralnpu_elfs(tags = []):
                 coralnpu_tests = [elf],
                 timeouts = [TIMEOUT_MAP.get(canonical_label, 100000)],
                 labels = [canonical_label],
-                run_spike = "//rules:uvm_run_spike_cosim",
+                run_spike = "@coralnpu_hw//rules:uvm_run_spike_cosim",
                 tags = tags + ["verilator-uvm-regression", "verilator-uvm-regression-coralnpu-tests"],
             )
             vcs_batch_uvm_test(
@@ -386,7 +386,7 @@ def collect_coralnpu_elfs(tags = []):
                 coralnpu_tests = [elf],
                 timeouts = [TIMEOUT_MAP.get(canonical_label, 100000)],
                 labels = [canonical_label],
-                run_spike = "//rules:uvm_run_spike_cosim",
+                run_spike = "@coralnpu_hw//rules:uvm_run_spike_cosim",
                 tags = tags + ["vcs", "vcs-uvm-regression", "vcs-uvm-regression-coralnpu-tests"],
             )
 
@@ -410,7 +410,7 @@ def collect_coralnpu_riscv_tests(binaries = [], tags = []):
                 coralnpu_tests = [":{}".format(elf)],
                 timeouts = [TIMEOUT_MAP.get(canonical_label, 100000)],
                 labels = [canonical_label],
-                run_spike = "//rules:uvm_run_spike_cosim",
+                run_spike = "@coralnpu_hw//rules:uvm_run_spike_cosim",
                 tags = tags + ["verilator-uvm-regression", "verilator-uvm-regression-riscv-tests"],
             )
             vcs_batch_uvm_test(
@@ -419,6 +419,6 @@ def collect_coralnpu_riscv_tests(binaries = [], tags = []):
                 coralnpu_tests = [":{}".format(elf)],
                 timeouts = [TIMEOUT_MAP.get(canonical_label, 100000)],
                 labels = [canonical_label],
-                run_spike = "//rules:uvm_run_spike_cosim",
+                run_spike = "@coralnpu_hw//rules:uvm_run_spike_cosim",
                 tags = tags + ["vcs", "vcs-uvm-regression", "vcs-uvm-regression-riscv-tests"],
             )

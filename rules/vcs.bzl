@@ -15,9 +15,8 @@
 """Bazel functions for VCS."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("@coralnpu_hw//rules:verilog.bzl", "collect_verilog_files")
-load("@rules_hdl//verilog:providers.bzl", "VerilogInfo")
 load("//rules:uvm_denylist.bzl", "SPIKE_DENYLIST")
+load("//rules:verilog.bzl", "VerilogInfo", "collect_verilog_files")
 
 def _vcs_testbench_test_impl(ctx):
     all_files = collect_verilog_files(ctx.attr.deps).to_list()

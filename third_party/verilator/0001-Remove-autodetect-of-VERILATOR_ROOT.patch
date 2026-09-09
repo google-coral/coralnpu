@@ -1,0 +1,25 @@
+diff --git a/bin/verilator b/bin/verilator
+index cb866e243..f73502df9 100755
+--- a/bin/verilator
++++ b/bin/verilator
+@@ -87,20 +87,6 @@ if (! GetOptions(
+     pod2usage(-exitstatus => 2, -verbose => 0);
+ }
+
+-# WARNING: $verilator_pkgdatadir_relpath is substituted during Verilator 'make install'
+-my $verilator_pkgdatadir_relpath = "..";
+-my $verilator_root = realpath("$RealBin/$verilator_pkgdatadir_relpath");
+-if (defined $ENV{VERILATOR_ROOT}) {
+-    if ((!-d $ENV{VERILATOR_ROOT}) || $verilator_root ne realpath($ENV{VERILATOR_ROOT})) {
+-        warn "%Error: verilator: VERILATOR_ROOT is set to inconsistent path. Suggest leaving it unset.\n";
+-        warn "%Error: VERILATOR_ROOT=$ENV{VERILATOR_ROOT}\n";
+-        exit 1;
+-    }
+-} else {
+-    print "export VERILATOR_ROOT='$verilator_root'\n" if $Debug;
+-    $ENV{VERILATOR_ROOT} = $verilator_root;
+-}
+-
+ my $lldb_selected = 0;
+ if (($opt_gdb || $opt_gdbbt) && !gdb_works()) {
+     if (lldb_works()) {

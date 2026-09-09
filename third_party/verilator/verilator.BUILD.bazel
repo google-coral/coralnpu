@@ -1,0 +1,555 @@
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Original implementation by Kevin Kiningham (@kkiningh) in kkiningh/rules_verilator.
+# Ported to bazel_rules_hdl by Stephen Tridgell (@stridge-cruxml)
+
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@coralnpu_hw//third_party/verilator:flex.bzl", "genlex")
+load(
+    "@coralnpu_hw//third_party/verilator:verilator_utils.bzl",
+    "verilator_astgen",
+    "verilator_bisonpre",
+    "verilator_build_template",
+    "verilator_flexfix",
+    "verilator_version",
+)
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+package(default_visibility = ["//visibility:private"])
+
+licenses(["notice"])
+
+exports_files([
+    "Artistic",
+    "COPYING",
+    "COPYING.LESSER",
+    "include/vltstd/svdpi.h",
+])
+
+verilator_version(
+    name = "version",
+    changelog = "Changes",
+)
+
+verilator_build_template(
+    name = "config_package",
+    out = "src/config_package.h",
+    substitutions = {
+        "#define PACKAGE_STRING \"\"": "#define PACKAGE_STRING \"Verilator v{VERILATOR_VERSION}\"",
+    },
+    template = "src/config_package.h.in",
+    version = ":version",
+)
+
+write_file(
+    name = "config_rev_template",
+    out = "src/config_rev.h.in",
+    content = """\
+static const char* const DTVERSION_rev = "";
+
+""".splitlines(),
+    newline = "unix",
+)
+
+verilator_build_template(
+    name = "config_rev",
+    out = "src/config_rev.h",
+    substitutions = {
+        "DTVERSION_rev = \"\"": "DTVERSION_rev = \"v{VERILATOR_VERSION}\"",
+    },
+    template = "src/config_rev.h.in",
+    version = ":version",
+)
+
+verilator_build_template(
+    name = "verilated_config",
+    out = "include/verilated_config.h",
+    substitutions = {
+        "@PACKAGE_NAME@": "Verilator",
+        "@PACKAGE_VERSION@": "{VERILATOR_VERSION}",
+    },
+    template = "include/verilated_config.h.in",
+    version = ":version",
+)
+
+verilator_build_template(
+    name = "verilated_mk",
+    out = "include/verilated.mk",
+    substitutions = {
+        "@AR@": "$${VERILATOR_AR}",
+        "@CXX@": "$${VERILATOR_CXX}",
+        "@PYTHON3@": "$${VERILATOR_PYTHON3}",
+        "@OBJCACHE@": "",
+        "@PERL@": "perl",
+        "@CFG_WITH_CCWARN@": "no",
+        "@CFG_WITH_LONGTESTS@": "no",
+        "@CFG_CXXFLAGS_PROFILE@": "-pg",
+        "@CFG_CXXFLAGS_STD@": "",
+        "@CFG_CXXFLAGS_STD_NEWEST@": "-std=c++20",
+        "@CFG_CXXFLAGS_NO_UNUSED@": " ".join([
+            "-faligned-new",
+            "-fcf-protection=none",
+            "-Wno-bool-operation",
+            "-Wno-overloaded-virtual",
+            "-Wno-shadow",
+            "-Wno-sign-compare",
+            "-Wno-uninitialized",
+            "-Wno-unused-but-set-parameter",
+            "-Wno-unused-but-set-variable",
+            "-Wno-unused-parameter",
+            "-Wno-unused-variable",
+        ]),
+        "@CFG_CXXFLAGS_WEXTRA@": "-Wextra -Wfloat-conversion -Wlogical-op",
+        "@CFG_CXXFLAGS_COROUTINES@": "-fcoroutines -std=c++20",
+        "@CFG_CXXFLAGS_PCH@": "-x c++-header",
+        "@CFG_CXXFLAGS_PCH_I@": "-include",
+        "@CFG_GCH_IF_CLANG@": "",
+        "@CFG_LDFLAGS_VERILATED@": "",
+        "@CFG_LDLIBS_THREADS@": "-lpthread -latomic -lstdc++ -lm",
+        "@CFG_LDFLAGS_DYNAMIC@": "",
+        "@CFG_LDLIBS_DYNAMIC@": "",
+    },
+    template = "include/verilated.mk.in",
+    version = ":version",
+)
+
+verilator_astgen(
+    name = "verilator_astgen",
+    srcs = [
+        "src/V3Ast.h",
+        "src/V3AstNodeDType.h",
+        "src/V3AstNodeExpr.h",
+        "src/V3AstNodeOther.h",
+        "src/V3AstNodeStmt.h",
+        "src/V3DfgVertices.h",
+        "src/Verilator.cpp",
+    ],
+    outs = [
+        "V3Ast__gen_forward_class_decls.h",
+        "V3Ast__gen_impl.h",
+        "V3Ast__gen_macros.h",
+        "V3Ast__gen_report.txt",
+        "V3Ast__gen_type_enum.h",
+        "V3Ast__gen_type_info.h",
+        "V3Ast__gen_type_tests.h",
+        "V3Ast__gen_visitor_decls.h",
+        "V3Ast__gen_visitor_defns.h",
+        "V3Ast__gen_yystype.h",
+        "V3Dfg__gen_ast_to_dfg.h",
+        "V3Dfg__gen_auto_classes.h",
+        "V3Dfg__gen_dfg_to_ast.h",
+        "V3Dfg__gen_forward_class_decls.h",
+        "V3Dfg__gen_macros.h",
+        "V3Dfg__gen_type_enum.h",
+        "V3Dfg__gen_type_tests.h",
+        "V3Dfg__gen_visitor_decls.h",
+        "V3Dfg__gen_visitor_defns.h",
+    ],
+    args = [
+        "--astdef",
+        "V3AstNodeDType.h",
+        "--astdef",
+        "V3AstNodeExpr.h",
+        "--astdef",
+        "V3AstNodeOther.h",
+        "--astdef",
+        "V3AstNodeStmt.h",
+        "--dfgdef",
+        "V3DfgVertices.h",
+        "--classes",
+    ],
+    astgen = "src/astgen",
+)
+
+verilator_astgen(
+    name = "verilator_astgen_const",
+    srcs = [
+        "src/V3Ast.h",
+        "src/V3AstNodeDType.h",
+        "src/V3AstNodeExpr.h",
+        "src/V3AstNodeOther.h",
+        "src/V3AstNodeStmt.h",
+        "src/V3Const.cpp",
+        "src/V3DfgVertices.h",
+        "src/Verilator.cpp",
+    ],
+    outs = [
+        "V3Const__gen.cpp",
+    ],
+    args = [
+        "--astdef",
+        "V3AstNodeDType.h",
+        "--astdef",
+        "V3AstNodeExpr.h",
+        "--astdef",
+        "V3AstNodeOther.h",
+        "--astdef",
+        "V3AstNodeStmt.h",
+        "--dfgdef",
+        "V3DfgVertices.h",
+        "V3Const.cpp",
+    ],
+    astgen = "src/astgen",
+)
+
+genlex(
+    name = "verilator_lex_pregen",
+    src = "src/verilog.l",
+    out = "V3Lexer_pregen.yy.cpp",
+)
+
+verilator_flexfix(
+    name = "verilator_lex_flexfix",
+    src = ":V3Lexer_pregen.yy.cpp",
+    out = "V3Lexer.yy.cpp",
+    args = ["V3Lexer"],
+    flexfix = "src/flexfix",
+)
+
+genlex(
+    name = "verilator_prelex_pregen",
+    src = "src/V3PreLex.l",
+    out = "V3PreLex_pregen.yy.cpp",
+)
+
+verilator_flexfix(
+    name = "verilator_prelex_flexfix",
+    src = ":V3PreLex_pregen.yy.cpp",
+    out = "V3PreLex.yy.cpp",
+    args = ["V3PreLex"],
+    flexfix = "src/flexfix",
+)
+
+verilator_bisonpre(
+    name = "verilator_bison",
+    srcs = [
+        "src/verilog.y",
+    ],
+    outs = [
+        "V3ParseBison.c",
+        "V3ParseBison.h",
+    ],
+    args = [
+        "--yacc",
+        "$(execpath @org_gnu_bison//:bison)",
+        "-d",
+        "-v",
+        "-o",
+        "$(execpath V3ParseBison.c)",
+        "$(execpath src/verilog.y)",
+    ],
+    bison_data = "@org_gnu_bison//:bison_runtime_data",
+    bisonpre = "src/bisonpre",
+    env = {
+        "M4": "$(execpath @org_gnu_m4//:m4)",
+    },
+    tools = [
+        "@org_gnu_bison//:bison",
+        "@org_gnu_m4//:m4",
+    ],
+)
+
+cc_library(
+    name = "verilatedos",
+    hdrs = [
+        "include/verilatedos.h",
+        "include/verilatedos_c.h",
+    ],
+    strip_include_prefix = "include/",
+)
+
+# TODO(kkiningh): Verilator also supports multithreading, should we enable it?
+cc_library(
+    name = "verilator_libV3",
+    srcs = glob(
+        ["src/V3*.cpp"],
+        exclude = [
+            "src/V3*_test.cpp",
+            "src/V3Const.cpp",
+        ],
+    ) + [
+        ":V3Ast__gen_forward_class_decls.h",
+        ":V3Ast__gen_impl.h",
+        ":V3Ast__gen_macros.h",
+        ":V3Ast__gen_type_enum.h",
+        ":V3Ast__gen_type_info.h",
+        ":V3Ast__gen_type_tests.h",
+        ":V3Ast__gen_visitor_decls.h",
+        ":V3Ast__gen_visitor_defns.h",
+        ":V3Ast__gen_yystype.h",
+        ":V3Const__gen.cpp",
+        ":V3Dfg__gen_ast_to_dfg.h",
+        ":V3Dfg__gen_auto_classes.h",
+        ":V3Dfg__gen_dfg_to_ast.h",
+        ":V3Dfg__gen_forward_class_decls.h",
+        ":V3Dfg__gen_macros.h",
+        ":V3Dfg__gen_type_enum.h",
+        ":V3Dfg__gen_type_tests.h",
+        ":V3Dfg__gen_visitor_decls.h",
+        ":V3Dfg__gen_visitor_defns.h",
+        ":V3ParseBison.h",
+    ],
+    hdrs = glob(["src/V3*.h"]) + [
+        "src/config_build.h",
+        "src/config_package.h",
+        "src/config_rev.h",
+    ],
+    copts = [
+        # TODO: We should probably set this later
+        "-DDEFENV_SYSTEMC_INCLUDE=\\\"@invalid@\\\"",
+        "-DDEFENV_SYSTEMC_LIBDIR=\\\"@invalid@\\\"",
+        "-DDEFENV_VERILATOR_ROOT=\\\"@invalid@\\\"",
+        # TODO: Remove these once upstream fixes these warnings
+        "-Wno-unneeded-internal-declaration",
+    ],
+    defines = ["YYDEBUG"],
+    strip_include_prefix = "src/",
+    textual_hdrs = [
+        # These are included directly by other C++ files
+        # See https://github.com/bazelbuild/bazel/issues/680
+        ":V3Lexer.yy.cpp",
+        ":V3PreLex.yy.cpp",
+        ":V3ParseBison.c",
+    ],
+    deps = [
+        ":verilatedos",
+        "@com_github_westes_flex//:FlexLexer",
+    ],
+)
+
+cc_library(
+    name = "vltstd",
+    hdrs = [
+        "include/vltstd/sv_vpi_user.h",
+        "include/vltstd/svdpi.h",
+        "include/vltstd/veriuser.h",
+        "include/vltstd/vpi_user.h",
+    ],
+    strip_include_prefix = "include/vltstd",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "verilator_lib",
+    srcs = [
+        "include/verilated.cpp",
+        "include/verilated_fst_c.cpp",
+        "include/verilated_fst_sc.cpp",
+        "include/verilated_imp.h",
+        "include/verilated_syms.h",
+        "include/verilated_threads.cpp",
+        "include/verilated_vcd_c.cpp",
+        "include/verilated_vcd_sc.cpp",
+        "include/verilated_vpi.cpp",
+    ],
+    hdrs = [
+        "include/verilated_config.h",
+        "include/verilated_dpi.h",
+        "include/verilated_fst_c.h",
+        "include/verilated_funcs.h",
+        "include/verilated_intrinsics.h",
+        "include/verilated_sc.h",
+        "include/verilated_sc_trace.h",
+        "include/verilated_sym_props.h",
+        "include/verilated_threads.h",
+        "include/verilated_timing.h",
+        # Needed for verilated_vcd_c.cpp and verilated_fst_c.cpp
+        "include/verilated_trace_imp.h",
+        "include/verilated_fst_sc.h",
+        "include/verilated_trace.h",
+        "include/verilated_types.h",
+        "include/verilated_vcd_c.h",
+        "include/verilated_vcd_sc.h",
+        "include/verilated_vpi.h",
+        "include/verilated.h",
+        "include/fstcpp/fstcpp.h",
+        "include/fstcpp/fstcpp_assertion.h",
+        "include/fstcpp/fstcpp_file.h",
+        "include/fstcpp/fstcpp_stream_write_helper.h",
+        "include/fstcpp/fstcpp_variable_info.h",
+        "include/fstcpp/fstcpp_writer.h",
+    ],
+    # TODO: Remove these once upstream fixes these warnings
+    copts = [
+        "-Wno-unused-const-variable",
+        "-Wno-sign-compare",
+        "-Wno-unused-variable",
+        "-Wno-unused-parameter",
+        "-Wno-unused-but-set-variable",
+        "-std=c++17",
+        "-ffp-contract=off",
+    ],
+    defines = ["VM_SC"],
+    includes = [
+        # include systemc header
+        "systemc/include",
+    ],
+    linkopts = [
+        "-lpthread",
+        "-llz4",
+    ],
+    strip_include_prefix = "include/",
+    textual_hdrs = [
+        "include/fstcpp/fstcpp_variable_info.cpp",
+        "include/fstcpp/fstcpp_writer.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":verilatedos",
+        ":vltstd",
+        "@accellera_systemc//:systemc",
+        "@net_zlib//:zlib",
+    ],
+)
+
+# This alias is for supporting the legacy name but while allowing the
+# `cc_library` target to be renamed to avoid a `liblibverilator.a`
+# output name.
+alias(
+    name = "libverilator",
+    actual = "verilator_lib",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "verilator_runtime",
+    srcs = [
+        "include/verilated.cpp",
+        "include/verilated_dpi.cpp",
+        "include/verilated_fst_c.cpp",
+        "include/verilated_random.cpp",
+        "include/verilated_threads.cpp",
+        "include/verilated_timing.cpp",
+        "include/verilated_vpi.cpp",
+    ],
+    hdrs = [
+        "include/fstcpp/fstcpp.h",
+        "include/fstcpp/fstcpp_assertion.h",
+        "include/fstcpp/fstcpp_file.h",
+        "include/fstcpp/fstcpp_stream_write_helper.h",
+        "include/fstcpp/fstcpp_variable_info.h",
+        "include/fstcpp/fstcpp_writer.h",
+        "include/verilated.h",
+        "include/verilated_config.h",
+        "include/verilated_dpi.h",
+        "include/verilated_fst_c.h",
+        "include/verilated_funcs.h",
+        "include/verilated_imp.h",
+        "include/verilated_intrinsics.h",
+        "include/verilated_random.h",
+        "include/verilated_save.h",
+        "include/verilated_sym_props.h",
+        "include/verilated_syms.h",
+        "include/verilated_threads.h",
+        "include/verilated_timing.h",
+        "include/verilated_trace.h",
+        "include/verilated_trace_imp.h",
+        "include/verilated_types.h",
+        "include/verilated_vcd_c.h",
+        "include/verilated_vpi.h",
+        "include/verilatedos.h",
+        "include/verilatedos_c.h",
+        "include/vltstd/sv_vpi_user.h",
+        "include/vltstd/svdpi.h",
+        "include/vltstd/veriuser.h",
+        "include/vltstd/vpi_user.h",
+    ],
+    copts = [
+        "-Wno-unused-const-variable",
+        "-Wno-sign-compare",
+        "-Wno-unused-variable",
+        "-Wno-unused-parameter",
+        "-Wno-unused-but-set-variable",
+        "-std=c++20",
+        "-ffp-contract=off",
+        "-DVL_TIME_CONTEXT",
+        "-DVM_TIMING=1",
+        "-DVM_VPI=1",
+        "-DVM_COVERAGE=0",
+        "-DVM_SC=0",
+        "-DVM_TRACE=0",
+        "-faligned-new",
+    ],
+    linkopts = [
+        "-lpthread",
+        "-latomic",
+        "-llz4",
+    ],
+    strip_include_prefix = "include",
+    textual_hdrs = [
+        "include/fstcpp/fstcpp_variable_info.cpp",
+        "include/fstcpp/fstcpp_writer.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":verilatedos",
+        ":vltstd",
+        "@net_zlib//:zlib",
+    ],
+)
+
+cc_library(
+    name = "svdpi",
+    hdrs = [
+        "include/vltstd/svdpi.h",
+    ],
+    strip_include_prefix = "include/vltstd",
+    visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "verilator_executable",
+    srcs = ["src/Verilator.cpp"],
+    copts = [
+        "-std=c++17",
+        "-ffp-contract=off",
+    ],
+    linkopts = [
+        "-lpthread",
+        "-latomic",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [":verilator_libV3"],
+)
+
+cc_binary(
+    name = "verilator_bin",
+    srcs = ["src/Verilator.cpp"],
+    copts = [
+        "-std=c++17",
+        "-ffp-contract=off",
+    ],
+    data = [
+        "bin/verilator_includer",
+        "include/verilated.mk",
+        "include/verilated_config.h",
+    ] + glob([
+        "include/**/*.c",
+        "include/**/*.cpp",
+        "include/**/*.h",
+        "include/**/*.sv",
+        "include/**/*.vlt",
+    ]),
+    linkopts = [
+        "-lpthread",
+        "-latomic",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [":verilator_libV3"],
+)
+
+sh_binary(
+    name = "verilator",
+    srcs = ["bin/verilator"],
+    visibility = ["//visibility:public"],
+)

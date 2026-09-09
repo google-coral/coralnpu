@@ -14,6 +14,7 @@
 
 load("@coralnpu_hw//rules:chisel.bzl", "chisel_binary", "chisel_cc_library", "chisel_library")
 load("@coralnpu_hw//rules:coco_tb.bzl", "verilator_cocotb_model")
+load("//hdl/chisel/src/coralnpu:flags.bzl", "RVV_CORE_MINI_AXI_VOPTS")
 load(
     "//tests/cocotb:build_defs.bzl",
     "VERILATOR_BUILD_ARGS",
@@ -99,6 +100,7 @@ chisel_cc_library(
     chisel_lib = ":coralnpu_chisel_subsystem_lib",
     emit_class = "coralnpu.soc.CoralNPUChiselSubsystemEmitter",
     module_name = "CoralNPUChiselSubsystem",
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 chisel_cc_library(
@@ -112,6 +114,7 @@ chisel_cc_library(
         "CoralNPUChiselSubsystem64",
     ],
     module_name = "CoralNPUChiselSubsystem64",
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 verilator_cocotb_model(
@@ -131,6 +134,7 @@ chisel_cc_library(
     emit_class = "coralnpu.soc.CoralNPUChiselSubsystemEmitter",
     gen_flags = ["--enableTestHarness"],
     module_name = "CoralNPUChiselSubsystemTestHarness",
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 verilator_cocotb_model(
@@ -156,6 +160,7 @@ chisel_cc_library(
         "CoralNPUChiselSubsystem64",
     ],
     module_name = "CoralNPUChiselSubsystem64TestHarness",
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 verilator_cocotb_model(
@@ -183,6 +188,7 @@ chisel_cc_library(
         "1024",
     ],
     module_name = "CoralNPUChiselSubsystemHighmem",
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 chisel_cc_library(
@@ -196,6 +202,7 @@ chisel_cc_library(
         "512",
     ],
     module_name = "CoralNPUChiselSubsystem_ITCM512KB_DTCM512KB",
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 chisel_cc_library(
@@ -210,6 +217,7 @@ chisel_cc_library(
         "1024",
     ],
     module_name = "CoralNPUChiselSubsystemHighmemTestHarness",
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 verilator_cocotb_model(
@@ -238,6 +246,7 @@ chisel_cc_library(
         "CoralNPUChiselSubsystemHighmem64",
     ],
     module_name = "CoralNPUChiselSubsystemHighmem64",
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 chisel_cc_library(
@@ -256,6 +265,7 @@ chisel_cc_library(
         "CoralNPUChiselSubsystemHighmem64",
     ],
     module_name = "CoralNPUChiselSubsystemHighmem64TestHarness",
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 verilator_cocotb_model(

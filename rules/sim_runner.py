@@ -104,10 +104,12 @@ def main():
         else:
             os.environ["LD_LIBRARY_PATH"] = vcs_lib_dir
 
-    wrapper_path = r.Rlocation("rules_hdl/cocotb/cocotb_wrapper.py")
+    wrapper_path = r.Rlocation("coralnpu_hw/rules/cocotb_wrapper.py")
+    if not wrapper_path:
+        wrapper_path = r.Rlocation("rules/cocotb_wrapper.py")
     if not wrapper_path:
         sys.stderr.write(
-            "Error: Could not find rules_hdl/cocotb/cocotb_wrapper.py in runfiles\n"
+            "Error: Could not find rules/cocotb_wrapper.py in runfiles\n"
         )
         sys.exit(1)
 

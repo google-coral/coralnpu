@@ -221,11 +221,6 @@ def get_tohost_addr(elf_path: str) -> Optional[int]:
 def get_simulator_binary_path(simulator: str = "verilator") -> str:
     if simulator == "vcs":
         return os.path.abspath("bazel-bin/tests/uvm/uvm_sim_vcs")
-    p1 = os.path.abspath(
-        "bazel-bin/tests/uvm/coralnpu_tb_top_build/coralnpu_tb_top"
-    )
-    if os.path.exists(p1):
-        return p1
     return os.path.abspath("bazel-bin/tests/uvm/uvm_sim_verilator")
 
 

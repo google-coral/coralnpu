@@ -47,7 +47,6 @@ load(
     "mpact_repos",
     "rvvi_repos",
     "tflite_repos",
-    "uvm_verilator_repos",
 )
 
 host_cpus(name = "coralnpu_host_cpus")
@@ -336,5 +335,3 @@ local_repository(
     name = "netlist_test",
     path = "internal/netlist_test",
 )
-
-uvm_verilator_repos()

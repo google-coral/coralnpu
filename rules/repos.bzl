@@ -18,20 +18,39 @@
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+load("@coralnpu_hw//third_party/verilator:gnulib.bzl", "org_gnu_gnulib")
+
+def _rules_hdl_compat_impl(rctx):
+    rctx.file("WORKSPACE", "workspace(name = 'rules_hdl')\n")
+    rctx.file("BUILD.bazel", "package(default_visibility = ['//visibility:public'])\n")
+    rctx.file("verilog/BUILD.bazel", "package(default_visibility = ['//visibility:public'])\nexports_files(['providers.bzl'])\n")
+    rctx.file("verilog/providers.bzl", """# Compatibility forwarding for rules_hdl
+load(
+    "@coralnpu_hw//rules:verilog.bzl",
+    _VerilogInfo = "VerilogInfo",
+    _verilog_library = "verilog_library",
+)
+
+VerilogInfo = _VerilogInfo
+verilog_library = _verilog_library
+""")
+
+rules_hdl_compat = repository_rule(
+    implementation = _rules_hdl_compat_impl,
+    local = True,
+)
 
 def coralnpu_repos():
+    rules_hdl_compat(
+        name = "rules_hdl",
+    )
+
     http_archive(
         name = "uvm",
-        urls = ["https://github.com/chipsalliance/uvm-verilator/archive/5a37baacfed0722b523b05decc9b94fe3e9efbe4.tar.gz"],
-        sha256 = "2c5b24ac5d6527824ca62f30c0c6695e4779481ad835d84a9ad1da85300a1b27",
-        strip_prefix = "uvm-verilator-5a37baacfed0722b523b05decc9b94fe3e9efbe4",
-        build_file_content = """
-filegroup(
-    name = "uvm_src",
-    srcs = glob(["**"]),
-    visibility = ["//visibility:public"],
-)
-""",
+        urls = ["https://github.com/chipsalliance/uvm-verilator/archive/refs/tags/uvm-2020-3.2.tar.gz"],
+        sha256 = "9647bfe69439340f1f5c8c969b9814aed06cde9fe4c355111bd5e7cd325c0e0f",
+        strip_prefix = "uvm-verilator-uvm-2020-3.2",
+        build_file = "@coralnpu_hw//third_party/verilator:uvm.BUILD",
     )
 
     http_archive(
@@ -126,9 +145,65 @@ filegroup(
         build_file = "@coralnpu_hw//third_party/freertos:freertos.BUILD",
     )
 
+def verilator_repos():
+    http_archive(
+        name = "verilator",
+        build_file = "@coralnpu_hw//third_party/verilator:verilator.BUILD.bazel",
+        urls = ["https://github.com/verilator/verilator/archive/refs/tags/v5.052.tar.gz"],
+        sha256 = "8c8d2e11e6ad32f641dd250742a94195ddecb912e2e2dabe2f42ddbbb99c1092",
+        strip_prefix = "verilator-5.052",
+        patch_args = ["-p1"],
+        patches = [
+            "@coralnpu_hw//third_party/verilator:0001-Remove-autodetect-of-VERILATOR_ROOT.patch",
+        ],
+    )
+
+    http_archive(
+        name = "net_zlib",
+        sha256 = "f5cc4ab910db99b2bdbba39ebbdc225ffc2aa04b4057bc2817f1b94b6978cfc3",
+        strip_prefix = "zlib-1.2.11",
+        urls = [
+            "https://github.com/madler/zlib/archive/v1.2.11.zip",
+        ],
+        build_file = "@coralnpu_hw//third_party/verilator:zlib.BUILD",
+    )
+
+    http_archive(
+        name = "org_gnu_m4",
+        urls = [
+            "https://ftp.gnu.org/gnu/m4/m4-1.4.18.tar.xz",
+            "https://ftpmirror.gnu.org/m4/m4-1.4.18.tar.xz",
+        ],
+        strip_prefix = "m4-1.4.18",
+        sha256 = "f2c1e86ca0a404ff281631bdc8377638992744b175afb806e25871a24a934e07",
+        build_file = "@coralnpu_hw//third_party/verilator:m4.BUILD",
+    )
+
+    http_archive(
+        name = "com_github_westes_flex",
+        urls = [
+            "https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz",
+        ],
+        strip_prefix = "flex-2.6.4",
+        sha256 = "e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995",
+        build_file = "@coralnpu_hw//third_party/verilator:flex.BUILD",
+    )
+
+    http_archive(
+        name = "org_gnu_bison",
+        urls = [
+            "https://ftp.gnu.org/gnu/bison/bison-3.5.tar.xz",
+            "https://ftpmirror.gnu.org/bison/bison-3.5.tar.xz",
+        ],
+        strip_prefix = "bison-3.5",
+        sha256 = "55e4a023b1b4ad19095a5f8279f0dc048fa29f970759cea83224a6d5e7a3a641",
+        build_file = "@coralnpu_hw//third_party/verilator:bison.BUILD",
+    )
+
+    org_gnu_gnulib()
+
 def coralnpu_repos2():
     """Coralnpu repos are split into two functions; this is to import repositories in order"""
-
     http_archive(
         name = "pybind11",
         build_file = "@pybind11_bazel//:pybind11-BUILD.bazel",
@@ -142,40 +217,8 @@ def coralnpu_repos2():
         urls = ["https://github.com/pybind/pybind11_abseil/archive/54b34dd0e8afb8a4febb9508c69410e708b43515.tar.gz"],
         sha256 = "26328a74f367208ae8d490dc640030111df4ba0869619c6445bb4a1c5964e2a7",
     )
-    http_archive(
-        name = "rules_hdl",
-        sha256 = "1b560fe7d4100486784d6f2329e82a63dd37301e185ba77d0fd69b3ecc299649",
-        strip_prefix = "bazel_rules_hdl-7a1ba0e8d229200b4628e8a676917fc6b8e165d1",
-        urls = [
-            "https://github.com/hdl/bazel_rules_hdl/archive/7a1ba0e8d229200b4628e8a676917fc6b8e165d1.tar.gz",
-        ],
-        patches = [
-            "@coralnpu_hw//third_party/rules_hdl:0001-Use-systemc-in-verilator-and-support-verilator-in-co.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0002-Update-cocotb-script-to-support-newer-version.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0003-Export-vdb-via-undeclared-test-outputs.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0004-More-jobs-for-cocotb.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0005-Use-num_failed-for-exit-code.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0006-Separate-build-from-test-for-Verilator.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0007-Suppress-skywater-pdk-loading.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0008-Use-glob-for-verilator_bin-data-files.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0009-Suppress-Verilator-C-warnings.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0010-Fix-ParseDict-to-handle-space-separated-lists.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0011-Support-location-expansion-in-build-args.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0012-Fix-runfiles-collection-for-direct-files.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0013-Support-pre-compiled-VCS-models.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0014-Remove-deprecated-path-attr-from-bison-filegroup.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0015-Use-short_path-for-python-runfiles-resolution.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0016-Add-V3AstNodeStmt-and-V3Dfg-gen-clone-cases-to-verilator.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0017-Clean-up-WAVES-env-var-to-avoid-spurious-traces.patch",
-            "@coralnpu_hw//third_party/rules_hdl:0018-Fix-python-runfiles-resolution-for-manifest-only.patch",
-            # Patch 0019 injects a python runfiles fix (via PYTHONPATH/sitecustomize.py)
-            # to resolve ValueError crashes during manifest-only/unsandboxed runs.
-            # See third_party/python_runfiles_fix/sitecustomize.py for a detailed explanation.
-            # Can be removed when rules_hdl supports manifest-only runs natively.
-            "@coralnpu_hw//third_party/rules_hdl:0019-Inject-python-runfiles-fix-to-PYTHONPATH.patch",
-        ],
-        patch_args = ["-p1"],
-    )
+
+    verilator_repos()
 
     http_archive(
         name = "io_bazel_rules_scala",
@@ -380,27 +423,6 @@ def mpact_repos():
         workspace_file = "@coralnpu_hw//third_party/coralnpu_mpact:WORKSPACE",
         patches = ["@coralnpu_hw//third_party/coralnpu_mpact:0002-Patch-mpact_riscv-WORKSPACE.patch"],
         patch_args = ["-p1"],
-    )
-
-def uvm_verilator_repos():
-    git_repository(
-        name = "uvm-verilator",
-        remote = "https://github.com/chipsalliance/uvm-verilator",
-        tag = "uvm-1.2",
-        build_file_content = """
-package(default_visibility = ["//visibility:public"])
-exports_files(glob(["**/*"]))
-filegroup(
-    name = "all_srcs",
-    srcs = glob([
-        "**/*",
-    ]),
-)
-        """,
-        patch_cmds = [
-            "git fetch --all",
-            "git cherry-pick -n --strategy=recursive -X theirs 5a37baacfed0722b523b05decc9b94fe3e9efbe4",
-        ],
     )
 
     http_file(

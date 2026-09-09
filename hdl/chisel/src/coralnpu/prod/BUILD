@@ -26,19 +26,14 @@ load(
 )
 load(
     "//hdl/chisel/src/coralnpu:flags.bzl",
+    "CORE_MINI_AXI_VOPTS",
     "RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS",
+    "RVV_CORE_MINI_AXI_VOPTS",
     "VME_CORE_MINI_AXI_COMMON_GEN_FLAGS",
+    "VME_CORE_MINI_AXI_VOPTS",
 )
 
 package(default_visibility = ["//visibility:public"])
-
-CORE_MINI_AXI_VOPTS = [
-    "-Wno-WIDTHEXPAND",
-    "-Wno-WIDTHTRUNC",
-    "-Wno-UNSIGNED",
-    "-Wno-BLKANDNBLK",
-    "-Wno-BLKSEQ",
-]
 
 # Production target for CoreMiniAxi (verification disabled)
 chisel_cc_library(
@@ -81,7 +76,7 @@ chisel_cc_library(
     ] + RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS,
     module_name = "RvvCoreMiniAxi",
     verilog_file_path = "RvvCoreMiniAxi.sv",
-    vopts = CORE_MINI_AXI_VOPTS,
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 # Production target for VmeCoreMiniAxi with 8kB ITCM and 128kB DTCM (verification disabled)
@@ -100,5 +95,5 @@ chisel_cc_library(
     ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
     module_name = "VmeCoreMini_ITCM8KB_DTCM128KBAxi",
     verilog_file_path = "VmeCoreMini_ITCM8KB_DTCM128KBAxi.sv",
-    vopts = CORE_MINI_AXI_VOPTS,
+    vopts = VME_CORE_MINI_AXI_VOPTS,
 )

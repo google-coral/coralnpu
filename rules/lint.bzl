@@ -14,8 +14,7 @@
 
 """VCStatic lint rules."""
 
-load("@coralnpu_hw//rules:verilog.bzl", "collect_verilog_files")
-load("@rules_hdl//verilog:providers.bzl", "VerilogInfo")
+load("//rules:verilog.bzl", "VerilogInfo", "collect_verilog_files")
 
 def _vcstatic_lint_impl(ctx):
     # Create f file

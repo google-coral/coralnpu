@@ -1,26 +1,22 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("//rules:host_cpus.bzl", "host_cpus")
-load("//rules:repos.bzl", "cvfpu_repos", "rvvi_repos")
+load("//rules:repos.bzl", "cvfpu_repos", "rules_hdl_compat", "rvvi_repos", "verilator_repos")
 
 def _coralnpu_deps_ext_impl(ctx):
     # Call non-conflicting legacy repo definitions
     host_cpus(name = "coralnpu_host_cpus")
     cvfpu_repos()
     rvvi_repos()
+    verilator_repos()
+    rules_hdl_compat(name = "rules_hdl")
 
     # uvm
     http_archive(
         name = "uvm",
-        urls = ["https://github.com/chipsalliance/uvm-verilator/archive/5a37baacfed0722b523b05decc9b94fe3e9efbe4.tar.gz"],
-        sha256 = "2c5b24ac5d6527824ca62f30c0c6695e4779481ad835d84a9ad1da85300a1b27",
-        strip_prefix = "uvm-verilator-5a37baacfed0722b523b05decc9b94fe3e9efbe4",
-        build_file_content = """
-filegroup(
-    name = "uvm_src",
-    srcs = glob(["**"]),
-    visibility = ["//visibility:public"],
-)
-""",
+        urls = ["https://github.com/chipsalliance/uvm-verilator/archive/refs/tags/uvm-2020-3.2.tar.gz"],
+        sha256 = "9647bfe69439340f1f5c8c969b9814aed06cde9fe4c355111bd5e7cd325c0e0f",
+        strip_prefix = "uvm-verilator-uvm-2020-3.2",
+        build_file = "@coralnpu_hw//third_party/verilator:uvm.BUILD",
     )
 
     # freertos

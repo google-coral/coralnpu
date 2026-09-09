@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,29 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@lowrisc_opentitan_gh//rules:fusesoc.bzl", "fusesoc_build")
-load("//rules:verilog.bzl", "verilog_library")
+load("@rules_python//python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-verilog_library(
-    name = "fpga_rtl",
-    srcs = [
-        "autoboot.sv",
-        "top_pkg.sv",
-        "top_racl_pkg.sv",
-    ],
-    deps = [
-        "//fpga/ip/coralnpu_tlul",
-    ],
+exports_files(glob(["*"]))
+
+py_binary(
+    name = "verilator_astgen",
+    srcs = ["verilator_astgen.py"],
 )
 
-filegroup(
-    name = "rtl_files",
-    srcs = glob([
-        "*.sv",
-        "*.core",
-        "*.cc",
-        "*.vlt",
-    ]),
+py_binary(
+    name = "verilator_bisonpre",
+    srcs = ["verilator_bisonpre.py"],
+)
+
+py_binary(
+    name = "verilator_build_template",
+    srcs = ["verilator_build_template.py"],
+)
+
+py_binary(
+    name = "verilator_flexfix",
+    srcs = ["verilator_flexfix.py"],
+)
+
+py_binary(
+    name = "verilator_version",
+    srcs = ["verilator_version.py"],
 )

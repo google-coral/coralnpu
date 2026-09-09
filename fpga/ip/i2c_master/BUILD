@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@lowrisc_opentitan_gh//rules:fusesoc.bzl", "fusesoc_build")
-load("@rules_hdl//verilog:providers.bzl", "verilog_library")
+load("//rules:verilog.bzl", "verilog_library")
 
 package(default_visibility = ["//visibility:public"])
 

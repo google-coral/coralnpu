@@ -19,10 +19,6 @@ load(
     "@rules_foreign_cc//foreign_cc:repositories.bzl",
     "rules_foreign_cc_dependencies",
 )
-load(
-    "@rules_hdl//dependency_support:dependency_support.bzl",
-    rules_hdl_dependency_support = "dependency_support",
-)
 
 def coralnpu_deps():
     """Full coralnpu dependent repositories
@@ -30,7 +26,6 @@ def coralnpu_deps():
     Including chisel and systemC test code
     """
     rules_foreign_cc_dependencies()
-    rules_hdl_dependency_support()
 
     http_archive(
         name = "accellera_systemc",

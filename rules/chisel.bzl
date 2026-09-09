@@ -15,8 +15,8 @@
 """chisel build rules"""
 
 load("@io_bazel_rules_scala//scala:scala.bzl", "scala_binary", "scala_library", "scala_test")
-load("@rules_hdl//verilator:defs.bzl", "verilator_cc_library")
-load("@rules_hdl//verilog:providers.bzl", "verilog_library")
+load("//rules:verilator.bzl", "verilator_cc_library")
+load("//rules:verilog.bzl", "verilog_library")
 
 SCALA_COPTS = [
     "-Ymacro-annotations",

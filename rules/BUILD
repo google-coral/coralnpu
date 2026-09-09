@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@rules_python//python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -25,7 +26,17 @@ exports_files([
     # Sourced by cocotb rules. Must be referenced via fully qualified label:
     # "@coralnpu_hw//rules:sim_runner.py" to support multi-workspace execution.
     "sim_runner.py",
+    "cocotb_wrapper.py",
 ])
+
+py_binary(
+    name = "cocotb_wrapper",
+    srcs = ["cocotb_wrapper.py"],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = ["@bazel_tools//tools/python/runfiles"],
+)
 
 # Enable Spike co-simulation for UVM tests
 # specifying --//rules:uvm_run_spike_cosim=true

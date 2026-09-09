@@ -16,13 +16,10 @@
 
 load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
 load("@coralnpu_hw//rules:sram_backdoor.bzl", "SRAM_BACKDOOR_TOPLEVELS")
-load("@coralnpu_hw//rules:verilog.bzl", "collect_verilog_files")
+load("@coralnpu_hw//rules:verilog.bzl", "VerilogInfo", "collect_verilog_files")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
-load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-load("@rules_hdl//cocotb:cocotb.bzl", "cocotb_test")
-load("@rules_hdl//verilog:providers.bzl", "VerilogInfo")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "PyInfo", "py_binary", "py_library")
 
 # Number of CPUs reserved per Verilate action in Bazel's local scheduler.
 # Sourced from `nproc` at workspace-fetch time so we don't oversubscribe
@@ -154,9 +151,8 @@ def _verilator_cocotb_model_impl(ctx):
     outdir = output_file.dirname
 
     # The @verilator runfiles live at <bin>.runfiles/<canonical>,
-    # where <canonical> is the verilator repo's canonical name (e.g.
-    # 'rules_hdl++hdl_deps+verilator'). Resolve via the verilator target's
-    # workspace_root rather than hardcoding it.
+    # where <canonical> is the verilator repo's canonical name.
+    # Resolve via the verilator target's owner rather than hardcoding it.
     verilator_canonical = ctx.executable._verilator_bin.owner.workspace_name
     verilator_root = "$PWD/{}.runfiles/{}".format(
         ctx.executable._verilator_bin.path,
@@ -360,7 +356,7 @@ vcs_cocotb_model = rule(
             allow_files = True,
         ),
         "_template": attr.label(
-            default = "//rules:vcs_model_wrapper.sh.template",
+            default = Label("@coralnpu_hw//rules:vcs_model_wrapper.sh.template"),
             allow_single_file = True,
         ),
     },
@@ -417,6 +413,338 @@ verilator_cocotb_model = rule(
     toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
 )
 
+def _list_to_argstring(data, argname, attr = None, operation = None):
+    result = " --{}=".format(argname) if data else ""
+    elems = []
+    for value in data:
+        elem = value if attr == None else getattr(value, attr)
+        elem = elem if operation == None else operation(elem)
+        elems.append(elem)
+    elems = " ".join(elems)
+    result += "'{}'".format(elems.replace("'", "'\\''"))
+    return result
+
+def _dict_to_argstring(data, argname):
+    result = " --{}".format(argname) if data else ""
+    for key, value in data.items():
+        entry = "{}={}".format(key, value)
+        result += " '{}'".format(entry.replace("'", "'\\''"))
+    return result
+
+def _files_to_argstring(data, argname):
+    return _list_to_argstring(data, argname, "short_path")
+
+def _pymodules_to_argstring(data, argname):
+    remove_py = lambda s: s.removesuffix(".py")
+    return _list_to_argstring(data, argname, "basename", remove_py)
+
+def _remove_duplicates_from_list(data):
+    result = []
+    for e in data:
+        if e not in result:
+            result.append(e)
+    return result
+
+def _collect_verilog_files_for_cocotb(ctx):
+    transitive_srcs_list = [
+        dep
+        for dep in ctx.attr.verilog_sources
+        if VerilogInfo in dep
+    ]
+    transitive_srcs_depset = depset(
+        [],
+        transitive = [dep[VerilogInfo].dag for dep in transitive_srcs_list],
+    )
+    verilog_srcs = [
+        verilog_info_struct.srcs + verilog_info_struct.hdrs
+        for verilog_info_struct in transitive_srcs_depset.to_list()
+    ]
+
+    return depset(
+        [src for sub_tuple in verilog_srcs for src in sub_tuple] +
+        ctx.files.verilog_sources,
+    )
+
+def _collect_vhdl_files(ctx):
+    return depset(direct = ctx.files.vhdl_sources)
+
+def _collect_python_transitive_imports(ctx):
+    return depset(transitive = [
+        dep[PyInfo].imports
+        for dep in ctx.attr.deps
+        if PyInfo in dep
+    ])
+
+def _collect_python_direct_imports(ctx):
+    return depset(direct = [module.dirname for module in ctx.files.test_module])
+
+def _collect_transitive_files(ctx):
+    py_toolchain = ctx.toolchains["@rules_python//python:toolchain_type"].py3_runtime
+    return depset(
+        direct = [py_toolchain.interpreter],
+        transitive = [dep[PyInfo].transitive_sources for dep in ctx.attr.deps] +
+                     [ctx.attr.cocotb_wrapper[PyInfo].transitive_sources] +
+                     [py_toolchain.files],
+    )
+
+def _collect_transitive_runfiles(ctx):
+    return ctx.runfiles(files = ctx.files.data).merge_all(
+        [dep.default_runfiles for dep in ctx.attr.deps] +
+        [dep.default_runfiles for dep in ctx.attr.sim] +
+        [dep.default_runfiles for dep in ctx.attr.data],
+    )
+
+def _get_pythonpath_to_set(ctx):
+    direct_imports = _collect_python_direct_imports(ctx).to_list()
+    transitive_imports = [
+        "../" + path
+        for path in _collect_python_transitive_imports(ctx).to_list()
+    ]
+    imports = _remove_duplicates_from_list(transitive_imports + direct_imports)
+    return ":".join(imports)
+
+def _get_path_to_set(ctx):
+    sim_paths = _remove_duplicates_from_list([dep.label.workspace_root for dep in ctx.attr.sim if dep.label.workspace_root])
+    if not sim_paths:
+        return ""
+    path = ":".join(["$PWD/" + str(p) for p in sim_paths])
+    return path
+
+def _get_test_command(ctx, verilog_files, vhdl_files):
+    vhdl_sources_args = _files_to_argstring(vhdl_files, "vhdl_sources")
+    verilog_sources_args = _files_to_argstring(verilog_files, "verilog_sources")
+
+    includes_args = _list_to_argstring(ctx.attr.includes, "includes")
+    testcase_args = _list_to_argstring(ctx.attr.testcase, "testcase")
+
+    # Expand $(location ...) in build_args using deps and data.
+    location_targets = ctx.attr.deps + ctx.attr.data
+    expanded_build_args = [ctx.expand_location(arg, location_targets) for arg in ctx.attr.build_args]
+    build_args = _list_to_argstring(expanded_build_args, "build_args")
+    gpi_interfaces_args = _list_to_argstring(ctx.attr.gpi_interfaces, "gpi_interfaces")
+    test_args = _list_to_argstring(ctx.attr.test_args, "test_args")
+    plus_args = _list_to_argstring(ctx.attr.plus_args, "plus_args")
+    extra_env_args = _list_to_argstring(ctx.attr.extra_env, "extra_env")
+
+    defines_args = _dict_to_argstring(ctx.attr.defines, "defines")
+    parameters_args = _dict_to_argstring(ctx.attr.parameters, "parameters")
+    verbose_args = " --verbose" if ctx.attr.verbose else ""
+    waves_args = " --waves" if ctx.attr.waves else ""
+    seed_args = " --seed {}".format(ctx.attr.seed) if ctx.attr.seed != "" else ""
+
+    test_module_args = _pymodules_to_argstring(ctx.files.test_module, "test_module")
+    python_interpreter = ctx.toolchains["@rules_python//python:toolchain_type"].py3_runtime.interpreter.short_path
+
+    path_to_set = _get_path_to_set(ctx)
+    path_prefix = "PATH={}:$PATH ".format(path_to_set) if path_to_set else ""
+
+    command = (
+        path_prefix +
+        "{}".format(python_interpreter) +
+        " {}".format(ctx.executable.cocotb_wrapper.short_path) +
+        " --jobs {}".format(ctx.attr.jobs) +
+        " --sim {}".format(ctx.attr.sim_name) +
+        " --hdl_library {}".format(ctx.attr.hdl_library) +
+        " --hdl_toplevel {}".format(ctx.attr.hdl_toplevel) +
+        " --hdl_toplevel_lang {}".format(ctx.attr.hdl_toplevel_lang) +
+        verilog_sources_args +
+        vhdl_sources_args +
+        includes_args +
+        testcase_args +
+        build_args +
+        gpi_interfaces_args +
+        test_args +
+        plus_args +
+        extra_env_args +
+        defines_args +
+        parameters_args +
+        verbose_args +
+        waves_args +
+        seed_args +
+        test_module_args +
+        (" --model {} --main_workspace {}".format(ctx.executable.model.short_path, ctx.workspace_name) if ctx.attr.model else "") +
+        ("&& (cp -fr `pwd`/sim_build/simv.vdb $TEST_UNDECLARED_OUTPUTS_DIR || true)" if ctx.attr.sim_name == "vcs" else "")
+    )
+
+    if ctx.attr.sim_name == "verilator":
+        verilator_root = ""
+        for dep in ctx.attr.sim:
+            if dep.label.workspace_root:
+                verilator_root = dep.label.workspace_root
+                break
+        if not verilator_root:
+            verilator_root = "external/verilator"
+        command = "VERILATOR_ROOT=$PWD/{} ".format(verilator_root) + command
+
+    return command
+
+def _cocotb_test_impl(ctx):
+    verilog_files = _collect_verilog_files_for_cocotb(ctx).to_list()
+    vhdl_files = _collect_vhdl_files(ctx).to_list()
+
+    # create test script
+    runner_script = ctx.actions.declare_file(ctx.attr.name + "_cocotb_runner.sh")
+    ctx.actions.write(
+        output = runner_script,
+        content = "#!/usr/bin/env bash\n" + _get_test_command(ctx, verilog_files, vhdl_files) + "\n",
+        is_executable = True,
+    )
+
+    # specify dependencies for the script
+    runfiles = ctx.runfiles(
+        files = ctx.files.cocotb_wrapper +
+                verilog_files +
+                vhdl_files +
+                ctx.files.test_module +
+                ctx.files.model,
+        transitive_files = _collect_transitive_files(ctx),
+    ).merge(
+        _collect_transitive_runfiles(ctx),
+    )
+
+    # specify PYTHONPATH for the script
+    env = {
+        "PYTHONPATH": _get_pythonpath_to_set(ctx),
+    }
+
+    if ctx.attr.sim_name == "verilator":
+        cc_toolchain = find_cc_toolchain(ctx)
+        env["VERILATOR_AR"] = cc_toolchain.ar_executable
+        env["VERILATOR_CXX"] = cc_toolchain.compiler_executable
+
+    # return the information about testing script and its dependencies
+    return [
+        DefaultInfo(executable = runner_script, runfiles = runfiles),
+        testing.TestEnvironment(env),
+    ]
+
+_cocotb_test_attrs = {
+    "build_args": attr.string_list(
+        doc = "Extra build arguments for the simulator",
+        default = [],
+    ),
+    "cocotb_wrapper": attr.label(
+        cfg = "exec",
+        executable = True,
+        doc = "Cocotb wrapper script",
+        default = Label("@coralnpu_hw//rules:cocotb_wrapper"),
+    ),
+    "defines": attr.string_dict(
+        doc = "Defines to set",
+        default = {},
+    ),
+    "data": attr.label_list(
+        doc = "Data dependencies for runtime and $(location) expansion in build_args.",
+        allow_files = True,
+        default = [],
+    ),
+    "deps": attr.label_list(
+        doc = "The list of python libraries to be linked in to the simulation target",
+        providers = [PyInfo],
+    ),
+    "extra_env": attr.string_list(
+        doc = "Extra environment variables to set",
+        default = [],
+    ),
+    "gpi_interfaces": attr.string_list(
+        doc = "List of GPI interfaces to use, with the first one being the entry point",
+        default = [],
+    ),
+    "hdl_library": attr.string(
+        doc = "The library name to compile into",
+        default = "top",
+    ),
+    "hdl_toplevel": attr.string(
+        doc = "The name of the HDL toplevel module",
+        mandatory = True,
+    ),
+    "hdl_toplevel_lang": attr.string(
+        doc = "Language of the HDL toplevel module",
+        mandatory = True,
+    ),
+    "includes": attr.string_list(
+        doc = "Verilog include directories",
+        default = [],
+    ),
+    "jobs": attr.int(
+        doc = "Maximum parallel jobs for simulator build",
+        default = verilator_make_parallelism,
+    ),
+    "model": attr.label(
+        executable = True,
+        doc = "Verilated model binary",
+        cfg = "exec",
+    ),
+    "parameters": attr.string_dict(
+        doc = "Verilog parameters or VHDL generics",
+        default = {},
+    ),
+    "plus_args": attr.string_list(
+        doc = "'plusargs' to set for the simulator",
+        default = [],
+    ),
+    "seed": attr.string(
+        doc = "A specific random seed to use",
+        default = "",
+    ),
+    "sim": attr.label_list(
+        doc = "Simulator to use",
+        default = [],
+    ),
+    "sim_name": attr.string(
+        doc = "Simulator name used in Cocotb",
+        default = "verilator",
+        values = ["ghdl", "icarus", "questa", "verilator", "vcs"],
+    ),
+    "test_args": attr.string_list(
+        doc = "Extra arguments for the simulator",
+        default = [],
+    ),
+    "test_module": attr.label_list(
+        doc = "Name(s) of the Python module(s) containing the tests to run",
+        allow_files = [".py"],
+        allow_empty = False,
+        mandatory = True,
+    ),
+    "testcase": attr.string_list(
+        doc = "Name(s) of a specific testcase(s) to run. If not set, run all testcases found in *test_module*",
+        default = [],
+    ),
+    "verbose": attr.bool(
+        doc = "Enable verbose messages",
+        default = False,
+    ),
+    "verilog_sources": attr.label_list(
+        doc = "Verilog source files to build",
+        providers = [VerilogInfo],
+        allow_files = True,
+        default = [],
+    ),
+    "vhdl_sources": attr.label_list(
+        doc = "VHDL source files to build",
+        allow_files = [".vhd", ".vhdl"],
+        default = [],
+    ),
+    "waves": attr.bool(
+        doc = "Record signal traces",
+        default = True,
+    ),
+    "_cc_toolchain": attr.label(
+        doc = "CC compiler.",
+        default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
+    ),
+}
+
+cocotb_test = rule(
+    implementation = _cocotb_test_impl,
+    attrs = _cocotb_test_attrs,
+    toolchains = [
+        "@rules_cc//cc:toolchain_type",
+        "@rules_python//python:toolchain_type",
+    ],
+    test = True,
+)
+
 def verilator_cocotb_test(
         name,
         model,
@@ -466,7 +794,8 @@ def verilator_cocotb_test(
     )
 
     extra_env = list(kwargs.pop("extra_env", []))
-    extra_env.append("COCOTB_TEST_FILTER=$TESTBRIDGE_TEST_ONLY")
+    if not kwargs.get("testcase"):
+        extra_env.append("COCOTB_TEST_FILTER=$TESTBRIDGE_TEST_ONLY")
     kwargs["extra_env"] = extra_env
 
     cocotb_test(
@@ -552,7 +881,7 @@ def _vcs_simulation_run_impl(ctx):
     args.add("--sim", "vcs")
     args.add("--hdl_toplevel_lang", "verilog")
 
-    # CRITICAL: These arguments mirror _get_test_command in @rules_hdl//cocotb:cocotb.bzl.
+    # CRITICAL: These arguments mirror _get_test_command in _cocotb_test_impl.
     # If standard cocotb tests receive new CLI arguments or flags, they must be added here.
     args.add("--model", ctx.executable.model.short_path)
     args.add("--main_workspace", ctx.workspace_name)
@@ -738,7 +1067,7 @@ def vcs_simulation_split_test(
     NOTE: This split flow is for gate-level power analysis where FSDB waveforms
     must be Bazel build outputs. For standard testing, use vcs_cocotb_test.
 
-    WARNING: Keep in sync with vcs_cocotb_test / @rules_hdl:
+    WARNING: Keep in sync with vcs_cocotb_test / cocotb_test:
     1. CLI Flags: _vcs_simulation_run_impl must manually forward new flags.
     2. Coverage: If using -cm, declare <name>.vdb output in vcs_simulation_run.
     3. Failures: Simulation runs as a build action; failures are BUILD failures.
@@ -806,7 +1135,7 @@ def vcs_simulation_split_test(
             requirement("cocotb"),
             requirement("numpy"),
             requirement("pytest"),
-            "@rules_hdl//cocotb:cocotb_wrapper",
+            "@coralnpu_hw//rules:cocotb_wrapper",
             "@bazel_tools//tools/python/runfiles",
         ],
         tags = run_tags,
@@ -893,7 +1222,7 @@ def vcs_cocotb_test(
 
     CRITICAL DIVERGENCE WARNING:
     If you introduce new runtime arguments, environment variables, or CLI flags
-    to this function or its underlying @rules_hdl rule, you MUST also update
+    to this function or its underlying cocotb_test rule, you MUST also update
     _vcs_simulation_run_impl above to ensure the split-test flow remains in sync!
     """
     testonly = kwargs.pop("testonly", False)
@@ -930,7 +1259,8 @@ def vcs_cocotb_test(
     )
 
     extra_env = list(kwargs.pop("extra_env", []))
-    extra_env.append("COCOTB_TEST_FILTER=$TESTBRIDGE_TEST_ONLY")
+    if not kwargs.get("testcase"):
+        extra_env.append("COCOTB_TEST_FILTER=$TESTBRIDGE_TEST_ONLY")
     kwargs["extra_env"] = extra_env
 
     # Resolve labels to paths and prefix with -v for VCS.
@@ -940,7 +1270,7 @@ def vcs_cocotb_test(
         # Note that $(execpath) expands to a space-separated list if the label contains multiple files.
         # VCS expects a separate -v flag for each file. This implementation assumes each entry in
         # verilog_model_files is a single-file label. If filegroups are needed, the expansion logic
-        # should probably be moved into the cocotb_test rule implementation in rules_hdl.
+        # should probably be moved into the cocotb_test rule implementation.
         build_args.extend(["-v", "../$(execpath {})".format(f)])
     kwargs["build_args"] = build_args
 

@@ -74,10 +74,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang git autoconf bc bison build-essential help2man curl device-tree-compiler flex libfl-dev fuse3 gawk mold python-is-python3 python3 python3-full python3-pip python3-pyelftools python3-setuptools python3-venv srecord unzip xxd zip openjdk-17-jre z3
-      - name: Clone UVM-1.2
+      - name: Clone UVM
         run: |
-          git clone https://github.com/chipsalliance/uvm-verilator.git -b uvm-1.2 ${{ env.CI_TMPDIR }}/uvm-verilator
-          git -C ${{ env.CI_TMPDIR }}/uvm-verilator cherry-pick -n --strategy=recursive -X theirs 5a37baacfed0722b523b05decc9b94fe3e9efbe4
+          git clone https://github.com/chipsalliance/uvm-verilator.git --depth=1 -b uvm-2020-3.2 ${{ env.CI_TMPDIR }}/uvm-verilator
       - name: Clone CoralNPU-mpact
         run: |
           git clone https://github.com/google-coral/coralnpu-mpact.git ${{ env.CI_TMPDIR }}/coralnpu-mpact

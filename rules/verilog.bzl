@@ -14,7 +14,76 @@
 
 """Verilog packaging rules"""
 
-load("@rules_hdl//verilog:providers.bzl", "VerilogInfo", "verilog_library")
+VerilogInfo = provider(
+    doc = "Contains DAG info per node in a struct.",
+    fields = {
+        "dag": "A depset of the DAG entries to propagate upwards.",
+        "plis": "a depset of VerilogInterfaceInfo",
+    },
+)
+
+def make_dag_entry(srcs, hdrs, data, deps, label):
+    """Create a new DAG entry for use in VerilogInfo."""
+    return struct(
+        srcs = tuple(srcs),
+        hdrs = tuple(hdrs),
+        data = tuple(data),
+        deps = tuple(deps),
+        label = label,
+    )
+
+def make_verilog_info(
+        new_entries = (),
+        old_infos = ()):
+    """Return a new VerilogInfo that merges other VerilogInfo and new DAG entries."""
+    return VerilogInfo(
+        dag = depset(
+            direct = new_entries,
+            order = "postorder",
+            transitive = [x.dag for x in old_infos if hasattr(x, "dag")],
+        ),
+    )
+
+def _verilog_library_impl(ctx):
+    verilog_info = make_verilog_info(
+        new_entries = [make_dag_entry(
+            srcs = ctx.files.srcs,
+            data = ctx.files.data,
+            hdrs = ctx.files.hdrs,
+            deps = ctx.attr.deps,
+            label = ctx.label,
+        )],
+        old_infos = [dep[VerilogInfo] for dep in ctx.attr.deps if VerilogInfo in dep],
+    )
+    return [
+        verilog_info,
+        DefaultInfo(files = depset(ctx.files.srcs + ctx.files.hdrs)),
+    ]
+
+verilog_library = rule(
+    doc = "Define a Verilog module.",
+    implementation = _verilog_library_impl,
+    attrs = {
+        "data": attr.label_list(
+            doc = "Compile data read by sources.",
+            allow_files = True,
+        ),
+        "deps": attr.label_list(
+            doc = "The list of other libraries to be linked.",
+            providers = [
+                VerilogInfo,
+            ],
+        ),
+        "hdrs": attr.label_list(
+            doc = "Verilog or SystemVerilog headers.",
+            allow_files = [".vh", ".svh"],
+        ),
+        "srcs": attr.label_list(
+            doc = "Verilog or SystemVerilog sources.",
+            allow_files = [".v", ".sv"],
+        ),
+    },
+)
 
 def collect_verilog_files(targets, files = None):
     """Collects Verilog files transitively from targets and direct files.
@@ -44,6 +113,7 @@ def collect_verilog_files(targets, files = None):
     flat_srcs = []
     for verilog_info_struct in transitive_srcs.to_list():
         flat_srcs.extend(verilog_info_struct.srcs)
+        flat_srcs.extend(verilog_info_struct.hdrs)
 
     if raw_files_depsets:
         flat_srcs.extend(depset(transitive = raw_files_depsets).to_list())

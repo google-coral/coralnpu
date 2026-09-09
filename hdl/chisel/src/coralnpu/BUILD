@@ -25,8 +25,11 @@ load("@coralnpu_hw//rules:utils.bzl", "filter_files_by_extension", "template_rul
 load("@coralnpu_hw//rules:verilog.bzl", "verilog_zip_bundle")
 load(
     "//hdl/chisel/src/coralnpu:flags.bzl",
+    "CORE_MINI_AXI_VOPTS",
     "RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS",
+    "RVV_CORE_MINI_AXI_VOPTS",
     "VME_CORE_MINI_AXI_COMMON_GEN_FLAGS",
+    "VME_CORE_MINI_AXI_VOPTS",
 )
 
 package(default_visibility = ["//visibility:public"])
@@ -563,17 +566,6 @@ chisel_cc_library(
     verilog_file_path = "CoreMini.sv",
 )
 
-CORE_MINI_AXI_VOPTS = [
-    "-DUSE_GENERIC",
-    # Warnings that we disable for fpnew
-    "-Wno-ASCRANGE",
-    "-Wno-WIDTHEXPAND",
-    "-Wno-WIDTHTRUNC",
-    "-Wno-UNSIGNED",
-    "-Wno-BLKANDNBLK",
-    "-Wno-BLKSEQ",
-]
-
 template_rule(
     chisel_cc_library,
     {
@@ -780,27 +772,7 @@ template_rule(
     },
     chisel_lib = ":coralnpu",
     emit_class = "coralnpu.EmitCore",
-    vopts = [
-        "-DUSE_GENERIC",
-        # RVV
-        "-DTB_SUPPORT",
-        "-DVLEN_128",
-        "-DZVE32F_ON",
-        "-Wno-WIDTH",
-        "-Wno-CASEINCOMPLETE",
-        "-Wno-LATCH",
-        "-Wno-SIDEEFFECT",
-        "-Wno-MULTIDRIVEN",
-        "-Wno-BLKANDNBLK",
-        "-Wno-CASEX",
-        # FPNEW
-        "-Wno-ASCRANGE",
-        "-Wno-WIDTHEXPAND",
-        "-Wno-WIDTHTRUNC",
-        "-Wno-UNSIGNED",
-        "-Wno-WIDTHCONCAT",
-        "-Ihdl/verilog/rvv/design/FPnew/common_cells/inc",
-    ],
+    vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
 filter_files_by_extension(
@@ -850,29 +822,7 @@ template_rule(
     },
     chisel_lib = ":coralnpu",
     emit_class = "coralnpu.EmitCore",
-    vopts = [
-        "-DUSE_GENERIC",
-        # RVV
-        "-DTB_SUPPORT",
-        "-DVLEN_128",
-        "-DZVE32F_ON",
-        # VME (Zvt) non-tile state and mset* instructions.
-        "-DZVT_ON",
-        "-Wno-WIDTH",
-        "-Wno-CASEINCOMPLETE",
-        "-Wno-LATCH",
-        "-Wno-SIDEEFFECT",
-        "-Wno-MULTIDRIVEN",
-        "-Wno-BLKANDNBLK",
-        "-Wno-CASEX",
-        # FPNEW
-        "-Wno-ASCRANGE",
-        "-Wno-WIDTHEXPAND",
-        "-Wno-WIDTHTRUNC",
-        "-Wno-UNSIGNED",
-        "-Wno-WIDTHCONCAT",
-        "-Ihdl/verilog/rvv/design/FPnew/common_cells/inc",
-    ],
+    vopts = VME_CORE_MINI_AXI_VOPTS,
 )
 
 vcstatic_lint(

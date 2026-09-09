@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,29 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@lowrisc_opentitan_gh//rules:fusesoc.bzl", "fusesoc_build")
-load("//rules:verilog.bzl", "verilog_library")
+"""Compatibility shim for verilog providers."""
 
-package(default_visibility = ["//visibility:public"])
-
-verilog_library(
-    name = "fpga_rtl",
-    srcs = [
-        "autoboot.sv",
-        "top_pkg.sv",
-        "top_racl_pkg.sv",
-    ],
-    deps = [
-        "//fpga/ip/coralnpu_tlul",
-    ],
+load(
+    "//rules:verilog.bzl",
+    _VerilogInfo = "VerilogInfo",
+    _verilog_library = "verilog_library",
 )
 
-filegroup(
-    name = "rtl_files",
-    srcs = glob([
-        "*.sv",
-        "*.core",
-        "*.cc",
-        "*.vlt",
-    ]),
-)
+VerilogInfo = _VerilogInfo
+verilog_library = _verilog_library

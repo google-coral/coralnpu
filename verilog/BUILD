@@ -12,4 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-exports_files(glob(["*.patch"]))
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["providers.bzl"])
