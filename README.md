@@ -32,13 +32,16 @@ Coral NPU offers the following top-level feature set:
 
 ## System Requirements
 
-* Bazel 7.4.1
-* Python 3.9-3.12 (3.13 support is in progress)
-* [SRecord](https://srecord.sourceforge.net/)
+* Bazel 8.6.0
+* Python 3.9-3.13
+
+See [coralnpu.dockerfile](utils/coralnpu.dockerfile) for a detailed list of
+requirements.  Our CI systems run most builds and tests using this image.
 
 ## Verification & Testing
 
-For details on our testing methodologies and how to run or write tests, see the corresponding test READMEs:
+For details on our testing methodologies and how to run or write tests, see the
+corresponding test READMEs:
 
 * [Cocotb Tests (RTL & Netlist simulation)](tests/cocotb/README.md)
 * [UVM Testbench (Co-simulation)](tests/uvm/README.md)
