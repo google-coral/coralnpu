@@ -125,8 +125,11 @@ object GenerateCoreShimSource {
       )
     }
 
-    coreInstantiation += """  localparam fpnew_pkg::fpu_implementation_t impl = '{
-        |  PipeRegs:   '{default: 'd3},
+    coreInstantiation += """  // 4-stage pipeline breaks the 32-bit mantissa multiply from the LZA/normalization stage.
+        |  // Note for Physical Design: If 3-cycle architectural latency is preferred, synthesis
+        |  // register retiming ('set_optimize_registers true') on the 3-stage core is an option.
+        |  localparam fpnew_pkg::fpu_implementation_t impl = '{
+        |  PipeRegs:   '{default: 'd4},
         |  UnitTypes:  '{'{default: fpnew_pkg::PARALLEL}, // ADDMUL
         |                '{default: fpnew_pkg::MERGED},   // DIVSQRT
         |                '{default: fpnew_pkg::PARALLEL}, // NONCOMP

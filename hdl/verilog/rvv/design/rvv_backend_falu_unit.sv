@@ -35,7 +35,10 @@ module rvv_backend_falu_unit(
   //rob ready 2 unit
   falu_result_rdy
 );
-  parameter int unsigned PIPEREGS  = 32'd3; 
+  // 4-stage pipeline breaks the 32-bit mantissa multiply from the LZA/normalization stage.
+  // Note for Physical Design: If 3-cycle architectural latency is preferred, synthesis
+  // register retiming ('set_optimize_registers true') on the 3-stage core is an option.
+  parameter int unsigned PIPEREGS  = 32'd4; 
   //global
   input   logic         clk;
   input   logic         rst_n;
