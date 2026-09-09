@@ -834,16 +834,18 @@ template_rule(
             "module_name": "VmeCoreMiniAxi",
         },
         "vme_core_mini_verification_axi_cc_library": {
-            "verilog_file_path": "VmeCoreMiniVerificationAxi.sv",
+            "verilog_file_path": "VmeCoreMiniVerificationHighmemAxi.sv",
             "extra_outs": [
-                "VVmeCoreMiniVerificationAxi_parameters.h",
-                "VmeCoreMiniVerificationAxi.zip",
+                "VVmeCoreMiniVerificationHighmemAxi_parameters.h",
+                "VmeCoreMiniVerificationHighmemAxi.zip",
             ],
             "gen_flags": [
                 "--moduleName=VmeCoreMiniVerification",
                 "--enableVerification=True",
+                "--itcmSizeKBytes=1024",
+                "--dtcmSizeKBytes=1024",
             ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
-            "module_name": "VmeCoreMiniVerificationAxi",
+            "module_name": "VmeCoreMiniVerificationHighmemAxi",
         },
     },
     chisel_lib = ":coralnpu",
