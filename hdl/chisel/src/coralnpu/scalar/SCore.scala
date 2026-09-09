@@ -19,7 +19,7 @@ import chisel3._
 import chisel3.util._
 import common._
 import coralnpu.float.FloatCore
-import coralnpu.rvv.RvvCoreIO
+import coralnpu.rvv.{Rob2Rt, RvvCoreIO}
 import _root_.circt.stage.ChiselStage
 
 object SCore {
@@ -77,17 +77,23 @@ class SCore(p: Parameters) extends Module {
   if (p.enableRvv) {
     rob_io.isVector.get        := dispatch.io.isVector.get
     rob_io.writeAddrVector.get := dispatch.io.rvvRdMark.get
+    val rvvRdPipedValid = RegInit(VecInit.fill(p.rvvRetireLanes)(false.B))
+    val rvvRdPipedBits  = Reg(Vec(p.rvvRetireLanes, new Rob2Rt(p)))
+    rvvRdPipedValid := Mux(
+      rob_io.trapRetired,
+      VecInit.fill(p.rvvRetireLanes)(false.B),
+      VecInit(io.rvvcore.get.rd_rob2rt_o.map(_.valid))
+    )
+    rvvRdPipedBits := io.rvvcore.get.rd_rob2rt_o
     (0 until p.rvvRetireLanes).foreach(i => {
-      rob_io.writeDataVector.get(i).valid        := io.rvvcore.get.rd_rob2rt_o(i).valid
-      rob_io.writeDataVector.get(i).bits.addr    := io.rvvcore.get.rd_rob2rt_o(i).w_index
-      rob_io.writeDataVector.get(i).bits.rob_tag := io.rvvcore.get.rd_rob2rt_o(i).rob_tag
+      rob_io.writeDataVector.get(i).valid        := rvvRdPipedValid(i)
+      rob_io.writeDataVector.get(i).bits.addr    := rvvRdPipedBits(i).w_index
+      rob_io.writeDataVector.get(i).bits.rob_tag := rvvRdPipedBits(i).rob_tag
       if (p.enableVerification) {
-        rob_io.writeDataVector.get(i).bits.data.get   := io.rvvcore.get.rd_rob2rt_o(i).w_data.get
-        rob_io.writeDataVector.get(i).bits.uop_pc.get := io.rvvcore.get.rd_rob2rt_o(i).uop_pc.get
+        rob_io.writeDataVector.get(i).bits.data.get   := rvvRdPipedBits(i).w_data.get
+        rob_io.writeDataVector.get(i).bits.uop_pc.get := rvvRdPipedBits(i).uop_pc.get
       }
-      rob_io.writeDataVector.get(i).bits.last_uop_valid := io.rvvcore.get
-        .rd_rob2rt_o(i)
-        .last_uop_valid
+      rob_io.writeDataVector.get(i).bits.last_uop_valid := rvvRdPipedBits(i).last_uop_valid
     })
   }
   rob_io.fault         := fault_manager.io.out

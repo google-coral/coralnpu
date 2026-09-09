@@ -652,16 +652,18 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     ShiftVectorRight(resultUpdate, deqReady)
   )
 
+  // Register inputs to break critical timing path from deqPtr -> deqReady -> retiredEcalls
+  val deqReady_reg        = RegNext(deqReady, 0.U)
+  val instIsEcallMask_reg = RegNext(
+    VecInit((0 until p.retirementLanes).map(i => instBuffer.io.dataOut(i).isEcall)).asUInt,
+    0.U
+  )
   val retiredEcalls = PopCount(
     VecInit(
-      (0 until p.retirementLanes).map(i => (i.U < deqReady) && instBuffer.io.dataOut(i).isEcall)
+      (0 until p.retirementLanes).map(i => (i.U < deqReady_reg) && instIsEcallMask_reg(i))
     ).asUInt
   )
-
-  // Register inputs to break timing path before subtraction
-  val deqReady_reg      = RegNext(deqReady, 0.U)
-  val retiredEcalls_reg = RegNext(retiredEcalls, 0.U)
-  io.nRetired    := deqReady_reg - retiredEcalls_reg
+  io.nRetired    := deqReady_reg - retiredEcalls
   io.trapPending := RegNext(hasTrap && !trapRetired, false.B)
   io.trapRetired := trapRetired
 
