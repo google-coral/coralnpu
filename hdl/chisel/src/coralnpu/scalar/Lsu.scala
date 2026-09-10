@@ -3196,11 +3196,17 @@ class LsuSuperSlot(p: Parameters) extends Module {
       val nStructs = MuxUpTo1H(
         0.U,
         Seq(
+          // mf8
+          (emul === "b101".U && elemWidth === LsuVectorElementWidth.E8)  -> (p.rvvVlenb / 8).U,
+          (emul === "b101".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb / 16).U,
           // mf4
-          (emul === "b110".U && elemWidth === LsuVectorElementWidth.E8) -> (p.rvvVlenb / 4).U,
+          (emul === "b110".U && elemWidth === LsuVectorElementWidth.E8)  -> (p.rvvVlenb / 4).U,
+          (emul === "b110".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb / 8).U,
+          (emul === "b110".U && elemWidth === LsuVectorElementWidth.E32) -> (p.rvvVlenb / 16).U,
           // mf2
           (emul === "b111".U && elemWidth === LsuVectorElementWidth.E8)  -> (p.rvvVlenb / 2).U,
           (emul === "b111".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb / 4).U,
+          (emul === "b111".U && elemWidth === LsuVectorElementWidth.E32) -> (p.rvvVlenb / 8).U,
           // m1
           (emul === "b000".U && elemWidth === LsuVectorElementWidth.E8)  -> p.rvvVlenb.U,
           (emul === "b000".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb / 2).U,

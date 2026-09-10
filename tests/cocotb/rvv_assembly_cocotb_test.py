@@ -2349,3 +2349,102 @@ async def core_mini_rvv_vl0_v0_corruption_test(dut):
         expected_v0,
         err_msg="Vector mask v0 corrupted after vmsbc.vvm under vl=0",
     )
+
+
+@cocotb.test()
+async def core_mini_rvv_lsu_indexed_short_vl_test(dut):
+    """Directed test for indexed vector ops under short vl."""
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+    r = runfiles.Create()
+
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/rvv/rvv_lsu_indexed_short_vl_test.elf"
+    )
+    if not elf_path:
+        raise ValueError("elf_path must consist a valid path")
+    with open(elf_path, "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+    with open(elf_path, "rb") as f:
+        out_e32_vl2_addr = core_mini_axi.lookup_symbol(
+            f, "out_data_indexed_e32_vl2"
+        )
+        out_e32_vl1_addr = core_mini_axi.lookup_symbol(
+            f, "out_data_indexed_e32_vl1"
+        )
+        out_e16_vl2_addr = core_mini_axi.lookup_symbol(
+            f, "out_data_indexed_e16_vl2"
+        )
+        out_store_addr = core_mini_axi.lookup_symbol(f, "out_data_store")
+        out_idx_store_addr = core_mini_axi.lookup_symbol(
+            f, "out_data_indexed_store"
+        )
+
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_wfi()
+
+    out_e32_vl2 = (await core_mini_axi.read(out_e32_vl2_addr,
+                                            16)).view(np.uint32)
+    out_e32_vl1 = (await core_mini_axi.read(out_e32_vl1_addr,
+                                            16)).view(np.uint32)
+    out_e16_vl2 = (await core_mini_axi.read(out_e16_vl2_addr,
+                                            16)).view(np.uint16)
+    out_store = (await core_mini_axi.read(out_store_addr, 16)).view(np.uint8)
+    out_idx_store = (await core_mini_axi.read(out_idx_store_addr,
+                                              16)).view(np.uint32)
+
+    dut._log.info(
+        f"out_e32_vl2:   [0x{out_e32_vl2[0]:08x}, 0x{out_e32_vl2[1]:08x}]"
+    )
+    dut._log.info(f"out_e32_vl1:   [0x{out_e32_vl1[0]:08x}]")
+    dut._log.info(
+        f"out_e16_vl2:   [0x{out_e16_vl2[0]:04x}, 0x{out_e16_vl2[1]:04x}]"
+    )
+    dut._log.info(
+        f"out_store:     [0x{out_store[0]:02x}, 0x{out_store[1]:02x}, 0x{out_store[2]:02x}, 0x{out_store[3]:02x}]"
+    )
+    dut._log.info(
+        f"out_idx_store: [0x{out_idx_store[0]:08x}, 0x{out_idx_store[1]:08x}, 0x{out_idx_store[2]:08x}]"
+    )
+
+    # Case 1: SEW=32, vl=2 (reduced to mf2)
+    np.testing.assert_array_equal(
+        out_e32_vl2[:2],
+        np.array([0x33333333, 0x22222222], dtype=np.uint32),
+        err_msg="Case 1 (e32, vl=2): Indexed load output mismatch",
+    )
+    # Strided store after Case 1
+    np.testing.assert_array_equal(
+        out_store[:4],
+        np.array([0x11, 0x22, 0x33, 0x44], dtype=np.uint8),
+        err_msg="Case 1: Strided store output mismatch",
+    )
+
+    # Case 2: SEW=32, vl=1 (reduced to mf4)
+    np.testing.assert_array_equal(
+        out_e32_vl1[:1],
+        np.array([0x33333333], dtype=np.uint32),
+        err_msg="Case 2 (e32, vl=1): Indexed load output mismatch",
+    )
+
+    # Case 3: SEW=16, vl=2 (reduced to mf4)
+    np.testing.assert_array_equal(
+        out_e16_vl2[:2],
+        np.array([0x2222, 0x1111], dtype=np.uint16),
+        err_msg="Case 3 (e16, vl=2): Indexed load output mismatch",
+    )
+
+    # Case 4: Indexed store vsuxei32.v with vl=2
+    # offset 4 (word 1) -> 0x22222222, offset 8 (word 2) -> 0x33333333
+    assert out_idx_store[
+        1
+    ] == 0x22222222, f"Expected 0x22222222 at word 1, got 0x{out_idx_store[1]:08x}"
+    assert out_idx_store[
+        2
+    ] == 0x33333333, f"Expected 0x33333333 at word 2, got 0x{out_idx_store[2]:08x}"
+
+    await core_mini_axi.raise_irq()
+    await core_mini_axi.wait_for_halted()

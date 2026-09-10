@@ -110,6 +110,9 @@ template_rule(
         "rvv_vleff_test": {
             "srcs": ["rvv_vleff_test.S"],
         },
+        "rvv_lsu_indexed_short_vl_test": {
+            "srcs": ["rvv_lsu_indexed_short_vl_test.S"],
+        },
     },
 )
 
@@ -119,6 +122,7 @@ filegroup(
         "rvv_add.elf",
         "rvv_flush_race_test.elf",
         "rvv_load.elf",
+        "rvv_lsu_indexed_short_vl_test.elf",
         "rvv_small_loop_test.elf",
         "rvv_vfrdiv_test.elf",
         "rvv_vill_loop_trap_test.elf",
