@@ -29,9 +29,6 @@ struct CoralNPUSimulatorOptions {
 
 class CoralNPUSimulator {
  public:
-  static CoralNPUSimulator *Create();
-  static CoralNPUSimulator *Create(const CoralNPUSimulatorOptions &options);
-
   virtual ~CoralNPUSimulator() = default;
 
   // Functions for reading/writing memory and Mailbox.
@@ -50,5 +47,10 @@ class CoralNPUSimulator {
   // Returns the total simulated cycle count.
   virtual uint64_t GetCycleCount() const = 0;
 };
+
+extern "C" CoralNPUSimulator *coralnpu_simulator_verilator_create(void);
+
+CoralNPUSimulator *coralnpu_simulator_verilator_create_with_options(
+    const CoralNPUSimulatorOptions &options);
 
 #endif  // HW_SIM_CORALNPU_SIMULATOR_H_

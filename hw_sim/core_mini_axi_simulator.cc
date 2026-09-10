@@ -167,9 +167,11 @@ AxiRData CoreMiniAxiSimulator::ReadCallback(const AxiAddr &addr) {
   return data;
 }
 
-// static
-CoralNPUSimulator *CoralNPUSimulator::Create() { return new CoreMiniAxiSimulator(); }
+extern "C" CoralNPUSimulator *coralnpu_simulator_verilator_create(void) {
+  return new CoreMiniAxiSimulator();
+}
 
-CoralNPUSimulator *CoralNPUSimulator::Create(const CoralNPUSimulatorOptions &options) {
+CoralNPUSimulator *coralnpu_simulator_verilator_create_with_options(
+    const CoralNPUSimulatorOptions &options) {
   return new CoreMiniAxiSimulator(options);
 }

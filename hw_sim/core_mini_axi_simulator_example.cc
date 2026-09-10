@@ -24,7 +24,7 @@
 #include "tests/verilator_sim/elf.h"
 
 int main() {
-  CoralNPUSimulator *simulator = CoralNPUSimulator::Create();
+  CoralNPUSimulator *simulator = coralnpu_simulator_verilator_create();
 
   // Load elf
   auto file_name = "hw_sim/mailbox_example.elf";
