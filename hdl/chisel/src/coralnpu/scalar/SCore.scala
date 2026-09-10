@@ -74,13 +74,15 @@ class SCore(p: Parameters) extends Module {
   dispatch.io.retirement_buffer_nSpace       := rob_io.nSpace
   dispatch.io.retirement_buffer_empty        := rob_io.empty
   dispatch.io.retirement_buffer_trap_pending := rob_io.trapPending
+  val rvvFlushReg = if (p.enableRvv) Some(RegNext(rob_io.trapRetired, false.B)) else None
   if (p.enableRvv) {
-    rob_io.isVector.get        := dispatch.io.isVector.get
-    rob_io.writeAddrVector.get := dispatch.io.rvvRdMark.get
+    rob_io.isVector.get                        := dispatch.io.isVector.get
+    rob_io.writeAddrVector.get                 := dispatch.io.rvvRdMark.get
+    dispatch.io.retirement_buffer_trap_pending := rob_io.trapPending || rvvFlushReg.get
     val rvvRdPipedValid = RegInit(VecInit.fill(p.rvvRetireLanes)(false.B))
     val rvvRdPipedBits  = Reg(Vec(p.rvvRetireLanes, new Rob2Rt(p)))
     rvvRdPipedValid := Mux(
-      rob_io.trapRetired,
+      rob_io.trapRetired || rvvFlushReg.get,
       VecInit.fill(p.rvvRetireLanes)(false.B),
       VecInit(io.rvvcore.get.rd_rob2rt_o.map(_.valid))
     )
@@ -524,14 +526,17 @@ class SCore(p: Parameters) extends Module {
     io.rvvcore.get.csr.vstart_write := vstart_write
     io.rvvcore.get.csr.vxrm_write <> csr.io.rvv.get.vxrm_write
     io.rvvcore.get.csr.vxsat_write <> csr.io.rvv.get.vxsat_write
-    io.rvvcore.get.csr.frm      := csr.io.rvv.get.frm
-    csr.io.rvv.get.vstart       := io.rvvcore.get.csr.vstart
-    csr.io.rvv.get.vl           := io.rvvcore.get.configState.bits.vl
-    csr.io.rvv.get.vtype        := io.rvvcore.get.configState.bits.vtype
-    csr.io.rvv.get.vxrm         := io.rvvcore.get.csr.vxrm
-    csr.io.rvv.get.vxsat        := io.rvvcore.get.csr.vxsat
-    csr.io.rvv.get.fflags       := io.rvvcore.get.csr.fflags
-    io.rvvcore.get.flush        := rob_io.trapRetired
+    io.rvvcore.get.csr.frm := csr.io.rvv.get.frm
+    csr.io.rvv.get.vstart  := io.rvvcore.get.csr.vstart
+    csr.io.rvv.get.vl      := io.rvvcore.get.configState.bits.vl
+    csr.io.rvv.get.vtype   := io.rvvcore.get.configState.bits.vtype
+    csr.io.rvv.get.vxrm    := io.rvvcore.get.csr.vxrm
+    csr.io.rvv.get.vxsat   := io.rvvcore.get.csr.vxsat
+    csr.io.rvv.get.fflags  := io.rvvcore.get.csr.fflags
+    // Register the flush into the RVV core to break the cross-core combinational
+    // path from branch resolution / retirement buffer trap scan through RVV ROB
+    // and queue capacity into dispatch and LSU.
+    io.rvvcore.get.flush        := rvvFlushReg.get
     io.rvvcore.get.clear_vstart := rob_io.clearVstart.getOrElse(false.B)
     if (p.enableVme) {
       csr.io.rvv.get.mtype := io.rvvcore.get.configState.bits.mtype.get
