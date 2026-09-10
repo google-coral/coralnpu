@@ -29,6 +29,7 @@ VME_TEST_TESTCASES = [
     "vme_decode_test",
     "vme_load_store_test",
     "vme_transpose_test",
+    "vme_msettk_clamp_test",
 ]
 
 cocotb_test_suite(

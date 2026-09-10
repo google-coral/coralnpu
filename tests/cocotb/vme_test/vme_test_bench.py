@@ -76,23 +76,22 @@ def _build_cases():
         ),
         # Case 1: SEW16 with mtwiden=2 derives LMUL=2 (vlmax = 2 * (VLENB/2) = 16).
         # msettn(100) clamps to 16 (previously was 8 when LMUL was not derived).
-        # msettm gets a near-max 14-bit value; msettk gets >3 and clamps to 3
-        # (the 2-bit field, matching the literal spec layout we follow).
+        # msettm gets a near-max 14-bit value; msettk gets 10 and clamps to KMAX=2 for SEW16.
         dict(
             inputs=(
                 _pack_mtype(tm=3, tk=2, mtwiden=2),  # mtype_value
                 0x08,  # vtype: SEW16/LMUL1 passed in rs2
                 100,  # msettn avl  -> clamps to vlmax (16)
                 0x3FFF,  # msettm arg  -> stays at 0x3FFF
-                10,  # msettk arg  -> clamps to 3
+                10,  # msettk arg  -> clamps to KMAX=2
             ),
             expected=(
                 _pack_mtype(tm=3, tk=2, mtwiden=2),
                 16,
                 0x3FFF,
                 _pack_mtype(tm=0x3FFF, tk=2, mtwiden=2),
-                3,
-                _pack_mtype(tm=0x3FFF, tk=3, mtwiden=2),
+                2,
+                _pack_mtype(tm=0x3FFF, tk=2, mtwiden=2),
             ),
         ),
         # Case 2: SEW32 with mtwiden=1 derives LMUL=4 (vlmax = 4 * (128/32) = 16).
@@ -151,6 +150,26 @@ def _build_cases():
                 0x0000,  # mtype_after_msettm
                 0,  # rd_after_msettk
                 0x0000,  # mtype_after_msettk
+            ),
+        ),
+        # Case 5: SEW8 with mtwiden=3 (TWIDEN=4, TEW=32, KMAX=4).
+        # mtype = 0x4083 (tm=16, tk=4, mtwiden=3).
+        # msettk(4) should clamp to min(4, KMAX=4) = 4, not 3.
+        dict(
+            inputs=(
+                0x4083,  # mtype_value: tm=16, tk=4, mtwiden=3
+                0x00,  # vtype_value: SEW8, LMUL1 (0x00)
+                16,  # msettn avl = 16
+                16,  # msettm arg = 16
+                4,  # msettk arg = 4
+            ),
+            expected=(
+                0x4083,  # mtype_after_msetmtype
+                16,  # rd_after_msettn
+                16,  # rd_after_msettm
+                0x4083,  # mtype_after_msettm
+                4,  # rd_after_msettk
+                0x4083,  # mtype_after_msettk
             ),
         ),
     ]
@@ -670,3 +689,122 @@ async def vme_transpose_test(dut):
         np.testing.assert_array_equal(
             actual, expected, err_msg=f"[{name}] Output mismatch"
         )
+
+
+@cocotb.test()
+async def vme_msettk_clamp_test(dut):
+    """Test msettk clamping and msetmtype tk unpack.
+
+    msettk should set rd and mtype.tk to min(rs1, KMAX).
+    For SEW=8, KMAX=4:
+      msettk(4) must give tk=4 (the design previously gave 3).
+      msettk(7) must clamp to KMAX=4.
+    Also tests msetmtype unpack of tk (bits [7:5]).
+    """
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_test_program.elf"
+    )
+    if not elf_path:
+        raise ValueError("Could not find ELF file. Build the target first.")
+
+    with open(elf_path, "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+    with open(elf_path, "rb") as f:
+        num_cases_addr = core_mini_axi.lookup_symbol(f, "vme_num_cases")
+        inputs_addr = core_mini_axi.lookup_symbol(f, "vme_inputs")
+        results_addr = core_mini_axi.lookup_symbol(f, "vme_results")
+
+    # Test sequence:
+    #   li   x6, 0x4083
+    #   li   x9, 0x0
+    #   .word 0x82937057              # msetmtype x6, x9 (SEW=8, TWIDEN=4, KMAX=4)
+    #   li   x10, 16
+    #   .word 0x840575D7              # msettn x11, x10
+    #   li   x14, 16
+    #   .word 0x841776D7              # msettm x13, x14
+    #   li   x16, 4
+    #   .word 0x842877D7              # msettk x15, x16
+    #   # Expected: vl=tn=16, tm=16, tk=4
+    cases = [
+        dict(
+            inputs=(
+                0x4083,  # mtype_value: tm=16, tk=4, mtwiden=3
+                0x00,  # vtype_value: SEW8, LMUL1
+                16,  # msettn avl
+                16,  # msettm arg
+                4,  # msettk arg (min(4, 4) = 4)
+            ),
+            expected=(
+                0x4083,  # mtype_after_msetmtype
+                16,  # rd_after_msettn
+                16,  # rd_after_msettm
+                0x4083,  # mtype_after_msettm
+                4,  # rd_after_msettk (was 3 in buggy design)
+                0x4083,  # mtype_after_msettk
+            ),
+        ),
+        dict(
+            inputs=(
+                0x4083,  # mtype_value: tm=16, tk=4, mtwiden=3
+                0x00,  # vtype_value: SEW8, LMUL1
+                16,  # msettn avl
+                16,  # msettm arg
+                7,  # msettk arg: clamped to KMAX=4
+            ),
+            expected=(
+                0x4083,  # mtype_after_msetmtype
+                16,  # rd_after_msettn
+                16,  # rd_after_msettm
+                0x4083,  # mtype_after_msettm
+                4,  # rd_after_msettk: clamped to KMAX=4
+                0x4083,  # mtype_after_msettk
+            ),
+        ),
+    ]
+
+    num_cases = len(cases)
+    inputs_packed = np.array([c["inputs"] for c in cases],
+                             dtype=np.uint32).flatten()
+    await core_mini_axi.write(inputs_addr, inputs_packed)
+    await core_mini_axi.write(
+        num_cases_addr, np.array([num_cases], dtype=np.uint32)
+    )
+
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_halted()
+
+    raw = await core_mini_axi.read(results_addr, num_cases * RESULT_WORDS * 4)
+    results = np.frombuffer(
+        raw, dtype=np.uint32
+    ).reshape(num_cases, RESULT_WORDS)
+
+    field_names = [
+        "mtype_after_msetmtype",
+        "rd_after_msettn",
+        "rd_after_msettm",
+        "mtype_after_msettm",
+        "rd_after_msettk",
+        "mtype_after_msettk",
+    ]
+    for i, case in enumerate(cases):
+        expected = case["expected"]
+        actual = [int(x) for x in results[i]]
+        cocotb.log.info(f"[msettk_clamp case {i}] inputs={case['inputs']}")
+        for name, exp, act in zip(field_names, expected, actual):
+            cocotb.log.info(
+                f"  {name:<22s} expected=0x{exp:08x} actual=0x{act:08x}"
+            )
+        for name, exp, act in zip(field_names, expected, actual):
+            assert act == exp, (
+                f"case {i} field `{name}` mismatch: "
+                f"got 0x{act:08x}, expected 0x{exp:08x}"
+            )
+
+    cocotb.log.info(f"[msettk_clamp] ✓ All {num_cases} test cases passed")

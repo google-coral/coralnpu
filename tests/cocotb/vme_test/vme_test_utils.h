@@ -79,16 +79,16 @@ static inline __attribute__((always_inline)) void vme_msetmtypei_mtwiden3_sew8(v
   asm volatile(".insn r 0b1010111, 0b111, 0b1000010, x0, x3, x3" ::: "memory");
 }
 
-// mtype CSR (0xC23) read helper. Spec layout: tm[23:10] | tk[6:5] | mtwiden[1:0].
+// mtype CSR (0xC23) read helper. Spec layout: tm[23:10] | tk[7:5] | mtwiden[1:0].
 static inline __attribute__((always_inline)) uint32_t vme_read_mtype(void) {
   uint32_t out;
   asm volatile("csrr %0, 0xC23" : "=r"(out));
   return out;
 }
 
-// mtype value: tm[23:10] | tk[6:5] | mtwiden[1:0].
+// mtype value: tm[23:10] | tk[7:5] | mtwiden[1:0].
 static constexpr uint32_t MtypeValue(uint32_t tm, uint32_t tk, uint32_t mtwiden) {
-  return ((tm & 0x3FFF) << 10) | ((tk & 0x3) << 5) | (mtwiden & 0x3);
+  return ((tm & 0x3FFF) << 10) | ((tk & 0x7) << 5) | (mtwiden & 0x3);
 }
 
 #endif  // TESTS_COCOTB_VME_TEST_VME_TEST_UTILS_H_
