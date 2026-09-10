@@ -39,6 +39,7 @@ object GenerateCoreShimSource {
         |    input clk,
         |    input rstn,
         |    input logic [VSTART_LEN:0] vstart,
+        |    input logic vstart_valid,
         |    input logic [1:0] vxrm,
         |    input logic vxsat,
         |    input logic [2:0] frm,
@@ -388,6 +389,7 @@ object GenerateCoreShimSource {
         |      .clk(clk),
         |      .rstn(rstn),
         |      .vstart(vstart),
+        |      .vstart_valid(vstart_valid),
         |      .vxrm(vxrm),
         |      .vxsat(vxsat),
         |      .frm(frm),
@@ -577,11 +579,12 @@ class RvvCoreWrapper(p: Parameters)
     val clk  = Input(Clock())
     val rstn = Input(AsyncReset())
 
-    val vstart = Input(UInt(log2Ceil(p.rvvVlen).W))
-    val vxrm   = Input(UInt(2.W))
-    val vxsat  = Input(UInt(1.W))
-    val frm    = Input(UInt(3.W))
-    val flush  = Input(Bool())
+    val vstart       = Input(UInt(log2Ceil(p.rvvVlen).W))
+    val vstart_valid = Input(Bool())
+    val vxrm         = Input(UInt(2.W))
+    val vxsat        = Input(UInt(1.W))
+    val frm          = Input(UInt(3.W))
+    val flush        = Input(Bool())
 
     val inst = Vec(p.instructionLanes, Flipped(Decoupled(new RvvCompressedInstruction(p))))
 
@@ -832,7 +835,15 @@ class RvvCoreShim(p: Parameters) extends Module {
   rvvCoreWrapper.io.rd_rob2rt_o <> io.rd_rob2rt_o
   io.trap := rvvCoreWrapper.io.trap
 
-  rvvCoreWrapper.io.vstart     := Mux(io.csr.vstart_write.valid, io.csr.vstart_write.bits, vstart)
+  val vstart_valid = io.csr.vstart_write.valid || rvvCoreWrapper.io.vcsr_valid
+  rvvCoreWrapper.io.vstart_valid := vstart_valid
+  rvvCoreWrapper.io.vstart       := MuxCase(
+    vstart,
+    Seq(
+      io.csr.vstart_write.valid    -> io.csr.vstart_write.bits,
+      rvvCoreWrapper.io.vcsr_valid -> rvvCoreWrapper.io.vcsr_vstart
+    )
+  )
   rvvCoreWrapper.io.vxrm       := Mux(io.csr.vxrm_write.valid, io.csr.vxrm_write.bits, vxrm)
   rvvCoreWrapper.io.vxsat      := Mux(io.csr.vxsat_write.valid, io.csr.vxsat_write.bits, vxsat)
   rvvCoreWrapper.io.frm        := io.csr.frm

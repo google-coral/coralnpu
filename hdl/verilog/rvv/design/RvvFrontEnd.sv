@@ -31,6 +31,7 @@ module RvvFrontEnd#(parameter N = 4,
   input rstn,
 
   input logic [`VSTART_WIDTH-1:0]     vstart_i,
+  input logic                         vstart_valid_i,
   input logic [`VCSR_VXRM_WIDTH-1:0]  vxrm_i,
   input logic [`VCSR_VXSAT_WIDTH-1:0] vxsat_i,
   input logic [2:0]                   frm_i,
@@ -152,7 +153,9 @@ module RvvFrontEnd#(parameter N = 4,
 `endif
   always_comb begin
     inst_config_state[0] = config_state_q;
-    inst_config_state[0].vstart = vstart_i;
+    if (vstart_valid_i) begin
+      inst_config_state[0].vstart = vstart_i;
+    end
     inst_config_state[0].xrm = RVVXRM'(vxrm_i);
     inst_config_state[0].xsat = vxsat_i;
 `ifdef ZVE32F_ON
@@ -160,6 +163,9 @@ module RvvFrontEnd#(parameter N = 4,
 `endif  // ZVE32F_ON
     for (int i = 0; i < N; i++) begin
       inst_config_state[i+1] = inst_config_state[i];
+      if (valid_inst_q[i]) begin
+        inst_config_state[i+1].vstart = 0;
+      end
       avl[i] = 0;
       vlmax[i] = 0;
       is_setvl[i] = 0;
@@ -517,6 +523,9 @@ module RvvFrontEnd#(parameter N = 4,
     end else begin
       // Update config state next cycle
       config_state_q <= inst_config_state[N];
+      if (flush_i || vstart_valid_i) begin
+        config_state_q.vstart <= vstart_i;
+      end
     end
   end
 
@@ -554,6 +563,7 @@ module RvvFrontEnd#(parameter N = 4,
       unaligned_cmd_data[i].opcode = inst_q[i].opcode;
       unaligned_cmd_data[i].bits = inst_q[i].bits;
       unaligned_cmd_data[i].arch_state = inst_config_state[i+1];
+      unaligned_cmd_data[i].arch_state.vstart = inst_config_state[i].vstart;
       // TODO: Handle rs propagation for loads/stores
       // funct3 == inst[14:12] == bits[7:5]; bits[7] == funct3[2] indicates
       // scalar rs1 is used (OPIVX, OPFVF, OPMVX, OPCFG). For OPFVF the scalar

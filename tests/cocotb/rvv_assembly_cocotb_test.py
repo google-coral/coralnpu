@@ -2448,3 +2448,93 @@ async def core_mini_rvv_lsu_indexed_short_vl_test(dut):
 
     await core_mini_axi.raise_irq()
     await core_mini_axi.wait_for_halted()
+
+
+@cocotb.test()
+async def core_mini_rvv_vstart_pipeline_test(dut):
+    """Testbench to test vstart reset across in-flight vector instructions in pipeline."""
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+    r = runfiles.Create()
+
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/rvv/rvv_vstart_pipeline_test.elf"
+    )
+    if not elf_path:
+        raise ValueError("elf_path must consist a valid path")
+    with open(elf_path, "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+    with open(elf_path, "rb") as f:
+        input_a_addr = core_mini_axi.lookup_symbol(f, "input_a")
+        input_b_addr = core_mini_axi.lookup_symbol(f, "input_b")
+        output_reopen_addr = core_mini_axi.lookup_symbol(f, "output_reopen")
+        output_b2b_0_addr = core_mini_axi.lookup_symbol(f, "output_b2b_0")
+        output_b2b_1_addr = core_mini_axi.lookup_symbol(f, "output_b2b_1")
+        output_dual_0_addr = core_mini_axi.lookup_symbol(f, "output_dual_0")
+        output_dual_1_addr = core_mini_axi.lookup_symbol(f, "output_dual_1")
+
+    await core_mini_axi.write(
+        input_a_addr, np.array([10, 20, 30, 40], dtype=np.uint32)
+    )
+    await core_mini_axi.write(
+        input_b_addr, np.array([1, 2, 3, 4], dtype=np.uint32)
+    )
+    await core_mini_axi.write(output_reopen_addr, np.zeros(4, dtype=np.uint32))
+    await core_mini_axi.write(output_b2b_0_addr, np.zeros(4, dtype=np.uint32))
+    await core_mini_axi.write(output_b2b_1_addr, np.zeros(4, dtype=np.uint32))
+    await core_mini_axi.write(output_dual_0_addr, np.zeros(4, dtype=np.uint32))
+    await core_mini_axi.write(output_dual_1_addr, np.zeros(4, dtype=np.uint32))
+
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_wfi()
+
+    output_reopen = (await core_mini_axi.read(output_reopen_addr,
+                                              16)).view(np.uint32)
+    output_b2b_0 = (await core_mini_axi.read(output_b2b_0_addr,
+                                             16)).view(np.uint32)
+    output_b2b_1 = (await core_mini_axi.read(output_b2b_1_addr,
+                                             16)).view(np.uint32)
+    output_dual_0 = (await core_mini_axi.read(output_dual_0_addr,
+                                              16)).view(np.uint32)
+    output_dual_1 = (await core_mini_axi.read(output_dual_1_addr,
+                                              16)).view(np.uint32)
+
+    dut._log.info(f"output_reopen: {output_reopen}")
+    dut._log.info(f"output_b2b_0: {output_b2b_0}")
+    dut._log.info(f"output_b2b_1: {output_b2b_1}")
+    dut._log.info(f"output_dual_0: {output_dual_0}")
+    dut._log.info(f"output_dual_1: {output_dual_1}")
+
+    # Test 1 (In-flight vector instruction followed by vmv.v.x)
+    # vmv.v.x must execute with vstart=0, setting all elements to 0x33333333.
+    # On buggy RTL, output_reopen[0] will be 0x55555555 because vstart=1 was inherited.
+    expected_reopen = np.array([
+        0x33333333, 0x33333333, 0x33333333, 0x33333333
+    ],
+                               dtype=np.uint32)
+    assert np.array_equal(
+        output_reopen, expected_reopen
+    ), f"In-flight vstart mismatch (vmv.v.x inherited non-zero vstart): got {output_reopen}, expected {expected_reopen}"
+
+    # Test 2 (Back-to-back arithmetic)
+    expected_b2b_0 = np.array([0, 0, 33, 44], dtype=np.uint32)
+    expected_b2b_1 = np.array([11, 22, 33, 44], dtype=np.uint32)
+    assert np.array_equal(
+        output_b2b_0, expected_b2b_0
+    ), f"B2B inst 0 mismatch: got {output_b2b_0}, expected {expected_b2b_0}"
+    assert np.array_equal(
+        output_b2b_1, expected_b2b_1
+    ), f"B2B inst 1 mismatch (second vadd inherited vstart=2): got {output_b2b_1}, expected {expected_b2b_1}"
+
+    # Test 3 (Dual-dispatch in same cycle)
+    expected_dual_0 = np.array([0, 0, 33, 44], dtype=np.uint32)
+    expected_dual_1 = np.array([11, 22, 33, 44], dtype=np.uint32)
+    assert np.array_equal(
+        output_dual_0, expected_dual_0
+    ), f"Dual-dispatch inst 0 mismatch: got {output_dual_0}, expected {expected_dual_0}"
+    assert np.array_equal(
+        output_dual_1, expected_dual_1
+    ), f"Dual-dispatch inst 1 mismatch (slot 1 inherited vstart=2): got {output_dual_1}, expected {expected_dual_1}"
