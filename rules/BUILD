@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("//rules:vcs_coverage.bzl", "vcs_coverage_types")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -32,5 +33,15 @@ exports_files([
 bool_flag(
     name = "uvm_run_spike_cosim",
     build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+# Compile VCS code coverage metrics into vcs_binary targets, e.g.:
+#   bazel build //tests/vcs_sim:rvv_core_mini_verification_axi_sim \
+#       --config=vcs \
+#       --//rules:vcs_coverage_types=line+cond+fsm+branch+tgl+assert
+vcs_coverage_types(
+    name = "vcs_coverage_types",
+    build_setting_default = [],
     visibility = ["//visibility:public"],
 )
