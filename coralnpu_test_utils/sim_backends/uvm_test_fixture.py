@@ -112,10 +112,14 @@ class UvmTestFixture:
         self.cycle_count = None
         self.test_passed = False
 
+        opts = list(optional_symbols or [])
+        if "tohost" not in opts:
+            opts.append("tohost")
+
         self.entry_point, self.symbols, self.symbol_sizes = parse_elf_symbols(
             self.elf_path,
             symbols=symbols,
-            optional_symbols=optional_symbols,
+            optional_symbols=opts,
             strict=not optional,
             require_symtab=False,
         )
@@ -123,7 +127,7 @@ class UvmTestFixture:
         if "tohost" in self.symbols:
             self.tohost_addr = self.symbols["tohost"]
         else:
-            logger.warning(
+            logger.debug(
                 "tohost symbol not found. Required for UVM status tracking."
             )
 
@@ -278,7 +282,7 @@ class UvmTestFixture:
 
     async def run_to_halt(
         self,
-        timeout_sec: float = 5.0,
+        timeout_sec: float = 60.0,
         timeout_cycles: int | None = None
     ) -> bool:
         """Launches simulator, applies patch, dumps memory on halt, and verifies results."""

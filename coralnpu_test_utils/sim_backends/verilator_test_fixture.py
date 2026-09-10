@@ -148,12 +148,14 @@ class VerilatorTestFixture:
 
     async def run_to_halt(
         self,
-        timeout_cycles: int = 10000,
-        timeout_sec: float | None = None
+        timeout_sec: float = 60.0,
+        timeout_cycles: int | None = None,
     ) -> int:
+        del timeout_sec
+        cycles_limit = 10000 if timeout_cycles is None else timeout_cycles
         await self.core_mini_axi.execute_from(self.entry_point)
         self.cycle_count = await self.core_mini_axi.wait_for_halted(
-            timeout_cycles=timeout_cycles
+            timeout_cycles=cycles_limit
         )
         return self.cycle_count
 

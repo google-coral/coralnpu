@@ -47,11 +47,13 @@ class FpgaTestFixture:
         ftdi_port: int = 1,
         csr_base_addr: int | None = None,
         auto_recovery: bool = True,
+        verify: bool = False,
     ):
         self.usb_serial = usb_serial
         self.highmem = highmem
         self.ftdi_port = ftdi_port
         self.auto_recovery = auto_recovery
+        self.verify = verify
         self.csr_base_addr = (
             csr_base_addr if csr_base_addr is not None else
             (0x200000 if highmem else 0x30000)
@@ -80,18 +82,6 @@ class FpgaTestFixture:
     def close(self) -> None:
         if hasattr(self.spi_master, "close"):
             self.spi_master.close()
-
-    def __enter__(self) -> "FpgaTestFixture":
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.close()
-
-    async def __aenter__(self) -> "FpgaTestFixture":
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.close()
 
     def has_symbol(self, symbol: str) -> bool:
         return symbol in self.symbols
@@ -131,11 +121,21 @@ class FpgaTestFixture:
         symbols: list[str] | None = None,
         optional: bool = False,
         optional_symbols: list[str] | None = None,
-        verify: bool = False,
+        verify: bool | None = None,
         verify_memory: bool = False,
     ) -> dict[str, int]:
         """Loads ELF binary onto FPGA hardware and resolves requested symbol table entries."""
-        resolved_elf = self.resolve_path(elf_file)
+        elf_str = os.fspath(elf_file)
+        resolved_elf = ""
+        if (self.highmem and elf_str.endswith(".elf")
+                and not elf_str.endswith("_highmem.elf")):
+            highmem_candidate = self.resolve_path(
+                elf_str[:-4] + "_highmem.elf"
+            )
+            if os.path.exists(highmem_candidate):
+                resolved_elf = highmem_candidate
+        if not resolved_elf:
+            resolved_elf = self.resolve_path(elf_file)
         if not os.path.exists(resolved_elf):
             raise FileNotFoundError(f"Could not find ELF file: {elf_file}")
 
@@ -147,7 +147,10 @@ class FpgaTestFixture:
             require_symtab=True,
         )
 
-        self.spi_master.load_elf(resolved_elf, start_core=False, verify=verify)
+        should_verify = self.verify if verify is None else verify
+        self.spi_master.load_elf(
+            resolved_elf, start_core=False, verify=should_verify
+        )
 
         if verify_memory:
             for s, addr in self.symbols.items():
