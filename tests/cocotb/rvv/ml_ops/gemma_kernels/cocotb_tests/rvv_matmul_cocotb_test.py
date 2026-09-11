@@ -70,7 +70,10 @@ async def _run_f32_matmul_test_impl(dut, shapes, test_label_prefix):
             np.zeros_like(golden_output).flatten()
         )
 
-        await fixture.run_to_halt(timeout_cycles=20000000)
+        # A 256x256x512 FP32 MatMul has about 33.55 million MACs and is
+        # expected to exceed the original 20-million-cycle limit. Leave enough
+        # headroom so a normal large matrix is not mistaken for a timeout.
+        await fixture.run_to_halt(timeout_cycles=40000000)
 
         npu_cycles = int((await fixture.read('cycle_count',
                                              4)).view(dtype=np.uint32)[0])
@@ -97,6 +100,41 @@ def bf16_u16_to_fp32(arr):
     return arr.view(ml_dtypes.bfloat16).astype(np.float32)
 
 
+def pack_bf16_segment2(rhs_u16):
+    """Pack each 64-column row block for vlseg2e16.v.
+
+    The first segment receives columns c..c+31 and the second receives
+    c+32..c+63. The interleaved memory layout preserves the original matrix
+    mathematically while allowing one segment load to reconstruct both
+    vectors.
+    """
+    K, N = rhs_u16.shape
+    if N % 64:
+        raise ValueError("segment-2 BF16 packing requires N divisible by 64")
+    packed = np.empty_like(rhs_u16)
+    for c in range(0, N, 64):
+        packed[:, c:c + 64:2] = rhs_u16[:, c:c + 32]
+        packed[:, c + 1:c + 64:2] = rhs_u16[:, c + 32:c + 64]
+    return packed
+
+
+def pack_bf16_block_segment2(rhs_u16):
+    """Pack [K, N] into block-major 64-column segment-2 blocks.
+
+    The resulting flat layout is [column_block][k][0, 32, 1, 33, ...].
+    It is intentionally distinct from ``pack_bf16_segment2``, which keeps
+    each original K row contiguous and therefore retains an N-byte stride.
+    """
+    K, N = rhs_u16.shape
+    if N % 64:
+        raise ValueError("block segment-2 BF16 packing requires N divisible by 64")
+    packed = np.empty((N // 64, K, 64), dtype=rhs_u16.dtype)
+    for block, c in enumerate(range(0, N, 64)):
+        packed[block, :, 0::2] = rhs_u16[:, c:c + 32]
+        packed[block, :, 1::2] = rhs_u16[:, c + 32:c + 64]
+    return packed.reshape(K, N)
+
+
 async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
     """Unified test runner for BFloat16 MatMul & GeMV variants."""
     r = runfiles.Create()
@@ -107,7 +145,9 @@ async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
         ext_mem_size=32 * 1024 * 1024
     )
 
-    elf_name = "rvv_bf16_matmul.elf"
+    # The experimental target can select an alternate software schedule while
+    # reusing the exact same input, reference and Cocotb checks.
+    elf_name = os.environ.get("BF16_MATMUL_ELF", "rvv_bf16_matmul.elf")
     elf_path = r.Rlocation(
         f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
     )
@@ -129,6 +169,19 @@ async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
 
         lhs_u16 = fp32_to_bf16_u16(lhs_fp32)
         rhs_u16 = fp32_to_bf16_u16(rhs_fp32)
+        rhs_to_write = rhs_u16
+        if (
+            os.environ.get("BF16_MATMUL_PACKED_B")
+            and M == 1
+            and N % 64 == 0
+        ):
+            rhs_to_write = pack_bf16_segment2(rhs_u16)
+        if (
+            os.environ.get("BF16_MATMUL_BLOCK_PACKED_B")
+            and M == 1
+            and N % 64 == 0
+        ):
+            rhs_to_write = pack_bf16_block_segment2(rhs_u16)
 
         lhs_exact = bf16_u16_to_fp32(lhs_u16)
         rhs_exact = bf16_u16_to_fp32(rhs_u16)
@@ -141,7 +194,7 @@ async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
         await fixture.write('active_n', np.array([N], dtype=np.uint32))
 
         await fixture.write('lhs_input', lhs_u16.flatten())
-        await fixture.write('rhs_input', rhs_u16.flatten())
+        await fixture.write('rhs_input', rhs_to_write.flatten())
         await fixture.write('result_output', np.zeros(M * N, dtype=np.uint16))
 
         await fixture.run_to_halt(timeout_cycles=25000000)
@@ -164,9 +217,24 @@ async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
 @cocotb.test()
 async def core_mini_rvv_bf16_matmul_lhs_1d_test(dut):
     """Unified Test for 1D BFloat16 GeMV kernels (Decode phase)."""
+    shapes = [
+        (1, 64, 64),
+        (1, 1024, 64),
+        (1, 256, 512),
+        # These five unique shapes cover the seven projections in the Gemma 3
+        # 270M decoder layer. K/V and Gate/Up projections share shapes and are
+        # multiplied by their call counts in the summary.
+        (1, 640, 1024),
+        (1, 640, 256),
+        (1, 1024, 640),
+        (1, 640, 2048),
+        (1, 2048, 640),
+    ]
+    if os.environ.get("GEMMA_PROFILE_ONLY"):
+        shapes = shapes[3:]
     await _run_bf16_matmul_test_impl(
         dut,
-        shapes=[(1, 64, 64), (1, 1024, 64), (1, 256, 512)],
+        shapes=shapes,
         test_label_prefix="BF16 GeMV 1D"
     )
 
