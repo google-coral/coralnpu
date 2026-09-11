@@ -33,6 +33,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ccache \
         cmake \
         curl \
+        device-tree-compiler \
         fuse3 \
         gawk \
         git \
