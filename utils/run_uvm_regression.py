@@ -21,7 +21,6 @@ import os
 import re
 import runpy
 import shutil
-import signal
 import stat
 import subprocess
 import sys
@@ -86,27 +85,11 @@ def is_riscv_test_file(fname: str) -> bool:
     return not fname.endswith('.dump') and fname.startswith('rv32')
 
 
-# Spike simulation parameters
-SPIKE_MEMORY_REGIONS = [
-    (0x0, 0x2000),  # ITCM
-    (0x10000, 0x8000),  # DTCM
-    (0x20000000, 0x400000),  # DRAM
-]
-SPIKE_ISA = "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zfbfmin_zvfbfa_xdummy"
-
-
-def get_spike_memory_map_str() -> str:
-
-    return ",".join([
-        f"0x{start:x}:0x{length:x}" for start, length in SPIKE_MEMORY_REGIONS
-    ])
-
-
 def get_targets(limit: Optional[int] = None,
                 target: Optional[str] = None) -> List[str]:
 
     if target:
-        return [target]
+        return [t.strip() for t in target.split(",") if t.strip()]
 
     logging.info("Querying bazel targets...")
     # Using --output=xml to parse attributes
@@ -250,18 +233,15 @@ def build_simulator(
         return False
 
 
-def build_spike() -> Optional[str]:
-    logging.info("Building Spike Simulator...")
-    cmd = ["bazel", "build", "@riscv_isa_sim//:riscv_isa_sim"]
+def build_spike() -> bool:
+    logging.info("Building Spike Co-simulation Library...")
+    cmd = ["bazel", "build", "//sw/coralnpu_sim:spike_cosim_dpi"]
     try:
         subprocess.run(cmd, check=True)
-        # Return the absolute path to the binary
-        return os.path.abspath(
-            "bazel-bin/external/riscv_isa_sim/riscv_isa_sim/bin/spike"
-        )
+        return True
     except subprocess.CalledProcessError as e:
         logging.error(f"Spike build failed: {e}")
-        return None
+        return False
 
 
 def build_verilator() -> Optional[str]:
@@ -274,81 +254,6 @@ def build_verilator() -> Optional[str]:
     except subprocess.CalledProcessError as e:
         logging.error(f"Verilator build failed: {e}")
         return None
-
-
-def check_spike_sanity(
-    spike_bin: str, elf_path: str, entry_point: int = 0
-) -> bool:
-    """Pre-flight sanity check to ensure Spike runs and accepts the configured ISA/options."""
-    logging.info("Performing Spike pre-flight sanity check...")
-    cmd = [
-        spike_bin, f"-m{get_spike_memory_map_str()}", f"--isa={SPIKE_ISA}",
-        "--priv=m", "--misaligned", "--instructions=1", f"--pc={entry_point}",
-        elf_path
-    ]
-    try:
-        res = subprocess.run(
-            cmd,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if res.returncode != 0:
-            err_msg = res.stderr.strip() if res.stderr else res.stdout.strip()
-            logging.critical(
-                f"Spike pre-flight sanity check failed (exit code {res.returncode}):\n{err_msg}"
-            )
-            return False
-        logging.info("Spike pre-flight sanity check passed.")
-        return True
-    except Exception as e:
-        logging.critical(f"Spike pre-flight sanity check error: {e}")
-        return False
-
-
-def generate_spike_log(
-    spike_bin: str,
-    elf_path: str,
-    log_path: str,
-    entry_point: int = 0,
-    timeout: int = 30
-) -> bool:
-
-    logging.info(
-        f"Generating Spike log for {elf_path} (Entry: 0x{entry_point:x})..."
-    )
-    cmd = [
-        spike_bin, f"-m{get_spike_memory_map_str()}", f"--isa={SPIKE_ISA}",
-        "--priv=m", "--misaligned", "-l", "--log-commits",
-        f"--pc={entry_point}", elf_path
-    ]
-    try:
-        with open(log_path, 'w') as f:
-            process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                start_new_session=True
-            )
-            try:
-                process.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                logging.warning(f"Spike timed out (PID: {process.pid})")
-                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                process.wait(timeout=5)
-                return False
-
-            if process.returncode != 0:
-                logging.error(
-                    f"Spike failed with exit code {process.returncode}"
-                )
-                return False
-        return True
-    except Exception as e:
-        logging.error(f"Spike generation failed: {e}")
-        return False
 
 
 def get_riscv_test_artifacts() -> List[Tuple[str, str]]:
@@ -398,11 +303,6 @@ def parse_arguments():
     )
     parser.add_argument(
         "--list-targets", action="store_true", help="List targets and exit"
-    )
-    parser.add_argument(
-        "--check-spike-timeouts",
-        action="store_true",
-        help="Run only Spike generation to identify timeouts"
     )
     parser.add_argument(
         "--skip-riscv-tests", action="store_true", help="Skip riscv-tests"
@@ -578,11 +478,15 @@ def prepare_tests(args, standard_targets: List[str]) -> List[Tuple[str, str]]:
     # Now populate tests_to_run with valid ELFs
     tests_to_run = []
 
+    target_set = set([t.strip()
+                      for t in args.target.split(",")
+                      if t.strip()]) if args.target else None
+
     # 1. RISC-V Tests
     if not args.skip_riscv_tests:
         riscv_tests = get_riscv_test_artifacts()
         for t, elf in riscv_tests:
-            if args.target and args.target != t:
+            if target_set and t not in target_set:
                 continue
             tests_to_run.append((t, elf))
 
@@ -590,7 +494,7 @@ def prepare_tests(args, standard_targets: List[str]) -> List[Tuple[str, str]]:
     if standard_targets:
         logging.info("Resolving standard target artifacts...")
     for t in standard_targets:
-        if args.target and args.target != t:
+        if target_set and t not in target_set:
             continue
         elf = get_elf_source_path(t)
         if elf:
@@ -601,54 +505,6 @@ def prepare_tests(args, standard_targets: List[str]) -> List[Tuple[str, str]]:
         tests_to_run = tests_to_run[:args.limit]
 
     return tests_to_run
-
-
-def run_spike_timeout_check(
-    tests_to_run: List[Tuple[str, str]], spike_bin: str, temp_elf_dir: str
-):
-    logging.info("--- Checking Spike Timeouts ---")
-    failed_targets = []
-    for i, (target, src_elf) in enumerate(tests_to_run):
-        logging.info(f"[{i+1}/{len(tests_to_run)}] Checking {target}")
-
-        if src_elf and os.path.exists(src_elf):
-            safe_name = target.replace('//', '').replace(':', '_').replace(
-                '/', '_'
-            ) + ".elf"
-            dest_elf = os.path.join(temp_elf_dir, safe_name)
-            try:
-                if os.path.exists(dest_elf): os.remove(dest_elf)
-                shutil.copy2(src_elf, dest_elf)
-                # Permissions: 755 / -rwxr-xr-x / u=rwx,go=rx
-                os.chmod(
-                    dest_elf, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR
-                    | stat.S_IRGRP
-                    | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
-                )
-
-                entry_point = get_entry_point(dest_elf)
-                temp_spike_log = os.path.join(
-                    temp_elf_dir, safe_name + ".spike.log"
-                )
-
-                if not generate_spike_log(
-                        spike_bin, dest_elf, temp_spike_log, entry_point,
-                        timeout=10):  # Short timeout for check
-                    logging.error(f"  FAIL: {target}")
-                    failed_targets.append(target)
-                else:
-                    logging.info(f"  PASS: {target}")
-            except Exception as e:
-                logging.error(f"  ERROR: {target} - {e}")
-                failed_targets.append(target)
-        else:
-            logging.warning(f"  SKIP: {target} (ELF not found)")
-
-    logging.info("\n--- Suggested SPIKE_DENYLIST ---")
-    logging.info("SPIKE_DENYLIST = [")
-    for t in failed_targets:
-        logging.info(f'    "{t}",')
-    logging.info("]")
 
 
 def run_uvm_batch(
@@ -683,6 +539,7 @@ def run_uvm_batch(
             start_match = re.search(r'--- STARTING TEST: (.*?) ---', line)
             if start_match:
                 current_target = start_match.group(1)
+                current_err_count = 0
                 logging.info(f"Running UVM for {current_target}...")
 
                 log_path = os.path.join(
@@ -703,9 +560,20 @@ def run_uvm_batch(
                 )
                 if err_match:
                     err_msg = err_match.group(1).strip()
-                    logging.error(f"    {err_msg}")
+                    current_err_count += 1
+                    if current_err_count <= 5:
+                        logging.error(f"    {err_msg}")
+                    elif current_err_count == 6:
+                        logging.error(
+                            f"    [Suppressing further repetitive error output for {current_target}...]"
+                        )
                     if current_reason == "None":
                         current_reason = err_msg.replace(',', ';')
+                    if current_err_count >= 100:
+                        logging.error(
+                            f"Aborting runaway test {current_target} due to excessive error limit (>= 100)."
+                        )
+                        process.kill()
                 else:
                     # Match standard Verilog Error/Fatal/Assertion
                     verilog_err = re.search(
@@ -714,9 +582,20 @@ def run_uvm_batch(
                     )
                     if verilog_err:
                         err_msg = verilog_err.group(0).strip()
-                        logging.error(f"    {err_msg}")
+                        current_err_count += 1
+                        if current_err_count <= 5:
+                            logging.error(f"    {err_msg}")
+                        elif current_err_count == 6:
+                            logging.error(
+                                f"    [Suppressing further repetitive error output for {current_target}...]"
+                            )
                         if current_reason == "None":
                             current_reason = err_msg.replace(',', ';')
+                        if current_err_count >= 100:
+                            logging.error(
+                                f"Aborting runaway test {current_target} due to excessive error limit (>= 100)."
+                            )
+                            process.kill()
 
                 if "** UVM TEST PASSED **" in line:
                     logging.info(f"  Result: PASS - {current_reason}")
@@ -778,19 +657,39 @@ def run_uvm_batch(
             })
             completed_targets.add(current_target)
             current_target = None
-    return results, completed_targets
+        elif process.returncode != 0 and not completed_targets:
+            # Simulator exited or crashed before starting any test in this batch
+            crashed_target = list(test_info_map.keys()
+                                  )[0] if test_info_map else "unknown"
+            if current_reason == "None":
+                current_reason = f"Simulator startup failed (exit code {process.returncode})"
+            logging.error(f"  Result: FAIL - {current_reason}")
+            # Mark all pending targets in this batch as completed/failed
+            for t in test_info_map.keys():
+                results.append({
+                    "Target":
+                    t,
+                    "Status":
+                    "FAIL",
+                    "Reason":
+                    current_reason,
+                    "Log Path":
+                    os.path.join("logs", test_info_map[t]['safe_log'])
+                })
+                completed_targets.add(t)
+        return results, completed_targets
 
 
 def run_full_regression(
     tests_to_run: List[Tuple[str, str]],
-    spike_bin: str,
+    spike_enabled: bool,
     mpact_root: str,
     mpact_riscv_root: Optional[str],
     temp_elf_dir: str,
     simulator: str,
     verilator_bin: Optional[str] = None,
     verilator_root: Optional[str] = None,
-    uvm_root: Optional[str] = None
+    uvm_root: Optional[str] = None,
 ):
     # Build the UVM simulator once
     if not build_simulator(mpact_root, simulator, mpact_riscv_root,
@@ -806,29 +705,10 @@ def run_full_regression(
     os.makedirs(logs_dir, exist_ok=True)
     logging.info(f"Regression results will be stored in: {output_dir}")
 
-    # 1. Preparation: Copy ELFs and generate Spike logs
+    # 1. Preparation: Copy ELFs and prepare test parameters
     logging.info(f"Preparing {len(tests_to_run)} tests...")
 
-    # Pre-flight check on the first available non-denylisted ELF
-    if spike_bin:
-        first_valid_test = next(
-            ((target, src_elf) for target, src_elf in tests_to_run if src_elf
-             and os.path.exists(src_elf) and target not in SPIKE_DENYLIST),
-            None,
-        )
-        if first_valid_test:
-            target, src_elf = first_valid_test
-            entry_point = get_entry_point(src_elf)
-            if not check_spike_sanity(spike_bin, src_elf, entry_point):
-                logging.critical(
-                    "ERROR: Spike pre-flight sanity check failed. Aborting regression."
-                )
-                sys.exit(1)
-
     test_info_map = {}  # target -> info dict
-    spike_failures = []
-    consecutive_spike_failures = 0
-    max_consecutive_failures = 3
 
     for target, src_elf in tests_to_run:
         if src_elf and os.path.exists(src_elf):
@@ -838,7 +718,11 @@ def run_full_regression(
             dest_elf = os.path.join(temp_elf_dir, safe_name)
 
             try:
-                if os.path.exists(dest_elf): os.remove(dest_elf)
+                if os.path.exists(dest_elf):
+                    try:
+                        os.remove(dest_elf)
+                    except OSError:
+                        pass
                 shutil.copy2(src_elf, dest_elf)
                 os.chmod(
                     dest_elf, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR
@@ -846,28 +730,9 @@ def run_full_regression(
                 )
 
                 entry_point = get_entry_point(dest_elf)
-                spike_log_path = "NONE"
-                if spike_bin and target not in SPIKE_DENYLIST:
-                    spike_log_name = safe_name + ".spike.log"
-                    temp_spike_log = os.path.join(temp_elf_dir, spike_log_name)
-                    dest_spike_log = os.path.join(logs_dir, spike_log_name)
-                    if generate_spike_log(spike_bin, dest_elf, temp_spike_log,
-                                          entry_point):
-                        shutil.copy2(temp_spike_log, dest_spike_log)
-                        spike_log_path = os.path.abspath(dest_spike_log)
-                        consecutive_spike_failures = 0
-                    else:
-                        spike_failures.append(target)
-                        consecutive_spike_failures += 1
-                        logging.error(
-                            f"Spike log generation failed for non-denylisted target '{target}'."
-                        )
-                        if consecutive_spike_failures >= max_consecutive_failures:
-                            logging.critical(
-                                f"ERROR: Encountered {consecutive_spike_failures} consecutive Spike failures. "
-                                "Aborting regression due to suspected systematic Spike failure."
-                            )
-                            sys.exit(1)
+                spike_option = "NONE"
+                if spike_enabled and target not in SPIKE_DENYLIST:
+                    spike_option = "SPIKE"
 
                 tohost_addr = get_tohost_addr(dest_elf)
                 if tohost_addr is None: tohost_addr = 0xFFFFFFFF
@@ -878,19 +743,11 @@ def run_full_regression(
                     "tohost": tohost_addr,
                     "entry": entry_point,
                     "timeout": timeout,
-                    "spike": spike_log_path,
+                    "spike": spike_option,
                     "safe_log": safe_name.replace('.elf', '.log')
                 }
             except Exception as e:
                 logging.error(f"Failed to prepare {target}: {e}")
-
-    if spike_failures:
-        logging.critical(
-            f"ERROR: Spike log generation failed for {len(spike_failures)} non-denylisted target(s):\n"
-            + "\n".join(f"  - {t}" for t in spike_failures) +
-            "\nAborting regression because valid Spike traces are required for 3-way co-simulation."
-        )
-        sys.exit(1)
 
     # 2. Execute Simulation with Crash Recovery
     results = []
@@ -1031,10 +888,10 @@ def main():
     tests_to_run = prepare_tests(args, standard_targets)
     logging.info(f"Found {len(tests_to_run)} tests to run.")
 
-    # Build Spike once
-    spike_bin = build_spike()
-    if not spike_bin or not os.path.exists(spike_bin):
-        logging.critical("ERROR: Spike binary not found. Aborting.")
+    # Build Spike co-sim library once
+    spike_enabled = build_spike()
+    if not spike_enabled:
+        logging.critical("ERROR: Spike library build failed. Aborting.")
         sys.exit(1)
 
     # Use secure temporary directory
@@ -1054,12 +911,8 @@ def main():
             verilator_root = resolve_verilator_root(verilator_bin)
             logging.info(f"Using VERILATOR_ROOT: {verilator_root}")
 
-        if args.check_spike_timeouts:
-            run_spike_timeout_check(tests_to_run, spike_bin, temp_elf_dir)
-            return
-
         run_full_regression(
-            tests_to_run, spike_bin, mpact_root, mpact_riscv_root,
+            tests_to_run, spike_enabled, mpact_root, mpact_riscv_root,
             temp_elf_dir, args.simulator, verilator_bin, verilator_root,
             uvm_root
         )

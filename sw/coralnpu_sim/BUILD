@@ -52,6 +52,29 @@ py_library(
     ],
 )
 
+cc_library(
+    name = "spike_simulator",
+    srcs = ["spike_simulator.cc"],
+    hdrs = ["spike_simulator.h"],
+    deps = [
+        "@riscv_isa_sim",
+    ],
+)
+
+cc_library(
+    name = "spike_cosim_dpi",
+    srcs = [
+        "spike_cosim_dpi.cc",
+    ],
+    hdrs = [
+        "spike_cosim_dpi.h",
+    ],
+    deps = [
+        ":spike_simulator",
+        "@verilator//:svdpi",
+    ],
+)
+
 py_test(
     name = "coralnpu_v2_sim_test",
     srcs = ["coralnpu_v2_sim_test.py"],
@@ -64,5 +87,19 @@ py_test(
         ":coralnpu_v2_sim_utils_lib",
         "@bazel_tools//tools/python/runfiles",
         requirement("numpy"),
+    ],
+)
+
+cc_test(
+    name = "spike_simulator_test",
+    srcs = ["spike_simulator_test.cc"],
+    data = [
+        "//tests/cocotb/rvv/arithmetics:rvv_add_int8_m1",
+    ],
+    deps = [
+        ":spike_cosim_dpi",
+        ":spike_simulator",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@com_google_googletest//:gtest_main",
     ],
 )

@@ -163,6 +163,7 @@ package coralnpu_test_pkg;
     virtual coralnpu_irq_if.DUT_IRQ_PORT irq_vif;
     uvm_event tohost_written_event;
     uvm_event test_start_event;
+    uvm_event cosim_mismatch_event;
     time clk_period;
     int unsigned entry_point = 0;
 
@@ -227,9 +228,11 @@ package coralnpu_test_pkg;
 
       env = coralnpu_env::type_id::create("env", this);
 
-      uvm_config_db#(string)::set(this, "*.m_cosim_checker", "elf_file_for_iss", test_elf);
+      uvm_config_db#(string)::set(this, "*.m_cosim_checker", "current_test_elf", test_elf);
+      uvm_config_db#(int unsigned)::set(this, "*.m_cosim_checker", "entry_point", entry_point);
       uvm_config_db#(int unsigned)::set(this, "*.m_cosim_checker", "initial_misa_value",
                                         initial_misa_value);
+      uvm_config_db#(bit)::set(this, "*.m_cosim_checker", "spike_enabled", spike_enabled);
 
       // Get the event handle that was created and set by tb_top
       if (!uvm_config_db#(uvm_event)::get(
@@ -247,6 +250,12 @@ package coralnpu_test_pkg;
 
       if (!uvm_config_db#(uvm_event)::get(this, "", "test_start_event", test_start_event)) begin
         `uvm_fatal(get_type_name(), "test_start_event handle not found!")
+      end
+
+      if (!uvm_config_db#(uvm_event)::get(
+              this, "", "cosim_mismatch_event", cosim_mismatch_event
+          )) begin
+        `uvm_fatal(get_type_name(), "cosim_mismatch_event handle not found!")
       end
 
       `uvm_info(get_type_name(), "Build phase finished", UVM_MEDIUM)
@@ -299,6 +308,11 @@ package coralnpu_test_pkg;
         begin  // Timeout mechanism
           #(test_timeout);
           test_timed_out = 1'b1;
+        end
+        begin  // Abort immediately upon co-simulation mismatch
+          cosim_mismatch_event.wait_trigger();
+          `uvm_info(get_type_name(), "Co-simulation mismatch detected: aborting test early.",
+                    UVM_NONE)
         end
       join_any
       disable fork;
@@ -426,6 +440,7 @@ package coralnpu_test_pkg;
       string current_spike_log;
       string current_target;
       string line;
+      bit parsed;
 
       uvm_event pulse_reset_event;
       coralnpu_kickoff_write_seq kickoff_seq;
@@ -456,7 +471,8 @@ package coralnpu_test_pkg;
         if ($fgets(line, fd)) begin
           if (line == "" || line.substr(0, 0) == "#") continue;
 
-          // Format: ELF TOHOST ENTRY TIMEOUT SPIKE_LOG TARGET
+          parsed = 0;
+          // Format: ELF TOHOST ENTRY TIMEOUT SPIKE_OPTION TARGET (6 fields)
           if ($sscanf(
                   line,
                   "%s %h %h %d %s %s",
@@ -467,6 +483,21 @@ package coralnpu_test_pkg;
                   current_spike_log,
                   current_target
               ) == 6) begin
+            parsed = 1;
+          end else if ($sscanf(
+                  line,
+                  "%s %h %h %d %s",
+                  current_elf,
+                  current_tohost,
+                  current_entry,
+                  current_timeout,
+                  current_target
+              ) == 5) begin
+            current_spike_log = "SPIKE";
+            parsed = 1;
+          end
+
+          if (parsed) begin
             `uvm_info(get_type_name(), $sformatf("--- STARTING TEST: %s ---", current_target),
                       UVM_NONE)
             total_tests++;
@@ -478,9 +509,10 @@ package coralnpu_test_pkg;
             dut_faulted_flag = 1'b0;
             tohost_written_flag = 1'b0;
             tohost_written_event.reset();
+            cosim_mismatch_event.reset();
             test_timeout = current_timeout * 1ns;
             entry_point  = current_entry;
-            if (current_spike_log != "NONE") spike_enabled = 1'b1;
+            if (current_spike_log != "NONE" && current_spike_log != "0") spike_enabled = 1'b1;
             else spike_enabled = 1'b0;
 
             // Teardown and Re-load
@@ -489,9 +521,10 @@ package coralnpu_test_pkg;
 
             // Pass configuration to checker
             uvm_config_db#(string)::set(null, "*", "current_test_elf", current_elf);
-            uvm_config_db#(string)::set(null, "*", "current_spike_log", current_spike_log);
+            uvm_config_db#(int unsigned)::set(null, "*", "entry_point", current_entry);
             uvm_config_db#(logic [31:0])::set(null, "*", "tohost_addr", current_tohost);
             uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 0);
+            uvm_config_db#(bit)::set(null, "*", "spike_enabled", spike_enabled);
 
             // Pulse Reset for tests AFTER the first one
             if (total_tests > 1) begin
@@ -541,6 +574,11 @@ package coralnpu_test_pkg;
               begin  // Timeout mechanism
                 #(test_timeout);
                 test_timed_out = 1'b1;
+              end
+              begin  // Abort immediately upon co-simulation mismatch
+                cosim_mismatch_event.wait_trigger();
+                `uvm_info(get_type_name(), "Co-simulation mismatch detected: aborting test early.",
+                          UVM_NONE)
               end
             join_any
             disable fork;

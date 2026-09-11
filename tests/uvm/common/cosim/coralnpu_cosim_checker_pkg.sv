@@ -14,13 +14,15 @@
 
 //----------------------------------------------------------------------------
 // Package: coralnpu_cosim_checker_pkg
-// Description: Package for the UVM component that manages co-simulation.
+// Description: Package for the UVM component that manages unified multi-ISS
+//              co-simulation (RTL vs MPACT vs Spike).
 //----------------------------------------------------------------------------
 package coralnpu_cosim_checker_pkg;
 
   import uvm_pkg::*;
   `include "uvm_macros.svh"
   import coralnpu_cosim_dpi_if::*;
+  import coralnpu_spike_cosim_dpi_if::*;
   import memory_map_pkg::*;
 
   //----------------------------------------------------------------------------
@@ -46,20 +48,18 @@ package coralnpu_cosim_checker_pkg;
     int          retire_index;
   } retired_instr_info_s;
 
-  `include "spike_trace_service.sv"
   `include "spike_cosim_checker.sv"
 
   //----------------------------------------------------------------------------
   // Class: coralnpu_cosim_checker
-  // Description: Manages the MPACT simulator via DPI-C. It receives retired
-  //              instruction info from the DUT (via RVVI) and sends that
-  //              same instruction to the MPACT simulator to execute, enabling
-  //              a trace-and-execute co-simulation flow.
+  // Description: Manages unified in-process co-simulation against MPACT and Spike
+  //              via DPI-C. Receives retired instructions from the DUT (via RVVI)
+  //              and steps both ISS models in lockstep.
   //----------------------------------------------------------------------------
   class coralnpu_cosim_checker extends uvm_component;
     `uvm_component_utils(coralnpu_cosim_checker)
 
-    // Use fully parameterized virtual interface type
+    // Fully parameterized virtual interface type
     virtual rvviTrace #(
         .ILEN  (32),
         .XLEN  (32),
@@ -68,13 +68,18 @@ package coralnpu_cosim_checker_pkg;
         .NHART (1),
         .RETIRE(8)
     ) rvvi_vif;
+    virtual coralnpu_irq_if.DUT_IRQ_PORT irq_vif;
 
-    // Event to wait on, which will be triggered by the RVVI monitor
+    // Event triggered by the RVVI monitor when instructions retire
     uvm_event instruction_retired_event;
     string test_elf;
     int unsigned initial_misa_value;
+    int unsigned entry_point = 0;
 
     spike_cosim_checker spike_checker;
+    bit mpact_enabled = 1;
+    bit spike_enabled = 1;
+    bit trace_logging_enabled = 0;
     bit mismatch_detected = 0;
     bit [31:0] dirty_gprs = 0;
     bit dirty_stack[int];
@@ -140,8 +145,6 @@ package coralnpu_cosim_checker_pkg;
           reads_rs1 = 1;
           reads_rs2 = 1;
         end  // BRANCH
-
-
       endcase
 
       // 3. Propagate GPR-to-GPR dirtiness
@@ -149,7 +152,7 @@ package coralnpu_cosim_checker_pkg;
       if (reads_rs2 && rs2 != 0 && dirty_gprs[rs2]) consumes_dirty = 1;
 
       // 3.5. Trace stack reloads (byte-granular)
-      if (opcode == 7'b0000011 && rs1 == 2) begin  // LOAD sp-relative (LB, LH, LW, LBU, LHU)
+      if (opcode == 7'b0000011 && rs1 == 2) begin  // LOAD sp-relative
         int offset = $signed(rtl_info.insn[31:20]);
         int size = (funct3 == 3'b000 || funct3 == 3'b100) ? 1 :  // Byte
         (funct3 == 3'b001 || funct3 == 3'b101) ? 2 :  // Halfword
@@ -185,8 +188,8 @@ package coralnpu_cosim_checker_pkg;
         end
       end
 
-      // 4.5. Trace stack spills (byte-granular, uses updated dirty state)
-      if (opcode == 7'b0100011 && rs1 == 2) begin  // STORE sp-relative (SB, SH, SW)
+      // 4.5. Trace stack spills (byte-granular)
+      if (opcode == 7'b0100011 && rs1 == 2) begin  // STORE sp-relative
         int offset = $signed({rtl_info.insn[31:25], rtl_info.insn[11:7]});
         int size = (funct3 == 3'b000) ? 1 :  // Byte
         (funct3 == 3'b001) ? 2 :  // Halfword
@@ -213,16 +216,15 @@ package coralnpu_cosim_checker_pkg;
       return skip_mask;
     endfunction
 
-
     // Constructor
     function new(string name = "coralnpu_cosim_checker", uvm_component parent = null);
       super.new(name, parent);
+      spike_checker = spike_cosim_checker::type_id::create("spike_checker");
     endfunction
 
     // Build phase: Get VIF handle, create and share event
     virtual function void build_phase(uvm_phase phase);
       super.build_phase(phase);
-      // Get the RVVI virtual interface from the config_db (set by tb_top)
       if (!uvm_config_db#(virtual rvviTrace #(
               .ILEN  (32),
               .XLEN  (32),
@@ -242,22 +244,20 @@ package coralnpu_cosim_checker_pkg;
         `uvm_fatal(get_type_name(), "'initial_misa_value' not found in config_db")
       end
 
-      // Create the event that this component will wait on.
+      if ($test$plusargs("COSIM_TRACE_LOG")) begin
+        trace_logging_enabled = 1;
+      end
+
       instruction_retired_event = new("instruction_retired_event");
-      // Pass the event to the monitor using an absolute path
       uvm_config_db#(uvm_event)::set(null, "*.m_rvvi_agent.monitor", "instruction_retired_event",
                                      instruction_retired_event);
     endfunction
 
     // Task: collect_retired_instructions
-    // Waits for the monitor to signal that instructions have retired, then
-    // captures the retired instruction information from the RVVI bus.
     virtual task collect_retired_instructions(ref retired_instr_info_s retired_instr_q[$]);
-      // Wait for the RVVI monitor to signal an instruction retirement
       instruction_retired_event.wait_trigger();
       retired_instr_q.delete();
 
-      // Collect all retired instructions and their state from the RVVI trace
       for (int i = 0; i < rvvi_vif.RETIRE; i++) begin
         if (rvvi_vif.valid[0][i]) begin
           retired_instr_info_s info;
@@ -266,7 +266,7 @@ package coralnpu_cosim_checker_pkg;
           info.x_wb = rvvi_vif.x_wb[0][i];
           info.f_wb = rvvi_vif.f_wb[0][i];
           info.v_wb = rvvi_vif.v_wb[0][i];
-          info.retire_index = i;  // Store the original channel index
+          info.retire_index = i;
           retired_instr_q.push_back(info);
           `uvm_info(get_type_name(), $sformatf("RTL Retired: PC=0x%h, Insn=0x%h", info.pc,
                                                info.insn), UVM_HIGH)
@@ -275,131 +275,204 @@ package coralnpu_cosim_checker_pkg;
     endtask
 
     // Task: process_instruction
-    // Matches the current MPACT state with a retired RTL instruction,
-    // steps MPACT, performs Spike sync/check if enabled, and verifies writeback.
+    // Coalesces stepping of MPACT and Spike to the instruction boundary,
+    // then performs a unified 3-way evaluation.
     virtual task process_instruction(ref retired_instr_info_s retired_instr_q[$],
                                      input uvm_phase phase);
       int unsigned mpact_pc;
+      int unsigned spike_pc;
       int match_index = -1;
       logic [31:0] rtl_instr;
       bit [31:0] skip_mask;
       int unsigned pre_step_sp;
 
-      if (mpact_get_register("pc", mpact_pc) != 0) begin
-        `uvm_error("COSIM_API_FAIL", "Failed to get PC from MPACT simulator.")
-      end
-
-      foreach (retired_instr_q[j]) begin
-        if (retired_instr_q[j].pc == mpact_pc) begin
-          match_index = j;
-          break;
+      // 1. Align retired RTL queue with current simulator PC
+      if (mpact_enabled) begin
+        if (mpact_get_register("pc", mpact_pc) != 0) begin
+          `uvm_error("COSIM_API_FAIL", "Failed to get PC from MPACT simulator.")
         end
-      end
 
-      if (match_index == -1) begin
-        string rtl_pcs_str = "[ ";
         foreach (retired_instr_q[j]) begin
-          rtl_pcs_str = $sformatf("%s0x%h ", rtl_pcs_str, retired_instr_q[j].pc);
+          if (retired_instr_q[j].pc == mpact_pc) begin
+            match_index = j;
+            break;
+          end
         end
-        rtl_pcs_str = {rtl_pcs_str, "]"};
-        `uvm_error("COSIM_PC_MISMATCH", $sformatf("MPACT PC 0x%h mismatches retired RTL PCs: %s",
-                                                  mpact_pc, rtl_pcs_str))
-        mismatch_detected = 1;
-        return;
+
+        if (match_index == -1) begin
+          string rtl_pcs_str = "[ ";
+          foreach (retired_instr_q[j]) begin
+            rtl_pcs_str = $sformatf("%s0x%h ", rtl_pcs_str, retired_instr_q[j].pc);
+          end
+          rtl_pcs_str = {rtl_pcs_str, "]"};
+          `uvm_error("COSIM_PC_MISMATCH", $sformatf("MPACT PC 0x%h mismatches retired RTL PCs: %s",
+                                                    mpact_pc, rtl_pcs_str))
+          mismatch_detected = 1;
+          return;
+        end
+      end else begin
+        match_index = 0;
       end
 
       rtl_instr = retired_instr_q[match_index].insn;
-      `uvm_info(get_type_name(), $sformatf("PC match (0x%h). Stepping MPACT with 0x%h", mpact_pc,
-                                           rtl_instr), UVM_HIGH)
 
-      if (mpact_get_register("sp", pre_step_sp) != 0) begin
-        `uvm_error("COSIM_API_FAIL", "Failed to get pre-step SP from MPACT.")
+      // 2. Align and Step Spike
+      if (spike_enabled && spike_checker.spike_enabled) begin
+        int unsigned sync_attempts = 0;
+        int unsigned initial_spike_pc = 0;
+        if (irq_vif != null) begin
+          if (irq_vif.irq) begin
+            void'(spike_checker.set_register("mip", 32'h800));
+          end else begin
+            void'(spike_checker.set_register("mip", 32'h0));
+          end
+        end
+        if (!spike_checker.get_pc(initial_spike_pc)) begin
+          `uvm_error("COSIM_API_FAIL", "Failed to get PC from Spike simulator.")
+        end
+        spike_pc = initial_spike_pc;
+
+        // If Spike is at an instruction that faulted/trapped (and therefore was not retired on RVVI),
+        // step Spike through the exception trap handler entry until its PC matches the retired RTL PC.
+        while (spike_pc != retired_instr_q[match_index].pc && sync_attempts < 10 && !spike_checker.is_halted()) begin
+          void'(spike_checker.step(1));
+          if (!spike_checker.get_pc(spike_pc)) break;
+          sync_attempts++;
+        end
+
+        if (!spike_checker.is_halted()) begin
+          if (spike_pc != retired_instr_q[match_index].pc) begin
+            `uvm_error(
+                "SPIKE_PC_MISMATCH",
+                $sformatf(
+                    "Spike PC 0x%h (initial: 0x%h after %0d sync steps) mismatches RTL PC 0x%h (Insn: 0x%h)",
+                    spike_pc, initial_spike_pc, sync_attempts, retired_instr_q[match_index].pc,
+                    rtl_instr))
+            mismatch_detected = 1;
+            retired_instr_q.delete(match_index);
+            return;
+          end
+          if (!spike_checker.step(1)) begin
+            `uvm_error("SPIKE_STEP_FAIL", $sformatf("Spike step failed at PC 0x%h (Insn: 0x%h)",
+                                                    spike_pc, rtl_instr))
+            mismatch_detected = 1;
+            retired_instr_q.delete(match_index);
+            return;
+          end
+        end
       end
 
-      if (mpact_step(rtl_instr) != 0) begin
-        `uvm_error("COSIM_STEP_FAIL", "mpact_step() DPI call failed.")
-        mismatch_detected = 1;
-        return;
+      // 3. Step MPACT
+      if (mpact_enabled) begin
+        if (mpact_get_register("sp", pre_step_sp) != 0) begin
+          `uvm_error("COSIM_API_FAIL", "Failed to get pre-step SP from MPACT.")
+        end
+        if (mpact_step(rtl_instr) != 0) begin
+          `uvm_error("COSIM_STEP_FAIL", "mpact_step() DPI call failed.")
+          mismatch_detected = 1;
+          retired_instr_q.delete(match_index);
+          return;
+        end
       end
 
+      // 4. Update dirty registers and synchronize varying CSRs
       skip_mask = update_dirty_registers(retired_instr_q[match_index], pre_step_sp);
-
-      if (spike_checker != null) begin
-        spike_checker.check_instruction(retired_instr_q[match_index], rvvi_vif, skip_mask);
+      if (skip_mask != 0 && spike_enabled && spike_checker.spike_enabled) begin
+        for (int r = 1; r < 32; r++) begin
+          if (skip_mask[r]) begin
+            logic [31:0] rtl_val = rvvi_vif.x_wdata[0][retired_instr_q[match_index].retire_index][r];
+            string rname = $sformatf("x%0d", r);
+            void'(spike_checker.set_register(rname, rtl_val));
+          end
+        end
       end
 
-      // Check return status and terminate on failure
-      if (!step_and_compare(retired_instr_q[match_index], skip_mask)) begin
+      // 5. Unified 3-Way Verification Boundary
+      if (!step_and_compare_3way(retired_instr_q[match_index], skip_mask)) begin
         mismatch_detected = 1;
+        retired_instr_q.delete(match_index);
         return;
       end
 
       retired_instr_q.delete(match_index);
     endtask
 
-    // Run phase: Contains the main co-simulation loop
+    // Run phase: Main co-simulation loop
     virtual task run_phase(uvm_phase phase);
       retired_instr_info_s retired_instr_q[$];
       sim_config_t dpi_cfg_s;
       logic [31:0] itcm_start_address;
       logic [31:0] itcm_length;
       uvm_event test_start_event;
+      uvm_event cosim_mismatch_event;
 
       if (!uvm_config_db#(uvm_event)::get(this, "", "test_start_event", test_start_event)) begin
-        // If not found, assume it is provided by the test via top
+        `uvm_fatal(get_type_name(), "'test_start_event' handle not found in config_db!")
+      end
+      if (!uvm_config_db#(uvm_event)::get(
+              this, "", "cosim_mismatch_event", cosim_mismatch_event
+          )) begin
+        `uvm_fatal(get_type_name(), "'cosim_mismatch_event' handle not found in config_db!")
+      end
+      if (!uvm_config_db#(virtual coralnpu_irq_if.DUT_IRQ_PORT)::get(
+              this, "", "irq_vif", irq_vif
+          )) begin
+        `uvm_warning(get_type_name(), "IRQ virtual interface 'irq_vif' not found in config_db")
       end
 
       itcm_start_address = memory_map_pkg::ITCM_START_ADDR;
       itcm_length = memory_map_pkg::ITCM_LENGTH;
 
-      `uvm_info("DPI_CALL", $sformatf({"Configuring MPACT with: MISA=0x%h, ITCM Start=0x%h, ",
-                                       "ITCM Length=0x%h"}, initial_misa_value, itcm_start_address,
-                                        itcm_length), UVM_MEDIUM)
+      dpi_cfg_s = {<<32{itcm_start_address, itcm_length, initial_misa_value, 32'd1}};
 
-      dpi_cfg_s = {<<32{itcm_start_address, itcm_length, initial_misa_value, 32'd1  // M3
-      }};
-
+      test_start_event.wait_trigger();
       forever begin
         string current_test_elf;
-        string current_spike_log;
+        bit has_entry_point;
 
-        // Wait for the next test to start
-        test_start_event.wait_trigger();
-
-        // Reset state
         mismatch_detected = 0;
         dirty_gprs = 0;
         dirty_stack.delete();
         retired_instr_q.delete();
         uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 0);
-
         if (uvm_config_db#(string)::get(this, "", "current_test_elf", current_test_elf)) begin
           test_elf = current_test_elf;
         end
-
-        // Spike checker initialization per test
-        if (uvm_config_db#(string)::get(
-                this, "", "current_spike_log", current_spike_log
-            ) && current_spike_log != "" && current_spike_log != "NONE") begin
-          if (spike_checker == null) begin
-            spike_checker = spike_cosim_checker::type_id::create("spike_checker");
-          end
-          spike_checker.initialize(current_spike_log);
-        end else begin
-          spike_checker = null;
+        has_entry_point = uvm_config_db#(int unsigned)::get(this, "", "entry_point", entry_point);
+        if (!has_entry_point) begin
+          entry_point = 0;
+        end
+        if (!uvm_config_db#(bit)::get(this, "", "spike_enabled", spike_enabled)) begin
+          spike_enabled = 1;
         end
 
-        `uvm_info(get_type_name(), $sformatf("Initializing Co-Sim for %s", test_elf), UVM_LOW)
+        `uvm_info(get_type_name(), $sformatf(
+                  "Initializing Multi-ISS Co-Sim for %s (entry: 0x%h, custom: %0d, spike: %0d)",
+                  test_elf,
+                  entry_point,
+                  has_entry_point,
+                  spike_enabled
+                  ), UVM_LOW)
 
-        void'(mpact_fini());
+        // Initialize MPACT
+        if (mpact_enabled) begin
+          void'(mpact_fini());
+          if (mpact_init() != 0) `uvm_error(get_type_name(), "MPACT simulator DPI init failed.")
+          if (mpact_config(dpi_cfg_s) != 0) `uvm_error(get_type_name(), "MPACT DPI config failed.")
+          if (mpact_load_program(test_elf) != 0)
+            `uvm_error(get_type_name(), "MPACT DPI load program failed.")
+        end
 
-        if (mpact_init() != 0) `uvm_error(get_type_name(), "MPACT simulator DPI init failed.")
-        if (mpact_config(dpi_cfg_s) != 0)
-          `uvm_error(get_type_name(), "MPACT simulator DPI config failed.")
-        if (mpact_load_program(test_elf) != 0)
-          `uvm_error(get_type_name(), "MPACT simulator DPI load program failed.")
+        // Initialize Spike
+        if (spike_enabled) begin
+          if (!spike_checker.initialize(test_elf, entry_point, has_entry_point)) begin
+            `uvm_warning(get_type_name(),
+                         "Spike in-process initialization failed. Continuing with MPACT.")
+          end
+        end else begin
+          spike_checker.finalize();
+        end
 
-        // Inner loop for processing instructions for the current test
         fork
           begin : cosim_process_loop
             forever begin
@@ -409,6 +482,7 @@ package coralnpu_cosim_checker_pkg;
                 process_instruction(retired_instr_q, phase);
                 if (mismatch_detected) begin
                   uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 1);
+                  if (cosim_mismatch_event != null) cosim_mismatch_event.trigger();
                   break;
                 end
               end
@@ -416,160 +490,244 @@ package coralnpu_cosim_checker_pkg;
             end
           end
           begin : wait_for_next_test
-            // Wait for the event again (which signals next test) to kill the processing loop
             test_start_event.wait_trigger();
           end
         join_any
         disable fork;
+
+        // If cosim exited due to mismatch (rather than next test start),
+        // wait for the test runner to reset and start the next test.
+        if (mismatch_detected) begin
+          test_start_event.wait_trigger();
+        end
       end
     endtask
 
-    // Function: step_and_compare
-    // Compares the register writeback state between the RTL (captured via RVVI)
-    // and the MPACT simulator. It verifies:
-    // 1. GPR (integer) writes: Checks the x_wb mask and compares the written data.
-    // 2. FPR (floating-point) writes: Checks the f_wb mask and compares the written data.
-    // 3. VPR (vector) writes: Checks the v_wb bitmask and compares each written vector register.
-    // Returns 1 if all checks pass, 0 otherwise.
-    virtual function bit step_and_compare(retired_instr_info_s rtl_info,
-                                          input bit [31:0] skip_mask);
-      int unsigned mpact_gpr_val;
-      int unsigned rd_index;
-      logic [31:0] rtl_wdata;
-      string reg_name;
+    // Function: diagnose_and_report_mismatch
+    // Formats a structured 3-way diagnosis table comparing RTL, MPACT, and Spike.
+    virtual function void report_3way_mismatch(
+        string reg_name, logic [31:0] pc, logic [31:0] insn, string rtl_str, string mpact_str,
+        string spike_str, bit rtl_eq_mpact, bit rtl_eq_spike, bit mpact_eq_spike);
+      string diagnosis;
+      bit has_spike = spike_enabled && spike_checker.spike_enabled;
 
-      `uvm_info(get_type_name(), "Comparing GPR writeback state...", UVM_HIGH)
-
-      if (!$onehot0(rtl_info.x_wb)) begin
-        `uvm_error("COSIM_GPR_MISMATCH", $sformatf({"Invalid GPR writeback flag at PC 0x%h. ",
-                                                    "x_wb is not one-hot: 0x%h"}, rtl_info.pc,
-                                                     rtl_info.x_wb))
-        return 0;  // FAIL
+      if (mpact_enabled && has_spike) begin
+        if (mpact_eq_spike && !rtl_eq_mpact) begin
+          diagnosis = "🔴 RTL BUG (MPACT and Spike agree; RTL state differs)";
+        end else if (rtl_eq_spike && !rtl_eq_mpact) begin
+          diagnosis = "🟡 MPACT DIVERGENCE (RTL and Spike agree; MPACT differs)";
+        end else if (rtl_eq_mpact && !rtl_eq_spike) begin
+          diagnosis = "🟡 SPIKE DIVERGENCE (RTL and MPACT agree; Spike differs)";
+        end else begin
+          diagnosis = "⚠️ MULTI-WAY DIVERGENCE (All three models report differing values)";
+        end
+      end else if (mpact_enabled && !rtl_eq_mpact) begin
+        diagnosis = "🟡 MPACT DIVERGENCE (Spike disabled; RTL and MPACT differ)";
+      end else if (has_spike && !rtl_eq_spike) begin
+        diagnosis = "🟡 SPIKE DIVERGENCE (MPACT disabled; RTL and Spike differ)";
+      end else begin
+        diagnosis = "⚠️ UNEXPECTED CO-SIMULATION MISMATCH";
       end
 
-      if (rtl_info.x_wb == 1) begin
-        `uvm_error("COSIM_GPR_MISMATCH", $sformatf("Illegal write to x0 detected at PC 0x%h.",
-                                                   rtl_info.pc))
-        return 0;  // FAIL
-      end else if (rtl_info.x_wb != 0) begin
+      `uvm_error("3WAY_COSIM_MISMATCH", $sformatf(
+                 {
+                   "\n========================= [3-WAY CO-SIM MISMATCH] =========================\n",
+                   "  PC:          0x%08h\n",
+                   "  Instruction: 0x%08h\n",
+                   "  Register:    %s\n",
+                   "  -------------------------------------------------------------------------\n",
+                   "  RTL:         %s\n",
+                   "  MPACT:       %s (RTL match: %s)\n",
+                   "  Spike:       %s (RTL match: %s)\n",
+                   "  -------------------------------------------------------------------------\n",
+                   "  Diagnosis:   %s\n",
+                   "==========================================================================="
+                 },
+                 pc,
+                 insn,
+                 reg_name,
+                 rtl_str,
+                 mpact_str,
+                 (rtl_eq_mpact ? "YES" : "NO"),
+                 spike_str,
+                 (rtl_eq_spike ? "YES" : "NO"),
+                 diagnosis
+                 ))
+    endfunction
+
+    // Function: step_and_compare_3way
+    // Compares register writeback state across RTL, MPACT, and Spike at the
+    // retired instruction boundary.
+    virtual function bit step_and_compare_3way(retired_instr_info_s rtl_info,
+                                               input bit [31:0] skip_mask);
+      int unsigned rd_index;
+      string reg_name;
+      bit has_spike = spike_enabled && spike_checker.spike_enabled;
+
+      // 1. GPR Writeback Verification
+      if (rtl_info.x_wb != 0) begin
+        if (!$onehot0(rtl_info.x_wb)) begin
+          `uvm_error("COSIM_GPR_MISMATCH",
+                     $sformatf("Invalid GPR writeback flag at PC 0x%h. x_wb is not one-hot: 0x%h",
+                               rtl_info.pc, rtl_info.x_wb))
+          return 0;
+        end
+
+        if (rtl_info.x_wb == 1) begin
+          `uvm_error("COSIM_GPR_MISMATCH", $sformatf("Illegal write to x0 at PC 0x%h.",
+                                                     rtl_info.pc))
+          return 0;
+        end
+
         rd_index = $clog2(rtl_info.x_wb);
         reg_name = $sformatf("x%0d", rd_index);
+
         if (skip_mask[rd_index]) begin
-          `uvm_info("COSIM_SKIP", $sformatf(
-                                      "Skipping GPR[%s] comparison at PC 0x%h due to dirty mask",
-                                      reg_name, rtl_info.pc), UVM_LOW)
-          return 1;  // PASS (skipped)
-        end
-
-        if (mpact_get_register(reg_name, mpact_gpr_val) != 0) begin
-          `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get GPR '%s'", reg_name));
-          return 0;  // FAIL
-        end
-
-        // Get the specific write data from the correct retire channel and
-        // register index
-        rtl_wdata = rvvi_vif.x_wdata[0][rtl_info.retire_index][rd_index];
-
-        if (mpact_gpr_val != rtl_wdata) begin
-          string msg;
-          msg = $sformatf(
-              {
-                "GPR[x%0d] mismatch at PC 0x%h. ", "RTL: 0x%h, MPACT: 0x%h"
-              },
-              rd_index,
-              rtl_info.pc,
-              rtl_wdata,
-              mpact_gpr_val
-          );
-          `uvm_error("COSIM_GPR_MISMATCH", msg)
-          return 0;  // FAIL
+          `uvm_info("COSIM_SKIP", $sformatf("Skipping GPR[%s] at PC 0x%h (dirty mask)", reg_name,
+                                            rtl_info.pc), UVM_HIGH)
         end else begin
-          `uvm_info("MPACT_MATCH", $sformatf(
-                    {
-                      "GPR[x%0d] match at PC 0x%h. ", "RTL: 0x%h, MPACT: 0x%h"
-                    },
-                    rd_index,
-                    rtl_info.pc,
-                    rtl_wdata,
-                    mpact_gpr_val
-                    ), UVM_HIGH)
+          logic [31:0] rtl_val = rvvi_vif.x_wdata[0][rtl_info.retire_index][rd_index];
+          int unsigned mpact_val = 0;
+          int unsigned spike_val = 0;
+          bit mpact_ok = 1;
+          bit spike_ok = 1;
+
+          if (mpact_enabled) begin
+            if (mpact_get_register(reg_name, mpact_val) != 0) begin
+              `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get MPACT GPR %s", reg_name));
+              mpact_ok = 0;
+            end
+          end
+
+          if (has_spike) begin
+            if (!spike_checker.get_gpr(reg_name, spike_val)) begin
+              `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get Spike GPR %s", reg_name));
+              spike_ok = 0;
+            end
+          end
+
+          if (trace_logging_enabled) begin
+            `uvm_info("COSIM_TRACE",
+                      $sformatf(
+                          "PC=0x%08h Insn=0x%08h | RTL: %s=0x%08h | MPACT: 0x%08h | Spike: 0x%08h",
+                          rtl_info.pc, rtl_info.insn, reg_name, rtl_val, mpact_val, spike_val),
+                      UVM_NONE)
+          end
+
+          if ((mpact_enabled && mpact_ok && mpact_val != rtl_val) ||
+              (has_spike && spike_ok && spike_val != rtl_val)) begin
+            report_3way_mismatch(reg_name, rtl_info.pc, rtl_info.insn, $sformatf("0x%08h", rtl_val),
+                                 mpact_enabled ? $sformatf("0x%08h", mpact_val) : "DISABLED",
+                                 has_spike ? $sformatf("0x%08h", spike_val) : "DISABLED",
+                                 mpact_enabled ? (mpact_val == rtl_val) : 1'b1,
+                                 has_spike ? (spike_val == rtl_val) : 1'b1,
+                                 (mpact_enabled && has_spike) ? (mpact_val == spike_val) : 1'b1);
+            return 0;
+          end
         end
       end
 
-      // Floating Point Writeback Detection
+      // 2. FPR Writeback Verification
       if (rtl_info.f_wb != 0) begin
-        int unsigned mpact_fpr_val;
         if (!$onehot0(rtl_info.f_wb)) begin
-          `uvm_error("COSIM_FPR_MISMATCH", $sformatf({"Invalid FPR writeback flag at PC 0x%h. ",
-                                                      "f_wb is not one-hot: 0x%h"}, rtl_info.pc,
-                                                       rtl_info.f_wb))
-          return 0;  // FAIL
+          `uvm_error("COSIM_FPR_MISMATCH",
+                     $sformatf("Invalid FPR writeback flag at PC 0x%h. f_wb is not one-hot: 0x%h",
+                               rtl_info.pc, rtl_info.f_wb))
+          return 0;
         end
 
         rd_index = $clog2(rtl_info.f_wb);
-        `uvm_info("COSIM_FPR_WB", $sformatf("Floating point writeback detected to f%0d at PC 0x%h",
-                                            rd_index, rtl_info.pc), UVM_MEDIUM)
-
         reg_name = $sformatf("f%0d", rd_index);
-        if (mpact_get_register(reg_name, mpact_fpr_val) != 0) begin
-          `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get FPR '%s'", reg_name));
-          return 0;  // FAIL
+
+        begin
+          logic [31:0] rtl_val = rvvi_vif.f_wdata[0][rtl_info.retire_index][rd_index];
+          int unsigned mpact_val = 0;
+          int unsigned spike_val = 0;
+          bit mpact_ok = 1;
+          bit spike_ok = 1;
+
+          if (mpact_enabled) begin
+            if (mpact_get_register(reg_name, mpact_val) != 0) begin
+              `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get MPACT FPR %s", reg_name));
+              mpact_ok = 0;
+            end
+          end
+
+          if (has_spike) begin
+            if (!spike_checker.get_fpr(reg_name, spike_val)) begin
+              `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get Spike FPR %s", reg_name));
+              spike_ok = 0;
+            end
+          end
+
+          if (trace_logging_enabled) begin
+            `uvm_info("COSIM_TRACE",
+                      $sformatf(
+                          "PC=0x%08h Insn=0x%08h | RTL: %s=0x%08h | MPACT: 0x%08h | Spike: 0x%08h",
+                          rtl_info.pc, rtl_info.insn, reg_name, rtl_val, mpact_val, spike_val),
+                      UVM_NONE)
+          end
+
+          if ((mpact_enabled && mpact_ok && mpact_val != rtl_val) ||
+              (has_spike && spike_ok && spike_val != rtl_val)) begin
+            report_3way_mismatch(reg_name, rtl_info.pc, rtl_info.insn, $sformatf("0x%08h", rtl_val),
+                                 mpact_enabled ? $sformatf("0x%08h", mpact_val) : "DISABLED",
+                                 has_spike ? $sformatf("0x%08h", spike_val) : "DISABLED",
+                                 mpact_enabled ? (mpact_val == rtl_val) : 1'b1,
+                                 has_spike ? (spike_val == rtl_val) : 1'b1,
+                                 (mpact_enabled && has_spike) ? (mpact_val == spike_val) : 1'b1);
+            return 0;
+          end
         end
-
-        // Get the specific write data from the correct retire channel and register index
-        rtl_wdata = rvvi_vif.f_wdata[0][rtl_info.retire_index][rd_index];
-
-        if (mpact_fpr_val != rtl_wdata) begin
-          string msg;
-          msg = $sformatf(
-              "FPR[f%0d] mismatch at PC 0x%h. RTL: 0x%h, MPACT: 0x%h",
-              rd_index,
-              rtl_info.pc,
-              rtl_wdata,
-              mpact_fpr_val
-          );
-          `uvm_error("COSIM_FPR_MISMATCH", msg)
-          return 0;  // FAIL
-        end
-
-        `uvm_info("MPACT_MATCH", $sformatf("FPR[f%0d] match at PC 0x%h. RTL: 0x%h, MPACT: 0x%h",
-                                           rd_index, rtl_info.pc, rtl_wdata, mpact_fpr_val),
-                  UVM_HIGH)
       end
 
-      // Vector Writeback Detection
+      // 3. VPR Writeback Verification
       if (rtl_info.v_wb != 0) begin
-        logic [127:0] mpact_vpr_val;
-        logic [127:0] rtl_vpr_wdata;
-
         for (int i = 0; i < 32; i++) begin
           if (rtl_info.v_wb[i]) begin
-            rd_index = i;
-            reg_name = $sformatf("v%0d", rd_index);
-            if (mpact_get_vector_register(reg_name, mpact_vpr_val) != 0) begin
-              `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get VPR '%s'", reg_name));
-              return 0;  // FAIL
+            reg_name = $sformatf("v%0d", i);
+            begin
+              logic [127:0] rtl_vval = rvvi_vif.v_wdata[0][rtl_info.retire_index][i];
+              logic [127:0] mpact_vval = 0;
+              logic [127:0] spike_vval = 0;
+              bit mpact_ok = 1;
+              bit spike_ok = 1;
+
+              if (mpact_enabled) begin
+                if (mpact_get_vector_register(reg_name, mpact_vval) != 0) begin
+                  `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get MPACT VPR %s", reg_name));
+                  mpact_ok = 0;
+                end
+              end
+
+              if (has_spike) begin
+                if (!spike_checker.get_vpr(reg_name, spike_vval)) begin
+                  `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get Spike VPR %s", reg_name));
+                  spike_ok = 0;
+                end
+              end
+
+              if (trace_logging_enabled) begin
+                `uvm_info(
+                    "COSIM_TRACE",
+                    $sformatf(
+                        "PC=0x%08h Insn=0x%08h | RTL: %s=0x%032h | MPACT: 0x%032h | Spike: 0x%032h",
+                        rtl_info.pc, rtl_info.insn, reg_name, rtl_vval, mpact_vval, spike_vval),
+                    UVM_NONE)
+              end
+
+              if ((mpact_enabled && mpact_ok && mpact_vval != rtl_vval) ||
+                  (has_spike && spike_ok && spike_vval != rtl_vval)) begin
+                report_3way_mismatch(
+                    reg_name, rtl_info.pc, rtl_info.insn, $sformatf("0x%032h", rtl_vval),
+                    mpact_enabled ? $sformatf("0x%032h", mpact_vval) : "DISABLED",
+                    has_spike ? $sformatf("0x%032h", spike_vval) : "DISABLED",
+                    mpact_enabled ? (mpact_vval == rtl_vval) : 1'b1,
+                    has_spike ? (spike_vval == rtl_vval) : 1'b1,
+                    (mpact_enabled && has_spike) ? (mpact_vval == spike_vval) : 1'b1);
+                return 0;
+              end
             end
-
-            // Get the specific write data from the correct retire channel and register index
-            rtl_vpr_wdata = rvvi_vif.v_wdata[0][rtl_info.retire_index][rd_index];
-
-            if (mpact_vpr_val != rtl_vpr_wdata) begin
-              string msg;
-              msg = $sformatf(
-                  "VPR[v%0d] mismatch at PC 0x%h. RTL: 0x%h, MPACT: 0x%h",
-                  rd_index,
-                  rtl_info.pc,
-                  rtl_vpr_wdata,
-                  mpact_vpr_val
-              );
-              `uvm_error("COSIM_VPR_MISMATCH", msg)
-              return 0;  // FAIL
-            end
-
-            `uvm_info("MPACT_MATCH",
-                      $sformatf("VPR[v%0d] match at PC 0x%h. RTL: 0x%h, MPACT: 0x%h", rd_index,
-                                rtl_info.pc, rtl_vpr_wdata, mpact_vpr_val), UVM_HIGH)
           end
         end
       end
@@ -582,39 +740,42 @@ package coralnpu_cosim_checker_pkg;
         for (int i = 0; i < 4096; i++) begin
           if (rvvi_vif.csr_wb[0][rtl_info.retire_index][i]) begin
             string csr_name = get_csr_name(i);
-            if (mpact_get_register(csr_name, mpact_csr_val) != 0) begin
-              `uvm_warning("COSIM_CSR_UNKNOWN",
-                           $sformatf("Cannot check CSR '%s' (0x%03x) - not in MPACT", csr_name, i))
-            end else begin
-              rtl_csr_wdata = rvvi_vif.csr[0][rtl_info.retire_index][i];
-              check_mask    = get_csr_compare_mask(i);
+            if (mpact_enabled) begin
+              if (mpact_get_register(csr_name, mpact_csr_val) != 0) begin
+                `uvm_warning("COSIM_CSR_UNKNOWN",
+                             $sformatf("Cannot check CSR '%s' (0x%03x) - not in MPACT", csr_name,
+                                       i))
+              end else begin
+                rtl_csr_wdata = rvvi_vif.csr[0][rtl_info.retire_index][i];
+                check_mask    = get_csr_compare_mask(i);
 
-              if ((mpact_csr_val & check_mask) != (rtl_csr_wdata & check_mask)) begin
-                string msg;
-                msg = $sformatf(
-                    "CSR[0x%03x] %s mismatch at PC 0x%08x, Insn=0x%08x. RTL: 0x%08x, MPACT: 0x%08x (mask: 0x%08x)",
-                    i,
-                    csr_name,
-                    rtl_info.pc,
-                    rtl_info.insn,
-                    rtl_csr_wdata,
-                    mpact_csr_val,
-                    check_mask
-                );
-                `uvm_error("COSIM_CSR_MISMATCH", msg)
-                return 0;  // FAIL
+                if ((mpact_csr_val & check_mask) != (rtl_csr_wdata & check_mask)) begin
+                  string msg;
+                  msg = $sformatf(
+                      "CSR[0x%03x] %s mismatch at PC 0x%08x, Insn=0x%08x. RTL: 0x%08x, MPACT: 0x%08x (mask: 0x%08x)",
+                      i,
+                      csr_name,
+                      rtl_info.pc,
+                      rtl_info.insn,
+                      rtl_csr_wdata,
+                      mpact_csr_val,
+                      check_mask
+                  );
+                  `uvm_error("COSIM_CSR_MISMATCH", msg)
+                  return 0;  // FAIL
+                end
+
+                `uvm_info("COSIM_CSR_MATCH", $sformatf(
+                          "CSR[0x%03x] %s compare success at PC 0x%08x, Insn=0x%08x. RTL: 0x%08x, MPACT: 0x%08x (mask: 0x%08x)",
+                          i,
+                          csr_name,
+                          rtl_info.pc,
+                          rtl_info.insn,
+                          rtl_csr_wdata,
+                          mpact_csr_val,
+                          check_mask
+                          ), UVM_HIGH)
               end
-
-              `uvm_info("COSIM_CSR_MATCH", $sformatf(
-                        "CSR[0x%03x] %s compare success at PC 0x%08x, Insn=0x%08x. RTL: 0x%08x, MPACT: 0x%08x (mask: 0x%08x)",
-                        i,
-                        csr_name,
-                        rtl_info.pc,
-                        rtl_info.insn,
-                        rtl_csr_wdata,
-                        mpact_csr_val,
-                        check_mask
-                        ), UVM_HIGH)
             end
           end
         end

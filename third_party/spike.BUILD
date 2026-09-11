@@ -30,5 +30,13 @@ configure_make(
     ],
     lib_source = ":all_srcs",
     out_binaries = ["spike"],
+    out_static_libs = [
+        "libriscv.a",
+        "libsoftfloat.a",
+        "libfesvr.a",
+        "libdisasm.a",
+        "libfdt.a",
+    ],
+    postfix_script = "cp lib*.a $$INSTALLDIR$$/lib/",
     visibility = ["//visibility:public"],
 )

@@ -524,23 +524,9 @@ def _verilator_batch_uvm_impl(ctx):
     if not model_binary:
         fail("Model binary could not be found")
 
-    spike_bin = None
-    for f in ctx.files._spike:
-        if f.basename == "spike":
-            spike_bin = f
-            break
-
-    if run_spike_flag and not spike_bin:
-        fail("Spike cosimulation enabled, but spike binary could not be found")
-
     ws = ctx.workspace_name
     runner = ctx.actions.declare_file(ctx.label.name)
     runfiles.extend(ctx.files.coralnpu_tests + [model_binary])
-    if run_spike_flag:
-        runfiles.append(spike_bin)
-        spike_rloc = _rlocation_path(ws, spike_bin)
-    else:
-        spike_rloc = ""
 
     ctx.actions.symlink(output = runner, target_file = ctx.executable._runner, is_executable = True)
 
@@ -566,7 +552,8 @@ def _verilator_batch_uvm_impl(ctx):
             environment = {
                 "UVM_MODEL_RLOCATION": _rlocation_path(ws, model_binary),
                 "UVM_CORALNPU_ELFS": "\n".join(coralnpu_elfs_fmt),
-                "UVM_SPIKE_RLOCATION": spike_rloc,
+                "UVM_SPIKE_RLOCATION": "SPIKE" if run_spike_flag else "",
+                "UVM_ENABLE_SPIKE": "1" if run_spike_flag else "0",
             },
         ),
     ]
@@ -581,10 +568,6 @@ verilator_batch_uvm_test = rule(
         "labels": attr.string_list(mandatory = True),
         "run_spike": attr.label(
             providers = [BuildSettingInfo],
-        ),
-        "_spike": attr.label(
-            default = Label("@riscv_isa_sim//:riscv_isa_sim"),
-            allow_files = True,
         ),
         "_runner": attr.label(
             default = Label("//utils:uvm_batch_runner"),

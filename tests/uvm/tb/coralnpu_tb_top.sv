@@ -360,12 +360,16 @@ module coralnpu_tb_top;
     logic [31:0] tohost_addr;
     uvm_event tohost_written_event;
     uvm_event test_start_event;
+    uvm_event cosim_mismatch_event;
 
     tohost_written_event = new("tohost_written_event");
     uvm_config_db#(uvm_event)::set(null, "*", "tohost_written_event", tohost_written_event);
 
     test_start_event = new("test_start_event");
     uvm_config_db#(uvm_event)::set(null, "*", "test_start_event", test_start_event);
+
+    cosim_mismatch_event = new("cosim_mismatch_event");
+    uvm_config_db#(uvm_event)::set(null, "*", "cosim_mismatch_event", cosim_mismatch_event);
 
     // Get the tohost address from the plusargs
     if ($value$plusargs("TOHOST_ADDR=%s", tohost_addr_str)) begin

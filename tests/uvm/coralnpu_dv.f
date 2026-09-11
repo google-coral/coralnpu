@@ -40,6 +40,7 @@
 ./common/coralnpu_axi_slave/coralnpu_axi_slave_if.sv
 ./common/coralnpu_irq/coralnpu_irq_if.sv
 ./common/cosim/coralnpu_cosim_dpi_if.sv
+./common/cosim/coralnpu_spike_cosim_dpi_if.sv
 
 // UVM Packages (in dependency order)
 ./common/memory_map_pkg.sv

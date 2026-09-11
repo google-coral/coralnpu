@@ -22,7 +22,6 @@ from typing import IO, Optional, TypedDict
 from bazel_tools.tools.python.runfiles import runfiles
 from run_uvm_regression import (
     format_batch_entry,
-    generate_spike_log,
     get_entry_point,
     get_tohost_addr,
     run_uvm_batch,
@@ -36,7 +35,7 @@ class TestInfo(TypedDict):
     tohost: int
     entry: int
     timeout: int
-    spike_log: str
+    spike: str
     safe_log: str
 
 
@@ -49,7 +48,7 @@ def write_entry(
     log_name: str,
     label: str,
     timeout: int,
-    spike: Optional[str],
+    spike: bool,
     test_info_map: TestInfoMap,
 ) -> None:
     entry = get_entry_point(str(elf_path))
@@ -57,14 +56,7 @@ def write_entry(
     if tohost is None:
         tohost = 0xFFFFFFFF
 
-    if spike:
-        spike_log = (elf_path.parent /
-                     f"spike_log_{elf_path.name}.log").as_posix()
-        if not generate_spike_log(spike, elf_path.as_posix(), spike_log, entry,
-                                  timeout):
-            sys.exit(1)
-    else:
-        spike_log = "NONE"
+    spike_option = "SPIKE" if spike else "NONE"
 
     batch_file.write(
         format_batch_entry(
@@ -72,7 +64,7 @@ def write_entry(
             tohost,
             entry,
             timeout,
-            spike_log,
+            spike_option,
             label,
         )
     )
@@ -82,7 +74,7 @@ def write_entry(
         tohost=tohost,
         entry=entry,
         timeout=timeout,
-        spike_log=spike_log,
+        spike=spike_option,
         safe_log=log_name,
     )
 
@@ -93,7 +85,7 @@ def label_to_fname(label: str) -> str:
 
 def build_batch_file(
     batch_path: Path, coralnpu_elfs: list[tuple[Path, str, int, bool]],
-    spike: Optional[str]
+    spike: bool
 ) -> TestInfoMap:
     test_info_map: TestInfoMap = {}
     with batch_path.open("w") as batch_file:
@@ -104,7 +96,7 @@ def build_batch_file(
                 f"{label_to_fname(label)}.log",
                 label,
                 timeout,
-                spike if enable_spike else None,
+                spike if enable_spike else False,
                 test_info_map,
             )
 
@@ -118,8 +110,11 @@ def main():
     if not model or not os.path.isfile(model):
         sys.exit(f"ERROR: model not found: {model_rloc}")
 
-    spike_rloc = os.environ["UVM_SPIKE_RLOCATION"]
-    spike = r.Rlocation(spike_rloc) if spike_rloc else None
+    spike_env = os.environ.get("UVM_ENABLE_SPIKE")
+    if spike_env is not None:
+        spike = spike_env in ("1", "true", "True")
+    else:
+        spike = bool(os.environ.get("UVM_SPIKE_RLOCATION", ""))
 
     coralnpu_elfs = []
     for line in os.environ.get("UVM_CORALNPU_ELFS", "").splitlines():
@@ -171,13 +166,13 @@ def main():
 
     logging.info(f"Regression PASSED: {len(results)} tests total.")
 
-    shutil.copytree(
-        results_dir_path.as_posix(),
-        (
-            Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")) /
-            "uvm_regression_batch"
-        ).as_posix(),
-    )
+    test_undeclared_outputs = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
+    if test_undeclared_outputs:
+        shutil.copytree(
+            results_dir_path.as_posix(),
+            (Path(test_undeclared_outputs) /
+             "uvm_regression_batch").as_posix(),
+        )
 
 
 if __name__ == "__main__":

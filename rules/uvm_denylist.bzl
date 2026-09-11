@@ -17,20 +17,14 @@
 # List of targets to exclude from the regression.
 # Supports exact labels or simple glob/prefix patterns (e.g. "*bf16*", "//internal/kernels:*").
 DENYLIST = [
-    # Checks mcycle
-    "//tests/cocotb/tutorial/counters:inst_cycle_counter_example",
-    "//tests/cocotb/coralnpu_isa:perf_counters",
     # Peripherals
     "//tests/cocotb:timer_interrupt_test",
     "//tests/cocotb:plic_test",
     # RVV exceptions, not supported by MPACT (yet)
     "//tests/cocotb/rvv:vill_test",
     "//tests/cocotb/rvv:rvv_vill_loop_trap_test",
-    "//tests/cocotb/rvv:rvv_vstart_trap_flush_test",
     "//tests/cocotb/rvv:rvv_vstart_vmv_scalar_test",
     "//tests/cocotb/rvv:rvv_vstart_vset_test",
-    "//tests/cocotb:vector_store",
-    "//tests/cocotb:vector_store_fault",
     "//tests/cocotb/exceptions:vfwadd_trap",
     "//tests/cocotb/exceptions:vfwsub_trap",
     "//tests/cocotb/exceptions:vfwmul_trap",
@@ -44,8 +38,6 @@ DENYLIST = [
     # Actual RVV bugs?
     "//tests/cocotb/rvv:vmsif_test",
     "//tests/cocotb/rvv:vmsbf_test",
-    "//tests/cocotb/rvv/load_store:load_unit_masked",
-    "//tests/cocotb/rvv/load_store:store_unit_masked",
     "//tests/cocotb/rvv/arithmetics:vmsge_vx_test",
     # MPACT needs update to canonical-NaN
     "//tests/cocotb/rvv/arithmetics:rvv_fdiv_float_rdn_m1",
@@ -68,12 +60,9 @@ DENYLIST = [
     "//tests/cocotb:zvfbf_test",
     # Exclude until MPACT supports VME.
     "*vme*",
-    # Exclude all ml_ops tests from regression
-    "//tests/cocotb/rvv/ml_ops:rvv_float_matmul",
+    # Exclude remaining ml_ops tests from regression
     "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_assembly",
     "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_optimized",
-    "//tests/cocotb/rvv/ml_ops:rvv_matmul",
-    "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly",
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_highmem",
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_itcm512kb_dtcm512kb",
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem",
@@ -90,28 +79,13 @@ DENYLIST = [
 SPIKE_DENYLIST = [
     "//hw_sim:mailbox_example",
     "//tests/cocotb/exceptions:store_fault_0",
-    "//tests/cocotb/rvv:rvv_add",
-    "//tests/cocotb/rvv:rvv_load",
-    "//tests/cocotb/rvv:vstart_store",
+    "//tests/cocotb/rvv/load_store:load_store8_fault",
+    "//tests/cocotb/rvv:vill_whole_reg_test",
+    "//tests/cocotb:csr_illegal_write_test",
     "//tests/cocotb:loop",
     "//tests/cocotb:registers",
     "//tests/cocotb:software_interrupt_test",
     "//tests/cocotb:stress_test",
-    "//tests/cocotb:wfi_slot_0",
-    "//tests/cocotb:wfi_slot_1",
-    "//tests/cocotb:wfi_slot_2",
-    "//tests/cocotb:wfi_slot_3",
-    "//tests/cocotb/exceptions:vfwadd_trap",
-    "//tests/cocotb/exceptions:vfwsub_trap",
-    "//tests/cocotb/exceptions:vfwmul_trap",
-    "//tests/cocotb/rvv:rvv_flush_race_test",
-    "//tests/cocotb/rvv:rvv_small_loop_test",
-    "//tests/cocotb:csr_behavior",
-    "//tests/cocotb/rvv:rvv_vfrdiv_test",
-    "//tests/cocotb/rvv:rvv_vl0_v0_corruption_test",
-    "//tests/cocotb/rvv:rvv_vleff_test",
-    "//tests/cocotb/rvv:rvv_lsu_indexed_short_vl_test",
-    "//tests/cocotb:csr_illegal_write_test",
 ]
 
 # Map of targets to custom timeouts (in nanoseconds)

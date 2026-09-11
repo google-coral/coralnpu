@@ -54,6 +54,7 @@ filegroup(
         "common/coralnpu_axi_slave/coralnpu_axi_slave_if.sv",
         "common/coralnpu_irq/coralnpu_irq_if.sv",
         "common/cosim/coralnpu_cosim_dpi_if.sv",
+        "common/cosim/coralnpu_spike_cosim_dpi_if.sv",
         # UVM Packages (in dependency order)
         "common/memory_map_pkg.sv",
         "common/transaction_item/transaction_item_pkg.sv",
@@ -110,6 +111,7 @@ verilator_model(
         ":include_dirs_deps",
         ":uvm_dpi",
         "//hdl/verilog:sram_backdoor",
+        "//sw/coralnpu_sim:spike_cosim_dpi",
         "@coralnpu_mpact//sim/cosim:coralnpu_cosim_lib",
     ],
 )
@@ -138,5 +140,6 @@ vcs_model(
     deps = [
         ":include_dirs_deps",
         "//hdl/verilog:dpi_files",
+        "//sw/coralnpu_sim:spike_cosim_dpi",
     ],
 )
