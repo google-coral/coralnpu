@@ -222,4 +222,74 @@ void sram_load_elf(const char *filename) {
 
   std::fclose(f);
 }
+
+int sram_backdoor_apply_patch(const char *filename) {
+  if (!filename)
+    return -1;
+  FILE *f = std::fopen(filename, "rb");
+  if (!f) {
+    std::fprintf(stderr, "[SRAM Backdoor] Failed to open patch file: %s\n", filename);
+    return -1;
+  }
+
+  while (true) {
+    uint64_t addr = 0;
+    uint32_t len  = 0;
+    if (std::fread(&addr, sizeof(addr), 1, f) != 1) {
+      break;  // Clean EOF
+    }
+    if (std::fread(&len, sizeof(len), 1, f) != 1) {
+      std::fprintf(stderr, "[SRAM Backdoor] Truncated patch record length at 0x%lx\n", addr);
+      std::fclose(f);
+      return -1;
+    }
+    if (len == 0) {
+      continue;
+    }
+
+    std::vector<uint8_t> buffer(len);
+    if (std::fread(buffer.data(), 1, len, f) != len) {
+      std::fprintf(stderr, "[SRAM Backdoor] Truncated patch payload at 0x%lx (%u bytes)\n", addr,
+                   len);
+      std::fclose(f);
+      return -1;
+    }
+
+    if (!SramBackdoorLoad(addr, buffer.data(), len)) {
+      std::fprintf(stderr, "[SRAM Backdoor] Failed to write patch at 0x%lx (%u bytes)\n", addr,
+                   len);
+      std::fclose(f);
+      return -1;
+    }
+  }
+
+  std::fclose(f);
+  return 0;
+}
+
+int sram_backdoor_dump_memory(const char *filename) {
+  if (!filename)
+    return -1;
+  FILE *f = std::fopen(filename, "wb");
+  if (!f) {
+    std::fprintf(stderr, "[SRAM Backdoor] Failed to open memory dump file for writing: %s\n",
+                 filename);
+    return -1;
+  }
+
+  for (const auto &[base, sram] : registered_srams) {
+    uint64_t base_addr  = base;
+    uint32_t size_bytes = static_cast<uint32_t>(sram->data.size());
+    if (std::fwrite(&base_addr, sizeof(base_addr), 1, f) != 1 ||
+        std::fwrite(&size_bytes, sizeof(size_bytes), 1, f) != 1 ||
+        std::fwrite(sram->data.data(), 1, size_bytes, f) != size_bytes) {
+      std::fprintf(stderr, "[SRAM Backdoor] Failed to write dump block at 0x%lx\n", base_addr);
+      std::fclose(f);
+      return -1;
+    }
+  }
+
+  std::fclose(f);
+  return 0;
+}
 }

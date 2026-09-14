@@ -40,6 +40,15 @@ void sram_clear();
 // Parse an ELF file and call SramBackdoorLoad for each PT_LOAD segment.
 // Same timing constraint as sram_clear — call after SRAMs have registered.
 void sram_load_elf(const char* filename);
+
+// Applies binary memory patch records (uint64_t addr, uint32_t len, bytes)
+// to registered SRAMs via SramBackdoorLoad.
+// Returns 0 on success, non-zero on failure.
+int sram_backdoor_apply_patch(const char *filename);
+
+// Dumps all registered SRAMs to a binary dump file (uint64_t base, uint32_t len, bytes).
+// Returns 0 on success, non-zero on failure.
+int sram_backdoor_dump_memory(const char *filename);
 }
 
 #endif  // HDL_VERILOG_SRAM_BACKDOOR_H_

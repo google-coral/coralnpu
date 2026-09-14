@@ -269,3 +269,14 @@ cc_library(
     hdrs = [":rvv_cpp_util.h"],
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "uvm_test_fixture",
+    srcs = ["uvm_test_fixture.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("numpy"),
+        requirement("pyelftools"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)

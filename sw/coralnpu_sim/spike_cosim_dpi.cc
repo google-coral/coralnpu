@@ -202,6 +202,63 @@ int spike_get_vector_register(const char *name, svLogicVecVal *value) {
   }
 }
 
+int spike_apply_memory_patch(const char *patch_file) {
+  try {
+    if (g_spike_sim == nullptr) {
+      std::cerr << "[Spike DPI] Simulator not initialized before apply patch." << std::endl;
+      return -1;
+    }
+    if (patch_file == nullptr) {
+      return 0;
+    }
+    FILE *f = std::fopen(patch_file, "rb");
+    if (!f) {
+      std::cerr << "[Spike DPI] Failed to open patch file: " << patch_file << std::endl;
+      return -1;
+    }
+
+    while (true) {
+      uint64_t addr = 0;
+      uint32_t len  = 0;
+      if (std::fread(&addr, sizeof(addr), 1, f) != 1) {
+        break;  // Clean EOF
+      }
+      if (std::fread(&len, sizeof(len), 1, f) != 1) {
+        std::cerr << "[Spike DPI] Truncated patch record length at 0x" << std::hex << addr
+                  << std::endl;
+        std::fclose(f);
+        return -1;
+      }
+      if (len == 0) {
+        continue;
+      }
+
+      std::vector<uint8_t> buffer(len);
+      if (std::fread(buffer.data(), 1, len, f) != len) {
+        std::cerr << "[Spike DPI] Truncated patch payload at 0x" << std::hex << addr << std::endl;
+        std::fclose(f);
+        return -1;
+      }
+
+      if (!g_spike_sim->WriteMemory(addr, buffer.data(), len)) {
+        std::cerr << "[Spike DPI] WriteMemory failed at 0x" << std::hex << addr << " (" << std::dec
+                  << len << " bytes)" << std::endl;
+        std::fclose(f);
+        return -1;
+      }
+    }
+
+    std::fclose(f);
+    return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "[Spike DPI] Exception in spike_apply_memory_patch: " << e.what() << std::endl;
+    return -1;
+  } catch (...) {
+    std::cerr << "[Spike DPI] Unknown exception in spike_apply_memory_patch." << std::endl;
+    return -1;
+  }
+}
+
 int spike_fini() {
   try {
     g_spike_sim.reset();

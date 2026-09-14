@@ -31,8 +31,9 @@ class spike_cosim_checker extends uvm_object;
   endfunction
 
   // Function: initialize
-  // Resets Spike, loads the test ELF program, and enables the checker.
-  function bit initialize(string elf_path, int unsigned entry_point = 0, bit has_entry_point = 0);
+  // Resets Spike, loads the test ELF program, applies memory patch if provided, and enables the checker.
+  function bit initialize(string elf_path, int unsigned entry_point = 0, bit has_entry_point = 0,
+                          string patch_file = "");
     current_elf = elf_path;
     void'(spike_fini());
     if (spike_init() != 0) begin
@@ -45,6 +46,15 @@ class spike_cosim_checker extends uvm_object;
       `uvm_error("SPIKE_LOAD_FAIL", $sformatf("Failed to load ELF into Spike: %s", elf_path))
       spike_enabled = 0;
       return 0;
+    end
+
+    if (patch_file != "") begin
+      if (spike_apply_memory_patch(patch_file) != 0) begin
+        `uvm_error("SPIKE_PATCH_FAIL", $sformatf("Failed to apply memory patch to Spike ISS: %s",
+                                                 patch_file))
+        spike_enabled = 0;
+        return 0;
+      end
     end
 
     spike_enabled = 1;

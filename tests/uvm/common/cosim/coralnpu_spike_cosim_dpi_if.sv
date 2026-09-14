@@ -64,6 +64,10 @@ package coralnpu_spike_cosim_dpi_if;
     output logic [127:0] value
   );
 
+  // Function to apply a binary memory patch to Spike memory.
+  // Returns 0 on success.
+  import "DPI-C" function int spike_apply_memory_patch(input string patch_file);
+
   // Function to finalize and free Spike simulator resources.
   // Returns 0 on success.
   import "DPI-C" function int spike_fini();

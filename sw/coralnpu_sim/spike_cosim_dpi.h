@@ -56,6 +56,11 @@ int spike_set_register(const char *name, uint32_t value);
 // Returns 0 on success.
 int spike_get_vector_register(const char *name, svLogicVecVal *value);
 
+// Applies binary memory patch records (uint64_t addr, uint32_t len, bytes)
+// into Spike ISS memory via WriteMemory.
+// Returns 0 on success, non-zero on failure.
+int spike_apply_memory_patch(const char *patch_file);
+
 // Finalizes and frees Spike simulator resources.
 // Returns 0 on success.
 int spike_fini();

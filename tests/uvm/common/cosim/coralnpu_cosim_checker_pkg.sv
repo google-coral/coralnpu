@@ -428,6 +428,7 @@ package coralnpu_cosim_checker_pkg;
       test_start_event.wait_trigger();
       forever begin
         string current_test_elf;
+        string mem_patch_file = "";
         bit has_entry_point;
 
         mismatch_detected = 0;
@@ -438,6 +439,7 @@ package coralnpu_cosim_checker_pkg;
         if (uvm_config_db#(string)::get(this, "", "current_test_elf", current_test_elf)) begin
           test_elf = current_test_elf;
         end
+        void'(uvm_config_db#(string)::get(this, "", "mem_patch_file", mem_patch_file));
         has_entry_point = uvm_config_db#(int unsigned)::get(this, "", "entry_point", entry_point);
         if (!has_entry_point) begin
           entry_point = 0;
@@ -445,13 +447,33 @@ package coralnpu_cosim_checker_pkg;
         if (!uvm_config_db#(bit)::get(this, "", "spike_enabled", spike_enabled)) begin
           spike_enabled = 1;
         end
+        if (!uvm_config_db#(bit)::get(this, "", "mpact_enabled", mpact_enabled)) begin
+          if ($test$plusargs("DISABLE_MPACT")) begin
+            mpact_enabled = 0;
+          end else if (mem_patch_file != "") begin
+            // TODO(b/563400507): MPACT's DPI wrapper (@coralnpu_mpact) currently only supports
+            // loading static ELF binaries via mpact_load_program() and lacks a runtime backdoor
+            // memory patching interface (e.g. mpact_apply_memory_patch). When memory patches
+            // (+MEM_PATCH=) are applied, MPACT retains unpatched memory, triggering false co-sim
+            // mismatches on load instructions. Temporarily disable MPACT when mem_patch_file is
+            // active until MPACT's DPI wrapper is extended to support memory patch injection.
+            `uvm_info(
+                get_type_name(),
+                "Memory patch active (+MEM_PATCH); disabling MPACT co-simulation due to missing patch DPI support (Spike active).",
+                UVM_LOW)
+            mpact_enabled = 0;
+          end else begin
+            mpact_enabled = 1;
+          end
+        end
 
         `uvm_info(get_type_name(), $sformatf(
-                  "Initializing Multi-ISS Co-Sim for %s (entry: 0x%h, custom: %0d, spike: %0d)",
+                  "Initializing Multi-ISS Co-Sim for %s (entry: 0x%h, custom: %0d, spike: %0d, mpact: %0d)",
                   test_elf,
                   entry_point,
                   has_entry_point,
-                  spike_enabled
+                  spike_enabled,
+                  mpact_enabled
                   ), UVM_LOW)
 
         // Initialize MPACT
@@ -465,7 +487,9 @@ package coralnpu_cosim_checker_pkg;
 
         // Initialize Spike
         if (spike_enabled) begin
-          if (!spike_checker.initialize(test_elf, entry_point, has_entry_point)) begin
+          if (!spike_checker.initialize(
+                  test_elf, entry_point, has_entry_point, mem_patch_file
+              )) begin
             `uvm_warning(get_type_name(),
                          "Spike in-process initialization failed. Continuing with MPACT.")
           end

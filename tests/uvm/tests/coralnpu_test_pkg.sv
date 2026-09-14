@@ -143,6 +143,11 @@ package coralnpu_test_pkg;
     endfunction
   endclass
 
+  import "DPI-C" function void sram_load_elf(input string filename);
+  import "DPI-C" function void sram_clear();
+  import "DPI-C" function int sram_backdoor_apply_patch(input string filename);
+  import "DPI-C" function int sram_backdoor_dump_memory(input string filename);
+
   //--------------------------------------------------------------------------
   // Class: coralnpu_base_test
   //--------------------------------------------------------------------------
@@ -166,13 +171,15 @@ package coralnpu_test_pkg;
     uvm_event cosim_mismatch_event;
     time clk_period;
     int unsigned entry_point = 0;
+    string test_elf;
+    string mem_patch_file = "";
+    string mem_dump_file = "";
 
     function new(string name = "coralnpu_base_test", uvm_component parent = null);
       super.new(name, parent);
     endfunction
 
     virtual function void build_phase(uvm_phase phase);
-      string test_elf;
       string timeout_str;
       string entry_point_str;
       int timeout_int;
@@ -226,9 +233,13 @@ package coralnpu_test_pkg;
         end
       end
 
+      void'(clp.get_arg_value("+MEM_PATCH=", mem_patch_file));
+      void'(clp.get_arg_value("+MEM_DUMP=", mem_dump_file));
+
       env = coralnpu_env::type_id::create("env", this);
 
       uvm_config_db#(string)::set(this, "*.m_cosim_checker", "current_test_elf", test_elf);
+      uvm_config_db#(string)::set(this, "*.m_cosim_checker", "mem_patch_file", mem_patch_file);
       uvm_config_db#(int unsigned)::set(this, "*.m_cosim_checker", "entry_point", entry_point);
       uvm_config_db#(int unsigned)::set(this, "*.m_cosim_checker", "initial_misa_value",
                                         initial_misa_value);
@@ -266,11 +277,22 @@ package coralnpu_test_pkg;
       coralnpu_pulse_irq_seq pulse_irq_seq;
       phase.raise_objection(this, "Base test running");
 
-      // Memory is loaded by $readmemh in tb_top before run phase starts.
-
       `uvm_info(get_type_name(), "Waiting for reset deassertion...", UVM_MEDIUM)
       @(posedge irq_vif.clk iff irq_vif.resetn == 1'b1);
       `uvm_info(get_type_name(), "Reset deasserted.", UVM_MEDIUM)
+
+      // Load ELF into SRAM via DPI backdoor before triggering test start
+      sram_clear();
+      sram_load_elf(test_elf);
+
+      if (mem_patch_file != "") begin
+        `uvm_info(get_type_name(), $sformatf("Applying memory patch to RTL SRAM: %s",
+                                             mem_patch_file), UVM_LOW)
+        if (sram_backdoor_apply_patch(mem_patch_file) != 0) begin
+          `uvm_error(get_type_name(), $sformatf("Failed to apply memory patch to RTL SRAM: %s",
+                                                mem_patch_file))
+        end
+      end
 
       test_start_event.trigger();
 
@@ -318,6 +340,13 @@ package coralnpu_test_pkg;
       disable fork;
 
       #(clk_period / 2);
+
+      if (mem_dump_file != "") begin
+        `uvm_info(get_type_name(), $sformatf("Dumping SRAM post-halt: %s", mem_dump_file), UVM_LOW)
+        if (sram_backdoor_dump_memory(mem_dump_file) != 0) begin
+          `uvm_error(get_type_name(), $sformatf("Failed to dump SRAM memory to: %s", mem_dump_file))
+        end
+      end
 
       `uvm_info(get_type_name(), "Run phase finishing", UVM_MEDIUM)
       phase.drop_objection(this, "Base test finished");
@@ -409,9 +438,6 @@ package coralnpu_test_pkg;
   //--------------------------------------------------------------------------
   // Class: coralnpu_regression_test
   //--------------------------------------------------------------------------
-  import "DPI-C" function void sram_load_elf(input string filename);
-  import "DPI-C" function void sram_clear();
-
   class coralnpu_regression_test extends coralnpu_base_test;
     `uvm_component_utils(coralnpu_regression_test)
 
