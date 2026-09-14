@@ -25,6 +25,7 @@ MPACT_RISCV_PATCH_FILES = [
     "mpact_riscv_vrgather.patch",
     "mpact_riscv_vsetvl_preserve_vl.patch",
     "mpact_riscv_vstart_trap.patch",
+    "mpact_riscv_widening_reduction.patch",
 ]
 
 MPACT_RISCV_PATCHES = [

@@ -1,0 +1,352 @@
+diff -u -r a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instruction_helpers.h
+--- a/riscv/riscv_vector_instruction_helpers.h	2026-09-14 20:48:59.920875449 +0000
++++ b/riscv/riscv_vector_instruction_helpers.h	2026-09-14 20:52:37.562353299 +0000
+@@ -654,9 +654,12 @@
+   }
+   int sew = rv_vector->selected_element_width();
+   int lmul = rv_vector->vector_length_multiplier();
+-  int lmul_vd = lmul * sizeof(Vd) / sew;
+-  int lmul_vs2 = lmul * sizeof(Vs2) / sew;
+-  int lmul_vs1 = lmul * sizeof(Vs1) / sew;
++  // In vector reductions, the destination (vd) and scalar source (vs1) are
++  // always a single vector register group, effectively LMUL=1, so we use 8 (the
++  // base multiplier).
++  int lmul_vd = 8 * static_cast<int>(sizeof(Vd)) / sew;
++  int lmul_vs2 = lmul * static_cast<int>(sizeof(Vs2)) / sew;
++  int lmul_vs1 = 8 * static_cast<int>(sizeof(Vs1)) / sew;
+   if (lmul_vd > 64 || lmul_vs2 > 64 || lmul_vs1 > 64) {
+     rv_vector->set_vector_exception();
+     LOG(ERROR) << "Illegal lmul value";
+diff -u -r a/riscv/riscv_vector_reduction_instructions.cc b/riscv/riscv_vector_reduction_instructions.cc
+--- a/riscv/riscv_vector_reduction_instructions.cc	2026-09-14 20:53:43.056098590 +0000
++++ b/riscv/riscv_vector_reduction_instructions.cc	2026-09-14 20:53:51.330292388 +0000
+@@ -293,22 +293,20 @@
+   int sew = rv_vector->selected_element_width();
+   switch (sew) {
+     case 1:
+-      return RiscVBinaryReductionVectorOp<uint16_t, uint8_t, uint8_t>(
++      return RiscVBinaryReductionVectorOp<uint16_t, uint8_t, uint16_t>(
+           rv_vector, inst, [](uint16_t acc, uint8_t vs2) -> uint16_t {
+             return acc + static_cast<uint16_t>(vs2);
+           });
+     case 2:
+-      return RiscVBinaryReductionVectorOp<uint32_t, uint16_t, uint16_t>(
++      return RiscVBinaryReductionVectorOp<uint32_t, uint16_t, uint32_t>(
+           rv_vector, inst, [](uint32_t acc, uint16_t vs2) -> uint32_t {
+             return acc + static_cast<uint32_t>(vs2);
+           });
+-      return;
+     case 4:
+-      return RiscVBinaryReductionVectorOp<uint64_t, uint32_t, uint32_t>(
++      return RiscVBinaryReductionVectorOp<uint64_t, uint32_t, uint64_t>(
+           rv_vector, inst, [](uint64_t acc, uint32_t vs2) -> uint64_t {
+             return acc + static_cast<uint64_t>(vs2);
+           });
+-      return;
+     case 8:
+     default:
+       rv_vector->set_vector_exception();
+@@ -323,22 +321,20 @@
+   int sew = rv_vector->selected_element_width();
+   switch (sew) {
+     case 1:
+-      return RiscVBinaryReductionVectorOp<int16_t, int8_t, int8_t>(
++      return RiscVBinaryReductionVectorOp<int16_t, int8_t, int16_t>(
+           rv_vector, inst, [](int16_t acc, int8_t vs2) -> int16_t {
+             return acc + static_cast<int16_t>(vs2);
+           });
+     case 2:
+-      return RiscVBinaryReductionVectorOp<int32_t, int16_t, int16_t>(
++      return RiscVBinaryReductionVectorOp<int32_t, int16_t, int32_t>(
+           rv_vector, inst, [](int32_t acc, int16_t vs2) -> int32_t {
+             return acc + static_cast<int32_t>(vs2);
+           });
+-      return;
+     case 4:
+-      return RiscVBinaryReductionVectorOp<int64_t, int32_t, int32_t>(
++      return RiscVBinaryReductionVectorOp<int64_t, int32_t, int64_t>(
+           rv_vector, inst, [](int64_t acc, int32_t vs2) -> int64_t {
+             return acc + static_cast<int64_t>(vs2);
+           });
+-      return;
+     case 8:
+     default:
+       rv_vector->set_vector_exception();
+diff -u -r a/riscv/test/riscv_vector_fp_reduction_instructions_test.cc b/riscv/test/riscv_vector_fp_reduction_instructions_test.cc
+--- a/riscv/test/riscv_vector_fp_reduction_instructions_test.cc	2026-09-14 20:56:39.266153599 +0000
++++ b/riscv/test/riscv_vector_fp_reduction_instructions_test.cc	2026-09-14 20:56:44.042149651 +0000
+@@ -105,8 +105,10 @@
+       for (int vlen_count = 0; vlen_count < 4; vlen_count++) {
+         int lmul8 = kLmul8Values[lmul_index];
+         int lmul8_vs2 = lmul8 * sizeof(Vs2) / byte_sew;
+-        int lmul8_vs1 = lmul8 * sizeof(Vs1) / byte_sew;
+-        int lmul8_vd = lmul8 * sizeof(Vd) / byte_sew;
++        // vd and vs1 are scalar for reductions, their effective length
++        // multiplier is capped at 1 vector register.
++        int lmul8_vs1 = 8 * sizeof(Vs1) / byte_sew;
++        int lmul8_vd = 8 * sizeof(Vd) / byte_sew;
+         int num_values = lmul8 * kVectorLengthInBytes / (8 * byte_sew);
+         // Set vlen, but leave vlen high at least once.
+         int vlen = 1024;
+diff -u -r a/riscv/test/riscv_vector_reduction_instructions_test.cc b/riscv/test/riscv_vector_reduction_instructions_test.cc
+--- a/riscv/test/riscv_vector_reduction_instructions_test.cc	2026-09-14 20:46:56.733160111 +0000
++++ b/riscv/test/riscv_vector_reduction_instructions_test.cc	2026-09-14 20:54:48.610245065 +0000
+@@ -15,6 +15,7 @@
+ #include "riscv/riscv_vector_reduction_instructions.h"
+ 
+ #include <algorithm>
++#include <array>
+ #include <cstdint>
+ #include <functional>
+ #include <vector>
+@@ -78,15 +79,16 @@
+     // Input values for 8 registers.
+     Vs2 vs2_value[vs2_size * 8];
+     auto vs2_span = Span<Vs2>(vs2_value);
+-    Vs2 vs1_value[vs2_size];
+-    auto vs1_span = Span<Vs2>(vs1_value);
++    constexpr int vd_size = kVectorLengthInBytes / sizeof(Vd);
++    Vd vs1_value[vd_size] = {};
++    auto vs1_span = Span<Vd>(vs1_value);
+     AppendVectorRegisterOperands({kVs2, kVs1, kVmask}, {kVd});
+     // Initialize input values.
+     FillArrayWithRandomValues<Vs2>(vs2_span);
+-    vs1_span[0] = RandomValue<Vs2>();
++    vs1_span[0] = RandomValue<Vd>();
+     auto mask_span = Span<const uint8_t>(kA5Mask);
+     SetVectorRegisterValues<uint8_t>({{kVmaskName, mask_span}});
+-    SetVectorRegisterValues<Vs2>({{kVs1Name, Span<const Vs2>(vs1_span)}});
++    SetVectorRegisterValues<Vd>({{kVs1Name, Span<const Vd>(vs1_span)}});
+     // Initialize the accumulator with the value from vs1[0].
+     for (int i = 0; i < 8; i++) {
+       auto vs2_name = absl::StrCat("v", kVs2 + i);
+@@ -98,7 +100,9 @@
+       for (int vlen_count = 0; vlen_count < 4; vlen_count++) {
+         int lmul8 = kLmul8Values[lmul_index];
+         int lmul8_vs2 = lmul8 * sizeof(Vs2) / byte_sew;
+-        int lmul8_vd = lmul8 * sizeof(Vd) / byte_sew;
++        // vd is scalar for reductions, its effective length multiplier is
++        // capped at 1 vector register.
++        int lmul8_vd = 8 * sizeof(Vd) / byte_sew;
+         int num_values = lmul8 * kVectorLengthInBytes / (8 * byte_sew);
+         // Set vlen, but leave vlen high at least once.
+         int vlen = 1024;
+@@ -424,4 +428,218 @@
+       [](WT val0, T val1) -> WT { return val0 + static_cast<WT>(val1); });
+ }
+ 
++TEST_F(RiscVVectorReductionInstructionsTest,
++       WideningReductionUnsignedMaxLmulMasked) {
++  SetSemanticFunction(&Vwredsumu);
++  AppendVectorRegisterOperands({kVs2, kVs1, kVmask}, {kVd});
++  // sew = 8 (1 byte), lmul = 8 (m8).
++  const uint32_t vtype = (kSewSettingsByByteSize[1] << 3) | kLmulSettings[6];
++  constexpr int kVl = 12;
++  ConfigureVectorUnit(vtype, /*vlen=*/kVl);
++
++  // Scalar input vs1[0] = 0x0100.
++  std::array<uint16_t, kVectorLengthInBytes / sizeof(uint16_t)> vs1_val = {};
++  vs1_val[0] = 0x0100;
++  SetVectorRegisterValues<uint16_t>(
++      {{kVs1Name, Span<const uint16_t>(vs1_val)}});
++
++  // Vector input vs2: Active elements with mask 12'b1110 0011 0000 are indices 4, 5, 9, 10, 11.
++  std::array<uint8_t, kVectorLengthInBytes> vs2_reg0 = {};
++  vs2_reg0[4] = 10;
++  vs2_reg0[5] = 20;
++  vs2_reg0[9] = 3;
++  vs2_reg0[10] = 4;
++  vs2_reg0[11] = 5;
++  // Inactive elements (indices 0, 1, 2, 3) have non-zero values that must not be added.
++  vs2_reg0[0] = 100;
++  vs2_reg0[1] = 100;
++  vs2_reg0[2] = 100;
++  vs2_reg0[3] = 100;
++
++  SetVectorRegisterValues<uint8_t>(
++      {{absl::StrCat("v", kVs2), Span<const uint8_t>(vs2_reg0)}});
++
++  // Clear rest of vs2 registers in m8 group.
++  for (int i = 1; i < 8; ++i) {
++    std::array<uint8_t, kVectorLengthInBytes> vs2_reg_val = {};
++    auto vs2_reg_name = absl::StrCat("v", kVs2 + i);
++    SetVectorRegisterValues<uint8_t>(
++        {{vs2_reg_name, Span<const uint8_t>(vs2_reg_val)}});
++  }
++
++  std::array<uint8_t, kVectorLengthInBytes> mask_val = {};
++  mask_val[0] = 0x30;
++  mask_val[1] = 0x0e;
++  SetVectorRegisterValues<uint8_t>(
++      {{kVmaskName, Span<const uint8_t>(mask_val)}});
++
++  ClearVectorRegisterGroup(kVd, 8);
++  instruction_->Execute();
++
++  EXPECT_FALSE(rv_vector_->vector_exception());
++  // Active sum = 10 + 20 + 3 + 4 + 5 = 42. Result = 0x0100 + 42 = 0x012a.
++  EXPECT_EQ(vreg_[kVd]->data_buffer()->Get<uint16_t>(0), 0x0100 + 42);
++}
++
++TEST_F(RiscVVectorReductionInstructionsTest,
++       WideningReductionSignedMaxLmulMasked) {
++  SetSemanticFunction(&Vwredsum);
++  AppendVectorRegisterOperands({kVs2, kVs1, kVmask}, {kVd});
++  // sew = 8 (1 byte), lmul = 8 (m8).
++  const uint32_t vtype = (kSewSettingsByByteSize[1] << 3) | kLmulSettings[6];
++  constexpr int kVl = 12;
++  ConfigureVectorUnit(vtype, /*vlen=*/kVl);
++
++  // Scalar input vs1[0] = -100 (int16_t).
++  std::array<int16_t, kVectorLengthInBytes / sizeof(int16_t)> vs1_val = {};
++  vs1_val[0] = -100;
++  SetVectorRegisterValues<int16_t>({{kVs1Name, Span<const int16_t>(vs1_val)}});
++
++  // Vector input vs2: Active elements with mask 12'b1110 0011 0000 are indices 4, 5, 9, 10, 11.
++  std::array<int8_t, kVectorLengthInBytes> vs2_reg0 = {};
++  vs2_reg0[4] = -10;
++  vs2_reg0[5] = 25;
++  vs2_reg0[9] = -5;
++  vs2_reg0[10] = -20;
++  vs2_reg0[11] = 30;
++  // Inactive elements.
++  vs2_reg0[0] = 50;
++  vs2_reg0[1] = -50;
++
++  SetVectorRegisterValues<int8_t>(
++      {{absl::StrCat("v", kVs2), Span<const int8_t>(vs2_reg0)}});
++
++  for (int i = 1; i < 8; ++i) {
++    std::array<int8_t, kVectorLengthInBytes> vs2_reg_val = {};
++    auto vs2_reg_name = absl::StrCat("v", kVs2 + i);
++    SetVectorRegisterValues<int8_t>(
++        {{vs2_reg_name, Span<const int8_t>(vs2_reg_val)}});
++  }
++
++  std::array<uint8_t, kVectorLengthInBytes> mask_val = {};
++  mask_val[0] = 0x30;
++  mask_val[1] = 0x0e;
++  SetVectorRegisterValues<uint8_t>(
++      {{kVmaskName, Span<const uint8_t>(mask_val)}});
++
++  ClearVectorRegisterGroup(kVd, 8);
++  instruction_->Execute();
++
++  EXPECT_FALSE(rv_vector_->vector_exception());
++  // Active sum = (-10) + 25 + (-5) + (-20) + 30 = 20. Result = -100 + 20 = -80.
++  EXPECT_EQ(vreg_[kVd]->data_buffer()->Get<int16_t>(0), -80);
++}
++
++TEST_F(RiscVVectorReductionInstructionsTest,
++       WideningReductionAllMaskedOutPreservesScalar) {
++  SetSemanticFunction(&Vwredsumu);
++  AppendVectorRegisterOperands({kVs2, kVs1, kVmask}, {kVd});
++  // sew = 8, lmul = 8.
++  const uint32_t vtype = (kSewSettingsByByteSize[1] << 3) | kLmulSettings[6];
++  ConfigureVectorUnit(vtype, /*vlen=*/16);
++
++  std::array<uint16_t, kVectorLengthInBytes / sizeof(uint16_t)> vs1_val = {};
++  vs1_val[0] = 0xbeef;
++  SetVectorRegisterValues<uint16_t>(
++      {{kVs1Name, Span<const uint16_t>(vs1_val)}});
++
++  // Set non-zero in vs2.
++  for (int i = 0; i < 8; ++i) {
++    std::array<uint8_t, kVectorLengthInBytes> vs2_reg_val = {};
++    vs2_reg_val.fill(0xff);
++    auto vs2_reg_name = absl::StrCat("v", kVs2 + i);
++    SetVectorRegisterValues<uint8_t>(
++        {{vs2_reg_name, Span<const uint8_t>(vs2_reg_val)}});
++  }
++
++  // All elements masked out (mask = 0).
++  std::array<uint8_t, kVectorLengthInBytes> mask_val = {};
++  SetVectorRegisterValues<uint8_t>(
++      {{kVmaskName, Span<const uint8_t>(mask_val)}});
++
++  ClearVectorRegisterGroup(kVd, 8);
++  instruction_->Execute();
++
++  EXPECT_FALSE(rv_vector_->vector_exception());
++  // When all elements are masked out, scalar operand vs1[0] is still preserved.
++  EXPECT_EQ(vreg_[kVd]->data_buffer()->Get<uint16_t>(0), 0xbeef);
++}
++
++TEST_F(RiscVVectorReductionInstructionsTest, WideningReductionLmul8Sew16AndSew32) {
++  SetSemanticFunction(&Vwredsumu);
++  AppendVectorRegisterOperands({kVs2, kVs1, kVmask}, {kVd});
++
++  // SEW=16 (2 bytes), LMUL=8.
++  {
++    const uint32_t vtype = (kSewSettingsByByteSize[2] << 3) | kLmulSettings[6];
++    ConfigureVectorUnit(vtype, /*vlen=*/8);
++
++    std::array<uint32_t, kVectorLengthInBytes / sizeof(uint32_t)> vs1_val = {};
++    vs1_val[0] = 0x1000'0000;
++    SetVectorRegisterValues<uint32_t>(
++        {{kVs1Name, Span<const uint32_t>(vs1_val)}});
++
++    std::array<uint16_t, kVectorLengthInBytes / sizeof(uint16_t)> vs2_reg0 = {};
++    vs2_reg0[0] = 0x1000;
++    vs2_reg0[1] = 0x2000;
++    SetVectorRegisterValues<uint16_t>(
++        {{absl::StrCat("v", kVs2), Span<const uint16_t>(vs2_reg0)}});
++
++    for (int i = 1; i < 8; ++i) {
++      std::array<uint16_t, kVectorLengthInBytes / sizeof(uint16_t)> vs2_reg_val = {};
++      auto vs2_reg_name = absl::StrCat("v", kVs2 + i);
++      SetVectorRegisterValues<uint16_t>(
++          {{vs2_reg_name, Span<const uint16_t>(vs2_reg_val)}});
++    }
++
++    std::array<uint8_t, kVectorLengthInBytes> mask_val = {};
++    mask_val[0] = 0x03;  // Elements 0 and 1 active.
++    SetVectorRegisterValues<uint8_t>(
++        {{kVmaskName, Span<const uint8_t>(mask_val)}});
++
++    ClearVectorRegisterGroup(kVd, 8);
++    instruction_->Execute();
++
++    EXPECT_FALSE(rv_vector_->vector_exception());
++    EXPECT_EQ(vreg_[kVd]->data_buffer()->Get<uint32_t>(0),
++              0x1000'0000 + 0x1000 + 0x2000);
++  }
++
++  // SEW=32 (4 bytes), LMUL=8.
++  {
++    const uint32_t vtype = (kSewSettingsByByteSize[4] << 3) | kLmulSettings[6];
++    ConfigureVectorUnit(vtype, /*vlen=*/4);
++
++    std::array<uint64_t, kVectorLengthInBytes / sizeof(uint64_t)> vs1_val = {};
++    vs1_val[0] = 0x1'0000'0000ULL;
++    SetVectorRegisterValues<uint64_t>(
++        {{kVs1Name, Span<const uint64_t>(vs1_val)}});
++
++    std::array<uint32_t, kVectorLengthInBytes / sizeof(uint32_t)> vs2_reg0 = {};
++    vs2_reg0[0] = 0x1000'0000;
++    vs2_reg0[1] = 0x2000'0000;
++    SetVectorRegisterValues<uint32_t>(
++        {{absl::StrCat("v", kVs2), Span<const uint32_t>(vs2_reg0)}});
++
++    for (int i = 1; i < 8; ++i) {
++      std::array<uint32_t, kVectorLengthInBytes / sizeof(uint32_t)> vs2_reg_val = {};
++      auto vs2_reg_name = absl::StrCat("v", kVs2 + i);
++      SetVectorRegisterValues<uint32_t>(
++          {{vs2_reg_name, Span<const uint32_t>(vs2_reg_val)}});
++    }
++
++    std::array<uint8_t, kVectorLengthInBytes> mask_val = {};
++    mask_val[0] = 0x03;
++    SetVectorRegisterValues<uint8_t>(
++        {{kVmaskName, Span<const uint8_t>(mask_val)}});
++
++    ClearVectorRegisterGroup(kVd, 8);
++    instruction_->Execute();
++
++    EXPECT_FALSE(rv_vector_->vector_exception());
++    EXPECT_EQ(vreg_[kVd]->data_buffer()->Get<uint64_t>(0),
++              0x1'0000'0000ULL + 0x1000'0000ULL + 0x2000'0000ULL);
++  }
++}
++
+ }  // namespace

@@ -116,6 +116,9 @@ template_rule(
         "rvv_vstart_pipeline_test": {
             "srcs": ["rvv_vstart_pipeline_test.S"],
         },
+        "vwredsumu_test": {
+            "srcs": ["vwredsumu_test.cc"],
+        },
     },
 )
 
@@ -154,6 +157,7 @@ filegroup(
         "vslide_boundary_test.elf",
         "vstart_store.elf",
         "vstart_test.elf",
+        "vwredsumu_test.elf",
     ],
 )
 
