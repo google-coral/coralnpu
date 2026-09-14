@@ -15,9 +15,25 @@
   $display("Error: Undefine VLEN, default: VLEN=128.\n");
 `endif
 
+`define BYTE_WIDTH              8
+`define HWORD_WIDTH             16
+`define WORD_WIDTH              32
+
 `define VLENB                   (`VLEN/`BYTE_WIDTH)
 `define VLENH                   (`VLEN/`HWORD_WIDTH)
 `define VLENW                   (`VLEN/`WORD_WIDTH)
+
+`ifdef TB_SUPPORT
+  `ifndef RVVI_ON
+    `define RVVI_ON
+  `endif
+`endif
+
+// number of scalar core issue lane
+`define ISSUE_LANE              4
+`define INST_LANE               4
+
+`define REGIDX_WIDTH            5
 
 // multi-issue and multi-read-ports of VRF
 `ifdef DISPATCH3
@@ -69,6 +85,9 @@
   `define ROB_DEPTH             16
 `endif
 
+// VRF REG depth
+`define NUM_VRF                 32
+
 // Uops Queue data width
 `define UQ_WIDTH                $bits(UOP_QUEUE_t)
 
@@ -115,6 +134,9 @@
 `endif
 
 `define NUM_RT_UOP              4
+`define PC_WIDTH                32
+`define XLEN                    32
+`define FLEN                    32
 `define EMUL_MAX                8
 
 `ifdef ZVE32F_ON
@@ -159,6 +181,7 @@
 `define FUNCT6_WIDTH            6
 `define NFIELD_WIDTH            3
 `define VM_WIDTH                1
+`define REGFILE_INDEX_WIDTH     5
 `define UMOP_WIDTH              5
 `define NREG_WIDTH              3
 `define IMM_WIDTH               5
