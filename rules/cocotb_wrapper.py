@@ -408,10 +408,15 @@ if __name__ == "__main__":
             )
         if verilator_lib_dir:
             cur_ld = os.environ.get("LD_LIBRARY_PATH", "")
-            test_flags['extra_env']['LD_LIBRARY_PATH'] = (
+            os.environ['LD_LIBRARY_PATH'] = (
                 f"{verilator_lib_dir}:{cur_ld}"
                 if cur_ld else verilator_lib_dir
             )
+            if 'extra_env' not in test_flags or not isinstance(
+                    test_flags['extra_env'], dict):
+                test_flags['extra_env'] = {}
+            test_flags['extra_env']['LD_LIBRARY_PATH'] = os.environ[
+                'LD_LIBRARY_PATH']
     else:
         runner.build(**build_flags)
 
