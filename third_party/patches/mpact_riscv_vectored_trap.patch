@@ -1,0 +1,78 @@
+diff --git a/riscv/riscv_state.cc b/riscv/riscv_state.cc
+--- a/riscv/riscv_state.cc
++++ b/riscv/riscv_state.cc
+@@ -739,7 +739,7 @@
+   // Get trap destination.
+   int trap_vector_mode = tvec_csr->AsUint64() & 0x3ULL;
+   uint64_t trap_target = tvec_csr->AsUint64() & ~0x3ULL;
+-  if (trap_vector_mode == 1) {
++  if (trap_vector_mode == 1 && is_interrupt) {
+     trap_target += 4 * exception_code;
+   }
+
+diff --git a/riscv/test/riscv_state_test.cc b/riscv/test/riscv_state_test.cc
+--- a/riscv/test/riscv_state_test.cc
++++ b/riscv/test/riscv_state_test.cc
+@@ -196,4 +196,62 @@
+   dummy_inst->DecRef();
+ }
+
++
++TEST(RiscVStateTest, VectoredTrapPc) {
++  FlatDemandMemory memory;
++  auto state = std::make_unique<RiscVState>("test", RiscVXlen::RV32, &memory);
++
++  // Set mtvec to 0x1000 with MODE=1 (Vectored). Base address is 0x1000.
++  state->mtvec()->Set(static_cast<uint32_t>(0x1001));
++
++  auto* dummy_inst = new mpact::sim::riscv::Instruction(0x0, nullptr);
++  dummy_inst->set_size(4);
++
++  // 1. Synchronous exception into M-mode (e.g. ECALL, code 11).
++  // Under RISC-V Privileged Architecture Spec 3.1.7, in Vectored mode,
++  // all synchronous exceptions MUST jump to BASE (0x1000), NOT BASE + 4*cause.
++  state->Trap(
++      /*is_interrupt=*/false, /*trap_value=*/0,
++      static_cast<uint64_t>(ExceptionCode::kEnvCallFromMMode),
++      /*epc=*/0x500, dummy_inst);
++  EXPECT_EQ(state->pc_operand()->AsUint32(0), 0x1000);
++
++  // 2. Asynchronous interrupt into M-mode (e.g. timer interrupt, code 7).
++  // In Vectored mode, interrupts MUST jump to BASE + 4 * cause (0x1000 + 4*7 = 0x101c).
++  state->Trap(/*is_interrupt=*/true, /*trap_value=*/0,
++              /*exception_code=*/7, /*epc=*/0x500, dummy_inst);
++  EXPECT_EQ(state->pc_operand()->AsUint32(0), 0x101c);
++
++  // 3. Direct mode (MODE=0): all traps (exceptions and interrupts) jump to BASE.
++  state->mtvec()->Set(static_cast<uint32_t>(0x1000));
++  state->Trap(
++      /*is_interrupt=*/false, /*trap_value=*/0,
++      static_cast<uint64_t>(ExceptionCode::kEnvCallFromMMode),
++      /*epc=*/0x500, dummy_inst);
++  EXPECT_EQ(state->pc_operand()->AsUint32(0), 0x1000);
++
++  state->Trap(/*is_interrupt=*/true, /*trap_value=*/0,
++              /*exception_code=*/7, /*epc=*/0x500, dummy_inst);
++  EXPECT_EQ(state->pc_operand()->AsUint32(0), 0x1000);
++
++  // 4. S-mode vectored trap with delegation.
++  state->stvec()->Set(static_cast<uint32_t>(0x2001));
++  state->medeleg()->Set(
++      uint64_t{1} << static_cast<int>(ExceptionCode::kInstructionAddressMisaligned));
++  state->mideleg()->Set(uint64_t{1} << 5);
++  state->set_privilege_mode(PrivilegeMode::kSupervisor);
++
++  state->Trap(
++      /*is_interrupt=*/false, /*trap_value=*/0,
++      static_cast<uint64_t>(ExceptionCode::kInstructionAddressMisaligned),
++      /*epc=*/0x600, dummy_inst);
++  EXPECT_EQ(state->pc_operand()->AsUint32(0), 0x2000);
++
++  state->Trap(/*is_interrupt=*/true, /*trap_value=*/0,
++              /*exception_code=*/5, /*epc=*/0x600, dummy_inst);
++  EXPECT_EQ(state->pc_operand()->AsUint32(0), 0x2014);
++
++  dummy_inst->DecRef();
++}
++
+ }  // namespace

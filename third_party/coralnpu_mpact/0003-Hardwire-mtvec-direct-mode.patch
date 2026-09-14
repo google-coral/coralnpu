@@ -1,0 +1,83 @@
+From: Alex Van Damme <atv@google.com>
+Date: Mon, 14 Sep 2026 22:35:00 +0000
+Subject: [PATCH] Hardwire mtvec to direct mode for CoralNPU
+
+Under RISC-V Privileged Architecture Specification (Section 3.1.7),
+mtvec is a WARL register and MODE (bits [1:0]) only accepts supported
+trap vector modes. Because CoralNPU hardware only supports Direct mode
+(MODE=0), bits [1:0] must be hardwired to 0. Mask writes and reads to
+prevent entering unsupported vectored mode.
+
+---
+ sim/coralnpu_state.cc              |  6 ++++++
+ sim/coralnpu_v2_state.cc           | 10 +++++++++-
+ sim/test/coralnpu_v2_state_test.cc | 11 +++++++++++
+ 3 files changed, 26 insertions(+), 1 deletion(-)
+
+diff --git a/sim/coralnpu_state.cc b/sim/coralnpu_state.cc
+index a5b871c..209930f 100644
+--- a/sim/coralnpu_state.cc
++++ b/sim/coralnpu_state.cc
+@@ -64,6 +64,12 @@ CoralNPUState::CoralNPUState(
+   if (!csr_set()->AddCsr(&kisa_).ok()) {
+     LOG(FATAL) << "Failed to register kisa";
+   }
++  auto* mtvec_csr =
++      dynamic_cast<::mpact::sim::riscv::RiscVSimpleCsr<uint32_t>*>(mtvec());
++  if (mtvec_csr != nullptr) {
++    mtvec_csr->set_write_mask(~0x3U);
++    mtvec_csr->set_read_mask(~0x3U);
++  }
+ 
+   absl::StatusOr<RiscVCsrInterface*> result = csr_set()->GetCsr("misa");
+   if (!result.ok()) {
+diff --git a/sim/coralnpu_v2_state.cc b/sim/coralnpu_v2_state.cc
+index adb1160..c0b904e 100644
+--- a/sim/coralnpu_v2_state.cc
++++ b/sim/coralnpu_v2_state.cc
+@@ -18,6 +18,7 @@
+ #include <memory>
+ #include <string>
+ 
++#include "riscv/riscv_csr.h"
+ #include "riscv/riscv_state.h"
+ #include "mpact/sim/generic/instruction.h"
+ #include "mpact/sim/util/memory/memory_interface.h"
+@@ -44,7 +45,14 @@ namespace {
+ CoralNPUV2State::CoralNPUV2State(
+     std::string id, RiscVXlen xlen, MemoryInterface* memory,
+     ::mpact::sim::util::AtomicMemoryOpInterface* atomic_memory)
+-    : RiscVState(id, xlen, memory, atomic_memory) {}
++    : RiscVState(id, xlen, memory, atomic_memory) {
++  auto* mtvec_csr =
++      dynamic_cast<::mpact::sim::riscv::RiscVSimpleCsr<uint32_t>*>(mtvec());
++  if (mtvec_csr != nullptr) {
++    mtvec_csr->set_write_mask(~0x3U);
++    mtvec_csr->set_read_mask(~0x3U);
++  }
++}
+ 
+ CoralNPUV2State::~CoralNPUV2State() = default;
+ 
+diff --git a/sim/test/coralnpu_v2_state_test.cc b/sim/test/coralnpu_v2_state_test.cc
+index 548cbe7..b1b2cd4 100644
+--- a/sim/test/coralnpu_v2_state_test.cc
++++ b/sim/test/coralnpu_v2_state_test.cc
+@@ -60,6 +60,17 @@ TEST(CoralNPUV2StateTest, HasPermission) {
+   // permissions).
+   EXPECT_FALSE(state->HasPermission(0x6FFC, 8, MemoryPermission::kRead));
+ }
++
++TEST(CoralNPUV2StateTest, MtvecDirectModeOnly) {
++  auto memory = std::make_unique<FlatDemandMemory>();
++  auto state = CreateCoralNPUV2State("test", RiscVXlen::RV32, memory.get());
++
++  state->mtvec()->Write(static_cast<uint32_t>(0x1001));
++  EXPECT_EQ(state->mtvec()->AsUint32(), 0x1000);
++
++  state->mtvec()->Write(static_cast<uint32_t>(0x1003));
++  EXPECT_EQ(state->mtvec()->AsUint32(), 0x1000);
++}
+ 
+ }  // namespace
+ }  // namespace coralnpu::sim

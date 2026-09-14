@@ -77,6 +77,11 @@ template_rule(
     },
 )
 
+coralnpu_v2_binary(
+    name = "vectored_exception_trap",
+    srcs = ["vectored_exception_trap.cc"],
+)
+
 filegroup(
     name = "elf_files",
     srcs = [
@@ -89,6 +94,7 @@ filegroup(
         ":load_fault_1.elf",
         ":store_fault_0.elf",
         ":store_fault_1.elf",
+        ":vectored_exception_trap.elf",
         ":vfwadd_trap.elf",
         ":vfwmul_trap.elf",
         ":vfwsub_trap.elf",

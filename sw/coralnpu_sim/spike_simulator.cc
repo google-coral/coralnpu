@@ -26,6 +26,7 @@
 
 #include "fesvr/elfloader.h"
 #include "riscv/cfg.h"
+#include "riscv/csrs.h"
 #include "riscv/encoding.h"
 #include "riscv/extension.h"
 #include "riscv/mmu.h"
@@ -139,6 +140,18 @@ static reg_t SafeMpauseHandler(processor_t *p, insn_t insn, reg_t pc) {
   return pc + 4;
 }
 
+static void ConfigureCoralNpuCsrs(processor_t *proc) {
+  if (!proc)
+    return;
+  auto *state = proc->get_state();
+  // CoralNPU only supports Direct trap mode (MODE=0).
+  // Under RISC-V Privileged Architecture Specification (Section 3.1.7),
+  // mtvec.MODE is a WARL field that only accepts supported modes.
+  // Configure mtvec with a write mask rejecting non-zero MODE bits.
+  state->add_csr(CSR_MTVEC,
+                 state->mtvec = std::make_shared<masked_csr_t>(proc, CSR_MTVEC, ~(reg_t)3, 0));
+}
+
 }  // namespace
 
 struct SpikeSimulator::Impl {
@@ -216,6 +229,8 @@ struct SpikeSimulator::Impl {
 
     // Enable vector ALU execution with non-zero vstart
     proc->VU.vstart_alu = true;
+
+    ConfigureCoralNpuCsrs(proc);
   }
 
   ~Impl() {
@@ -239,6 +254,7 @@ void SpikeSimulator::Reset() {
     impl_->proc->get_state()->dcsr->ebreakvs = true;
     impl_->proc->get_state()->dcsr->ebreakvu = true;
     impl_->proc->VU.vstart_alu               = true;
+    ConfigureCoralNpuCsrs(impl_->proc);
   }
   impl_->step_count = 0;
 }

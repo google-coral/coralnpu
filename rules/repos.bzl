@@ -417,6 +417,7 @@ def mpact_repos():
             "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_f_instructions.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_vector_csr.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_vsetvl_preserve_vl.patch",
+            "@coralnpu_hw//third_party/patches:mpact_riscv_vectored_trap.patch",
         ],
         patch_args = ["-p1"],
     )
@@ -427,7 +428,10 @@ def mpact_repos():
         sha256 = "426328af9681929b262147538e61c7b6545bebf70e4db2d483c94d9613ac5909",
         strip_prefix = "coralnpu-mpact-e2a26e6d983f13d4c10875e4e5878a6171c04a06",
         workspace_file = "@coralnpu_hw//third_party/coralnpu_mpact:WORKSPACE",
-        patches = ["@coralnpu_hw//third_party/coralnpu_mpact:0002-Patch-mpact_riscv-WORKSPACE.patch"],
+        patches = [
+            "@coralnpu_hw//third_party/coralnpu_mpact:0002-Patch-mpact_riscv-WORKSPACE.patch",
+            "@coralnpu_hw//third_party/coralnpu_mpact:0003-Hardwire-mtvec-direct-mode.patch",
+        ],
         patch_args = ["-p1"],
     )
 

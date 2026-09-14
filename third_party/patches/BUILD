@@ -23,4 +23,5 @@ exports_files([
     "mpact_riscv_vstart_trap.patch",
     "mpact_riscv_vector_csr.patch",
     "mpact_riscv_vsetvl_preserve_vl.patch",
+    "mpact_riscv_vectored_trap.patch",
 ])

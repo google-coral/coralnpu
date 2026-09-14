@@ -114,6 +114,25 @@ TEST(SpikeSimulatorTest, CsrReadWrite) {
   sim.WriteRegister("unknown_csr_xyz", 0x123);  // Should not crash
 }
 
+TEST(SpikeSimulatorTest, MtvecDirectModeOnly) {
+  SpikeSimulator sim;
+
+  // Verify that mtvec only supports Direct trap mode (MODE=0, bits [1:0] == 00).
+  // Writing values with non-zero MODE bits (e.g. 0x1 for Vectored mode, 0x3 for reserved)
+  // must be masked to 0 per RISC-V Privileged Architecture Specification (Section 3.1.7)
+  // for implementations that do not support Vectored trap mode.
+  sim.WriteRegister("mtvec", 0x10001);
+  EXPECT_EQ(sim.ReadRegister("mtvec"), 0x10000);
+
+  sim.WriteRegister("mtvec", 0x20003);
+  EXPECT_EQ(sim.ReadRegister("mtvec"), 0x20000);
+
+  // Verify that after Reset(), the direct mode WARL invariant is preserved.
+  sim.Reset();
+  sim.WriteRegister("mtvec", 0x30001);
+  EXPECT_EQ(sim.ReadRegister("mtvec"), 0x30000);
+}
+
 TEST(SpikeSimulatorTest, VectorRegisterReadWrite128Bit) {
   SpikeSimulator sim;
 

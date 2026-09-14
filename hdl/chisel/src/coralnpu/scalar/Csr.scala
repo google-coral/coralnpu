@@ -560,6 +560,8 @@ class Csr(p: Parameters) extends Module {
     )
   )
 
+  val mtvec_w = Cat(localWdata(mtvec)(p.programCounterBits - 1, 2), 0.U(2.W))
+
   val fflags_base = WireDefault(fflags)
   when(req.valid) {
     when(fflagsEn) { fflags_base := wdata(4, 0) }
@@ -571,7 +573,7 @@ class Csr(p: Parameters) extends Module {
     }
     when(mstatusEn) { mstatus_mie := wdata(3); mstatus_mpie := wdata(7) }
     when(mieEn) { mie := wdata & "h888".U }
-    when(mtvecEn) { mtvec := localWdata(mtvec) }
+    when(mtvecEn) { mtvec := mtvec_w }
     // Writes to mstatush are ignored (hardwired zero)
     when(mscratchEn) { mscratch := wdata }
     when(mepcEn) { mepc := localWdata(mepc) }
@@ -762,7 +764,7 @@ class Csr(p: Parameters) extends Module {
   // Forwarding.
   io.bru.out.mode  := mode
   io.bru.out.mepc  := Mux(mepcEn && req.valid, localWdata(mepc), mepc)
-  io.bru.out.mtvec := Mux(mtvecEn && req.valid, localWdata(mtvec), mtvec)
+  io.bru.out.mtvec := Mux(mtvecEn && req.valid, mtvec_w, mtvec)
 
   val frmBypass = MuxCase(
     frm,
@@ -801,7 +803,7 @@ class Csr(p: Parameters) extends Module {
     Seq(
       mstatusEn  -> mstatusWord(wdata(3), wdata(7)),
       mieEn      -> (wdata & "h888".U),
-      mtvecEn    -> localWdata(mtvec),
+      mtvecEn    -> mtvec_w,
       mepcEn     -> localWdata(mepc),
       misaEn     -> misa,
       mstatushEn -> 0.U,
