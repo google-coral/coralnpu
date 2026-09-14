@@ -299,7 +299,7 @@ module rvv_backend_rob
       assign rd_rob2rt[i].uop_pc           = uop_rob2rt[i].uop_pc;
     `endif          
       assign rd_rob2rt[i].rob_tag          = uop_rob2rt[i].rob_tag;
-      assign rd_rob2rt[i].res_updating_end = uop_rob2rt[i].res_updating_end;          
+      assign rd_rob2rt[i].res_updating_end = uop_rob2rt[i].res_updating_end;
       assign rd_rob2rt[i].last_uop_valid   = uop_rob2rt[i].last_uop_valid;
       assign rd_rob2rt[i].w_valid         = res_mem[wind_uop_rptr[i]].w_valid & uop_done[wind_uop_rptr[i]];
       assign rd_rob2rt[i].w_index         = uop_rob2rt[i].w_index;

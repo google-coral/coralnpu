@@ -25,10 +25,13 @@ module fp_align#(
   // also, prod_exponent=(raw < E_align) ? trimmed : raw
   //
   // For ordinary subnormal align mode, set minimum = 1, trimmed = 0
-  input  logic [OUT_EXP_BITS-1:0]      align_minimum_exponent, // reference exponent, Em
-  input  logic [OUT_EXP_BITS-1:0]      align_trimmed_exponent, // trimmed exponent, ET, see "2."
+  input  logic signed [OUT_EXP_BITS-1:0] align_minimum_exponent, // reference exponent, Em
+  input  logic signed [OUT_EXP_BITS-1:0] align_trimmed_exponent, // trimmed exponent, ET, see "2."
 
   // normal product
+  // out_exponent's bit pattern equals out_exponent_fix truncated to OUT_EXP_BITS.
+  // Callers using Em>=0 (subnormal-align) interpret it as unsigned [0, 2^OUT_EXP_BITS-1];
+  // callers using batch-normalize with possibly-negative Em should reinterpret via $signed().
   output logic [OUT_EXP_BITS-1:0]      out_exponent,
   output logic [OUT_SIG_BITS-1:0]      out_significand,
   output logic                         out_round_bit,
@@ -79,7 +82,10 @@ module fp_align#(
   logic exponent_too_tiny;  // the signal providing "*" info above
 
   localparam int unsigned MAX_EXP_BITS = 32'(2 + (IN_EXP_BITS > OUT_EXP_BITS ? IN_EXP_BITS : OUT_EXP_BITS));
-  wire signed[MAX_EXP_BITS-1:0] align_exponent_distance = MAX_EXP_BITS'($signed(in_exponent - align_minimum_exponent)); // Er=E0-Em
+  // Sign-extend both operands to MAX_EXP_BITS before subtracting so the distance stays
+  // correct when Em is negative (batch-normalize with tiny products).
+  wire signed[MAX_EXP_BITS-1:0] align_exponent_distance =
+      MAX_EXP_BITS'(in_exponent) - MAX_EXP_BITS'(align_minimum_exponent); // Er=E0-Em
   // Compute t in the wider signed exponent domain so we can catch very-negative Er that would
   // otherwise wrap into a spurious small positive when truncated to the narrow shamt width.
   wire signed [MAX_EXP_BITS-1:0] tiny_shamt_wide = align_exponent_distance + MAX_EXP_BITS'(OUT_SIG_BITS + 1);
@@ -89,7 +95,7 @@ module fp_align#(
   logic signed[MAX_EXP_BITS-1:0] out_exponent_raw;
 
   // see cases above and below
-  wire in_case_c = ($signed(align_exponent_distance) >= MAX_EXP_BITS'($signed({1'b0, lzc_cnt_fix})));
+  wire in_case_c = !in_zero && ($signed(align_exponent_distance) >= MAX_EXP_BITS'($signed({1'b0, lzc_cnt_fix})));
 
   always_comb begin
     exponent_too_tiny = 1'b0;
@@ -99,7 +105,10 @@ module fp_align#(
     end else if (in_case_c) begin
       // (c) can be aligned to MSB
       shamt = {1'b0, lzc_cnt} + {1'b0, OUT_SIG_BITS} + 1;
-      out_exponent_raw = (MAX_EXP_BITS)'(in_exponent - lzc_cnt);
+      // Widen both operands to MAX_EXP_BITS before subtracting so a negative in_exponent
+      // (batch-normalize with tiny products) sign-extends instead of getting turned into
+      // a large positive by the unsigned promotion of the narrow subtract.
+      out_exponent_raw = MAX_EXP_BITS'(in_exponent) - MAX_EXP_BITS'(lzc_cnt);
       // do not use lzc_cnt_fix:
       // 1. if in_sig == 0, shamt and out_exponent_raw won't affect final result
       // 2. in_sig should not be 0 (guarded by assertion)
@@ -166,11 +175,11 @@ module fp_align#(
     assign out_exponent_fix = out_exponent_raw;
   end endgenerate
 
-  assign overflow     = |out_exponent_fix[MAX_EXP_BITS-2:OUT_EXP_BITS];
+  // Overflow flags only the positive-out-of-range case. When Em can be negative
+  // (batch-normalize with tiny products), out_exponent_fix's sign-extended top
+  // bits are all 1s -- those must not be misread as overflow.
+  assign overflow     = ~out_exponent_fix[MAX_EXP_BITS-1] &
+                        |out_exponent_fix[MAX_EXP_BITS-2:OUT_EXP_BITS];
   assign out_exponent = out_exponent_fix[OUT_EXP_BITS-1:0];
-  `ifdef ASSERT_ON
-    `rvv_forbid(out_exponent_fix[MAX_EXP_BITS-1])
-      else $warning("Exponent must be non-negative in correct design");
-  `endif
 
 endmodule

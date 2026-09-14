@@ -347,23 +347,19 @@ endgenerate
                                   rob2rt_write_data[j].w_valid & 
                                   rob2rt_write_data[j].res_updating_end;
 
-    
       rvvrob2rt_data[j]         = rob2rt_write_data[j];
       rvvrob2rt_data[j].w_valid = rvvrob2rt_valid[j];  
-    `ifndef RVVI_ON
-      rvvrob2rt_data[j].w_data  = 'b0;
-    `endif
 
+    `ifdef RVVI_ON
       if(rob2rt_write_data[j].w_type==VRF) begin
         for(int i=0;i<`VLENB;i++) begin
           rvvrob2rt_data[j].vd_type                             = {`VLENB{BODY_ACTIVE}};
-        `ifdef RVVI_ON
           rvvrob2rt_data[j].w_data[i*`BYTE_WIDTH+:`BYTE_WIDTH]  = vrfres_strobe[j][i] 
                                                                 ? vrfres[j][i*`BYTE_WIDTH+:`BYTE_WIDTH] 
                                                                 : vrf_data[rob2rt_write_data[j].w_index][i*`BYTE_WIDTH+:`BYTE_WIDTH];
-        `endif
         end
       end
+    `endif
     end
   end
 

@@ -79,4 +79,9 @@ module rvv_backend_decode_unit
     endcase
   end
 
+  `ifdef ASSERT_ON
+    `rvv_forbid(inst_valid && !lcmd_valid)
+    else $info("PC(0x%h) is a reserved/nop instruction. RvvBackend.Decoder retired it directly.\n",$sampled(inst.inst_pc));
+  `endif
+
 endmodule

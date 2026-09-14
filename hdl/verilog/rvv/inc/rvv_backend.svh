@@ -81,8 +81,8 @@ typedef struct packed {
   RVVLMUL                       lmul_orig;
 `ifdef ZVT_ON
   // VME (Zvt) non-tile state. Packed mtype view assembled from {tm, tk,
-  // mtwiden} per §15.1.1.2; widths follow the literal spec bit allocation
-  // (tk in [6:5] = 2 bits, mtwiden in [1:0] = 2 bits, tm in [23:10] = 14
+  // mtwiden} per ?5.1.1.2; widths follow the literal spec bit allocation
+  // (tk in [7:5] = 3 bits, mtwiden in [1:0] = 2 bits, tm in [23:10] = 14
   // bits).
   logic                         altfmt;
   logic [1:0]                   mtwiden;
@@ -117,7 +117,7 @@ typedef struct packed {
   logic [`ROB_TAG_WIDTH-1:0] rob_tag;
   RVVOpCode                  opcode;
   logic [24:0]               bits;
-  logic [`XLEN-1:0]          rs1;
+  logic [`XLEN-1:0]               rs1;
   RVVConfigState             arch_state;
 } RVVCmd;
 
@@ -735,18 +735,18 @@ typedef struct packed {
 typedef struct packed {
   logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][`WORD_WIDTH-1:0]  res;
   logic [`TE/2*`COMPRATIO-1:0][`TE/2-1:0][3:0]              resMask;  
-  fpnew_pkg::status_t [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]     status;
+  fpnew_pkg::status_t                                       status;
   MULBULKTAG_t                                              tag; 
 } MULBULKRES_t;
 
 typedef struct packed {
 `ifdef TB_SUPPORT
-  logic [`PC_WIDTH-1:0]                                     uop_pc;
+  logic [`PC_WIDTH-1:0]                               uop_pc;
 `endif
-  fpnew_pkg::status_t [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]     status;
-  logic [$clog2(`NUM_MT)-1:0]                               writeMtIdx; 
-  logic [$clog2(`PROCESS_DELAY)-1:0]                        writeMtId;
-  logic                                                     lastUopVld;
+  fpnew_pkg::status_t                                 status;
+  logic [$clog2(`NUM_MT)-1:0]                         writeMtIdx;
+  logic [$clog2(`PROCESS_DELAY)-1:0]                  writeMtId;
+  logic                                               lastUopVld;
 } ADDERTAG_t;
 
 typedef struct packed {
@@ -770,6 +770,8 @@ typedef struct packed {
 typedef struct packed {
   logic                                                     Vld;
 `ifdef RVVI_ON
+  logic [`PC_WIDTH-1:0]                                     inst_pc;
+  fpnew_pkg::status_t                                       status;
   logic [3:0][$clog2(`NUM_MT)-1:0]                          rvviMtIdx;
   logic [3:0][`NUM_SUBTILE/2-1:0]                           rvviSubVld;
   logic [3:0][`NUM_SUBTILE/2-1:0][$clog2(`NUM_SUBTILE)-1:0] rvviSubIdx;
@@ -781,6 +783,12 @@ typedef struct packed {
 typedef struct packed {
   logic [`PC_WIDTH-1:0]                               uop_pc;
   logic [$clog2(`NUM_MT)-1:0]                         mtIdx;
+} MISC_RTINFO_t;
+
+typedef struct packed {
+  logic [`PC_WIDTH-1:0]                               uop_pc;
+  logic [$clog2(`NUM_MT)-1:0]                         mtIdx;
+  fpnew_pkg::status_t                                 status;
 } PE_RTINFO_t;
 `endif
 
@@ -791,6 +799,7 @@ typedef struct packed {
   logic [`ROB_TAG_WIDTH-1:0]                          rob_tag;
   logic                                               isStore;
 `ifdef RVVI_ON
+  fpnew_pkg::status_t                                 status;
   logic [3:0]                                         mtIdxVld;
   logic [3:0][$clog2(`NUM_MT)-1:0]                    mtIdx;
   logic [3:0][`NUM_SUBTILE-1:0][`SUBTILE_SIZE*8-1:0]  mtData;       

@@ -263,7 +263,7 @@ module zvt_pe_array (
         vaInfoHi.op      = peCmd[0].dst_index[0] ? INTMUL : UINTMUL;
         vaInfoLo.opMod   = peCmd[0].altfmt;
         vaInfoHi.opMod   = peCmd[0].altfmt;
-      `ifdef ZVTI16I32_ON
+      `ifdef ZVTI16I32MM_ON
         vaInfoLo.isrcFmt = peCmd[0].sew==SEW16 ? fpnew_pkg::INT16 : fpnew_pkg::INT8;
         vaInfoHi.isrcFmt = peCmd[0].sew==SEW16 ? fpnew_pkg::INT16 : fpnew_pkg::INT8;
       `else
@@ -276,8 +276,13 @@ module zvt_pe_array (
       OPFVV: begin
         vaInfoLo.op      = FPMUL;
         vaInfoHi.op      = FPMUL;
+      `ifdef ZVTBF16FMM_ON
         vaInfoLo.fsrcFmt = peCmd[0].sew==SEW16 ? fpnew_pkg::FP16ALT : fpnew_pkg::FP32;
         vaInfoHi.fsrcFmt = peCmd[0].sew==SEW16 ? fpnew_pkg::FP16ALT : fpnew_pkg::FP32;
+      `else
+        vaInfoLo.fsrcFmt = fpnew_pkg::FP32;
+        vaInfoHi.fsrcFmt = fpnew_pkg::FP32;
+      `endif
         vaInfoLo.fdstFmt = fpnew_pkg::FP32;
         vaInfoHi.fdstFmt = fpnew_pkg::FP32;
       end

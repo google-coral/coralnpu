@@ -30,11 +30,14 @@ module fp_mulfront#(
   //
   // For ordinary subnormal align mode, set minimum = 1, trimmed = 0, raw output can be ignored
   output logic signed[IN_EXP_BITS+2-1:0] prod_exponent_raw,  // = Ea+Eb-BIAS, MSB +1b, sign +1b -> total +2b
-  input  logic [OUT_EXP_BITS-1:0]        align_minimum_exponent, // reference exponent, Em
-  input  logic [OUT_EXP_BITS-1:0]        align_trimmed_exponent, // trimmed exponent, ET, see "3."
+  output logic signed[IN_EXP_BITS+2-1:0] prod_exponent_norm,
+  input  logic signed[OUT_EXP_BITS-1:0]  align_minimum_exponent, // reference exponent, Em (signed for batch-normalize)
+  input  logic signed[OUT_EXP_BITS-1:0]  align_trimmed_exponent, // trimmed exponent, ET, see "3."
 
   // normal product
   output logic                           prod_sign,
+  // prod_exponent carries the fp_align bit pattern verbatim. Callers that pass a
+  // possibly-negative Em should reinterpret via $signed() on this output.
   output logic [OUT_EXP_BITS-1:0]        prod_exponent,
   output logic [OUT_SIG_BITS-1:0]        prod_significand,
   output logic                           prod_round_bit,
@@ -130,6 +133,9 @@ module fp_mulfront#(
   // USE_LZA_POSTFIX handle the possible 1-bit overshoot.
   localparam int unsigned RAW_LZC_WIDTH = 32'($clog2(IN_SIG_BITS*2));
   wire [RAW_LZC_WIDTH-1:0] lza_scnt = {1'b0, lzc_a_cnt} + {1'b0, lzc_b_cnt} + 1'b1;
+
+  assign prod_exponent_norm = (a_zero | b_zero) ? prod_exponent_raw
+    : prod_exponent_raw - (IN_EXP_BITS+2)'($signed({1'b0, lza_scnt})) + 1'b1;
 
   // 3. Align
   fp_align#(

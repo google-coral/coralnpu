@@ -90,7 +90,10 @@ module fp_addfront#(
   wire [IN_EXP_BITS-1:0] subnormal_fix_align_exp = max_exponent > 1 ? max_exponent : (IN_EXP_BITS)'(1'd1);
 
   // fp_align needs real exponents...
-  wire signed[1:0][IN_EXP_BITS:0] in_exponents;
+  // Signedness lives on the element type so a per-lane slice keeps its sign
+  // when fed to fp_align.in_exponent (declared signed).
+  typedef logic signed [IN_EXP_BITS:0] s_in_exp_t;
+  s_in_exp_t [1:0] in_exponents;
   assign in_exponents[0] = {1'b0, a_exponent[IN_EXP_BITS-1:1], a_exponent[0] | ~a_implicit_bit};
   assign in_exponents[1] = {1'b0, b_exponent[IN_EXP_BITS-1:1], b_exponent[0] | ~b_implicit_bit};
 
@@ -99,7 +102,7 @@ module fp_addfront#(
   assign in_significands[0] = {a_implicit_bit, a_mantissa};
   assign in_significands[1] = {b_implicit_bit, b_mantissa};
 
-  wire [1:0][IN_EXP_BITS-1:0]  aligned_exponents;
+  wire [1:0][IN_EXP_BITS:0]    aligned_exponents;  // width follows u_in_align OUT_EXP_BITS
   wire [1:0][OUT_SIG_BITS+1:0] aligned_significands;
   wire [1:0]                   aligned_round_bits, aligned_sticky_bits, aligned_sticky_msbs;
   wire [1:0]                   overflow;
@@ -109,7 +112,9 @@ module fp_addfront#(
     fp_align#(
       .IN_EXP_BITS(IN_EXP_BITS + 1),  // align needs signed input
       .IN_SIG_BITS(IN_SIG_BITS),
-      .OUT_EXP_BITS(IN_EXP_BITS),
+      // +1 so the (now-signed) Em/ET ports can hold IN_EXP_BITS-wide unsigned exponents
+      // (e.g., FP32 encoded exp 254 = 0x0FE) as non-negative signed values.
+      .OUT_EXP_BITS(IN_EXP_BITS + 1),
       .OUT_SIG_BITS(OUT_SIG_BITS + 2)  // 2 bit guard bit, one for subtract borrow guard, one for precise sticky msb
     ) u_in_align (
       .in_exponent   (in_exponents[i]),
@@ -117,8 +122,10 @@ module fp_addfront#(
       .ext_lzc_cnt   ('1), // dont care
       .ext_in_zero   ('1), // dont care
 
-      .align_minimum_exponent(subnormal_fix_align_exp),
-      .align_trimmed_exponent(max_exponent),
+      // Explicitly zero-extend into the signed (IN_EXP_BITS+1)-wide Em/ET ports so
+      // FP32 encoded exponents up to 254 stay non-negative signed.
+      .align_minimum_exponent({1'b0, subnormal_fix_align_exp}),
+      .align_trimmed_exponent({1'b0, max_exponent}),
 
       .out_exponent   (aligned_exponents[i]),
       .out_significand(aligned_significands[i]),
@@ -132,9 +139,9 @@ module fp_addfront#(
       `rvv_forbid(aligned_exponents[0] != max_exponent ||
                   aligned_exponents[1] != max_exponent)
         else $error("Aligned exponent should be equal to max_exponent by design");
-      `rvv_forbid((aligned_exponents[0] == 0 && aligned_significands[0][IN_SIG_BITS-1]))
+      `rvv_forbid((aligned_exponents[0] == 0 && aligned_significands[0][OUT_SIG_BITS+2-1]))
         else $error("Exponent and significand argue on it is subnormal for input a");
-      `rvv_forbid((aligned_exponents[1] == 0 && aligned_significands[1][IN_SIG_BITS-1]))
+      `rvv_forbid((aligned_exponents[1] == 0 && aligned_significands[1][OUT_SIG_BITS+2-1]))
         else $error("Exponent and significand argue on it is subnormal for input b");
       `rvv_forbid(|overflow)
         else $error("Overflow should not happen on align stage in correct design");
@@ -147,7 +154,7 @@ module fp_addfront#(
   `endif
 
   wire [OUT_SIG_BITS+2+1-1:0] sum_significand;  // another MSB for overflow
-  wire [IN_EXP_BITS-1:0] sum_exponent = max_exponent;
+  wire [IN_EXP_BITS-1:0] sum_exponent = subnormal_fix_align_exp;
   wire sum_round_bit, sum_sticky_bit;
   wire sum_negative;
 

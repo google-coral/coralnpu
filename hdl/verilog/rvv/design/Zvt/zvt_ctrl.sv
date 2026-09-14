@@ -42,7 +42,7 @@ module zvt_ctrl (
   rtCmdRdy,
   miscRtVld
 `ifdef RVVI_ON
-  ,miscRtMtIdx
+  ,miscRtInfo
 `endif
 );
 
@@ -94,7 +94,7 @@ module zvt_ctrl (
   // LSU/MV/Zero retiring informaiton
   output logic                      miscRtVld;
 `ifdef RVVI_ON
-  output logic [$clog2(`NUM_MT)-1:0]  miscRtMtIdx;
+  output MISC_RTINFO_t              miscRtInfo;
 `endif
 
 // -------------- code start --------------------
@@ -172,7 +172,7 @@ module zvt_ctrl (
   assign index     = uop[0].tss.index;
   assign vstart    = uop[0].vstart;
   assign tm        = uop[0].tm[$clog2(`TE):0];
-  assign tn        = uop[0].vl;
+  assign tn        = (isVme2Lsu||isLsu2Vme) & (uop[0].vl>`TE) ? `TE : uop[0].vl;
   assign uop_index = uop[0].uop_index;
   
   // element type
@@ -693,7 +693,9 @@ module zvt_ctrl (
   assign rtCmd.tssPattern = pattern;
   assign rtCmd.mt_index = (isMv2Vme || isLsu2Vme) ? tile : uop[0].dst_index[4:1];
   assign rtCmd.eew_mt   = uop[0].eew_mt;
-  assign miscRtMtIdx    = (isMv2Vme || isLsu2Vme) ? tile : uop[0].dst_index[4:1];
+
+  assign miscRtInfo.uop_pc = uop[0].uop_pc;
+  assign miscRtInfo.mtIdx  = (isMv2Vme || isLsu2Vme) ? tile : uop[0].dst_index[4:1];
 `endif
 
   // Every rtCmd push must be matched by exactly one push into each of zvt's

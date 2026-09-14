@@ -10,7 +10,6 @@ module fp_rounding#(
   // Controls
   input fpnew_pkg::fp_format_e    dst_fmt,              // output format
   input fpnew_pkg::roundmode_e    rnd_mode,             // rounding mode
-  input logic                     exact_zero_keep_sign, // whether to output +0 on exact +-0 input
 
   // Input numeric
   input logic                     preround_sign,        // sign
@@ -21,8 +20,13 @@ module fp_rounding#(
   input logic                     sticky_msb,           // mantissa "0.25 bit" for IEEE UF check
 
   // Output numeric
-  output logic [WIDTH-1:0]        round_normal_result,  // output WHEN NOT OVERFLOW
-  output fpnew_pkg::status_t      status                // rounding status, will raise OF/UF/NX on condition
+  output logic [WIDTH-1:0]        round_normal_result,     // output WHEN NOT OVERFLOW
+  // When status.OF is asserted, the caller must substitute the result:
+  //   round_of_to_max_norm==1 -> substitute with max-normal of dst_fmt with preround_sign
+  //   round_of_to_max_norm==0 -> substitute with infinity  of dst_fmt with preround_sign
+  // A pure function of {rnd_mode, preround_sign}; only meaningful when status.OF is set.
+  output logic                    round_of_to_max_norm,
+  output fpnew_pkg::status_t      status                   // rounding status, will raise OF/UF/NX on condition
 );
 
   // Pre-round overflow check
@@ -89,6 +93,18 @@ module fp_rounding#(
     endcase
   end
 
+  // On overflow (status.OF), IEEE-754 requires the substitution to be max-normal instead
+  // of infinity for: RTZ, ROD, RDN with positive sign, RUP with negative sign.
+  always_comb begin : of_saturate_decision
+    unique case (rnd_mode)
+      fpnew_pkg::RNE, fpnew_pkg::RMM: round_of_to_max_norm = 1'b0;
+      fpnew_pkg::RTZ, fpnew_pkg::ROD: round_of_to_max_norm = 1'b1;
+      fpnew_pkg::RDN:                 round_of_to_max_norm = ~preround_sign;
+      fpnew_pkg::RUP:                 round_of_to_max_norm =  preround_sign;
+      default:                        round_of_to_max_norm = fpnew_pkg::DONT_CARE;
+    endcase
+  end
+
   logic [NUM_FORMATS-1:0][SUPER_MAN_BITS-1:0] fmt_carry_in_bits;
   for (genvar i = 0; i < NUM_FORMATS; i++) begin
     assign fmt_carry_in_bits[i] = ((SUPER_MAN_BITS)'(FP_FMT_CONFIG[i]))
@@ -124,12 +140,13 @@ module fp_rounding#(
     || ((preround_exponent == 0) && (round_exponent == 1) &&
         (!(result_round_bit & result_sticky_bit) || (!result_sticky_msb && (rnd_mode == fpnew_pkg::RNE || rnd_mode == fpnew_pkg::RMM))));
 
-  wire result_sign = (input_is_zero && !exact_zero_keep_sign) ? 1'b0 : preround_sign;
-  assign round_normal_result = {result_sign, round_exponent, round_mantissa};
+  assign round_normal_result = {preround_sign, round_exponent, round_mantissa};
   assign status.NV = 1'b0;
   assign status.DZ = 1'b0;
   assign status.OF = preround_overflow | postround_overflow;
   assign status.UF = postround_underflow & status.NX;
-  assign status.NX = result_round_bit | result_sticky_bit;
+  // IEEE-754: overflow always implies inexact. On preround_overflow the round/sticky bits
+  // are masked to 0 by preround_visible_bits, so OF must be ORed in explicitly.
+  assign status.NX = result_round_bit | result_sticky_bit | preround_overflow | postround_overflow;
 
 endmodule

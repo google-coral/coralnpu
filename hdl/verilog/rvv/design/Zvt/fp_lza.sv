@@ -40,13 +40,25 @@ module fp_lza #(
   assign f[WIDTH]     = ~sub & p[WIDTH-1];
   assign f[WIDTH-1:0] = (pp1 & (g & ~km1 | k & ~gm1)) | (~pp1 & (k & ~km1 | g & ~gm1));
 
+  logic                       f_empty;
+  logic [$clog2(WIDTH+1)-1:0] scnt_raw;
+
   lzc #(
     .WIDTH ( WIDTH+1 ),
     .MODE  ( 1       )
   ) i_lzc (
-    .in_i    ( f    ),
-    .cnt_o   ( scnt ),
-    .empty_o (      )
+    .in_i    ( f        ),
+    .cnt_o   ( scnt_raw ),
+    .empty_o ( f_empty  )
   );
+
+  // f == 0 carries no transition to anticipate.  It happens exactly when
+  // |result| <= 1: a subtract of two adjacent operands, whose two's-complement
+  // form is the all-ones string (a-b == -1), or an exact zero.  lzc then reports
+  // cnt_o = 0, which under-predicts by the full width and breaks the
+  // over-predict-only contract.  In both cases the magnitude's leading 1 (if any)
+  // sits at bit 0 of the WIDTH-bit result, so the exact count is WIDTH-1.
+  // |result| == 0 is reported to the caller separately (fp_absaddsub.sum_is_zero).
+  assign scnt = f_empty ? ($clog2(WIDTH+1))'(WIDTH-1) : scnt_raw;
 
 endmodule

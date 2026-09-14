@@ -123,13 +123,13 @@ module zvt_pe_adder_fp_lane#(
   // ----------
 
   logic [WIDTH-1:0]        round_normal_result;
+  logic                    round_of_to_max_norm;
   fpnew_pkg::status_t      round_status;
   fp_rounding#(
     .FP_FMT_CONFIG(5'b10001) // only FP32 should be fine, but lint failed
   ) u_rounding (
     .dst_fmt             (fpnew_pkg::FP32),
     .rnd_mode            (rnd_mode_q),
-    .exact_zero_keep_sign(rnd_mode_q != fpnew_pkg::ROD),  // TODO: align behavior with model
     .preround_sign       (mid_pipe[NUM_MID_REGS].sign),
     .preround_exponent   (mid_pipe[NUM_MID_REGS].exponent),
     .preround_mantissa   (mid_pipe[NUM_MID_REGS].mantissa),
@@ -138,20 +138,28 @@ module zvt_pe_adder_fp_lane#(
     .sticky_msb          (mid_pipe[NUM_MID_REGS].sticky_msb),
 
     .round_normal_result (round_normal_result),
+    .round_of_to_max_norm(round_of_to_max_norm),
     .status              (round_status));
 
+  logic inf_sign;
+  wire [31:0] fp32_inf = {inf_sign, 8'hff, 23'b0};
 
-  wire [31:0] fp32_inf = {mid_pipe[NUM_MID_REGS].special_inf_sign, 8'hff, 23'b0};
+  logic [WIDTH-1:0] overflow_result;
+  assign overflow_result = round_of_to_max_norm ?
+    {mid_pipe[NUM_MID_REGS].sign, 8'hFE, 23'h7FFFFF} : fp32_inf;
+
    // special mux
   always_comb begin
+    inf_sign = mid_pipe[NUM_MID_REGS].sign;
     if (mid_pipe[NUM_MID_REGS].special_nan) begin
-      result = {1'b0, 8'b1, 1'b1, 22'b0};  // qNaN
+      result = {1'b0, 8'hFF, 1'b1, 22'b0};  // qNaN
       status = '{NV: mid_pipe[NUM_MID_REGS].special_invalid, default: '0};
     end else if (mid_pipe[NUM_MID_REGS].special_inf) begin
+      inf_sign = mid_pipe[NUM_MID_REGS].special_inf_sign;
       result = fp32_inf;
       status = '0;
     end else begin
-      result = round_status.OF ? fp32_inf : round_normal_result;
+      result = round_status.OF ? overflow_result : round_normal_result;
       status = round_status;
     end
   end

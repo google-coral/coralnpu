@@ -1579,7 +1579,7 @@ module rvv_backend_decode_unit_ari_de2
                 EEW8: begin
                   vs1_offset[i] = {uop_index_current[i][`UOP_INDEX_WIDTH_ALU-2:0], 1'b0};
                 end
-              `ifdef ZVTI16I32_ON
+              `ifdef ZVTI16I32MM_ON
                 EEW16: begin
                   vs1_offset[i] = {uop_index_current[i][1], 1'b0, uop_index_current[i][0]};
                 end
@@ -1804,7 +1804,7 @@ module rvv_backend_decode_unit_ari_de2
                 EEW8: begin
                   vs2_offset[i] = {uop_index_current[i][`UOP_INDEX_WIDTH_ALU-2:0], 1'b0};
                 end
-              `ifdef ZVTI16I32_ON
+              `ifdef ZVTI16I32MM_ON
                 EEW16: begin
                   vs2_offset[i] = {uop_index_current[i][1], 1'b0, uop_index_current[i][0]};
                 end
@@ -1934,8 +1934,12 @@ module rvv_backend_decode_unit_ari_de2
 
           `ifdef ZVT_ON
             VCOMPRESS_VTMVTV: begin
-              vs2_offset[i] = uop_index_current[i][`UOP_INDEX_WIDTH_ALU-1:0];
-              vs2_valid[i]  = 1'b1;
+              // vtmv.t.v only; vcompress.vv (OPMVV) reads vs2 via PMTRDT's
+              // internal gather engine, not this dispatch-time port.
+              if (inst_funct3==OPMVX) begin
+                vs2_offset[i] = uop_index_current[i][`UOP_INDEX_WIDTH_ALU-1:0];
+                vs2_valid[i]  = 1'b1;
+              end
             end
           `endif
           endcase

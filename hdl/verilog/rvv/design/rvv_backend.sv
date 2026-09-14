@@ -155,13 +155,8 @@ module rvv_backend
 // RVV.ROB retires for the normal instructions.
 // They both need to retire instruction to RetirementBuffer for synthesis.
 // Once the test is passed, delete TB_SUPPORT and else-block
-  `ifdef TB_SUPPORT
     output  logic     [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_valid_rob2rt_o;
     output  ROB2RT_t  [`NUM_RT_UOP+`NUM_DE_INST-1:0]  rd_rob2rt_o;
-  `else
-    output  logic     [`NUM_RT_UOP-1:0]               rd_valid_rob2rt_o;
-    output  ROB2RT_t  [`NUM_RT_UOP-1:0]               rd_rob2rt_o;
-  `endif
     
 // rvv_backend is not active.(IDLE)
     output  logic                                 rvv_idle;
@@ -179,7 +174,6 @@ module rvv_backend
 
     logic         [`NUM_DE_INST-1:0]      lcmd_valid_de2lcq;
     LCMD_t        [`NUM_DE_INST-1:0]      lcmd_de2lcq;
-
     logic         [`NUM_DE_INST-1:0]      de2rt_valid;
     ROB2RT_t      [`NUM_DE_INST-1:0]      de2rt_data;
   // Legal command queue to Decode in DE2 stage
@@ -284,13 +278,11 @@ module rvv_backend
     logic         [`NUM_LSU-1:0]          mapinfo_valid;
     LSU_MAP_INFO_t  [`NUM_LSU-1:0]        mapinfo;
     logic         [`NUM_LSU-1:0]          pop_mapinfo;
-    logic                                 mapinfo_empty;
     logic         [`NUM_LSU-1:0]          mapinfo_almost_empty;
   // LSU result
     logic         [`NUM_LSU-1:0]          lsu_res_valid;
     UOP_LSU_t     [`NUM_LSU-1:0]          lsu_res;
     logic         [`NUM_LSU-1:0]          pop_lsu_res;
-    logic                                 lsu_res_empty;
     logic         [`NUM_LSU-1:0]          lsu_res_almost_full;
     logic         [`NUM_LSU-1:0]          lsu_res_almost_empty;
     logic         [`NUM_LSU-1:0]          uop_lsu_valid;
@@ -412,9 +404,9 @@ module rvv_backend
         .pop          (pop_de2cq),
         .dataout      (inst_cq2de),
       // fifo status
-        .empty        (fifo_empty_cq2de),
         .full         (),
         .almost_full  (),
+        .empty        (fifo_empty_cq2de),
         .almost_empty (fifo_almost_empty_cq2de),
         .clear        (trap_flush_rvv),
         .fifo_data    (),
@@ -443,8 +435,8 @@ module rvv_backend
       .inst               (inst_cq2de),
       .lcmd_valid         (lcmd_valid_de2lcq),
       .lcmd               (lcmd_de2lcq),
-      .de2rt_valid        (de2rt_valid),
-      .de2rt_data         (de2rt_data)
+      .de2rt_valid      (de2rt_valid),
+      .de2rt_data       (de2rt_data)
     );
   
   // Legal Command Queue
@@ -889,7 +881,7 @@ module rvv_backend
       // fifo status
         .full         (),
         .almost_full  (),
-        .empty        (mapinfo_empty),
+        .empty        (),
         .almost_empty (mapinfo_almost_empty),
         .clear        (trap_flush_rvv),
         .fifo_data    (),
@@ -925,7 +917,7 @@ module rvv_backend
     );
 
   // LSU feedback result
-    assign uop_lsu_valid = uop_lsu_valid_lsu2rvv;
+    assign uop_lsu_valid = trap_en ? 'b1 : uop_lsu_valid_lsu2rvv;
     
     assign uop_lsu[0].trap_valid  = trap_en;
     assign uop_lsu[0].uop_lsu2rvv = trap_en ? 'b0 : uop_lsu_lsu2rvv[0];
@@ -959,7 +951,7 @@ module rvv_backend
       // fifo status
         .full         (),
         .almost_full  (lsu_res_almost_full),
-        .empty        (lsu_res_empty),
+        .empty        (),
         .almost_empty (lsu_res_almost_empty),
         .clear        (trap_flush_rvv),
         .fifo_data    (),
@@ -1339,13 +1331,8 @@ module rvv_backend
   // Retire information:
   // Decoder and RVV.ROB both need to retire instruction to RetirementBuffer for synthesis.
   // Once the test is passed, delete TB_SUPPORT and else-block
-  `ifdef TB_SUPPORT
     assign rd_valid_rob2rt_o = {de2rt_valid, rvvrob2rt_valid};
     assign rd_rob2rt_o       = {de2rt_data, rvvrob2rt_data};
-  `else
-    assign rd_valid_rob2rt_o = rd_valid_rob2rt;
-    assign rd_rob2rt_o       = rd_rob2rt;
-  `endif
   
   // rvv_backend IDLE 
   assign rvv_idle = fifo_empty_cq2de&fifo_empty_lcq2de&uq_empty&rob_empty

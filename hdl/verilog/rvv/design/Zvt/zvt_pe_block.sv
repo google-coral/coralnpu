@@ -80,6 +80,7 @@ module zvt_pe_block (
   MULBULKRES_t                                              mulbulkRes;
   logic                                                     mulbulkResRdy;
   MULBULKTAG_t [MULBULKPIPENUM:1]                           mulbulkTagPipe;
+  fpnew_pkg::status_t [`TE/2*`COMPRATIO-1:0][`TE/2-1:0]     mulbulkResStatus;
   // mul+bulk status                                        
   logic                                                     mulbulkBusy;
 
@@ -106,7 +107,7 @@ module zvt_pe_block (
       if ((i==0)&(j==0)) begin
         zvt_pe_mulbulk #(
           .FP_FMT_CONFIG    (5'b10001),
-          `ifdef ZVTI16I32_ON
+          `ifdef ZVTI16I32MM_ON
           .INT_FMT_CONFIG   (2'b11),
           `else
           .INT_FMT_CONFIG   (2'b01),
@@ -136,7 +137,7 @@ module zvt_pe_block (
           .flush          (flush),
           // Output signals
           .result         (mulbulkRes.res[i][j]),
-          .status         (mulbulkRes.status[i][j]),
+          .status         (mulbulkResStatus[i][j]),
           .out_tag        (mulbulkTagPipe),
           // Output handshak
           .out_valid      (mulbulkOutVld[i][j]),
@@ -146,12 +147,16 @@ module zvt_pe_block (
         );
       end else begin
         zvt_pe_mulbulk #(
+        `ifdef ZVTBF16FMM_ON
           .FP_FMT_CONFIG    (5'b10001),
-          `ifdef ZVTI16I32_ON
+        `else
+          .FP_FMT_CONFIG    (5'b10000),
+        `endif
+        `ifdef ZVTI16I32MM_ON
           .INT_FMT_CONFIG   (2'b11),
-          `else
+        `else
           .INT_FMT_CONFIG   (2'b01),
-          `endif
+        `endif
           .NUM_PIPE_REGS    (MULBULKPIPENUM),
           .PIPE_CONFIG      (fpnew_pkg::DISTRIBUTED),
           .REMV_PIPE_BUBBLE (1)
@@ -175,7 +180,7 @@ module zvt_pe_block (
           .flush          (flush),
           // Output signals
           .result         (mulbulkRes.res[i][j]),
-          .status         (mulbulkRes.status[i][j]),
+          .status         (mulbulkResStatus[i][j]),
           .out_tag        (),
           // Output handshak
           .out_valid      (mulbulkOutVld[i][j]),
@@ -191,6 +196,17 @@ module zvt_pe_block (
 
   assign mulbulkRes.tag = mulbulkTagPipe[MULBULKPIPENUM];
   assign mulbulkResVld  = mulbulkOutVld[0][0][MULBULKPIPENUM];   
+
+  // fp status
+  always_comb begin
+    mulbulkRes.status = 'b0;
+    for(int i=0; i<`TE/2*`COMPRATIO; i++) begin
+      for(int j=0; j<`TE/2; j++) begin
+        mulbulkRes.status.OF = mulbulkRes.status.OF | mulbulkOutVld[i][j][MULBULKPIPENUM] & mulbulkResStatus[i][j].OF;
+        mulbulkRes.status.NV = mulbulkRes.status.NV | mulbulkOutVld[i][j][MULBULKPIPENUM] & mulbulkResStatus[i][j].NV;
+      end
+    end
+  end
 
   // output tag for RAW check
   for(genvar i=1; i<=ADDERPIPENUM; i++) begin
@@ -339,11 +355,13 @@ module zvt_pe_block (
 
   // fp status
   always_comb begin
-    fpexp = 'b0;
+    fpexp    = 'b0;
+    fpexp.of = adderResTag.status.OF;
+    fpexp.nv = adderResTag.status.NV;
     for(int i=0; i<`TE/2*`COMPRATIO; i++) begin
       for(int j=0; j<`TE/2; j++) begin
-        fpexp.of = fpexp.of | adderResVld[i][j] && (adderResTag.status[i][j].OF || adderStatus[i][j].OF);
-        fpexp.nv = fpexp.nv | adderResVld[i][j] && (adderResTag.status[i][j].NV || adderStatus[i][j].NV);
+        fpexp.of = fpexp.of | adderResVld[i][j] & adderStatus[i][j].OF;
+        fpexp.nv = fpexp.nv | adderResVld[i][j] & adderStatus[i][j].NV;
       end
     end
   end
@@ -379,8 +397,9 @@ module zvt_pe_block (
   // retire
   assign blkRtVld         = adderResVld[0][0] && adderResTag.lastUopVld;
 `ifdef RVVI_ON
-  assign blkRtInfo.uop_pc = adderResTag.uop_pc;
-  assign blkRtInfo.mtIdx  = adderResTag.writeMtIdx;
+  assign blkRtInfo.uop_pc = adderResVld[0][0] ? adderResTag.uop_pc : 'b0;
+  assign blkRtInfo.mtIdx  = adderResVld[0][0] ? adderResTag.writeMtIdx : 'b0;
+  assign blkRtInfo.status = adderResVld[0][0] ? fpexp : 'b0;
 `endif
 
   // busy

@@ -1,9 +1,6 @@
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `include "rvv_backend.svh"
 `endif
-`ifndef RVV_ASSERT__SVH
-`include "rvv_backend_sva.svh"
-`endif
 
 module rvv_backend_decode_unit_lsu
 (
@@ -34,7 +31,6 @@ module rvv_backend_decode_unit_lsu
   RVVOpCode                       inst_opcode;      // inst original encoding[6:0]
 
   logic   [`XLEN-1:0]             rs1;    
-  logic                           csr_vill;
   logic   [`VSTART_WIDTH-1:0]     csr_vstart;
   logic   [`VL_WIDTH-1:0]         csr_vl;
   logic   [`VL_WIDTH-1:0]         evl;
@@ -44,7 +40,6 @@ module rvv_backend_decode_unit_lsu
 `ifdef ZVT_ON
   logic   [1:0]                   csr_mtwiden;
   logic   [$clog2(`TE):0]         csr_tm;
-  logic   [$clog2(`TE):0]         csr_tn;
   TSS_t                           tss;
 `endif  
   EMUL_e                          emul_vd;          
@@ -105,7 +100,6 @@ module rvv_backend_decode_unit_lsu
   assign inst_vd        = inst_valid ? inst.bits[4:0] : 'b0;
   assign inst_opcode    = inst_valid ? inst.opcode : LOAD;
   assign rs1            = inst_valid ? inst.rs1 : 'b0;
-  assign csr_vill       = inst_valid ? inst.arch_state.vill : 'b0;
   assign csr_vstart     = inst_valid ? inst.arch_state.vstart : 'b0;
   assign csr_vl         = inst_valid ? inst.arch_state.vl : 'b0;
   assign csr_sew        = inst_valid ? inst.arch_state.sew : SEW8;
@@ -114,7 +108,6 @@ module rvv_backend_decode_unit_lsu
   `ifdef ZVT_ON
   assign csr_mtwiden    = inst_valid ? inst.arch_state.mtwiden : 'b0;
   assign csr_tm         = inst_valid ? inst.arch_state.tm : 'b0;
-  assign csr_tn         = csr_vl[$clog2(`TE):0];
   assign tss.tile       = rs1[30:27];
   assign tss.pattern    = rs1[24];
   assign tss.index      = rs1[$clog2(`TE)-1:0];
@@ -3068,33 +3061,12 @@ module rvv_backend_decode_unit_lsu
               if(inst_funct6[5:3]==TILESEW16) begin
                 emul_max      = EMUL2;
                 uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-
-                //if((!tss.pattern && (|csr_tm[$clog2(`TE):$clog2(`TE)-1])) || 
-                //   ( tss.pattern && (|csr_tn[$clog2(`TE):$clog2(`TE)-1])) )
-                //  uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
               end
             end
             LMUL4: begin
               if(inst_funct6[5:3]==TILESEW32) begin
                 emul_max      = EMUL4;
                 uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-
-                //if(!tss.pattern) begin
-                //  if(csr_tm[$clog2(`TE):$clog2(`TE)-2]>=3'b011)
-                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-                //  else if(csr_tm[$clog2(`TE):$clog2(`TE)-2]>=3'b010)
-                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d2);
-                //  else if(csr_tm[$clog2(`TE):$clog2(`TE)-2]>=3'b001)
-                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-                //end
-                //else begin
-                //  if(csr_tn[$clog2(`TE):$clog2(`TE)-2]>=3'b011)
-                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-                //  else if(csr_tn[$clog2(`TE):$clog2(`TE)-2]>=3'b010)
-                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d2);
-                //  else if(csr_tn[$clog2(`TE):$clog2(`TE)-2]>=3'b001)
-                //    uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-                //end
               end
             end
           endcase
@@ -3214,10 +3186,10 @@ module rvv_backend_decode_unit_lsu
         end
       `ifdef ZVT_ON
         TILELDST: begin
-          case({csr_sew, csr_mtwiden})
-            {SEW8, 2'd3},
-            {SEW16, 2'd2},
-            {SEW32, 2'd1}: begin
+          case(csr_sew)
+            SEW8,
+            SEW16,
+            SEW32: begin
               case(inst_funct6[5:3])
                 TILESEW8:  begin
                   eew_mt  = EEW8;
@@ -3424,7 +3396,11 @@ module rvv_backend_decode_unit_lsu
   end
 
   //check common requirements for all instructions
-  assign check_common = check_vd_align&check_vs2_align&check_vd_in_range&check_sew&check_lmul;
+  assign check_common = check_vd_align&check_vs2_align&check_vd_in_range&check_sew&check_lmul
+                      `ifdef RVVCHECK_VSTART_VL
+                        &check_evl_not_0&check_vstart_sle_evl
+                      `endif
+                        ;
 
   // check whether vd is aligned to emul_vd
   always_comb begin
@@ -3568,16 +3544,6 @@ module rvv_backend_decode_unit_lsu
 
   // check vstart < evl
   assign check_vstart_sle_evl = {1'b0,csr_vstart} < evl;
-
-  `ifdef ASSERT_ON
-    `ifdef TB_SUPPORT
-      `rvv_forbid((inst_valid==1'b1)&(inst_encoding_correct==1'b0))
-      else $warning("pc(0x%h) instruction will be discarded directly.\n",$sampled(inst.inst_pc));
-    `else
-      `rvv_forbid((inst_valid==1'b1)&(inst_encoding_correct==1'b0))
-      else $warning("This instruction will be discarded directly.\n");
-    `endif
-  `endif
   
   // update force_vma_agnostic
     //When source and destination registers overlap and have different EEW, the instruction is mask- and tail-agnostic.

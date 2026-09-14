@@ -5,6 +5,8 @@
 module zvt_pe_mulbulk_fp_lane#(
   parameter fpnew_pkg::fmt_logic_t   FP_FMT_CONFIG = 5'b10001,          // Indicates which data types are supported
   parameter int unsigned             NUM_MID_REGS = 1,
+  // Align products s.t. absolute largest have significand[MSB]=1 which results in better precision
+  parameter logic                    ALIGN_PRODUCT_TO_MSB = 1'b1,
   // Do not change
   localparam int unsigned WIDTH          = fpnew_pkg::max_fp_width(FP_FMT_CONFIG),
   localparam int unsigned NUM_FORMATS    = fpnew_pkg::NUM_FP_FORMATS
@@ -58,13 +60,15 @@ module zvt_pe_mulbulk_fp_lane#(
   // ----------
   // Stage 1: multiplication & Batch-normalization
   // ----------
-  localparam int unsigned PROD_EXP_BITS = SUPER_EXP_BITS+1;
+  // +1 for the pre-round overflow bit, +1 for the sign so vector-lane batch-normalize
+  // can carry a possibly-negative max_exp reference without wrap-around.
+  localparam int unsigned PROD_EXP_BITS = SUPER_EXP_BITS+2;
   localparam int unsigned PROD_SIG_BITS = SUPER_MAN_BITS+GUARD_BITS+1;
 
   // defines for fmt_products of all supported formats
   typedef struct packed {
     logic sign;
-    logic [PROD_EXP_BITS-1:0] exponent;
+    logic signed [PROD_EXP_BITS-1:0] exponent;
     logic [PROD_SIG_BITS-1:0] significand;
     logic round_bit, sticky_bit, sticky_msb;
   } fpu_product_t;
@@ -106,36 +110,42 @@ module zvt_pe_mulbulk_fp_lane#(
         `endif
         localparam FMT_VEC_LEN = WIDTH/FMT_BITS;
 
-        logic signed[FMT_VEC_LEN-1:0][EXP_BITS+2-1:0] prod_exponent_raw;
-        logic [EXP_BITS:0] align_minimum_exponent;
-        logic [EXP_BITS:0] align_trimmed_exponent;
+        // Signedness lives on the element type so per-lane slices stay signed
+        // in the max-exponent tree comparisons below.
+        typedef logic signed [EXP_BITS+2-1:0] s_raw_exp_t;
+        s_raw_exp_t [FMT_VEC_LEN-1:0] prod_exponent_raw;
+        s_raw_exp_t [FMT_VEC_LEN-1:0] prod_exponent_norm;
+        // Widened to signed s_raw_exp_t so vector-lane batch-normalize can drive Em from
+        // max_exp_tree directly, including negative values (subnormal * subnormal in a
+        // widen-mode format such as BF16/FP16ALT -> FP32).
+        s_raw_exp_t align_minimum_exponent;
+        s_raw_exp_t align_trimmed_exponent;
 
         // Build up a balanced tree for maximum exponent selection
         localparam int unsigned EXP_TREE_STAGE = 32'($clog2(FMT_VEC_LEN));
-        logic signed[EXP_TREE_STAGE:0][FMT_VEC_LEN-1:0][EXP_BITS+2-1:0] max_exp_tree;
+        s_raw_exp_t[EXP_TREE_STAGE:0][FMT_VEC_LEN-1:0] max_exp_tree;
         // inputs are raw exponents
         always_comb begin
-          // Only build up the tree when in vector mode. In scalar mode, use subnormal align pattern
           max_exp_tree = '0;
           if (FMT_VEC_LEN != 1) begin
-            // build the tree up
-            max_exp_tree[0] = prod_exponent_raw;
+            // Vector lane: build the max_exp tree and always batch-normalize to it.
+            // Unlike before, this holds even when max_exp <= 1 -- keeping every lane
+            // aligned to max_exp (rather than dropping to Em=1/ET=0 subnormal-align)
+            // preserves the "larger operand is MSB-aligned" invariant that
+            // fp_absaddsub's VALID_HIGH_BITS optimization depends on.
+            max_exp_tree[0] = ALIGN_PRODUCT_TO_MSB ? prod_exponent_norm : prod_exponent_raw;
             for (int x = 0; x < EXP_TREE_STAGE; x++) begin: exp_tree_stage
               for (int y = 0; y < (FMT_VEC_LEN >> x); y=y+2) begin: branch
                 max_exp_tree[x+1][y/2] = (max_exp_tree[x][y] > max_exp_tree[x][y+1]) ?
                                           max_exp_tree[x][y] : max_exp_tree[x][y+1];
               end
             end
-          end
-          // select max exponent as align input
-          // if all are within subnormal range, use subnormal pattern
-          // In scalar mode, this is always subnormal pattern
-          if (max_exp_tree[EXP_TREE_STAGE][0] > (EXP_BITS+2)'($signed(1))) begin
             align_minimum_exponent = max_exp_tree[EXP_TREE_STAGE][0];
             align_trimmed_exponent = max_exp_tree[EXP_TREE_STAGE][0];
           end else begin
-            align_minimum_exponent = 'b1;
-            align_trimmed_exponent = 'b0;
+            // Scalar lane: no tree, no batch-normalize -- ordinary subnormal-align mode.
+            align_minimum_exponent = s_raw_exp_t'(1);
+            align_trimmed_exponent = s_raw_exp_t'(0);
           end
         end
 
@@ -173,9 +183,10 @@ module zvt_pe_mulbulk_fp_lane#(
             .b_sign    (operands_masked[1][j*FMT_BITS+MAN_BITS+EXP_BITS]),
             .b_exponent(operands_masked[1][j*FMT_BITS+MAN_BITS           +: EXP_BITS]),
             .b_mantissa(operands_masked[1][j*FMT_BITS                    +: MAN_BITS]),
-            
+
             // export signals for batch-normalize
             .prod_exponent_raw(prod_exponent_raw[j]),
+            .prod_exponent_norm(prod_exponent_norm[j]),
             .align_minimum_exponent(align_minimum_exponent),
             .align_trimmed_exponent(align_trimmed_exponent),
 
@@ -197,7 +208,7 @@ module zvt_pe_mulbulk_fp_lane#(
           assign component_inf_sign[j] = fmt_products[i][j].sign;
 
           `ifdef ASSERT_ON
-            `rvv_forbid(up_valid && reg_enable[0] && src_fmt == i &&
+            `rvv_forbid(up_valid && reg_enable[0] && src_fmt == i && FMT_VEC_LEN == 1 &&
                 ((!fmt_products[i][j].significand[PROD_SIG_BITS-1]) ^ (!(|fmt_products[i][j].exponent))))
               else $warning("Significand and exponent argue on multiply stage is a subnormal");
             if (j != 0) begin
@@ -316,7 +327,10 @@ module zvt_pe_mulbulk_fp_lane#(
   // fmt_tree_* : per-format pre-align adder-tree result. Vector-lane branches
   // publish here; a src_fmt_q-mux selects one bundle to feed u_vec_align.
   logic [NUM_FORMATS-1:0][TREE_OUTPUT_SIG_WIDTH-1:0]                 fmt_tree_sig;
-  logic signed [NUM_FORMATS-1:0][PROD_EXP_BITS+2-1:0]                fmt_tree_exp;
+  // Signedness lives on the element type so a per-format slice keeps its sign
+  // when fed to fp_align.in_exponent (declared signed).
+  typedef logic signed [PROD_EXP_BITS+2-1:0] s_tree_exp_t;
+  s_tree_exp_t [NUM_FORMATS-1:0]                                     fmt_tree_exp;
   logic [NUM_FORMATS-1:0][$clog2(TREE_OUTPUT_SIG_WIDTH)-1:0]         fmt_tree_scnt;
   logic [NUM_FORMATS-1:0]                                            fmt_tree_zero;
 
@@ -394,11 +408,11 @@ module zvt_pe_mulbulk_fp_lane#(
           for (k = 0; k < FMT_VEC_LEN; k = k + 1) begin: load
             wire fpu_product_t this_prod = mid_data_pipe[NUM_MID_REGS][i].fmt_products[k];
             assign fmt_tree_sign[0][k] = this_prod.sign;
+            wire [PROD_SIG_BITS+1:0] this_prod_tail = ALIGN_PRODUCT_TO_MSB ?
+              {this_prod.significand | PROD_SIG_BITS'(this_prod.round_bit | this_prod.sticky_bit), 2'b00} :
+              {this_prod.significand, this_prod.round_bit, this_prod.sticky_bit};
             assign fmt_tree_significand[0][k] = mid_data_pipe[NUM_MID_REGS][i].fmt_product_en[k] ?
-                                              {{FMT_TREE_STAGE{1'b0}},
-                                               this_prod.significand,  // already contains lower guard bits
-                                               this_prod.round_bit,
-                                               this_prod.sticky_bit} :
+                                              {{FMT_TREE_STAGE{1'b0}}, this_prod_tail} :
                                               '0;
           end
 
@@ -410,24 +424,20 @@ module zvt_pe_mulbulk_fp_lane#(
             // Set higher entries to 0 to make spyglass happy.
             for (k = (1 << (FMT_TREE_STAGE-j-1)); k < FMT_VEC_LEN; k++) begin: untouched
               assign fmt_tree_significand[j+1][k] = '0;
+              assign fmt_tree_sign       [j+1][k] = 1'b0;
             end
             for (k = 0; k < (1 << (FMT_TREE_STAGE-j)); k=k+2) begin: branch
               localparam bit LAST_STAGE = (j == (FMT_TREE_STAGE-1)) && (k == 0);
               localparam int unsigned STAGE_IN_WIDTH = PROD_SIG_BITS + j + 2;
-              // When there is only one add stage, one of the operands has significand
-              // whose valid bits occupy only the top 2*MAN_BITS+2, and the
-              // low guard/round/sticky bits are all zero.  This enables the split
-              // optimization in fp_absaddsub.  Otherwise keep VALID_HIGH_BITS =
-              // IN_WIDTH to fall back to the original full-width path.
-              localparam int unsigned STAGE_VALID_HIGH_BITS =
-                  (FMT_TREE_STAGE == 1 && 2*MAN_BITS + 2 < STAGE_IN_WIDTH) ?
-                  (2*MAN_BITS + 2) : STAGE_IN_WIDTH;
               logic sum_negative;
               logic [$clog2(PROD_SIG_BITS+j+2+1)-1:0] scnt_wire;
               // Build up each branch of the tree
+              // Do not use VALID_HIGH_BITS optimization:
+              // Assumption not met: larger of a and b may not aligned to MSB
+              // if both are subnormal.
               fp_absaddsub#(
                 .IN_WIDTH        (STAGE_IN_WIDTH),
-                .VALID_HIGH_BITS (STAGE_VALID_HIGH_BITS),
+                .VALID_HIGH_BITS (STAGE_IN_WIDTH),  // revert high-bits optimization
                 .ENABLE_LZA      (LAST_STAGE)
               ) u_absaddsub(
                 .a          (fmt_tree_significand[j][ k ][PROD_SIG_BITS+j+2-1:0]),
@@ -448,7 +458,10 @@ module zvt_pe_mulbulk_fp_lane#(
 
           // Left align tree result to the input of shared vector fp_align
           assign fmt_tree_sig[i]    = {fmt_tree_significand[FMT_TREE_STAGE][0], {FMT_LSB_PAD{1'b0}}};
-          assign fmt_tree_exp[i]    = {2'b0, mid_data_pipe[NUM_MID_REGS][i].fmt_products[0].exponent} + FMT_TREE_STAGE;
+          // Sign-extend the (now-signed) product exponent before adding the tree
+          // stage offset so a negative batch-normalize reference propagates correctly
+          // into u_vec_align.in_exponent.
+          assign fmt_tree_exp[i]    = s_tree_exp_t'(mid_data_pipe[NUM_MID_REGS][i].fmt_products[0].exponent) + FMT_TREE_STAGE;
           assign fmt_tree_scnt[i]   = fmt_scnt;
           assign fmt_tree_zero[i]   = fmt_zero;
           `ifdef ASSERT_ON
@@ -457,7 +470,8 @@ module zvt_pe_mulbulk_fp_lane#(
           `endif
 
           // Connect fp_align's output to fp_round input of this format
-          assign fmt_preround_sign[i]           = fmt_tree_sign[FMT_TREE_STAGE][0];
+          assign fmt_preround_sign[i]           = fmt_zero ? 1'b0
+                                                : fmt_tree_sign[FMT_TREE_STAGE][0];
           assign fmt_preround_lead_bit[i]       = vec_out_sig[SUPER_MAN_BITS];
           assign fmt_preround_mantissa[i]       = vec_out_sig[SUPER_MAN_BITS-1:0];
           assign fmt_preround_exponent[i]       = vec_out_exp;
@@ -512,13 +526,13 @@ module zvt_pe_mulbulk_fp_lane#(
   // rounding to dst_fmt
   // ----------
   logic [WIDTH-1:0]        round_normal_result;
+  logic                    round_of_to_max_norm;
   fpnew_pkg::status_t      round_status;
   fp_rounding#(
     .FP_FMT_CONFIG(FP_FMT_CONFIG)
   ) u_rounding (
     .dst_fmt             (dst_fmt_q),
     .rnd_mode            (mid_ctrl_pipe[NUM_MID_REGS].rnd_mode),
-    .exact_zero_keep_sign(mid_ctrl_pipe[NUM_MID_REGS].rnd_mode != fpnew_pkg::ROD),  // TODO: align behavior with model
     .preround_sign       (preround_sign),
     .preround_exponent   (preround_exponent),
     .preround_mantissa   (preround_mantissa),
@@ -526,16 +540,23 @@ module zvt_pe_mulbulk_fp_lane#(
     .sticky_bit          (preround_sticky_bit),
     .sticky_msb          (preround_sticky_msb),
     .round_normal_result (round_normal_result),
+    .round_of_to_max_norm(round_of_to_max_norm),
     .status              (round_status));
 
-  logic [NUM_FORMATS-1:0][WIDTH-1:0] fmt_nan, fmt_inf;
+  logic [NUM_FORMATS-1:0][WIDTH-1:0] fmt_nan, fmt_inf, fmt_max_fin;
   logic inf_sign;
   for (i = 0; i < NUM_FORMATS; i++) begin
     localparam EXP_BITS = fpnew_pkg::FP_ENCODINGS[i].exp_bits;
     localparam MAN_BITS = fpnew_pkg::FP_ENCODINGS[i].man_bits;
-    assign fmt_nan[i] = {1'b0,     {EXP_BITS{1'b1}}, 1'b1, {WIDTH-1-EXP_BITS-1{1'b0}}};
-    assign fmt_inf[i] = {inf_sign, {EXP_BITS{1'b1}}, {WIDTH-1-EXP_BITS{1'b0}}        };
+    assign fmt_nan[i]     = {1'b0,     {EXP_BITS{1'b1}}       , 1'b1, {WIDTH-1-EXP_BITS-1{1'b0}}};
+    assign fmt_inf[i]     = {inf_sign, {EXP_BITS{1'b1}}       , {WIDTH-1-EXP_BITS{1'b0}}        };
+    assign fmt_max_fin[i] = {inf_sign, {EXP_BITS{1'b1}} - 1'b1, {WIDTH-1-EXP_BITS{1'b1}}        };
   end
+
+  logic [WIDTH-1:0] overflow_result;
+  // Spec: widen-mode ROD overflows to inf, not max-normal.
+  assign overflow_result = (round_of_to_max_norm && (src_fmt_q == dst_fmt_q)) ?
+    fmt_max_fin[dst_fmt_q] : fmt_inf[dst_fmt_q];
 
   // special mux
   always_comb begin
@@ -548,10 +569,10 @@ module zvt_pe_mulbulk_fp_lane#(
       result = fmt_inf[dst_fmt_q];
       status = '0;
     end else if (final_align_overflow) begin
-      result = fmt_inf[dst_fmt_q];
-      status = '{OF: 1'b1, default: '0};
+      result = overflow_result;
+      status = '{OF: 1'b1, NX: 1'b1, default: '0};
     end else begin
-      result = round_status.OF ? fmt_inf[dst_fmt_q] : round_normal_result;
+      result = round_status.OF ? overflow_result : round_normal_result;
       status = round_status;
     end
   end

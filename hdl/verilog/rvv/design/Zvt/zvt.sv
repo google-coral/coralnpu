@@ -103,8 +103,8 @@ module zvt (
   logic                 miscRtVld;
   logic [`NUM_BLK-1:0]  peRtVld;
 `ifdef RVVI_ON
-  logic [$clog2(`NUM_MT)-1:0] miscRtMtIdx;
-  PE_RTINFO_t [`NUM_BLK-1:0]  peRtInfo;
+  MISC_RTINFO_t              miscRtInfo;
+  PE_RTINFO_t [`NUM_BLK-1:0] peRtInfo;
 `endif
 
   // Controller
@@ -148,7 +148,7 @@ module zvt (
     .rtCmdRdy         (rtCmdRdy),
     .miscRtVld        (miscRtVld)
   `ifdef RVVI_ON
-    ,.miscRtMtIdx     (miscRtMtIdx)
+    ,.miscRtInfo      (miscRtInfo)
   `endif
   );
 
@@ -271,25 +271,52 @@ module zvt (
   assign vmeRtCmdVld = ~rtCmdAempty;
 
   // register rt valid
-  logic miscRtVldD1;
-  logic blk0RtVld, blk1RtVld, blk2RtVld, blk3RtVld;
+  logic                miscRtVldD1;
+  logic [`NUM_BLK-1:0] blkRtVld;
   
   dff regMiscRtVld (.q(miscRtVldD1), .clk(clk), .rst_n(rst_n), .d(miscRtVld));
-  dff regBlk0RtVld (.q(blk0RtVld  ), .clk(clk), .rst_n(rst_n), .d(peRtVld[0]));
-  dff regBlk1RtVld (.q(blk1RtVld  ), .clk(clk), .rst_n(rst_n), .d(blk0RtVld));
-  dff regBlk3RtVld (.q(blk3RtVld  ), .clk(clk), .rst_n(rst_n), .d(blk1RtVld));
+  dff regBlk0RtVld (.q(blkRtVld[0]), .clk(clk), .rst_n(rst_n), .d(peRtVld[0]));
+  dff regBlk1RtVld (.q(blkRtVld[1]), .clk(clk), .rst_n(rst_n), .d(blkRtVld[0]));
+  dff regBlk3RtVld (.q(blkRtVld[3]), .clk(clk), .rst_n(rst_n), .d(blkRtVld[1]));
 
-  assign blk2RtVld = blk1RtVld;
+  assign blkRtVld[2] = blkRtVld[1];
 
 `ifdef RVVI_ON
+  // Block pc
+  logic [`NUM_BLK-1:0][`PC_WIDTH-1:0] pcBlkD1;
+  for(genvar i=0; i<`NUM_BLK; i++) begin
+      dff #(.WIDTH(`PC_WIDTH)) regBlk0Pc (.q(pcBlkD1[i]), .clk(clk), .rst_n(rst_n), .d(peRtInfo[i].uop_pc));
+  end
+
+  // Block fp exception
+  fpnew_pkg::status_t [`NUM_BLK-1:0] statusBlk;
+  fpnew_pkg::status_t [`NUM_BLK-1:0] statusBlkD1;
+  always_comb begin
+      for(int i=0; i<`NUM_BLK; i++) begin
+          statusBlk[i]    = '0;
+          if(blkRtVld[i]) begin
+              statusBlk[i].OF = peRtInfo[i].status.OF;
+              statusBlk[i].NV = peRtInfo[i].status.NV;
+          end else begin
+              statusBlk[i].OF = statusBlkD1[i].OF | peRtInfo[i].status.OF;
+              statusBlk[i].NV = statusBlkD1[i].NV | peRtInfo[i].status.NV;
+          end
+      end
+  end
+
+  for(genvar i=0; i<`NUM_BLK; i++) begin
+      dff #(.WIDTH(5)) regBlk0Status (.q(statusBlkD1[i]), .clk(clk), .rst_n(rst_n), .d(statusBlk[i]));
+  end
+
+  // Mt idx info
   logic [$clog2(`NUM_MT)-1:0] miscRtMtIdxD1;
   logic [$clog2(`NUM_MT)-1:0] blk0RtMtIdx, blk1RtMtIdx, blk2RtMtIdx, blk3RtMtIdx;
 
-  dff #(.WIDTH($clog2(`NUM_MT))) regMiscRtMtIdx (.q(miscRtMtIdxD1), .clk(clk), .rst_n(rst_n), .d(miscRtMtIdx));
-  dff #(.WIDTH($clog2(`NUM_MT))) regBlk0RtMtIdx (.q(blk0RtMtIdx  ), .clk(clk), .rst_n(rst_n), .d(peRtInfo[0].mtIdx));
-  dff #(.WIDTH($clog2(`NUM_MT))) regBlk1RtMtIdx (.q(blk1RtMtIdx  ), .clk(clk), .rst_n(rst_n), .d(blk0RtMtIdx));
-  dff #(.WIDTH($clog2(`NUM_MT))) regBlk3RtMtIdx (.q(blk3RtMtIdx  ), .clk(clk), .rst_n(rst_n), .d(blk1RtMtIdx));
-  
+  dff #(.WIDTH($clog2(`NUM_MT))) regMiscRtMtIdx (.q(miscRtMtIdxD1 ), .clk(clk), .rst_n(rst_n), .d(miscRtInfo.mtIdx));
+  dff #(.WIDTH($clog2(`NUM_MT))) regBlk0RtMtIdx (.q(blk0RtMtIdx   ), .clk(clk), .rst_n(rst_n), .d(peRtInfo[0].mtIdx));
+  dff #(.WIDTH($clog2(`NUM_MT))) regBlk1RtMtIdx (.q(blk1RtMtIdx   ), .clk(clk), .rst_n(rst_n), .d(blk0RtMtIdx));
+  dff #(.WIDTH($clog2(`NUM_MT))) regBlk3RtMtIdx (.q(blk3RtMtIdx   ), .clk(clk), .rst_n(rst_n), .d(blk1RtMtIdx));
+
   assign blk2RtMtIdx = blk1RtMtIdx;
 
   // MT accessing
@@ -405,7 +432,7 @@ module zvt (
       endcase
     end
     else begin
-      if(blk0RtVld) begin
+      if(blkRtVld[0]) begin
         // default: EEW32
         rvviMtIdx[BLKID0][0] = blk0RtMtIdx; 
         rvviMtIdx[BLKID0][1] = blk0RtMtIdx + 'd1; 
@@ -423,7 +450,7 @@ module zvt (
         end
       end
 
-      if(blk1RtVld || blk2RtVld) begin
+      if(blkRtVld[1] || blkRtVld[2]) begin
         // default: EEW32
         rvviMtIdx[BLKID1][0] = blk1RtMtIdx; 
         rvviMtIdx[BLKID1][1] = blk1RtMtIdx + 'd1; 
@@ -449,7 +476,7 @@ module zvt (
         end
       end
 
-      if(blk3RtVld) begin
+      if(blkRtVld[3]) begin
         // default: EEW32
         rvviMtIdx[BLKID3][0] = blk3RtMtIdx; 
         rvviMtIdx[BLKID3][1] = blk3RtMtIdx + 'd1; 
@@ -494,19 +521,18 @@ module zvt (
   MT_INFO_t [`NUM_BLK-1:0] mtRtInfo;
   logic     [`NUM_BLK-1:0] mtInfoAempty;
 
-  assign mtInfo[0].Vld = blk0RtVld || miscRtVldD1;
-  assign mtInfo[1].Vld = blk1RtVld || miscRtVldD1;
-  assign mtInfo[2].Vld = blk2RtVld || miscRtVldD1;
-  assign mtInfo[3].Vld = blk3RtVld || miscRtVldD1;
-
-`ifdef RVVI_ON
   for (genvar i=0; i<`NUM_BLK; i++) begin
+    assign mtInfo[i].Vld        = blkRtVld[i] || miscRtVldD1;
+
+  `ifdef RVVI_ON
+    assign mtInfo[i].inst_pc    = miscRtVldD1 ? miscRtInfo.uop_pc : pcBlkD1[i];
+    assign mtInfo[i].status     = statusBlkD1[i];
     assign mtInfo[i].rvviMtIdx  = rvviMtIdx[i];
     assign mtInfo[i].rvviSubVld = rvviSubVld[i];
     assign mtInfo[i].rvviSubIdx = rvviSubIdx[i];
     assign mtInfo[i].rvviData   = rvviMtData[i];
+  `endif
   end
-`endif
 
   for (genvar i=0; i<`NUM_BLK; i++) begin: store_mt_info
     multi_fifo #(
@@ -551,6 +577,14 @@ module zvt (
   assign vmeRt.isStore = vmeRtCmd.isStore;
 
 `ifdef RVVI_ON
+  // status
+  always_comb begin
+    vmeRt.status = 'b0;
+    for(int i=0;i<`NUM_BLK;i++) begin
+      vmeRt.status = vmeRt.status | mtRtInfo[i].status;
+    end
+  end
+
   // mt_index
   always_comb begin
     case(vmeRtCmd.eew_mt)

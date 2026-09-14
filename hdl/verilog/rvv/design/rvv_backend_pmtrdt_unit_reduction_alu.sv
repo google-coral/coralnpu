@@ -20,7 +20,7 @@ module rvv_backend_pmtrdt_unit_reduction_alu
 
 // ---parameter definition--------------------------------------------
   parameter  ALU_WIDTH = 32;
-  localparam ALU_BYTE = ALU_WIDTH/8;
+  localparam int ALU_BYTE = int'(ALU_WIDTH/8);
 
 // ---port definition-------------------------------------------------
   input [ALU_BYTE-1:0][7:0] src1, src2;
@@ -33,18 +33,53 @@ module rvv_backend_pmtrdt_unit_reduction_alu
   logic [ALU_BYTE-1:0][7:0] sum_dst;
   logic [ALU_BYTE-1:0][7:0] and_dst,  or_dst, xor_dst;
   logic [ALU_BYTE-1:0]      lt; // less than
+  logic [ALU_BYTE-1:0]      elem_lt;
 
-  logic [3:0] element_byte; 
+  logic [ALU_BYTE-1:0]      is_msb_byte;
+  logic [ALU_BYTE-1:0]      is_lsb_byte;
 
   genvar i;
 
 // ---code start------------------------------------------------------
   always_comb begin
     case (ctrl.vs2_eew)
-      EEW64: element_byte = 4'h8;
-      EEW32: element_byte = 4'h4;
-      EEW16: element_byte = 4'h2;
-      default: element_byte = 4'h1; //EEW8
+      EEW64: begin
+        for (int b = 0; b < ALU_BYTE; b++) begin
+          int msb_idx;
+          is_msb_byte[b] = ((b & 7) == 7);
+          is_lsb_byte[b] = ((b & 7) == 0);
+          msb_idx = b|7;
+          if (msb_idx >= ALU_BYTE) msb_idx = ALU_BYTE - 'b1;
+          elem_lt[b] = lt[msb_idx];
+        end
+      end
+      EEW32: begin
+        for (int b = 0; b < ALU_BYTE; b++) begin
+          int msb_idx;
+          is_msb_byte[b] = ((b & 3) == 3);
+          is_lsb_byte[b] = ((b & 3) == 0);
+          msb_idx = b|3;
+          if (msb_idx >= ALU_BYTE) msb_idx = ALU_BYTE - 'b1;
+          elem_lt[b] = lt[msb_idx];
+        end
+      end
+      EEW16: begin
+        for (int b = 0; b < ALU_BYTE; b++) begin
+          int msb_idx;
+          is_msb_byte[b] = ((b & 1) == 1);
+          is_lsb_byte[b] = ((b & 1) == 0);
+          msb_idx = b|1;
+          if (msb_idx >= ALU_BYTE) msb_idx = ALU_BYTE - 'b1;
+          elem_lt[b] = lt[msb_idx];
+        end
+      end
+      default: begin // EEW8
+        for (int b = 0; b < ALU_BYTE; b++) begin
+          is_msb_byte[b] = 1'b1;
+          is_lsb_byte[b] = 1'b1;
+          elem_lt[b]     = lt[b];
+        end
+      end
     endcase
   end
 
@@ -54,7 +89,7 @@ module rvv_backend_pmtrdt_unit_reduction_alu
       always_comb begin
         case(ctrl.uop_funct6)
           VREDMAX,
-          VREDMIN: src2_tmp[i] = (i%element_byte)==(element_byte-1) ? {src2[i][7],src2[i]} : {1'b0,src2[i]}; 
+          VREDMIN: src2_tmp[i] = is_msb_byte[i] ? {src2[i][7],src2[i]} : {1'b0,src2[i]};
           //VREDMAXU, VREDMINU,
           //VMUNARY0, VWRXUNARY0, VREDSUM, VWREDSUMU,
           //VWREDSUM, VREDAND, VREDOR, VREDXOR
@@ -70,7 +105,7 @@ module rvv_backend_pmtrdt_unit_reduction_alu
       always_comb begin
         case(ctrl.uop_funct6)
           VREDMAX,
-          VREDMIN: src1_tmp[i] = (i%element_byte)==(element_byte-1) ? ~{src1[i][7],src1[i]} : ~{1'b0,src1[i]}; 
+          VREDMIN: src1_tmp[i] = is_msb_byte[i] ? ~{src1[i][7],src1[i]} : ~{1'b0,src1[i]};
           VREDMAXU,
           VREDMINU: src1_tmp[i] = ~{1'b0, src1[i]};
           //VMUNARY0, VWRXUNARY0, VREDSUM, VWREDSUMU,
@@ -100,10 +135,10 @@ module rvv_backend_pmtrdt_unit_reduction_alu
           VREDMAXU,
           VREDMAX,
           VREDMINU,
-          VREDMIN: cin[i] = i%element_byte==0 ? ~1'b0 : ~cout[i-1]; 
+          VREDMIN: cin[i] = is_lsb_byte[i] ? ~1'b0 : ~cout[i-1];
           //VMUNARY0, VWRXUNARY0, VREDSUM, VWREDSUMU,
           //VWREDSUM, VREDAND, VREDOR, VREDXOR,
-          default: cin[i] = i%element_byte==0 ? 1'b0 : cout[i-1]; 
+          default: cin[i] = is_lsb_byte[i] ? 1'b0 : cout[i-1];
         endcase
       end
     end //for (i=0; i<ALU_BYTE; i++) begin : gen_cin
@@ -124,9 +159,9 @@ module rvv_backend_pmtrdt_unit_reduction_alu
           VWREDSUMU,
           VWREDSUM: dst[i] = sum_dst[i][7:0];
           VREDMAXU,
-          VREDMAX: dst[i] = ~lt[(i/element_byte+1)*element_byte-1] ? src2[i][7:0] : src1[i][7:0];
+          VREDMAX: dst[i] = ~elem_lt[i] ? src2[i][7:0] : src1[i][7:0];
           VREDMINU,
-          VREDMIN: dst[i] = lt[(i/element_byte+1)*element_byte-1] ? src2[i][7:0] : src1[i][7:0];
+          VREDMIN: dst[i] = elem_lt[i] ? src2[i][7:0] : src1[i][7:0];
           VREDAND: dst[i] = and_dst[i];
           VREDOR:  dst[i] = or_dst[i];
           default: dst[i] = xor_dst[i]; //VREDXOR

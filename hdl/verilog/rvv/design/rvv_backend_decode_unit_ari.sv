@@ -1,9 +1,6 @@
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `include "rvv_backend.svh"
 `endif
-`ifndef RVV_ASSERT__SVH
-`include "rvv_backend_sva.svh"
-`endif
 
 // TODO: tail uops
 
@@ -532,9 +529,11 @@ module rvv_backend_decode_unit_ari
         `ifdef ZVT_ON
           VTXMMXTVV: begin
             case(1'b1)
-              ((csr_sew==SEW8 )&&(csr_lmul==LMUL1)),
+            `ifdef ZVTI16I32MM_ON
               ((csr_sew==SEW16)&&(csr_lmul==LMUL2)),
-              ((csr_sew==SEW32)&&(csr_lmul==LMUL4)): begin
+            `endif
+              // default: ZVTI8I32MM_ON
+              ((csr_sew==SEW8)&&(csr_lmul==LMUL1)): begin
                 uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
                 emul_vs2      = EMUL4;
                 emul_vs1      = EMUL4;
@@ -2026,8 +2025,10 @@ module rvv_backend_decode_unit_ari
           `ifdef ZVT_ON
           VTXMMXTVV: begin
             case(1'b1)
-              ((csr_sew==SEW8 )&&(csr_lmul==LMUL1)),
+            `ifdef ZVTBF16FMM_ON
               ((csr_sew==SEW16)&&(csr_lmul==LMUL2)),
+            `endif
+              // default: ZVTFMM_ON
               ((csr_sew==SEW32)&&(csr_lmul==LMUL4)): begin
                 uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
                 emul_vs2      = EMUL4;
@@ -2438,13 +2439,14 @@ module rvv_backend_decode_unit_ari
             case(inst_funct3)
               OPIVV: begin
                 case({csr_sew, csr_mtwiden})
+                  // default: ZVTI8I32MM_ON
                   {SEW8, 2'd3}: begin
                     eew_mt      = EEW32;
                     eew_vs2     = EEW8;
                     eew_vs1     = EEW8;
                     eew_max     = EEW32;
                   end
-                `ifdef ZVTI16I32_ON
+                `ifdef ZVTI16I32MM_ON
                   {SEW16, 2'd2}: begin
                     eew_mt      = EEW32;
                     eew_vs2     = EEW16;
@@ -2697,30 +2699,27 @@ module rvv_backend_decode_unit_ari
                   endcase
                 end
                 else if(vs2_opcode==VTZERO) begin
-                  case(csr_sew)
-                    SEW8: begin
+                  case({csr_sew, csr_mtwiden})
+                    {SEW8, 2'd1}: begin
                       eew_mt      = EEW8;
                       eew_max     = EEW8;
                     end
-                    SEW16: begin
-                      eew_mt      = EEW16;
-                      eew_max     = EEW16;
-                    end
-                    SEW32: begin
+                  `ifdef ZVTI16I32MM_ON
+                    {SEW8, 2'd3}: begin
                       eew_mt      = EEW32;
                       eew_max     = EEW32;
                     end
-                  //case({csr_sew, csr_mtwiden})
-                  //`ifdef ZVTI16I32_ON
-                  //  {SEW16, 2'd2}: begin
-                  //    eew_mt      = EEW32;
-                  //    eew_max     = EEW32;
-                  //  end
-                  //`endif
-                  //  {SEW8, 2'd3}: begin
-                  //    eew_mt      = EEW32;
-                  //    eew_max     = EEW32;
-                  //  end
+                  `endif
+                  `ifdef ZVTBF16FMM_ON
+                    {SEW16, 2'd2}: begin
+                      eew_mt      = EEW32;
+                      eew_max     = EEW32;
+                    end
+                  `endif
+                    {SEW32, 2'd1}: begin
+                      eew_mt      = EEW32;
+                      eew_max     = EEW32;
+                    end
                   endcase
                 end
               `endif
@@ -3012,12 +3011,15 @@ module rvv_backend_decode_unit_ari
             case(inst_funct3)
               OPFVV: begin
                 case({csr_sew, csr_mtwiden, csr_altfmt})
+                `ifdef ZVTBF16FMM_ON
                   {SEW16, 2'd2, 1'b1}: begin
                     eew_mt      = EEW32;
                     eew_vs2     = EEW16;
                     eew_vs1     = EEW16;
                     eew_max     = EEW32;
                   end
+                `endif
+                  // default: ZVTFMM_ON
                   {SEW32, 2'd1, 1'b0}: begin
                     eew_mt      = EEW32;
                     eew_vs2     = EEW32;
@@ -3759,6 +3761,9 @@ module rvv_backend_decode_unit_ari
                       `ifdef ZVE32F_ON
                         &check_frm
                       `endif
+                      `ifdef RVVCHECK_VSTART_VL
+                        &check_vl_not_0&check_vstart_sle_vl
+                      `endif
                         ;
 
   // check whether vd is aligned to emul_vd
@@ -3979,7 +3984,7 @@ module rvv_backend_decode_unit_ari
   // check vstart < vl
   always_comb begin
     check_vl_not_0      = csr_vl!='b0;
-    check_vstart_sle_vl = {1'b0, csr_vstart} < csr_vl;
+    check_vstart_sle_vl = evstart < csr_vl;
     
     // Instructions that write an x register or f register do so even when vstart >= vl, including when vl=0.
     case(inst_funct3) 
@@ -4026,16 +4031,6 @@ module rvv_backend_decode_unit_ari
   // check FP rounding mode is legal
   assign check_frm = (inst.arch_state.frm < 3'd5) && valid_opf || !valid_opf;
 `endif
-
-  `ifdef ASSERT_ON
-    `ifdef TB_SUPPORT
-      `rvv_forbid((inst_valid==1'b1)&(inst_encoding_correct==1'b0))
-      else $warning("pc(0x%h) instruction will be discarded directly.\n",$sampled(inst.inst_pc));
-    `else
-      `rvv_forbid((inst_valid==1'b1)&(inst_encoding_correct==1'b0))
-      else $warning("This instruction will be discarded directly.\n");
-    `endif
-  `endif
 
 // get the start number of uop_index
   always_comb begin
