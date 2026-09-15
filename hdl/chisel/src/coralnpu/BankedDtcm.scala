@@ -18,9 +18,7 @@ import chisel3._
 import chisel3.util._
 import bus._
 import coralnpu.soc.RawTlulSram
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.{ChiselEmitter, ChiselEmitterOptions}
 
 class BankedDtcm(
   p: TLULParameters,
@@ -54,15 +52,13 @@ class BankedDtcm(
   }
 }
 
-@nowarn
 object BankedDtcmEmitter extends App {
   val p = new Parameters
   p.m = MemoryRegions.default
 
-  var numBanks                  = 8
-  var numHosts                  = 3
-  var moduleName                = "BankedDtcm"
-  var targetDir: Option[String] = None
+  var numBanks   = 8
+  var numHosts   = 3
+  var moduleName = "BankedDtcm"
 
   // Simple arg parser
   var chiselArgs = Array[String]()
@@ -75,9 +71,6 @@ object BankedDtcmEmitter extends App {
       p.lsuDataBits = arg.split("=")(1).toInt
     } else if (arg.startsWith("--moduleName=")) {
       moduleName = arg.split("=")(1)
-    } else if (arg.startsWith("--target-dir=")) {
-      targetDir = Some(arg.split("=")(1))
-      chiselArgs = chiselArgs :+ arg
     } else {
       chiselArgs = chiselArgs :+ arg
     }
@@ -101,41 +94,16 @@ object BankedDtcmEmitter extends App {
 
   val bankBaseAddresses = (0 until numBanks).map { i => dtcmBase + i * bankSizeBytes }
 
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ chiselArgs,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new BankedDtcm(
-          p = p.toTLUL(),
-          numBanks = numBanks,
-          numHosts = numHosts,
-          bankSizeBytes = bankSizeBytes,
-          bankBaseAddresses = bankBaseAddresses,
-          routeFn = routeFn
-        )
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new BankedDtcm(
+      p = p.toTLUL(),
+      numBanks = numBanks,
+      numHosts = numHosts,
+      bankSizeBytes = bankSizeBytes,
+      bankBaseAddresses = bankBaseAddresses,
+      routeFn = routeFn
+    ),
+    chiselArgs,
+    ChiselEmitterOptions(moduleName = Some(moduleName))
   )
-
-  targetDir.foreach { dir =>
-    val svFile = new java.io.File(s"$dir/$moduleName.sv")
-    if (svFile.exists()) {
-      val source  = scala.io.Source.fromFile(svFile)
-      val content =
-        try source.mkString
-        finally source.close()
-      val resourcesSeparator =
-        "// ----- 8< ----- FILE \"firrtl_black_box_resource_files.f\" ----- 8< -----"
-      if (content.contains(resourcesSeparator)) {
-        val strippedContent = content.split(resourcesSeparator)(0)
-        val writer          = new java.io.PrintWriter(svFile)
-        try {
-          writer.write(strippedContent)
-        } finally {
-          writer.close()
-        }
-        println(s"Stripped resource list from ${svFile.getPath}")
-      }
-    }
-  }
 }

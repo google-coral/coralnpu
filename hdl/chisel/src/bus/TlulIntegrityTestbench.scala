@@ -68,17 +68,9 @@ class TlulIntegrityTestbench(p: TLULParameters) extends Module {
 
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object EmitTlulIntegrityTestbench extends App {
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new TlulIntegrityTestbench(tlul_p))) ++ Seq(
-      FirtoolOption("-enable-layers=Verification")
-    )
-  )
+  ChiselEmitter.emit(new TlulIntegrityTestbench(tlul_p), args)
 }

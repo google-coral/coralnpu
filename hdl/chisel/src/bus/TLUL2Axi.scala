@@ -17,9 +17,6 @@ package bus
 import chisel3._
 import chisel3.util._
 import common.CoralNPURRArbiter
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
 
 /** TLUL2Axi: A Chisel module that serves as a bridge between a TileLink-UL master and an AXI4
   * slave.
@@ -182,22 +179,19 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
 
 }
 
-@nowarn
+import common.ChiselEmitter
+
 object EmitTLUL2Axi extends App {
   val tlul_p = new TLULParameters(dataBits = 256, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new TLUL2Axi(
-          tlul_p,
-          256,
-          32,
-          6,
-          () => new OpenTitanTileLink_A_User,
-          () => new OpenTitanTileLink_D_User
-        )
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new TLUL2Axi(
+      tlul_p,
+      256,
+      32,
+      6,
+      () => new OpenTitanTileLink_A_User,
+      () => new OpenTitanTileLink_D_User
+    ),
+    args
   )
 }

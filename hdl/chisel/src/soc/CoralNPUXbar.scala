@@ -322,17 +322,14 @@ class CoralNPUXbar(
   }
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
+import common.ChiselEmitter
 import coralnpu.Parameters
-import scala.annotation.nowarn
 import coralnpu.MemorySize
 
 /** A standalone main object to generate the SystemVerilog for the CoralNPUXbar.
   *
   * This can be run via Bazel to produce the final Verilog output.
   */
-@nowarn
 object CoralNPUXbarEmitter extends App {
   // Basic argument parsing for --enableTestHarness
   val enableTestHarness = args.contains("--enableTestHarness")
@@ -346,19 +343,14 @@ object CoralNPUXbarEmitter extends App {
     new bus.TLULParameters(dataBits = device.width, addrBits = 32, idBits = 10)
   }
 
-  // Use ChiselStage to generate the Verilog.
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ chiselArgs,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new CoralNPUXbar(
-          hostParams,
-          deviceParams,
-          enableTestHarness,
-          MemorySize.fromKBytes(Parameters.itcmSizeKBytesDefault),
-          MemorySize.fromKBytes(Parameters.dtcmSizeKBytesDefault)
-        )
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new CoralNPUXbar(
+      hostParams,
+      deviceParams,
+      enableTestHarness,
+      MemorySize.fromKBytes(Parameters.itcmSizeKBytesDefault),
+      MemorySize.fromKBytes(Parameters.dtcmSizeKBytesDefault)
+    ),
+    chiselArgs
   )
 }

@@ -31,36 +31,16 @@ class SecdedEncoderTestbench(val w: Int, val moduleName: String) extends Module 
   io.ecc_o          := encoder.io.ecc_o
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object EmitSecdedEncoderTestbench extends App {
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() => new SecdedEncoderTestbench(128, "SecdedEncoderTestbench128"))
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
-  )
+  ChiselEmitter.emit(new SecdedEncoderTestbench(128, "SecdedEncoderTestbench128"), args)
 }
 
-@nowarn
 object EmitSecdedEncoderTestbench32 extends App {
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() => new SecdedEncoderTestbench(32, "SecdedEncoderTestbench32"))
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
-  )
+  ChiselEmitter.emit(new SecdedEncoderTestbench(32, "SecdedEncoderTestbench32"), args)
 }
 
-@nowarn
 object EmitSecdedEncoderTestbench57 extends App {
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() => new SecdedEncoderTestbench(57, "SecdedEncoderTestbench57"))
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
-  )
+  ChiselEmitter.emit(new SecdedEncoderTestbench(57, "SecdedEncoderTestbench57"), args)
 }

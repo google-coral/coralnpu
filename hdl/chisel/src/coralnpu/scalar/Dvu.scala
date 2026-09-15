@@ -17,7 +17,6 @@ package coralnpu
 import chisel3._
 import chisel3.util._
 import common._
-import _root_.circt.stage.ChiselStage
 
 object Dvu {
   def apply(p: Parameters): Dvu = {
@@ -205,5 +204,5 @@ class Dvu(p: Parameters) extends Module {
 
 object EmitDvu extends App {
   val p = new Parameters
-  ChiselStage.emitSystemVerilogFile(new Dvu(p), args)
+  ChiselEmitter.emit(new Dvu(p), args)
 }

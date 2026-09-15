@@ -56,48 +56,36 @@ class TlulSocketM1(
   io.tl_d.d.ready := VecInit(augmented_hosts.map(_.d.ready))(host_index)
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object TlulSocketM1_2_128Emitter extends App {
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new TlulSocketM1(
-          p = tlul_p,
-          M = 2,
-          HReqDepth = Seq.fill(2)(0),
-          HRspDepth = Seq.fill(2)(0),
-          DReqDepth = 0,
-          DRspDepth = 0,
-          moduleName = "TlulSocketM1_2_128"
-        )
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new TlulSocketM1(
+      p = tlul_p,
+      M = 2,
+      HReqDepth = Seq.fill(2)(0),
+      HRspDepth = Seq.fill(2)(0),
+      DReqDepth = 0,
+      DRspDepth = 0,
+      moduleName = "TlulSocketM1_2_128"
+    ),
+    args
   )
 }
 
-@nowarn
 object TlulSocketM1_3_128Emitter extends App {
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new TlulSocketM1(
-          p = tlul_p,
-          M = 3,
-          HReqDepth = Seq.fill(3)(0),
-          HRspDepth = Seq.fill(3)(0),
-          DReqDepth = 0,
-          DRspDepth = 0,
-          moduleName = "TlulSocketM1_3_128"
-        )
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new TlulSocketM1(
+      p = tlul_p,
+      M = 3,
+      HReqDepth = Seq.fill(3)(0),
+      HRspDepth = Seq.fill(3)(0),
+      DReqDepth = 0,
+      DRspDepth = 0,
+      moduleName = "TlulSocketM1_3_128"
+    ),
+    args
   )
 }

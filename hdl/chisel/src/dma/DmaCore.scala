@@ -73,16 +73,9 @@ class DmaCore(p: TLULParameters) extends Module {
   // real decision at ping-pong.
 }
 
-import scala.annotation.nowarn
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
+import common.ChiselEmitter
 
-@nowarn
 object DmaCoreEmitter extends App {
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new DmaCore(tlul_p))) ++
-      Seq(FirtoolOption("-enable-layers=Verification"))
-  )
+  ChiselEmitter.emit(new DmaCore(tlul_p), args)
 }

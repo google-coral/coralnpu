@@ -91,36 +91,23 @@ class TlulFifoSync(
   }
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object TlulFifoSyncEmitter extends App {
   val tlul_p = new TLULParameters(dataBits = 256, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new TlulFifoSync(tlul_p))) ++ Seq(
-      FirtoolOption("-enable-layers=Verification")
-    )
-  )
+  ChiselEmitter.emit(new TlulFifoSync(tlul_p), args)
 }
 
-@nowarn
 object EmitTlulFifoSyncDepth0 extends App {
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new TlulFifoSync(
-          p = tlul_p,
-          reqDepth = 0,
-          rspDepth = 0,
-          spareReqW = 4,
-          moduleName = "TlulFifoSync_Depth0"
-        )
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new TlulFifoSync(
+      p = tlul_p,
+      reqDepth = 0,
+      rspDepth = 0,
+      spareReqW = 4,
+      moduleName = "TlulFifoSync_Depth0"
+    ),
+    args
   )
 }

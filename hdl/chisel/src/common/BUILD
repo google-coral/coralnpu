@@ -55,6 +55,7 @@ chisel_library(
     deps = [
         ":index_allocator",
         ":library",
+        ":sv_generation_utils",
         "@chipsalliance_rocket_chip//:asyncqueue",
     ],
 )
@@ -136,6 +137,7 @@ chisel_library(
 chisel_library(
     name = "sv_generation_utils",
     srcs = [
+        "ChiselEmitter.scala",
         "SvGenerationUtils.scala",
     ],
     visibility = ["//visibility:public"],

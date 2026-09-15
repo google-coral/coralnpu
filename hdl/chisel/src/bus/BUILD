@@ -62,6 +62,7 @@ chisel_library(
     ],
     deps = [
         "//hdl/chisel/src/common",
+        "//hdl/chisel/src/common:sv_generation_utils",
         "@chipsalliance_rocket_chip//:asyncqueue",
     ],
 )

@@ -16,9 +16,7 @@ package bus
 
 import chisel3._
 import chisel3.util._
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
 class TlulLocalXbar(
   p: TLULParameters,
@@ -56,7 +54,6 @@ class TlulLocalXbar(
   }
 }
 
-@nowarn
 object TlulLocalXbarEmitter extends App {
   val tlul_p   = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
   val bankSize = 4096
@@ -75,18 +72,14 @@ object TlulLocalXbarEmitter extends App {
     sel ++ Seq(error_sel)
   }
 
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new TlulLocalXbar(
-          p = tlul_p,
-          numHosts = 3,
-          numBanks = numBanks,
-          routeFn = routeFn,
-          moduleName = "TlulLocalXbar"
-        )
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new TlulLocalXbar(
+      p = tlul_p,
+      numHosts = 3,
+      numBanks = numBanks,
+      routeFn = routeFn,
+      moduleName = "TlulLocalXbar"
+    ),
+    args
   )
 }

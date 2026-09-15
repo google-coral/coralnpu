@@ -349,18 +349,9 @@ class SpiMaster(p: TLULParameters) extends RawModule {
   fifo.io.rst_d_i := spi_reset
 }
 
-// Verilog Generation App
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object EmitSpiMaster extends App {
   val tlul_p = new TLULParameters(dataBits = 32, addrBits = 32, idBits = 10)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new SpiMaster(tlul_p))) ++ Seq(
-      FirtoolOption("-enable-layers=Verification")
-    )
-  )
+  ChiselEmitter.emit(new SpiMaster(tlul_p), args)
 }

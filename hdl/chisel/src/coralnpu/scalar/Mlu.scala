@@ -17,9 +17,6 @@ package coralnpu
 import chisel3._
 import chisel3.util._
 import common._
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
 
 object Mlu {
   def apply(p: Parameters): Mlu = {
@@ -131,13 +128,7 @@ class Mlu(p: Parameters) extends Module {
   }
 }
 
-@nowarn
 object EmitMlu extends App {
   val p = new Parameters
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new Mlu(p))) ++ Seq(
-      FirtoolOption("-enable-layers=Verification")
-    )
-  )
+  ChiselEmitter.emit(new Mlu(p), args)
 }

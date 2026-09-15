@@ -260,16 +260,9 @@ class TransposeBuffer(p: TLULParameters) extends Module {
   io.out.bits := gatherData
 }
 
-import scala.annotation.nowarn
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
+import common.ChiselEmitter
 
-@nowarn
 object TransposeBufferEmitter extends App {
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new TransposeBuffer(tlul_p))) ++
-      Seq(FirtoolOption("-enable-layers=Verification"))
-  )
+  ChiselEmitter.emit(new TransposeBuffer(tlul_p), args)
 }

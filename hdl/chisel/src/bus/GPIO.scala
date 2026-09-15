@@ -106,19 +106,10 @@ class GPIO(p: TLULParameters, gpioParams: GPIOParameters) extends Module {
   tl_d.bits.user   := 0.U.asTypeOf(tl_d.bits.user)
 }
 
-// Emitter object for Verilog generation if needed
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object EmitGPIO extends App {
   val tlul_p = new TLULParameters(dataBits = 32, addrBits = 32, idBits = 10)
   val gp     = GPIOParameters(width = 32)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new GPIO(tlul_p, gp))) ++ Seq(
-      FirtoolOption("-enable-layers=Verification")
-    )
-  )
+  ChiselEmitter.emit(new GPIO(tlul_p, gp), args)
 }

@@ -48,18 +48,11 @@ class AxiAddressGenerator(addrWidthBits: Int, dataWidthBits: Int, idBits: Int) e
   arb.io.out <> io.out
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object EmitAxiAddressGenerator extends App {
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new AxiAddressGenerator(addrWidthBits = 32, dataWidthBits = 256, idBits = 6)
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new AxiAddressGenerator(addrWidthBits = 32, dataWidthBits = 256, idBits = 6),
+    args
   )
 }

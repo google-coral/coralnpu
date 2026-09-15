@@ -108,27 +108,20 @@ class TlulSocket1N(
   io.tl_h.d <> d_arb.io.out
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object TlulSocket1N_128Emitter extends App {
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new TlulSocket1N(
-          p = tlul_p,
-          N = 4, // Default value, will be overridden at instantiation
-          DReqPass = Seq.fill(4)(true),
-          DRspPass = Seq.fill(4)(true),
-          DReqDepth = Seq.fill(4)(1),
-          DRspDepth = Seq.fill(4)(1),
-          moduleName = "TlulSocket1N_128"
-        )
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new TlulSocket1N(
+      p = tlul_p,
+      N = 4, // Default value, will be overridden at instantiation
+      DReqPass = Seq.fill(4)(true),
+      DRspPass = Seq.fill(4)(true),
+      DReqDepth = Seq.fill(4)(1),
+      DRspDepth = Seq.fill(4)(1),
+      moduleName = "TlulSocket1N_128"
+    ),
+    args
   )
 }

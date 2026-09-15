@@ -38,6 +38,7 @@ chisel_library(
     deps = [
         "//hdl/chisel/src/bus",
         "//hdl/chisel/src/common",
+        "//hdl/chisel/src/common:sv_generation_utils",
     ],
 )
 

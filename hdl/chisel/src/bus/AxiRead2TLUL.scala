@@ -93,17 +93,9 @@ class AxiRead2TLUL(p: TLULParameters) extends Module {
   }
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object EmitAxiRead2TLUL extends App {
   val tlulP = new TLULParameters(dataBits = 256, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() => new AxiRead2TLUL(tlulP))
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
-  )
+  ChiselEmitter.emit(new AxiRead2TLUL(tlulP), args)
 }

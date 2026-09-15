@@ -16,7 +16,6 @@ package common
 
 import chisel3._
 import chisel3.util._
-import _root_.circt.stage.ChiselStage
 
 // FifoX with entry output and no output registration stage.
 
@@ -130,5 +129,5 @@ class FifoXe[T <: Data](t: T, x: Int, n: Int) extends Module {
 }
 
 object EmitFifoXe extends App {
-  ChiselStage.emitSystemVerilogFile(new FifoXe(UInt(8.W), 4, 10), args)
+  ChiselEmitter.emit(new FifoXe(UInt(8.W), 4, 10), args)
 }

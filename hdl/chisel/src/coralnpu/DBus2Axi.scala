@@ -19,9 +19,6 @@ import chisel3.util._
 
 import bus.{AxiMasterIO, AxiResponseType, AxiWriteData}
 import common._
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
 
 object DBus2Axi {
   def apply(p: Parameters, id: Int = 0): DBus2Axi = {
@@ -157,13 +154,7 @@ class DBus2AxiV2(p: Parameters, id: Int = 0) extends DBus2Axi(p) {
   io.fault.bits.epc  := io.dbus.pc
 }
 
-@nowarn
 object EmitDBus2Axi extends App {
   val p = new Parameters
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new DBus2AxiV2(p))) ++ Seq(
-      FirtoolOption("-enable-layers=Verification")
-    )
-  )
+  ChiselEmitter.emit(new DBus2AxiV2(p), args)
 }

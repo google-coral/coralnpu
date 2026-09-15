@@ -21,7 +21,6 @@ package coralnpu
 import chisel3._
 import chisel3.util._
 import common._
-import _root_.circt.stage.ChiselStage
 
 object Regfile {
   def apply(p: Parameters): Regfile = {
@@ -262,5 +261,5 @@ class Regfile(p: Parameters) extends Module {
 
 object EmitRegfile extends App {
   val p = new Parameters
-  ChiselStage.emitSystemVerilogFile(new Regfile(p), args)
+  ChiselEmitter.emit(new Regfile(p), args)
 }

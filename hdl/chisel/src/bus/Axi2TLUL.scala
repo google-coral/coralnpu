@@ -254,20 +254,12 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   }
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
+import common.ChiselEmitter
 
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
-
-@nowarn
 object EmitAxi2TLUL extends App {
   val tlul_p = new TLULParameters(dataBits = 256, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new Axi2TLUL(tlul_p, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User)
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new Axi2TLUL(tlul_p, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User),
+    args
   )
 }

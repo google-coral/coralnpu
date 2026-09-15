@@ -41,24 +41,17 @@ class TlulFifoAsync(
   io.tl_h.d <> rsp_queue.io.deq
 }
 
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
-import scala.annotation.nowarn
+import common.ChiselEmitter
 
-@nowarn
 object TlulFifoAsync128Emitter extends App {
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() =>
-        new TlulFifoAsync(
-          p = tlul_p,
-          reqDepth = 1,
-          rspDepth = 1,
-          moduleName = "TlulFifoAsync128"
-        )
-      )
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+  ChiselEmitter.emit(
+    new TlulFifoAsync(
+      p = tlul_p,
+      reqDepth = 1,
+      rspDepth = 1,
+      moduleName = "TlulFifoAsync128"
+    ),
+    args
   )
 }

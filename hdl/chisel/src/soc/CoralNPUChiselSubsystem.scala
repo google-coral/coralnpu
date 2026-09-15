@@ -510,9 +510,6 @@ class CoralNPUChiselSubsystem(
   }
 }
 
-import _root_.circt.stage.ChiselStage
-import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Paths, StandardOpenOption}
 import coralnpu.Parameters
 
 abstract class BaseCoralNPUChiselSubsystemEmitter {
@@ -554,8 +551,7 @@ abstract class BaseCoralNPUChiselSubsystemEmitter {
       case (arg, idx)
           if !indicesToSkip.contains(idx) &&
             !arg.startsWith("--enableTestHarness") &&
-            !arg.startsWith("--enableVme") &&
-            !arg.startsWith("--target-dir=") =>
+            !arg.startsWith("--enableVme") =>
         arg
     }
 
@@ -567,17 +563,7 @@ abstract class BaseCoralNPUChiselSubsystemEmitter {
       new bus.TLULParameters(dataBits = device.width, addrBits = xlen, idBits = 10)
     }
 
-    // Manually parse arguments to find the target directory.
-    var targetDir: Option[String] = None
-    args.foreach {
-      case s if s.startsWith("--target-dir=") => targetDir = Some(s.stripPrefix("--target-dir="))
-      case "--enableTestHarness"              => // Already handled by filterNot
-      case "--enableVme"                      => // Ignored
-      case _                                  => // Ignore other arguments
-    }
-
-    // The subsystem module must be created in the ChiselStage context.
-    lazy val subsystem =
+    common.ChiselEmitter.emit(
       new CoralNPUChiselSubsystem(
         hostParams,
         deviceParams,
@@ -587,30 +573,9 @@ abstract class BaseCoralNPUChiselSubsystemEmitter {
         xlen,
         moduleName,
         socConfig.enableVme
-      )
-
-    val firtoolOpts = Array(
-      // Disable `automatic logic =`, Suppress location comments
-      "--lowering-options=disallowLocalVariables,locationInfoStyle=none",
-      "-enable-layers=Verification"
+      ),
+      chiselArgs.toArray
     )
-    val systemVerilogSource =
-      ChiselStage.emitSystemVerilog(subsystem, chiselArgs.toArray, firtoolOpts)
-
-    // CIRCT adds extra data to the end of the file. Remove it.
-    val resourcesSeparator =
-      "// ----- 8< ----- FILE \"firrtl_black_box_resource_files.f\" ----- 8< -----"
-    val strippedVerilogSource = systemVerilogSource.split(resourcesSeparator)(0)
-
-    // Write the stripped Verilog to the target directory.
-    targetDir.foreach { dir =>
-      Files.write(
-        Paths.get(dir, subsystem.name + ".sv"),
-        strippedVerilogSource.getBytes(StandardCharsets.UTF_8),
-        StandardOpenOption.CREATE,
-        StandardOpenOption.TRUNCATE_EXISTING
-      )
-    }
   }
 }
 

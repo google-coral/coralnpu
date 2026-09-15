@@ -16,12 +16,7 @@ package coralnpu
 
 import chisel3._
 
-import java.io.{File, FileOutputStream}
-import java.util.zip._
-import java.nio.file.{Files, Paths, StandardOpenOption}
-import java.nio.charset.StandardCharsets
 import coralnpu.rvv.RvvCore
-import _root_.circt.stage.ChiselStage
 
 object Core {
   def apply(p: Parameters): Core = {
@@ -87,12 +82,11 @@ class Core(p: Parameters, moduleName: String) extends Module with RequireAsyncRe
 }
 
 object EmitCore extends App {
-  val p                         = new Parameters
-  var moduleName                = "Core"
-  var chiselArgs                = List[String]()
-  var targetDir: Option[String] = None
-  var useAxi                    = false
-  var useTlul                   = false
+  val p          = new Parameters
+  var moduleName = "Core"
+  var chiselArgs = List[String]()
+  var useAxi     = false
+  var useTlul    = false
   for (arg <- args) {
     if (arg.startsWith("--enableAxiInstructionFetch")) {
       p.enableAxiInstructionFetch = arg.split("=")(1).toBoolean
@@ -131,8 +125,6 @@ object EmitCore extends App {
       useAxi = true
     } else if (arg.startsWith("--useTlul")) {
       useTlul = true
-    } else if (arg.startsWith("--target-dir")) {
-      targetDir = Some(arg.split("=")(1))
     } else {
       chiselArgs = chiselArgs :+ arg
     }
@@ -178,170 +170,27 @@ object EmitCore extends App {
     new Core(p, finalModuleName)
   }
 
-  val firtoolOpts = Array(
-    // Disable `automatic logic =`, Suppress location comments
-    "--lowering-options=disallowLocalVariables,locationInfoStyle=none",
-    "-enable-layers=Verification"
-  )
-  val systemVerilogSource = ChiselStage.emitSystemVerilog(core, chiselArgs.toArray, firtoolOpts)
-  // CIRCT adds a little extra data to the sv file at the end. Remove it as we
-  // don't want it (it prevents the sv from being verilated).
-  val resourcesSeparator =
-    "// ----- 8< ----- FILE \"firrtl_black_box_resource_files.f\" ----- 8< -----"
-  val strippedVerilogSource = systemVerilogSource.split(resourcesSeparator)(0)
-  val coreName              = core.name
-
-  val header_str = EmitParametersHeader(p)
-
-  targetDir match {
-    case Some(targetDir) => {
-      // 1. Identify boundary between Chisel-generated modules and embedded FILE sections.
-      val fileSepRegex   = """(?m)^//.*FILE\s*"([^"]+)".*$""".r
-      val fileSepMatches = fileSepRegex.findAllMatchIn(strippedVerilogSource).toList
-
-      val chiselPart = if (fileSepMatches.nonEmpty) {
-        strippedVerilogSource.substring(0, fileSepMatches.head.start)
-      } else {
-        strippedVerilogSource
-      }
-
-      // 2. Extract common header (macros/preamble before the first module).
-      val modDeclRegex = """(?m)^(module|interface|package|primitive|config)\s+(\w+)""".r
-      val modMatches   = modDeclRegex.findAllMatchIn(chiselPart).toList
-      val commonHeader = if (modMatches.nonEmpty) {
-        chiselPart.substring(0, modMatches.head.start)
-      } else {
-        ""
-      }
-
-      // 3. Build multi-file ZIP and filelist.f in topological order.
-      val headers       = collection.mutable.ArrayBuffer[String]()
-      val packages      = collection.mutable.ArrayBuffer[String]()
-      val chiselModules = collection.mutable.ArrayBuffer[String]()
-      val otherModules  = collection.mutable.ArrayBuffer[String]()
-
-      val zipFile = new File(targetDir, s"${coreName}.zip")
-      val zip     = new ZipOutputStream(new FileOutputStream(zipFile))
-
-      try {
-        // A. Chisel-generated modules
-        for (i <- modMatches.indices) {
-          val m       = modMatches(i)
-          val modName = m.group(2)
-          val start   = m.start
-          val end = if (i + 1 < modMatches.length) modMatches(i + 1).start else chiselPart.length
-          val modBody     = chiselPart.substring(start, end)
-          val fileName    = s"${modName}.sv"
-          val fileContent = commonHeader + modBody
-
-          zip.putNextEntry(new ZipEntry(fileName))
-          zip.write(fileContent.getBytes(StandardCharsets.UTF_8))
-          zip.closeEntry()
-
-          chiselModules += fileName
-        }
-
-        // B. Embedded file sections (verification layers, blackbox resources, headers)
-        for (i <- fileSepMatches.indices) {
-          val m              = fileSepMatches(i)
-          val rawPath        = m.group(1)
-          val normalizedPath = if (rawPath.startsWith("./")) rawPath.substring(2) else rawPath
-          val lineEnd        = strippedVerilogSource.indexOf('\n', m.start)
-          val start          = if (lineEnd != -1) lineEnd + 1 else m.end
-          val end            =
-            if (i + 1 < fileSepMatches.length) fileSepMatches(i + 1).start
-            else strippedVerilogSource.length
-          val rawBody = if (start <= end) strippedVerilogSource.substring(start, end) else ""
-
-          val body = if (normalizedPath.startsWith("verification/")) {
-            s"`ifndef SYNTHESIS // Added by Core.scala Verification Wrapper\n\n${rawBody.trim}\n\n`endif // Added by Core.scala Verification Wrapper\n"
-          } else {
-            rawBody
-          }
-
-          zip.putNextEntry(new ZipEntry(normalizedPath))
-          zip.write(body.getBytes(StandardCharsets.UTF_8))
-          zip.closeEntry()
-
-          if (normalizedPath.endsWith(".svh") || normalizedPath.endsWith(".h")) {
-            headers += normalizedPath
-          } else if (
-            normalizedPath
-              .endsWith("_pkg.sv") || normalizedPath.startsWith("defs_") || normalizedPath.contains(
-              "defs"
-            )
-          ) {
-            packages += normalizedPath
-          } else if (!normalizedPath.endsWith(".f")) {
-            otherModules += normalizedPath
-          }
-        }
-
-        // C. filelist.f (+incdir+., defines, packages, headers, then modules in topological order)
-        val filelist = collection.mutable.ArrayBuffer[String]()
-        filelist += "+incdir+."
-        filelist += "+define+USE_GENERIC"
-        if (p.enableRvv) {
-          filelist += s"+define+VLEN_${p.rvvVlen}"
-          filelist += "+define+TB_SUPPORT"
-          if (p.enableFloat) {
-            filelist += "+define+ZVE32F_ON"
-          }
-        }
-        if (p.enableVme) {
-          filelist += "+define+ZVT_ON"
-        }
-        if (p.fpuPipeRegs != 4) {
-          filelist += s"+define+FPU_PIPEREGS=${p.fpuPipeRegs}"
-          filelist += s"+define+FALU_PIPEREGS=${p.fpuPipeRegs}"
-        }
-        filelist ++= packages
-        filelist ++= headers
-        filelist ++= chiselModules
-        filelist ++= otherModules
-
-        val filelistContent = filelist.mkString("\n") + "\n"
-        zip.putNextEntry(new ZipEntry("filelist.f"))
-        zip.write(filelistContent.getBytes(StandardCharsets.UTF_8))
-        zip.closeEntry()
-      } finally {
-        zip.close()
-      }
-
-      // 4. Verification wrapper for monolithic Verilog output
-      // Regex to match verification blocks in the concatenated Verilog output.
-      // - (^//.*FILE\s*"verification/[^"]+".*$\n) matches the header line of a verification file.
-      // - (?:[\s\S]*?) lazily captures all content up to the next file block.
-      // - (?=\n//.*FILE\s*"|\z) lookahead stops matching before the next file header or at the end of the file.
-      // - (?m) enables multiline mode so ^ and $ match line boundaries.
-      val verificationPattern =
-        """(?m)(^//.*FILE\s*"verification/[^"]+".*$\n(?:[\s\S]*?))(?=\n//.*FILE\s*"|\z)""".r
-      val wrappedVerilogSource = verificationPattern.replaceAllIn(
-        strippedVerilogSource,
-        m => {
-          java.util.regex.Matcher.quoteReplacement(
-            s"`ifndef SYNTHESIS // Added by Core.scala Verification Wrapper\n\n${m.group(1)}\n`endif // Added by Core.scala Verification Wrapper"
-          )
-        }
-      )
-
-      Files.write(
-        Paths.get(targetDir + "/V" + core.name + "_parameters.h"),
-        header_str.getBytes(StandardCharsets.UTF_8),
-        StandardOpenOption.CREATE,
-        StandardOpenOption.TRUNCATE_EXISTING
-      )
-      Files.write(
-        Paths.get(targetDir + "/" + core.name + ".sv"),
-        wrappedVerilogSource
-          .replace("exclude_file", "exclude_module")
-          .getBytes(StandardCharsets.UTF_8),
-        StandardOpenOption.CREATE,
-        StandardOpenOption.TRUNCATE_EXISTING
-      )
-
-      ()
+  val defines = collection.mutable.ArrayBuffer[String]()
+  if (p.enableRvv) {
+    defines += s"+define+VLEN_${p.rvvVlen}"
+    defines += "+define+TB_SUPPORT"
+    if (p.enableFloat) {
+      defines += "+define+ZVE32F_ON"
     }
-    case None => ()
   }
+  if (p.enableVme) {
+    defines += "+define+ZVT_ON"
+  }
+  if (p.fpuPipeRegs != 4) {
+    defines += s"+define+FPU_PIPEREGS=${p.fpuPipeRegs}"
+    defines += s"+define+FALU_PIPEREGS=${p.fpuPipeRegs}"
+  }
+
+  val headerStr = EmitParametersHeader(p)
+  val options   = common.ChiselEmitterOptions(
+    defines = defines.toSeq,
+    extraFilesGen = Some(name => Map(s"V${name}_parameters.h" -> headerStr))
+  )
+
+  common.ChiselEmitter.emit(core, chiselArgs.toArray, options)
 }

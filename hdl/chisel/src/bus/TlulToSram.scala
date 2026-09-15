@@ -92,17 +92,9 @@ class TlulToSram(p: TLULParameters, sramAddressWidth: Int) extends Module {
   d_q.io.enq.bits.user   := 0.U.asTypeOf(d_q.io.enq.bits.user)
 }
 
-import scala.annotation.nowarn
-import _root_.circt.stage.{ChiselStage, FirtoolOption}
-import chisel3.stage.ChiselGeneratorAnnotation
+import common.ChiselEmitter
 
-@nowarn
 object TlulToSramEmitter extends App {
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  (new ChiselStage).execute(
-    Array("--target", "systemverilog") ++ args,
-    Seq(
-      ChiselGeneratorAnnotation(() => new TlulToSram(tlul_p, 10))
-    ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
-  )
+  ChiselEmitter.emit(new TlulToSram(tlul_p, 10), args)
 }
