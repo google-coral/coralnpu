@@ -12,7 +12,7 @@ set -e
 RAW_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'verilator_raw')"
 trap 'rm -rf "$RAW_DIR"' EXIT
 mkdir -p "$1" "$2"
-VERILATOR_ROOT="$3" "$4" "${@:5}" -Mdir "$RAW_DIR"
+VERILATOR_ROOT="$3" "$4" "${@:7}" -Mdir "$RAW_DIR"
 python3 -c '
 import os, shutil, sys
 raw, cpp, hdr = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -23,6 +23,17 @@ for entry in os.scandir(raw):
         elif entry.name.endswith((".h", ".hh", ".hpp")):
             shutil.move(entry.path, os.path.join(hdr, entry.name))
 ' "$RAW_DIR" "$1" "$2"
+
+COMPILER="$5"
+PCH_INCS="$6"
+if [ -n "$COMPILER" ] && [ -f "$2/Vtop__pch.h" ]; then
+    "$COMPILER" -x c++-header -std=c++20 -O2 \
+        -DVERILATOR=1 -DVL_TIME_CONTEXT -DVM_TIMING=1 -DVM_VPI=1 \
+        -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -DVM_TRACE_SAIF=0 \
+        -faligned-new -fPIC \
+        -I"$2" $PCH_INCS \
+        "$2/Vtop__pch.h" -o "$2/Vtop__pch.h.gch" 2>/dev/null || true
+fi
 """
 
 def _uvm_verilator_cc_library_impl(ctx):
@@ -73,7 +84,24 @@ def _uvm_verilator_cc_library_impl(ctx):
     )
     add_input(vlt_file)
 
-    # 2. Codegen Action: Run Verilator to generate C++ code into cpp_dir and hdr_dir
+    # 2. Collect CcInfo dependencies & include paths for PCH
+    all_cc_deps = [dep for dep in ctx.attr.deps if CcInfo in dep]
+    if ctx.attr._verilator_runtime and CcInfo in ctx.attr._verilator_runtime:
+        all_cc_deps.append(ctx.attr._verilator_runtime)
+
+    pch_includes = []
+    cc_headers = []
+    for dep in all_cc_deps:
+        cc_info = dep[CcInfo]
+        for inc in cc_info.compilation_context.includes.to_list():
+            pch_includes.append("-I" + inc)
+        for inc in cc_info.compilation_context.quote_includes.to_list():
+            pch_includes.append("-I" + inc)
+        for inc in cc_info.compilation_context.system_includes.to_list():
+            pch_includes.append("-isystem " + inc)
+        cc_headers.extend(cc_info.compilation_context.headers.to_list())
+
+    # 3. Codegen Action: Run Verilator to generate C++ code into cpp_dir and hdr_dir
     cpp_dir = ctx.actions.declare_directory(ctx.label.name + "_cpp")
     hdr_dir = ctx.actions.declare_directory(ctx.label.name + "_h")
 
@@ -112,7 +140,7 @@ def _uvm_verilator_cc_library_impl(ctx):
         outputs = [cpp_dir, hdr_dir],
         tools = [ctx.executable._verilator_bin],
         inputs = depset(
-            verilog_inputs,
+            verilog_inputs + cc_headers,
             transitive = [
                 depset(ctx.files._verilator),
                 depset(ctx.files._uvm_lib),
@@ -124,16 +152,13 @@ def _uvm_verilator_cc_library_impl(ctx):
             hdr_dir.path,
             verilator_root,
             ctx.executable._verilator_bin.path,
+            cc_toolchain.compiler_executable,
+            " ".join(pch_includes),
         ] + verilator_flags,
         mnemonic = "VerilatorCodegen",
         progress_message = "Verilating SystemVerilog to C++ for %s" % ctx.label,
         resource_set = verilator_resource_estimator,
     )
-
-    # 3. Collect CcInfo dependencies
-    all_cc_deps = [dep for dep in ctx.attr.deps if CcInfo in dep]
-    if ctx.attr._verilator_runtime and CcInfo in ctx.attr._verilator_runtime:
-        all_cc_deps.append(ctx.attr._verilator_runtime)
 
     # 4. Compile generated C++ files using Bazel C++ toolchain
     compilation_context, compilation_outputs = cc_common.compile(

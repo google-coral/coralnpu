@@ -91,6 +91,8 @@ verilator_model(
     name = "uvm_sim_verilator",
     cflags = [
         "+define+UVM_NO_DEPRECATED",
+        "+define+UVM_NO_REG",
+        "+define+UVM_NO_TLM2",
         "+define+TB_SUPPORT",
         "+define+VLEN_128",
         "+define+ZVE32F_ON",

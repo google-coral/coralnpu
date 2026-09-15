@@ -1,0 +1,15 @@
+--- a/src/uvm_pkg.sv
++++ b/src/uvm_pkg.sv
+@@ -59,8 +59,12 @@ package uvm_pkg;
+  `include "tlm1/uvm_tlm.svh"
+  `include "comps/uvm_comps.svh"
+  `include "seq/uvm_seq.svh"
++ `ifndef UVM_NO_TLM2
+  `include "tlm2/uvm_tlm2.svh"
++ `endif
++ `ifndef UVM_NO_REG
+  `include "reg/uvm_reg_model.svh"
++ `endif
+ 
+  `ifdef UVM_EXPERIMENTAL_POLLING_API
+   `include "dpi/uvm_polling_dpi.svh"

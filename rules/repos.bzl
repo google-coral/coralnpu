@@ -51,6 +51,10 @@ def coralnpu_repos():
         sha256 = "9647bfe69439340f1f5c8c969b9814aed06cde9fe4c355111bd5e7cd325c0e0f",
         strip_prefix = "uvm-verilator-uvm-2020-3.2",
         build_file = "@coralnpu_hw//third_party/verilator:uvm.BUILD",
+        patch_args = ["-p1"],
+        patches = [
+            "@coralnpu_hw//third_party/verilator:0002-uvm-optional-reg-tlm2.patch",
+        ],
     )
 
     http_archive(
