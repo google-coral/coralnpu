@@ -76,22 +76,22 @@ def _build_cases():
         ),
         # Case 1: SEW16 with mtwiden=2 derives LMUL=2 (vlmax = 2 * (VLENB/2) = 16).
         # msettn(100) clamps to 16 (previously was 8 when LMUL was not derived).
-        # msettm gets a near-max 14-bit value; msettk gets 10 and clamps to KMAX=2 for SEW16.
+        # msettm(0x3FFF) clamps to TE=16; msettk(10) clamps to KMAX=2 for SEW16.
         dict(
             inputs=(
                 _pack_mtype(tm=3, tk=2, mtwiden=2),  # mtype_value
                 0x08,  # vtype: SEW16/LMUL1 passed in rs2
                 100,  # msettn avl  -> clamps to vlmax (16)
-                0x3FFF,  # msettm arg  -> stays at 0x3FFF
+                0x3FFF,  # msettm arg  -> clamps to TE=16
                 10,  # msettk arg  -> clamps to KMAX=2
             ),
             expected=(
                 _pack_mtype(tm=3, tk=2, mtwiden=2),
                 16,
-                0x3FFF,
-                _pack_mtype(tm=0x3FFF, tk=2, mtwiden=2),
+                16,  # rd_after_msettm clamps to 16
+                _pack_mtype(tm=16, tk=2, mtwiden=2),
                 2,
-                _pack_mtype(tm=0x3FFF, tk=2, mtwiden=2),
+                _pack_mtype(tm=16, tk=2, mtwiden=2),
             ),
         ),
         # Case 2: SEW32 with mtwiden=1 derives LMUL=4 (vlmax = 4 * (128/32) = 16).
@@ -808,3 +808,151 @@ async def vme_msettk_clamp_test(dut):
             )
 
     cocotb.log.info(f"[msettk_clamp] ✓ All {num_cases} test cases passed")
+
+
+@cocotb.test()
+async def vme_msettm_clamp_test(dut):
+    """Directed tests for msettm clamping behavior:
+
+    1. Clamping check:
+       msetmtype clamps tm to TE=16 (min(rs1, 16)).
+       msettm must also clamp to 16.
+       Passing msettm(32) or msettm(100) must clamp to 16.
+
+    2. Tile dimension bounds:
+       Ensures tm is clamped within hardware tile bounds (TE=16).
+    """
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_test_program.elf"
+    )
+    if not elf_path:
+        raise ValueError("Could not find ELF file. Build the target first.")
+
+    with open(elf_path, "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+    with open(elf_path, "rb") as f:
+        num_cases_addr = core_mini_axi.lookup_symbol(f, "vme_num_cases")
+        inputs_addr = core_mini_axi.lookup_symbol(f, "vme_inputs")
+        results_addr = core_mini_axi.lookup_symbol(f, "vme_results")
+
+    # We test:
+    # Case 0: msettm(32) -> Should clamp to 16 (just like msetmtype does).
+    # Expected: rd_after_msettm = 16, mtype_after_msettm has tm=16.
+    cases = [
+        dict(
+            desc="msettm(32) should clamp to TE=16 (min(32, 16))",
+            inputs=(
+                0x4083,  # mtype: tm=16, tk=4, mtwiden=3
+                0x00,  # vtype: SEW8, LMUL1
+                16,  # msettn avl
+                32,  # msettm arg = 32
+                4,  # msettk arg
+            ),
+            expected=(
+                0x4083,  # mtype_after_msetmtype
+                16,  # rd_after_msettn
+                16,  # rd_after_msettm: EXPECTED TO CLAMP TO 16
+                0x4083,  # mtype_after_msettm: EXPECTED tm=16 (0x4083)
+                4,  # rd_after_msettk
+                0x4083,  # mtype_after_msettk
+            ),
+        ),
+        dict(
+            desc="msettm(100) should clamp to TE=16 (min(100, 16))",
+            inputs=(
+                0x4083,  # mtype: tm=16, tk=4, mtwiden=3
+                0x00,  # vtype: SEW8, LMUL1
+                16,  # msettn avl
+                100,  # msettm arg = 100
+                4,  # msettk arg
+            ),
+            expected=(
+                0x4083,  # mtype_after_msetmtype
+                16,  # rd_after_msettn
+                16,  # rd_after_msettm: EXPECTED TO CLAMP TO 16
+                0x4083,  # mtype_after_msettm: EXPECTED tm=16 (0x4083)
+                4,  # rd_after_msettk
+                0x4083,  # mtype_after_msettk
+            ),
+        ),
+    ]
+
+    num_cases = len(cases)
+    inputs_packed = np.array([c["inputs"] for c in cases],
+                             dtype=np.uint32).flatten()
+    await core_mini_axi.write(inputs_addr, inputs_packed)
+    await core_mini_axi.write(
+        num_cases_addr, np.array([num_cases], dtype=np.uint32)
+    )
+
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_halted()
+
+    raw = await core_mini_axi.read(results_addr, num_cases * RESULT_WORDS * 4)
+    results = np.frombuffer(
+        raw, dtype=np.uint32
+    ).reshape(num_cases, RESULT_WORDS)
+
+    field_names = [
+        "mtype_after_msetmtype",
+        "rd_after_msettn",
+        "rd_after_msettm",
+        "mtype_after_msettm",
+        "rd_after_msettk",
+        "mtype_after_msettk",
+    ]
+    for i, case in enumerate(cases):
+        expected = case["expected"]
+        actual = [int(x) for x in results[i]]
+        cocotb.log.info(f"[{case['desc']}]")
+        for name, exp, act in zip(field_names, expected, actual):
+            cocotb.log.info(
+                f"  {name:<22s} expected=0x{exp:08x} actual=0x{act:08x}"
+            )
+        for name, exp, act in zip(field_names, expected, actual):
+            assert act == exp, (
+                f"case {i} ({case['desc']}) field `{name}` mismatch: "
+                f"got 0x{act:08x}, expected 0x{exp:08x}"
+            )
+
+
+@cocotb.test()
+async def vme_msettm_matmul_test(dut):
+    """Verifies Matmul execution with msettm.
+
+    When msettm(32) is invoked, M=32 saturates to the hardware maximum
+    tile height TE=16, computing a full 16x16 tile update.
+    """
+    fixture = await _load_matmul_fixture(dut)
+    rng = np.random.default_rng(42)
+
+    a = rng.integers(1, 10, MM_ROWS * MM_DIM, dtype=np.uint8)
+    b = rng.integers(1, 10, MM_ROWS * MM_DIM, dtype=np.uint8)
+    c_init = rng.integers(100, 200, MM_DIM * MM_DIM, dtype=np.uint32)
+
+    case = dict(impl="vtmmu_mt0", signed_a=False, init=1, tm=32, tn=16, tk=3)
+
+    # Expected: tm=32 clamps to 16, computing full C[:16, :16] += A.T @ B.
+    expected = _int_matmul_ref(
+        a,
+        b,
+        c_init,
+        min(case["tm"], MM_DIM),  # Clamped to 16
+        case["tn"],
+        case["tk"],
+        case["signed_a"],
+    )
+
+    actual = await _run_matmul_case(fixture, case, a, b, c_init)
+
+    cocotb.log.info(
+        "Checking whether msettm(32) updated the tile accumulator..."
+    )
+    _check_matmul_result("int8", case, actual, expected)

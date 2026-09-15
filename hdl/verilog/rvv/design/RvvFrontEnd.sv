@@ -145,6 +145,8 @@ module RvvFrontEnd#(parameter N = 4,
   logic is_setvl [N-1:0];
   logic [`VL_WIDTH-1:0] vl_minus_one [N-1:0];
 `ifdef ZVT_ON
+  // tm = min(tm, LMUL*EVE, ETE) = min(tm, 16)
+  localparam logic [13:0] TILE_EDGE_DIM = 14'd16;
   // VME (Zvt) msettm / msettk write rd with the new field value (and do not
   // set vl). msettn falls through the is_setvl path which already writes
   // vl-to-rd.
@@ -261,8 +263,8 @@ module RvvFrontEnd#(parameter N = 4,
               end
             endcase
             // tm = min(tm, LMUL*EVE, ETE) = min(tm, 16)
-            inst_config_state[i+1].tm = (reg_read_data_i[2*i][23:10] > 14'd16)
-                                        ? 14'd16 : reg_read_data_i[2*i][23:10];
+            inst_config_state[i+1].tm = (reg_read_data_i[2*i][23:10] > TILE_EDGE_DIM)
+                                        ? TILE_EDGE_DIM : reg_read_data_i[2*i][23:10];
           end else begin
             // Unconfigured (mtwiden == 0): mtype is 0, vtype takes rs2 as if by vsetvl.
             inst_config_state[i+1].tk        = 3'b000;
@@ -280,10 +282,12 @@ module RvvFrontEnd#(parameter N = 4,
               avl[i] = reg_read_data_i[2*i];
               is_setvl[i] = 1;
             end
-            3'b001: begin  // msettm rd, rs1 - mtype.tm <- rs1 (saturated)
+            3'b001: begin  // msettm rd, rs1 - mtype.tm <- min(rs1, TE)
               logic [13:0] msettm_new_tm;
-              msettm_new_tm = (reg_read_data_i[2*i] > 32'h3FFF) ? 14'h3FFF
-                                                                : reg_read_data_i[2*i][13:0];
+              logic [13:0] tmax;
+              tmax = (inst_config_state[i+1].mtwiden == 2'b00) ? 14'd0 : TILE_EDGE_DIM;
+              msettm_new_tm = (reg_read_data_i[2*i] > {18'd0, tmax}) ? tmax
+                                                                     : reg_read_data_i[2*i][13:0];
               inst_config_state[i+1].tm = msettm_new_tm;
               mset_writes_rd[i] = 1;
               mset_rd_data[i] = {18'd0, msettm_new_tm};

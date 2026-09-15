@@ -157,7 +157,8 @@ static void RunIntCase() {
 
   // int8 matmul shape: SEW8/LMUL1, mtwiden=3 (TWIDEN=4). Load all four
   // A/B row slots with vl=16; rows >= tk are masked off by the hardware.
-  vme_msetmtype(MtypeValue(mm_tm, mm_tk, /*mtwiden=*/3), kVtypeSew8Lmul1);
+  vme_msetmtype(MtypeValue(/*tm=*/TE, mm_tk, /*mtwiden=*/3), kVtypeSew8Lmul1);
+  (void)vme_msettm(mm_tm);
   (void)vme_msettn(TE);
   asm volatile(
       "vle8.v v8,  (%0)\n"

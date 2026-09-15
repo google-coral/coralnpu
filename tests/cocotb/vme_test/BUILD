@@ -30,6 +30,8 @@ VME_TEST_TESTCASES = [
     "vme_load_store_test",
     "vme_transpose_test",
     "vme_msettk_clamp_test",
+    "vme_msettm_clamp_test",
+    "vme_msettm_matmul_test",
 ]
 
 cocotb_test_suite(
