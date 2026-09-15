@@ -571,7 +571,14 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
         decodedInsts(i).rvv.get.bits.isLoadStore() &&
         !decodedInsts(i).rvv.get.bits.isWholeRegisterLoadStore()
       val invalidVill = isNonWrLdSt && (configInvalid(i) || io.rvvState.get.bits.vill)
-      !invalidVill
+      val invalidVme  = if (p.enableVme) {
+        decodedInsts(i).rvv.get.valid &&
+        decodedInsts(i).rvv.get.bits.isVmeLdSt() &&
+        (configInvalid(i) || !io.rvvState.get.bits.mtwiden.get.orR)
+      } else {
+        false.B
+      }
+      !invalidVill && !invalidVme
     })
   } else {
     Seq.fill(p.instructionLanes)(true.B)
@@ -1053,8 +1060,17 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
                                // Return fault if vill is set for vtdiscard.
                                val invalidVillVtdiscard = decodedInsts(0).isVtdiscard() && villIsSet
 
+                               val invalidVme = if (p.enableVme) {
+                                 decodedInsts(0).rvv.get.valid &&
+                                 decodedInsts(0).rvv.get.bits.isVmeLdSt() &&
+                                 io.rvvState.get.valid &&
+                                 !io.rvvState.get.bits.mtwiden.get.orR
+                               } else {
+                                 false.B
+                               }
+
                                io.inst(0)
-                                 .valid && (invalidVstart || invalidVill || invalidMs || invalidVillVtdiscard) &&
+                                 .valid && (invalidVstart || invalidVill || invalidMs || invalidVillVtdiscard || invalidVme) &&
                                (0.U < io.retirement_buffer_nSpace) &&
                                !io.retirement_buffer_trap_pending
                              } else {

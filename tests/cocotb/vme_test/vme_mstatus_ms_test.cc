@@ -76,13 +76,13 @@ VME_SUBTEST(mstatus_ms_transitions) {
   asm volatile(
       "li x6, 0x4042 \n"
       "li x9, 0x008 \n"
-      ".word 0x82937057 \n"  // msetmtype x6, x9
+      ".word 0x84937057 \n"  // msetmtype x6, x9
       "li x10, 4 \n"
-      ".word 0x840575D7 \n"  // msettn x11, x10
+      ".word 0x880575D7 \n"  // msettn x11, x10
       "li x14, 4 \n"
-      ".word 0x841776D7 \n"  // msettm x13, x14
+      ".word 0x881776D7 \n"  // msettm x13, x14
       "li x16, 2 \n"
-      ".word 0x842877D7 \n"  // msettk x15, x16
+      ".word 0x882877D7 \n"  // msettk x15, x16
       ::
           : "x6", "x9", "x10", "x11", "x13", "x14", "x15", "x16");
 
@@ -146,13 +146,13 @@ VME_SUBTEST(mstatus_ms_transitions) {
   asm volatile(
       "li x6, 0x4021 \n"
       "li x9, 0x0D2 \n"
-      ".word 0x82937057 \n"  // msetmtype x6, x9 (SEW32/LMUL4, mtwiden=1)
+      ".word 0x84937057 \n"  // msetmtype x6, x9 (SEW32/LMUL4, mtwiden=1)
       "li x10, 4 \n"
-      ".word 0x840575D7 \n"  // msettn x11, x10
+      ".word 0x880575D7 \n"  // msettn x11, x10
       "li x14, 4 \n"
-      ".word 0x841776D7 \n"  // msettm x13, x14
+      ".word 0x881776D7 \n"  // msettm x13, x14
       "li x16, 1 \n"
-      ".word 0x842877D7 \n"  // msettk x15, x16
+      ".word 0x882877D7 \n"  // msettk x15, x16
       ::
           : "x6", "x9", "x10", "x11", "x13", "x14", "x15", "x16");
   // Re-enable MS (Clean=10) and set FS=Initial (01), VS=Initial (01)
@@ -211,26 +211,26 @@ VME_SUBTEST(mstatus_ms_csr_to_tile_back_to_back) {
   SAMPLE_MSTATUS_PAIR(6,
                       "li x6, 0x4042 \n"
                       "li x9, 0x008",
-                      ".word 0x82937057");
+                      ".word 0x84937057");
 
   // 1. msetmtypei (mtwiden=3, SEW8)
-  SAMPLE_MSTATUS_PAIR(8, "", ".insn r 0b1010111, 0b111, 0b1000010, x0, x3, x3");
+  SAMPLE_MSTATUS_PAIR(8, "", ".insn r 0b1010111, 0b111, 0b1000100, x0, x3, x4");
 
   // Re-configure valid base mtype for msettn/tm/tk
   asm volatile(
       "li x6, 0x4042 \n"
       "li x9, 0x008 \n"
-      ".word 0x82937057 \n" ::
+      ".word 0x84937057 \n" ::
           : "x6", "x9");
 
   // 2. msettn
-  SAMPLE_MSTATUS_PAIR(10, "li x10, 4", ".word 0x840575D7");
+  SAMPLE_MSTATUS_PAIR(10, "li x10, 4", ".word 0x880575D7");
 
   // 3. msettm
-  SAMPLE_MSTATUS_PAIR(12, "li x14, 4", ".word 0x841776D7");
+  SAMPLE_MSTATUS_PAIR(12, "li x14, 4", ".word 0x881776D7");
 
   // 4. msettk
-  SAMPLE_MSTATUS_PAIR(14, "li x16, 2", ".word 0x842877D7");
+  SAMPLE_MSTATUS_PAIR(14, "li x16, 2", ".word 0x882877D7");
 
   // 5. vtdiscard
   SAMPLE_MSTATUS_PAIR(16, "", ".word 0x43C06057");
@@ -248,9 +248,9 @@ VME_SUBTEST(mstatus_ms_csr_to_tile_back_to_back) {
   SAMPLE_MSTATUS_PAIR(24,
                       "li x6, (16 << 10) | 3 \n"
                       "li x9, 0xC0 \n"
-                      ".word 0x82937057 \n"
+                      ".word 0x84937057 \n"
                       "li x10, 16 \n"
-                      ".word 0x840575D7",
+                      ".word 0x880575D7",
                       ".insn r 0b0000111, 0b111, 0b0001001, zero, %[buf], %[tss]",
                       [buf] "r"(buf_addr), [tss] "r"(tss));
 
@@ -258,9 +258,9 @@ VME_SUBTEST(mstatus_ms_csr_to_tile_back_to_back) {
   SAMPLE_MSTATUS_PAIR(26,
                       "li x6, (16 << 10) | 2 \n"
                       "li x9, 0xC9 \n"
-                      ".word 0x82937057 \n"
+                      ".word 0x84937057 \n"
                       "li x10, 16 \n"
-                      ".word 0x840575D7",
+                      ".word 0x880575D7",
                       ".insn r 0b0000111, 0b111, 0b0011001, zero, %[buf], %[tss]",
                       [buf] "r"(buf_addr), [tss] "r"(tss));
 
@@ -268,9 +268,9 @@ VME_SUBTEST(mstatus_ms_csr_to_tile_back_to_back) {
   SAMPLE_MSTATUS_PAIR(28,
                       "li x6, (16 << 10) | 1 \n"
                       "li x9, 0xD2 \n"
-                      ".word 0x82937057 \n"
+                      ".word 0x84937057 \n"
                       "li x10, 16 \n"
-                      ".word 0x840575D7",
+                      ".word 0x880575D7",
                       ".insn r 0b0000111, 0b111, 0b0101001, zero, %[buf], %[tss]",
                       [buf] "r"(buf_addr), [tss] "r"(tss));
 
@@ -278,9 +278,9 @@ VME_SUBTEST(mstatus_ms_csr_to_tile_back_to_back) {
   SAMPLE_MSTATUS_PAIR(30,
                       "li x6, (4 << 10) | (4 << 5) | 3 \n"
                       "li x9, 0xC0 \n"
-                      ".word 0x82937057 \n"
+                      ".word 0x84937057 \n"
                       "li x10, 4 \n"
-                      ".word 0x840575D7",
+                      ".word 0x880575D7",
                       ".word 0xF2880077");          // vtmmu.tvv mt0, v8, v16
   SAMPLE_MSTATUS_PAIR(32, "", ".word 0xF28800F7");  // vtmms.tvv mt0, v8, v16
 
@@ -288,27 +288,27 @@ VME_SUBTEST(mstatus_ms_csr_to_tile_back_to_back) {
   SAMPLE_MSTATUS_PAIR(34,
                       "li x6, (4 << 10) | (1 << 5) | 1 \n"
                       "li x9, 0xD2 \n"
-                      ".word 0x82937057 \n"
+                      ".word 0x84937057 \n"
                       "li x10, 4 \n"
-                      ".word 0x840575D7",
+                      ".word 0x880575D7",
                       ".word 0xF2881077");  // vtfmm.tvv mt0, v8, v16
 
   // 15. vtfmm.alt.tvv (BF16: configure SEW16, LMUL2, altfmt=1 (0x1C9), mtwiden=2, tm=4, tn=4, tk=2)
   SAMPLE_MSTATUS_PAIR(36,
                       "li x6, (4 << 10) | (2 << 5) | 2 \n"
                       "li x9, 0x1C9 \n"
-                      ".word 0x82937057 \n"
+                      ".word 0x84937057 \n"
                       "li x10, 4 \n"
-                      ".word 0x840575D7",
+                      ".word 0x880575D7",
                       ".word 0xF28810F7");  // vtfmm.alt.tvv mt0, v8, v16
 
   // 16. vtse8 (configure SEW8, LMUL1, mtwiden=3, tm=16, tn=16)
   SAMPLE_MSTATUS_PAIR(38,
                       "li x6, (16 << 10) | 3 \n"
                       "li x9, 0xC0 \n"
-                      ".word 0x82937057 \n"
+                      ".word 0x84937057 \n"
                       "li x10, 16 \n"
-                      ".word 0x840575D7",
+                      ".word 0x880575D7",
                       ".insn r 0b0100111, 0b111, 0b0001001, zero, %[buf], %[tss]",
                       [buf] "r"(buf_addr), [tss] "r"(tss));
 
@@ -316,9 +316,9 @@ VME_SUBTEST(mstatus_ms_csr_to_tile_back_to_back) {
   SAMPLE_MSTATUS_PAIR(40,
                       "li x6, (16 << 10) | 2 \n"
                       "li x9, 0xC9 \n"
-                      ".word 0x82937057 \n"
+                      ".word 0x84937057 \n"
                       "li x10, 16 \n"
-                      ".word 0x840575D7",
+                      ".word 0x880575D7",
                       ".insn r 0b0100111, 0b111, 0b0011001, zero, %[buf], %[tss]",
                       [buf] "r"(buf_addr), [tss] "r"(tss));
 
@@ -326,9 +326,9 @@ VME_SUBTEST(mstatus_ms_csr_to_tile_back_to_back) {
   SAMPLE_MSTATUS_PAIR(42,
                       "li x6, (16 << 10) | 1 \n"
                       "li x9, 0xD2 \n"
-                      ".word 0x82937057 \n"
+                      ".word 0x84937057 \n"
                       "li x10, 16 \n"
-                      ".word 0x840575D7",
+                      ".word 0x880575D7",
                       ".insn r 0b0100111, 0b111, 0b0101001, zero, %[buf], %[tss]",
                       [buf] "r"(buf_addr), [tss] "r"(tss));
 }
@@ -354,13 +354,13 @@ VME_SUBTEST(ms_off_mset_allowed) {
       "csrc mstatus, t0 \n"  // mstatus.MS = Off (00)
       "li x6, 0x4042 \n"
       "li x9, 0x008 \n"
-      ".word 0x82937057 \n"  // msetmtype x6, x9
+      ".word 0x84937057 \n"  // msetmtype x6, x9
       "li x10, 4 \n"
-      ".word 0x840575D7 \n"  // msettn x11, x10
+      ".word 0x880575D7 \n"  // msettn x11, x10
       "li x14, 4 \n"
-      ".word 0x841776D7 \n"  // msettm x13, x14
+      ".word 0x881776D7 \n"  // msettm x13, x14
       "li x16, 2 \n"
-      ".word 0x842877D7 \n"  // msettk x15, x16
+      ".word 0x882877D7 \n"  // msettk x15, x16
       ::
           : "t0", "x6", "x9", "x10", "x11", "x13", "x14", "x15", "x16", "memory");
 }
@@ -503,9 +503,9 @@ VME_SUBTEST(squashed_vtdiscard_on_tile_store_fault) {
       "csrs mstatus, t0 \n"  // mstatus.MS = Dirty (11)
       "li x6, (16 << 10) | 3 \n"
       "li x9, 0xC0 \n"
-      ".word 0x82937057 \n"  // msetmtype x6, x9 (SEW8, LMUL1, mtwiden=3, tm=16)
+      ".word 0x84937057 \n"  // msetmtype x6, x9 (SEW8, LMUL1, mtwiden=3, tm=16)
       "li x10, 16 \n"
-      ".word 0x840575D7 \n"                                       // msettn x11, x10 (tn=16)
+      ".word 0x880575D7 \n"                                       // msettn x11, x10 (tn=16)
       ".insn r 0b0100111, 0b111, 0b0001001, zero, zero, zero \n"  // vtse8 to ITCM (0x0) faults in
                                                                   // LSU (mcause=7)
       ".word 0x43C06057 \n"  // Younger vtdiscard (must be squashed before mutating MS)

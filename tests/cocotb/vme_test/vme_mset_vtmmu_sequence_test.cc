@@ -38,15 +38,15 @@ __attribute__((noinline)) void run_mset_vtmmu_sequence(void) {
       "lui   x6, 0x4 \n"
       "addi  x6, x6, 0x43 \n"     // x6 = 0x00004043 (tm=16, tk=2, mtwiden=3)
       "addi  x9, zero, 0x000 \n"  // x9 = 0x00000000 (SEW=8)
-      ".word 0x82937057 \n"       // msetmtype x6, x9
+      ".word 0x84937057 \n"       // msetmtype x6, x9
 
       // Set tn/vl = 4, tm = 4, tk = 2
       "addi  x10, zero, 4 \n"
-      ".word 0x840575D7 \n"  // msettn x11, x10
+      ".word 0x880575D7 \n"  // msettn x11, x10
       "addi  x14, zero, 4 \n"
-      ".word 0x841776D7 \n"  // msettm x13, x14
+      ".word 0x881776D7 \n"  // msettm x13, x14
       "addi  x16, zero, 2 \n"
-      ".word 0x842877D7 \n"  // msettk x15, x16
+      ".word 0x882877D7 \n"  // msettk x15, x16
 
       // vtzero mt0
       ".word 0x43E06057 \n"  // vtzero mt0
@@ -72,9 +72,9 @@ __attribute__((noinline)) void run_mset_vtmmu_sequence(void) {
       "lui   x6, 0x4 \n"
       "addi  x6, x6, 0x21 \n"     // x6 = 0x00004021 (tm=16, tk=1, mtwiden=1)
       "addi  x9, zero, 0x0D2 \n"  // x9 = SEW32, LMUL4, ta, ma
-      ".word 0x82937057 \n"       // msetmtype x6, x9
+      ".word 0x84937057 \n"       // msetmtype x6, x9
       "addi  x10, zero, 4 \n"
-      ".word 0x840575D7 \n"  // msettn x11, x10
+      ".word 0x880575D7 \n"  // msettn x11, x10
       "addi  x10, zero, 0 \n"
       ".word 0x43FA6257 \n"  // vtmv.v.t v4, a0 (row 0 of mt0)
 

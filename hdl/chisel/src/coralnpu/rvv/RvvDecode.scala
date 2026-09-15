@@ -179,17 +179,24 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
   // vset*vl*, distinguished by bit31=1 and the funct7 / sub-funct fields.
   // In the 25-bit `bits` view (which is instr[31:7]):
   //   bits(24,18)  = instr[31:25] = funct7
-  //   bits(15,13)  = instr[22:20] = sub-funct (for the 000010 family)
+  //   bits(17,13)  = instr[24:20] = rs2 / sub-funct
+  //   bits(12,8)   = instr[19:15] = rs1
+  //   bits(7,5)    = instr[14:12] = funct3
+  //   bits(4,0)    = instr[11:7]  = rd
+  // v0.4: msetmtype funct7=1000010 (inst[27:25]=010), rd=00000
   def isMsetmtype(): Bool =
-    isVset() && bits(24, 18) === "b1000001".U
+    isVset() && bits(24, 18) === "b1000010".U && bits(4, 0) === 0.U
+  // v0.4: msettn/m/k funct7=1000100 (inst[27:25]=100)
   def isMsettn(): Bool =
-    isVset() && bits(24, 18) === "b1000010".U && bits(15, 13) === "b000".U
+    isVset() && bits(24, 18) === "b1000100".U && bits(17, 13) === "b00000".U
   def isMsettm(): Bool =
-    isVset() && bits(24, 18) === "b1000010".U && bits(15, 13) === "b001".U
+    isVset() && bits(24, 18) === "b1000100".U && bits(17, 13) === "b00001".U
   def isMsettk(): Bool =
-    isVset() && bits(24, 18) === "b1000010".U && bits(15, 13) === "b010".U
+    isVset() && bits(24, 18) === "b1000100".U && bits(17, 13) === "b00010".U
+  // v0.4: msetmtypei has bits[24:22]=100, bits[20:18]=100, bits[15:13]=100, bits[12:10]=000, rd=00000
   def isMsetmtypei(): Bool =
-    isVset() && bits(24, 18) === "b1000010".U && bits(15, 13) === "b011".U
+    isVset() && (bits(24, 22) === "b100".U) && (bits(20, 18) === "b100".U) &&
+      (bits(15, 13) === "b100".U) && (bits(12, 10) === "b000".U) && (bits(4, 0) === 0.U)
   def isMsetAny(): Bool =
     isMsetmtype() || isMsettn() || isMsettm() || isMsettk() || isMsetmtypei()
   def isMsetWritesMtype(): Bool =
@@ -211,12 +218,10 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
 
   def readsRs1(): Bool = {
     isLoadStore() ||
-    (funct3() === "b100".U) ||                                 // OPIVX
-    (funct3() === "b110".U) ||                                 // OPMVX
-    ((funct3() === "b111".U) && (bits(24, 23) =/= "b11".U)) || // vsetvl(i)
-    // VME mset*: msetmtype/msettn/msettm/msettk all read rs1. Above clause
-    // already covers msettn/m/k (bits[24:23]=00) but not msetmtype (bits[24:23]
-    // is rs2 high bits, which can be 11).
+    (funct3() === "b100".U) ||                                                    // OPIVX
+    (funct3() === "b110".U) ||                                                    // OPMVX
+    ((funct3() === "b111".U) && (bits(24, 23) =/= "b11".U) && !isMsetmtypei()) || // vsetvl(i)
+    // VME mset*: msetmtype/msettn/msettm/msettk all read rs1.
     isMsetmtype() || isMsettn() || isMsettm() || isMsettk()
   }
 
@@ -419,21 +424,30 @@ object RvvCompressedInstruction {
   }
 
   def isMsetWritesMtype(inst: UInt): Bool = {
-    val opcode   = inst(6, 0)
-    val funct3   = inst(14, 12)
-    val funct7   = inst(31, 25)
-    val subFunct = inst(22, 20)
-    val isVset   = opcode === "b1010111".U && funct3 === "b111".U
-    isVset && ((funct7 === "b1000001".U) || (funct7 === "b1000010".U && (subFunct === 1.U || subFunct === 2.U || subFunct === 3.U)))
+    val opcode       = inst(6, 0)
+    val funct3       = inst(14, 12)
+    val funct7       = inst(31, 25)
+    val rs2          = inst(24, 20)
+    val rd           = inst(11, 7)
+    val isVset       = opcode === "b1010111".U && funct3 === "b111".U
+    val isMsetmtype  = funct7 === "b1000010".U && rd === 0.U
+    val isMsettm     = funct7 === "b1000100".U && rs2 === "b00001".U
+    val isMsettk     = funct7 === "b1000100".U && rs2 === "b00010".U
+    val isMsetmtypei = (inst(31, 29) === "b100".U) && (inst(27, 25) === "b100".U) &&
+      (inst(22, 20) === "b100".U) && (inst(19, 17) === "b000".U) && (rd === 0.U)
+    isVset && (isMsetmtype || isMsettm || isMsettk || isMsetmtypei)
   }
 
   def isMsetWritesVtype(inst: UInt): Bool = {
-    val opcode   = inst(6, 0)
-    val funct3   = inst(14, 12)
-    val funct7   = inst(31, 25)
-    val subFunct = inst(22, 20)
-    val isVset   = opcode === "b1010111".U && funct3 === "b111".U
-    isVset && ((funct7 === "b1000001".U) || (funct7 === "b1000010".U && subFunct === 3.U))
+    val opcode       = inst(6, 0)
+    val funct3       = inst(14, 12)
+    val funct7       = inst(31, 25)
+    val rd           = inst(11, 7)
+    val isVset       = opcode === "b1010111".U && funct3 === "b111".U
+    val isMsetmtype  = funct7 === "b1000010".U && rd === 0.U
+    val isMsetmtypei = (inst(31, 29) === "b100".U) && (inst(27, 25) === "b100".U) &&
+      (inst(22, 20) === "b100".U) && (inst(19, 17) === "b000".U) && (rd === 0.U)
+    isVset && (isMsetmtype || isMsetmtypei)
   }
 }
 

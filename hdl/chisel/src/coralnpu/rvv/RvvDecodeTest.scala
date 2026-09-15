@@ -501,40 +501,40 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
       )
       val cases = Seq(
         TestCase(
-          0x82007057L,
+          0x84007057L,
           writesMtype = true,
           writesVtype = true,
           isMsettn = false
         ), // msetmtype
         TestCase(
-          0x82b57057L,
+          0x84b57057L,
           writesMtype = true,
           writesVtype = true,
           isMsettn = false
         ), // msetmtype with rs1/rs2
-        TestCase(0x84007057L, writesMtype = false, writesVtype = false, isMsettn = true), // msettn
+        TestCase(0x88007057L, writesMtype = false, writesVtype = false, isMsettn = true), // msettn
         TestCase(
-          0x840572d7L,
+          0x880572d7L,
           writesMtype = false,
           writesVtype = false,
           isMsettn = true
         ), // msettn with rd/rs1
-        TestCase(0x84107057L, writesMtype = true, writesVtype = false, isMsettn = false), // msettm
+        TestCase(0x88107057L, writesMtype = true, writesVtype = false, isMsettn = false), // msettm
         TestCase(
-          0x841572d7L,
+          0x881572d7L,
           writesMtype = true,
           writesVtype = false,
           isMsettn = false
         ), // msettm with rd/rs1
-        TestCase(0x84207057L, writesMtype = true, writesVtype = false, isMsettn = false), // msettk
+        TestCase(0x88207057L, writesMtype = true, writesVtype = false, isMsettn = false), // msettk
         TestCase(
-          0x842572d7L,
+          0x882572d7L,
           writesMtype = true,
           writesVtype = false,
           isMsettn = false
         ), // msettk with rd/rs1
         TestCase(
-          0x84307057L,
+          0x88407057L,
           writesMtype = true,
           writesVtype = true,
           isMsettn = false

@@ -66,8 +66,12 @@ volatile VmeMsetCase vme_inputs[VME_MAX_CASES] __attribute__((section(".data")))
     {0x4083, 0x00, 16, 32, 4},                     // SEW8/mtwiden=3, msettm(32)->clamped to 16
 };
 
-VmeMsetResult vme_results[VME_MAX_CASES] __attribute__((section(".data"))) = {};
-uint32_t vme_msetmtypei_result __attribute__((section(".data")))           = 0;
+VmeMsetResult vme_results[VME_MAX_CASES] __attribute__((section(".data")))     = {};
+uint32_t vme_msetmtypei_result __attribute__((section(".data")))               = 0;
+uint32_t vme_msetmtypei_vtype_result __attribute__((section(".data")))         = 0;
+uint32_t vme_msetmtypei_altfmt1_result __attribute__((section(".data")))       = 0;
+uint32_t vme_msetmtypei_altfmt1_vtype_result __attribute__((section(".data"))) = 0;
+uint32_t vme_vsetvl_mtype_result __attribute__((section(".data")))             = 0xFFFFFFFF;
 
 int main(int argc, char **argv) {
   // Each row sets mtype + vtype via msetmtype, then exercises msettn/m/k with
@@ -78,18 +82,36 @@ int main(int argc, char **argv) {
 
     vme_results[i].rd_after_msettn = vme_msettn(vme_inputs[i].msettn_avl);
 
-    vme_results[i].rd_after_msettm    = vme_msettm(vme_inputs[i].msettm_arg);
-    vme_results[i].mtype_after_msettm = vme_read_mtype();
+    if ((vme_inputs[i].mtype_value & 3) != 0) {
+      vme_results[i].rd_after_msettm    = vme_msettm(vme_inputs[i].msettm_arg);
+      vme_results[i].mtype_after_msettm = vme_read_mtype();
 
-    vme_results[i].rd_after_msettk    = vme_msettk(vme_inputs[i].msettk_arg);
-    vme_results[i].mtype_after_msettk = vme_read_mtype();
+      vme_results[i].rd_after_msettk    = vme_msettk(vme_inputs[i].msettk_arg);
+      vme_results[i].mtype_after_msettk = vme_read_mtype();
+    } else {
+      vme_results[i].rd_after_msettm    = 0;
+      vme_results[i].mtype_after_msettm = 0;
+      vme_results[i].rd_after_msettk    = 0;
+      vme_results[i].mtype_after_msettk = 0;
+    }
   }
 
   // The msetmtypei variant has all operands encoded as immediates, so it can't
   // be parameterized from memory. Run the single hard-coded version and snap
-  // its mtype readback so the harness can still verify the encoding path.
+  // its mtype and vtype readback so the harness can verify the encoding path.
   vme_msetmtypei_mtwiden3_sew8();
-  vme_msetmtypei_result = vme_read_mtype();
+  vme_msetmtypei_result       = vme_read_mtype();
+  vme_msetmtypei_vtype_result = vme_read_vtype();
+
+  // Test altfmt=1 variant
+  vme_msetmtypei_altfmt1_mtwiden3_sew8();
+  vme_msetmtypei_altfmt1_result       = vme_read_mtype();
+  vme_msetmtypei_altfmt1_vtype_result = vme_read_vtype();
+
+  // Test that vsetvli clears mtype to 0
+  uint32_t vl_discard;
+  asm volatile("vsetvli %0, zero, e8, m1, ta, ma" : "=r"(vl_discard));
+  vme_vsetvl_mtype_result = vme_read_mtype();
 
   return 0;
 }

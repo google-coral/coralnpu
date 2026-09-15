@@ -3317,7 +3317,7 @@ module rvv_backend_decode_unit_ari
 
          `ifdef ZVT_ON
           VTXMMXTVV: begin
-            check_special = inst_vm&check_tm&check_tn&check_tk&check_mtd_align&(csr_vstart=='b0);
+            check_special = inst_vm&check_tm&check_tn&check_tk&check_mtd_align&(csr_vstart=='b0)&(csr_mtwiden!=2'b00);
           end
         `endif
         endcase
@@ -3601,8 +3601,8 @@ module rvv_backend_decode_unit_ari
             case(vs2_opcode)
               VMV_S_X: check_special = inst_vm;
             `ifdef ZVT_ON
-              VTMVVT:  check_special = inst_vm;
-              VTZERO:  check_special = inst_vm&(inst_vs1==5'b00000)&(inst_vd[0]=='b0)&check_mtd_align&check_tm&check_tn;
+              VTMVVT:  check_special = inst_vm & (csr_mtwiden != 2'b00);
+              VTZERO:  check_special = inst_vm&(inst_vs1==5'b00000)&(inst_vd[0]=='b0)&check_mtd_align&check_tm&check_tn&(csr_mtwiden!=2'b00);
             `endif
             endcase
           end
@@ -3618,7 +3618,7 @@ module rvv_backend_decode_unit_ari
                           `ifndef RVVCHECK_VSTART_VL
                             &check_vstart_sle_vl
                           `endif 
-                            ;
+                            &(csr_mtwiden!=2'b00);
           end
         `endif
         endcase
@@ -3718,7 +3718,7 @@ module rvv_backend_decode_unit_ari
             // Per Zvt §15.1.1.8 matrix arith traps on non-zero vstart.
             // Mirrors the OPIVV arm at line 3147-3151 which already gates on
             // (csr_vstart=='b0).
-            check_special = inst_vm&check_tm&check_tn&check_tk&check_mtd_align&(csr_vstart=='b0);
+            check_special = inst_vm&check_tm&check_tn&check_tk&check_mtd_align&(csr_vstart=='b0)&(csr_mtwiden!=2'b00);
           end
         `endif
         endcase

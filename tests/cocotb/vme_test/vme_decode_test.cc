@@ -257,13 +257,13 @@ VME_SUBTEST(mset_dimension_config) {
   asm volatile(
       "li x6, 0x4042 \n"
       "li x9, 0x008 \n"
-      ".word 0x82937057 \n"  // msetmtype x6, x9
+      ".word 0x84937057 \n"  // msetmtype x6, x9
       "li x10, 4 \n"
-      ".word 0x840575D7 \n"  // msettn x11, x10
+      ".word 0x880575D7 \n"  // msettn x11, x10
       "li x14, 4 \n"
-      ".word 0x841776D7 \n"  // msettm x13, x14
+      ".word 0x881776D7 \n"  // msettm x13, x14
       "li x16, 2 \n"
-      ".word 0x842877D7 \n"  // msettk x15, x16
+      ".word 0x882877D7 \n"  // msettk x15, x16
       ".word 0x43E06057 \n"  // vtzero mt0
       ::
           : "x6", "x9", "x10", "x11", "x13", "x14", "x15", "x16", "memory");
@@ -284,6 +284,80 @@ VME_SUBTEST(vfwmacc_vv_vill) {
       ".word 0xF2001057 \n"                              // vfwmacc.vv v0, v0, v0 (opcode 0x57)
       : [vl_discard] "=&r"(vl_discard)
       :
+      : "vl", "vtype");
+}
+
+// msettm when mtwiden=0 (unconfigured) raises illegal instruction trap
+VME_SUBTEST(msettm_unconfigured) {
+  uint32_t vl_discard;
+  uint32_t tm_discard;
+  asm volatile(
+      "vsetvli %[vl_discard], zero, e8, m1, ta, ma \n"  // clears mtype (mtwiden=0)
+      ".insn r 0b1010111, 0b111, 0b1000100, %[tm_discard], x0, x1 \n"
+      : [vl_discard] "=&r"(vl_discard), [tm_discard] "=&r"(tm_discard)
+      :
+      : "vl", "vtype");
+}
+
+// msettk when mtwiden=0 (unconfigured) raises illegal instruction trap
+VME_SUBTEST(msettk_unconfigured) {
+  uint32_t vl_discard;
+  uint32_t tk_discard;
+  asm volatile(
+      "vsetvli %[vl_discard], zero, e8, m1, ta, ma \n"  // clears mtype (mtwiden=0)
+      ".insn r 0b1010111, 0b111, 0b1000100, %[tk_discard], x0, x2 \n"
+      : [vl_discard] "=&r"(vl_discard), [tk_discard] "=&r"(tk_discard)
+      :
+      : "vl", "vtype");
+}
+
+// vtle8 when mtwiden=0 (unconfigured) raises illegal instruction trap
+VME_SUBTEST(vtle_unconfigured) {
+  uint32_t addr = 0x1000;
+  uint32_t tss  = 0;
+  uint32_t vl_discard;
+  asm volatile(
+      "vsetvli %[vl_discard], zero, e8, m1, ta, ma \n"  // clears mtype (mtwiden=0)
+      ".insn r 0b0000111, 0b111, 0b0001001, zero, %[addr], %[tss] \n"
+      : [vl_discard] "=&r"(vl_discard)
+      : [addr] "r"(addr), [tss] "r"(tss)
+      : "vl", "vtype");
+}
+
+// vtse8 when mtwiden=0 (unconfigured) raises illegal instruction trap
+VME_SUBTEST(vtse_unconfigured) {
+  uint32_t addr = 0x1000;
+  uint32_t tss  = 0;
+  uint32_t vl_discard;
+  asm volatile(
+      "vsetvli %[vl_discard], zero, e8, m1, ta, ma \n"  // clears mtype (mtwiden=0)
+      ".insn r 0b0100111, 0b111, 0b0001001, zero, %[addr], %[tss] \n"
+      : [vl_discard] "=&r"(vl_discard)
+      : [addr] "r"(addr), [tss] "r"(tss)
+      : "vl", "vtype");
+}
+
+// vtmv.v.t when mtwiden=0 (unconfigured) raises illegal instruction trap
+VME_SUBTEST(vtmv_v_t_unconfigured) {
+  uint32_t tss = 0;
+  uint32_t vl_discard;
+  asm volatile(
+      "vsetvli %[vl_discard], zero, e8, m1, ta, ma \n"  // clears mtype (mtwiden=0)
+      ".insn r 0b1010111, 0b110, 0b0100001, x8, %[tss], x31 \n"
+      : [vl_discard] "=&r"(vl_discard)
+      : [tss] "r"(tss)
+      : "vl", "vtype", "v8");
+}
+
+// vtmv.t.v when mtwiden=0 (unconfigured) raises illegal instruction trap
+VME_SUBTEST(vtmv_t_v_unconfigured) {
+  uint32_t tss = 0;
+  uint32_t vl_discard;
+  asm volatile(
+      "vsetvli %[vl_discard], zero, e8, m1, ta, ma \n"  // clears mtype (mtwiden=0)
+      ".insn r 0b1010111, 0b110, 0b0101111, x0, %[tss], x8 \n"
+      : [vl_discard] "=&r"(vl_discard)
+      : [tss] "r"(tss)
       : "vl", "vtype");
 }
 

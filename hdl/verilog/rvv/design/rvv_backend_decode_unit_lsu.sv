@@ -3390,7 +3390,7 @@ module rvv_backend_decode_unit_lsu
                         `ifndef RVVCHECK_VSTART_VL
                           &check_evl_not_0&check_vstart_sle_evl
                         `endif 
-                          ;
+                          &(csr_mtwiden!=2'b00);
         end
       `endif
     endcase

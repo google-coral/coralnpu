@@ -43,8 +43,8 @@ static inline void vme_configure(uint32_t mtwiden, uint32_t sew_code, uint32_t l
   uint32_t vtype   = (0xc0) | ((sew_code & 0x7) << 3) | (lmul_code & 0x7);
   uint32_t sixteen = 16;
   asm volatile(
-      ".insn r 0b1010111, 0b111, 0b1000001, x0, %[mtype], %[vtype] \n"  // msetmtype
-      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[sixteen], x0 \n"      // msettn x0, 16
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[mtype], %[vtype] \n"  // msetmtype
+      ".insn r 0b1010111, 0b111, 0b1000100, x0, %[sixteen], x0 \n"      // msettn x0, 16
       :
       : [mtype] "r"(mtype), [vtype] "r"(vtype), [sixteen] "r"(sixteen)
       : "vl", "vtype");

@@ -604,15 +604,19 @@ object GenerateCoreShimSource {
     coreInstantiation += "  assign configLmul = config_state.lmul;\n"
     coreInstantiation += "  assign configLmulOrig = config_state.lmul_orig;\n"
     coreInstantiation += "  assign configVill = config_state.vill;\n"
-    coreInstantiation +=
-      "`ifdef ZVT_ON\n" +
-        "  assign configAltfmt = config_state.altfmt;\n" +
-        "`else\n" +
-        "  assign configAltfmt = 1'b0;\n" +
-        "`endif\n"
+    if (enableVme) {
+      coreInstantiation +=
+        "`ifdef ZVT_ON\n" +
+          "  assign configAltfmt = config_state.altfmt;\n" +
+          "`else\n" +
+          "  assign configAltfmt = 1'b0;\n" +
+          "`endif\n"
+    } else {
+      coreInstantiation += "  assign configAltfmt = 1'b0;\n"
+    }
 
     // VME (Zvt) packed mtype CSR view assembled from {tm, tk, mtwiden} per
-    // spec §15.1.1.2. Tied to 0 when ZVT_ON is not defined.
+    // spec §12.1.1.2. Tied to 0 when ZVT_ON is not defined.
     // Note: We use 2'd0 spacer before tk (instead of 3'd0) because tk is 3 bits
     // (occupying 7:5 instead of spec's 6:5) to resolve spec discrepancy.
     coreInstantiation +=
@@ -996,12 +1000,12 @@ class RvvCoreShim(p: Parameters) extends Module {
   io.configState.bits.lmul_orig := rvvCoreWrapper.io.configLmulOrig
   io.configState.bits.vill      := rvvCoreWrapper.io.configVill
   if (p.enableVme) {
+    io.configState.bits.altfmt.get := rvvCoreWrapper.io.configAltfmt
     val mt = rvvCoreWrapper.io.configMtype
     io.configState.bits.mtype.get   := mt
     io.configState.bits.mtwiden.get := mt(1, 0)
     io.configState.bits.tk.get      := mt(7, 5)
     io.configState.bits.tm.get      := mt(23, 10)
-    io.configState.bits.altfmt.get  := rvvCoreWrapper.io.configAltfmt
     io.nextConfigMtype.get          := rvvCoreWrapper.io.nextConfigMtype
   }
   io.rvv_idle       := rvvCoreWrapper.io.rvv_idle

@@ -201,6 +201,18 @@ async def vme_mset_csr_test(dut):
         msetmtypei_addr = core_mini_axi.lookup_symbol(
             f, "vme_msetmtypei_result"
         )
+        msetmtypei_vtype_addr = core_mini_axi.lookup_symbol(
+            f, "vme_msetmtypei_vtype_result"
+        )
+        msetmtypei_altfmt1_addr = core_mini_axi.lookup_symbol(
+            f, "vme_msetmtypei_altfmt1_result"
+        )
+        msetmtypei_altfmt1_vtype_addr = core_mini_axi.lookup_symbol(
+            f, "vme_msetmtypei_altfmt1_vtype_result"
+        )
+        vsetvl_mtype_addr = core_mini_axi.lookup_symbol(
+            f, "vme_vsetvl_mtype_result"
+        )
 
     cases = _build_cases()
     num_cases = len(cases)
@@ -244,12 +256,12 @@ async def vme_mset_csr_test(dut):
                 f"got 0x{act:08x}, expected 0x{exp:08x}"
             )
 
-    # msetmtypei is single-shot (immediates can't be parameterized from memory).
+    # msetmtypei with altfmt=0
     raw = await core_mini_axi.read(msetmtypei_addr, 4)
     msetmtypei_result = int(np.frombuffer(raw, dtype=np.uint32)[0])
     EXPECTED_MTYPE_AFTER_MSETMTYPEI = 3  # mtwiden=3, tk=0, tm=0
     cocotb.log.info(
-        f"[VME msetmtypei] expected=0x{EXPECTED_MTYPE_AFTER_MSETMTYPEI:08x} "
+        f"[VME msetmtypei altfmt0] mtype: expected=0x{EXPECTED_MTYPE_AFTER_MSETMTYPEI:08x} "
         f"actual=0x{msetmtypei_result:08x}"
     )
     assert msetmtypei_result == EXPECTED_MTYPE_AFTER_MSETMTYPEI, (
@@ -257,8 +269,37 @@ async def vme_mset_csr_test(dut):
         f"expected 0x{EXPECTED_MTYPE_AFTER_MSETMTYPEI:08x}"
     )
 
+    raw = await core_mini_axi.read(msetmtypei_vtype_addr, 4)
+    msetmtypei_vtype = int(np.frombuffer(raw, dtype=np.uint32)[0])
+    altfmt0_bit = (msetmtypei_vtype >> 8) & 1
     cocotb.log.info(
-        f"[VME] ✓ All {num_cases} parameterized cases + msetmtypei passed"
+        f"[VME msetmtypei altfmt0] vtype=0x{msetmtypei_vtype:08x}, altfmt={altfmt0_bit}"
+    )
+    assert altfmt0_bit == 0, f"msetmtypei altfmt bit mismatch: expected 0, got {altfmt0_bit}"
+
+    # msetmtypei with altfmt=1
+    raw = await core_mini_axi.read(msetmtypei_altfmt1_addr, 4)
+    msetmtypei_altfmt1_result = int(np.frombuffer(raw, dtype=np.uint32)[0])
+    assert msetmtypei_altfmt1_result == EXPECTED_MTYPE_AFTER_MSETMTYPEI
+
+    raw = await core_mini_axi.read(msetmtypei_altfmt1_vtype_addr, 4)
+    msetmtypei_altfmt1_vtype = int(np.frombuffer(raw, dtype=np.uint32)[0])
+    altfmt1_bit = (msetmtypei_altfmt1_vtype >> 8) & 1
+    cocotb.log.info(
+        f"[VME msetmtypei altfmt1] vtype=0x{msetmtypei_altfmt1_vtype:08x}, altfmt={altfmt1_bit}"
+    )
+    assert altfmt1_bit == 1, f"msetmtypei altfmt bit mismatch: expected 1, got {altfmt1_bit}"
+
+    # vsetvl clears mtype
+    raw = await core_mini_axi.read(vsetvl_mtype_addr, 4)
+    vsetvl_mtype_result = int(np.frombuffer(raw, dtype=np.uint32)[0])
+    cocotb.log.info(
+        f"[VME vsetvl clears mtype] mtype=0x{vsetvl_mtype_result:08x}"
+    )
+    assert vsetvl_mtype_result == 0, f"vsetvl did not clear mtype: got 0x{vsetvl_mtype_result:08x}"
+
+    cocotb.log.info(
+        f"[VME] ✓ All {num_cases} parameterized cases + msetmtypei (altfmt0/1) + vsetvl clears mtype passed"
     )
 
 
@@ -491,6 +532,12 @@ async def vme_decode_test(dut):
         "vill1_store",
         "opve_invalid_funct3",
         "vfwmacc_vv_vill",
+        "msettm_unconfigured",
+        "msettk_unconfigured",
+        "vtle_unconfigured",
+        "vtse_unconfigured",
+        "vtmv_v_t_unconfigured",
+        "vtmv_t_v_unconfigured",
     ]
 
     r = runfiles.Create()
@@ -832,13 +879,13 @@ async def vme_msettk_clamp_test(dut):
     # Test sequence:
     #   li   x6, 0x4083
     #   li   x9, 0x0
-    #   .word 0x82937057              # msetmtype x6, x9 (SEW=8, TWIDEN=4, KMAX=4)
+    #   .word 0x84937057              # msetmtype x6, x9 (SEW=8, TWIDEN=4, KMAX=4)
     #   li   x10, 16
-    #   .word 0x840575D7              # msettn x11, x10
+    #   .word 0x880575D7              # msettn x11, x10
     #   li   x14, 16
-    #   .word 0x841776D7              # msettm x13, x14
+    #   .word 0x881776D7              # msettm x13, x14
     #   li   x16, 4
-    #   .word 0x842877D7              # msettk x15, x16
+    #   .word 0x882877D7              # msettk x15, x16
     #   # Expected: vl=tn=16, tm=16, tk=4
     cases = [
         dict(
