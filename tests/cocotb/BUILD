@@ -51,6 +51,7 @@ COCOTB_TEST_BINARY_TARGETS = glob(["**/*.elf"]) + glob(["**/*.o"]) + [
     ":zfbfmin_test.elf",
     ":zvfbf_test.elf",
     ":rvv_fflags_test.elf",
+    ":rvv_vsetvli_keep_vl_test.elf",
     ":fencei_test.elf",
     "//tests/cocotb/coralnpu_isa:coralnpu_isa_tests",
     "//tests/cocotb/exceptions:elf_files",
@@ -494,6 +495,13 @@ coralnpu_v2_binary(
     name = "align_test",
     srcs = [
         "align_test.cc",
+    ],
+)
+
+coralnpu_v2_binary(
+    name = "rvv_vsetvli_keep_vl_test",
+    srcs = [
+        "rvv_vsetvli_keep_vl_test.S",
     ],
 )
 

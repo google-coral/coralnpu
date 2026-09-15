@@ -412,6 +412,7 @@ def mpact_repos():
             "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_helpers.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_f_instructions.patch",
             "@coralnpu_hw//third_party/patches:mpact_riscv_vector_csr.patch",
+            "@coralnpu_hw//third_party/patches:mpact_riscv_vsetvl_preserve_vl.patch",
         ],
         patch_args = ["-p1"],
     )
