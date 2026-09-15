@@ -82,6 +82,7 @@ mock_linter "clang-format-19"
 mock_linter "git-clang-format-19"
 mock_linter "scalafmt"
 mock_linter "shellcheck"
+mock_linter "mdl"
 
 # Run a test case
 run_test() {

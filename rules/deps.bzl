@@ -14,11 +14,11 @@
 
 """CoralNPU HW dependent repositories."""
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load(
     "@rules_foreign_cc//foreign_cc:repositories.bzl",
     "rules_foreign_cc_dependencies",
 )
+load("//rules:repo_defs.bzl", "define_sim_repos")
 
 def coralnpu_deps():
     """Full coralnpu dependent repositories
@@ -26,32 +26,4 @@ def coralnpu_deps():
     Including chisel and systemC test code
     """
     rules_foreign_cc_dependencies()
-
-    http_archive(
-        name = "accellera_systemc",
-        build_file = "@coralnpu_hw//third_party/systemc:systemc.BUILD",
-        sha256 = "bfb309485a8ad35a08ee78827d1647a451ec5455767b25136e74522a6f41e0ea",
-        strip_prefix = "systemc-2.3.4",
-        urls = [
-            "https://github.com/accellera-official/systemc/archive/refs/tags/2.3.4.tar.gz",
-        ],
-    )
-
-    http_archive(
-        name = "riscv_isa_sim",
-        build_file = "@coralnpu_hw//third_party:spike.BUILD",
-        sha256 = "850f3c736f98536e306b7cf070b07996fb557014e2150353ec0118efac14674d",
-        strip_prefix = "riscv-isa-sim-fd72ee2d3e0d1703451c446d467387ff0576e492",
-        patches = [
-            "@coralnpu_hw//third_party/spike:0001-Add-mpause.patch",
-            "@coralnpu_hw//third_party/spike:0002-Coral-Deviations.patch",
-            "@coralnpu_hw//third_party/spike:0003-Dump-GPRs-on-EBREAK.patch",
-            "@coralnpu_hw//third_party/spike:0004-Add-custom-CoralNPU-CSRs-and-update-MVENDORID-MARCHI.patch",
-            "@coralnpu_hw//third_party/spike:0005-Force-logging-in-vcompress.patch",
-            "@coralnpu_hw//third_party/spike:0006-Hardwire-misa-as-read-only-WARL.patch",
-        ],
-        patch_args = ["-p1"],
-        urls = [
-            "https://github.com/riscv-software-src/riscv-isa-sim/archive/fd72ee2d3e0d1703451c446d467387ff0576e492.tar.gz",
-        ],
-    )
+    define_sim_repos()

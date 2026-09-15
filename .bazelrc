@@ -1,6 +1,10 @@
 # Disable bzlmod and enable workspace while we migrate
 common --noenable_bzlmod --enable_workspace
 
+# Dual-mode configs for Bzlmod and legacy WORKSPACE
+common:bzlmod --enable_bzlmod --noenable_workspace
+common:workspace --noenable_bzlmod --enable_workspace
+
 # Bazel 8 default-flipped --incompatible_disallow_empty_glob. Several BUILD
 # files (notably third_party/* with mixed .v/.sv source trees) rely on the
 # legacy permissive behavior. Restore it for now; clean up per-glob in a

@@ -39,6 +39,11 @@ http_archive(
 
 load("//rules:host_cpus.bzl", "host_cpus")
 load(
+    "//rules:repo_defs.bzl",
+    "define_coralnpu_toolchain",
+    "define_internal_check",
+)
+load(
     "//rules:repos.bzl",
     "coralnpu_repos",
     "coralnpu_repos2",
@@ -185,25 +190,22 @@ python_register_toolchains(
 coralnpu_repos2()
 
 # Scala setup
-load("@io_bazel_rules_scala//:scala_config.bzl", "scala_config")
+load("@rules_scala//scala:deps.bzl", "rules_scala_dependencies")
 
-scala_config(scala_version = "2.13.12")
+rules_scala_dependencies()
 
-load("@io_bazel_rules_scala//scala:scala.bzl", "rules_scala_setup", "rules_scala_toolchain_deps_repositories")
+load("@rules_scala//:scala_config.bzl", "scala_config")
 
-rules_scala_setup()
+scala_config(scala_version = "2.13.18")
 
-rules_scala_toolchain_deps_repositories(fetch_sources = True)
+load("@rules_scala//scala:toolchains.bzl", "scala_register_toolchains", "scala_toolchains")
 
-load("@io_bazel_rules_scala//scala:toolchains.bzl", "scala_register_toolchains")
+scala_toolchains(
+    fetch_sources = True,
+    scalatest = True,
+)
 
 scala_register_toolchains()
-
-load("@io_bazel_rules_scala//testing:scalatest.bzl", "scalatest_repositories", "scalatest_toolchain")
-
-scalatest_repositories()
-
-scalatest_toolchain()
 
 load("//rules:deps.bzl", "coralnpu_deps")
 
@@ -214,10 +216,6 @@ cvfpu_repos()
 rvvi_repos()
 
 fpga_repos()
-
-load("@lowrisc_opentitan_gh//rules:nonhermetic.bzl", "nonhermetic_repo")
-
-nonhermetic_repo(name = "nonhermetic")
 
 load("@rules_python//python:pip.bzl", "pip_parse")
 
@@ -255,23 +253,7 @@ load("@ot_python_deps//:requirements.bzl", ot_install_deps = "install_deps")
 
 ot_install_deps()
 
-http_archive(
-    name = "toolchain_coralnpu_v2",
-    build_file_content = """
-licenses(["notice"])
-exports_files(glob(["**"]))
-package(default_visibility = ["//visibility:public"])
-filegroup(
-    name = "all_files",
-    srcs = glob(["**"]),
-)
-""",
-    sha256 = "de06690c2da5cd783d76b2998208bd4db4dcdc22dec146c7b0a5ee1af40d3db7",
-    strip_prefix = "toolchain_coralnpu_v2",
-    urls = [
-        "https://storage.googleapis.com/shodan-public-artifacts/toolchain_coralnpu_v2-2026-06-29.tar.xz",
-    ],
-)
+define_coralnpu_toolchain()
 
 register_toolchains(
     "//toolchain:cc_coralnpu_v2_toolchain",
@@ -318,13 +300,7 @@ load("@com_google_mpact-riscv//:deps.bzl", "mpact_riscv_deps")
 
 mpact_riscv_deps()
 
-load("@coralnpu_hw//rules:check_folder.bzl", "check_folder")
-
-check_folder(
-    name = "internal_check",
-    directory = "internal",
-    root_file = "//:BUILD.bazel",
-)
+define_internal_check(root_file = "//:BUILD.bazel")
 
 load("@internal_check//:repositories.bzl", "synthesis_internal_repo")
 

@@ -4,26 +4,33 @@ module(
 )
 
 # Core rules
+bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "rules_cc", version = "0.2.14")
 bazel_dep(name = "rules_python", version = "1.6.3")
-bazel_dep(name = "rules_scala", version = "7.2.6", repo_name = "io_bazel_rules_scala")
-bazel_dep(name = "rules_jvm_external", version = "6.6")
-bazel_dep(name = "rules_java", version = "7.10.0")
-bazel_dep(name = "rules_pkg", version = "0.10.1")
+bazel_dep(name = "rules_scala", version = "7.2.6")
+bazel_dep(name = "rules_jvm_external", version = "6.7")
+bazel_dep(name = "rules_java", version = "8.14.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_foreign_cc", version = "0.9.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "rules_license", version = "1.0.0")
 
 # Core libraries
-bazel_dep(name = "abseil-cpp", version = "20240722.0", repo_name = "com_google_absl")
+bazel_dep(name = "abseil-cpp", version = "20250512.1", repo_name = "com_google_absl")
 bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
+bazel_dep(name = "googletest", version = "1.17.0", repo_name = "com_google_googletest")
+bazel_dep(name = "re2", version = "2024-07-02.bcr.1", repo_name = "com_googlesource_code_re2")
+bazel_dep(name = "pybind11_bazel", version = "2.13.6")
 
 # Configure Scala version
-scala_config = use_extension("@io_bazel_rules_scala//scala/extensions:config.bzl", "scala_config")
+scala_config = use_extension("@rules_scala//scala/extensions:config.bzl", "scala_config")
 scala_config.settings(
     scala_version = "2.13.18",
 )
 
 # Load Scala dependencies
-scala_deps = use_extension("@io_bazel_rules_scala//scala/extensions:deps.bzl", "scala_deps")
+scala_deps = use_extension("@rules_scala//scala/extensions:deps.bzl", "scala_deps")
 scala_deps.scala()
 
 # Configure Maven dependencies for Chisel
@@ -62,26 +69,119 @@ maven.install(
 )
 use_repo(maven, "coralnpu_maven")
 
+# Configure C++ toolchain & local_config_cc
+cc_configure = use_extension("@rules_cc//cc:extensions.bzl", "cc_configure_extension")
+use_repo(cc_configure, "local_config_cc")
+
+register_toolchains(
+    "//toolchain/host_clang:host_clang_toolchain_def",
+    "//toolchain:cc_coralnpu_v2_toolchain",
+    "//toolchain:cc_coralnpu_v2_semihosting_toolchain",
+)
+
+# Configure Python toolchain
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    ignore_root_user_error = True,
+    is_default = True,
+    python_version = "3.11.6",
+)
+use_repo(python, "python_3_11", "python_versions")
+
+# Configure gemma_deps pip dependencies
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    hub_name = "gemma_deps",
+    python_version = "3.11",
+    requirements_lock = "//third_party:gemma_requirements.txt",
+)
+use_repo(pip, "gemma_deps")
+
 # Local extension for legacy non-module dependencies
 coralnpu_deps_ext = use_extension("//rules:extensions.bzl", "coralnpu_deps_ext")
 use_repo(
     coralnpu_deps_ext,
     "RVVI",
     "accellera_systemc",
+    "cc_static_library_external",
     "chipsalliance_diplomacy",
     "chipsalliance_rocket_chip",
-    "common_cells",
+    "com_github_serge1_elfio",
     "com_github_westes_flex",
+    "com_google_mpact-riscv",
+    "com_google_mpact-sim",
+    "common_cells",
     "coralnpu_host_cpus",
+    "coralnpu_mpact",
+    "coralnpu_pip_deps_cocotb",
+    "coralnpu_pip_deps_colorama",
+    "coralnpu_pip_deps_exceptiongroup",
+    "coralnpu_pip_deps_find_libpython",
+    "coralnpu_pip_deps_fusesoc",
+    "coralnpu_pip_deps_hjson",
+    "coralnpu_pip_deps_importlib_metadata",
+    "coralnpu_pip_deps_importlib_resources",
+    "coralnpu_pip_deps_iniconfig",
+    "coralnpu_pip_deps_intelhex",
+    "coralnpu_pip_deps_intervaltree",
+    "coralnpu_pip_deps_lark",
+    "coralnpu_pip_deps_libusb_package",
+    "coralnpu_pip_deps_mako",
+    "coralnpu_pip_deps_ml_dtypes",
+    "coralnpu_pip_deps_natsort",
+    "coralnpu_pip_deps_numpy",
+    "coralnpu_pip_deps_packaging",
+    "coralnpu_pip_deps_pillow",
+    "coralnpu_pip_deps_pluggy",
+    "coralnpu_pip_deps_prettytable",
+    "coralnpu_pip_deps_psutil",
+    "coralnpu_pip_deps_pyelftools",
+    "coralnpu_pip_deps_pyftdi",
+    "coralnpu_pip_deps_pylink_square",
+    "coralnpu_pip_deps_pyserial",
+    "coralnpu_pip_deps_pytest",
+    "coralnpu_pip_deps_pyusb",
+    "coralnpu_pip_deps_pyyaml",
+    "coralnpu_pip_deps_six",
+    "coralnpu_pip_deps_sortedcontainers",
+    "coralnpu_pip_deps_tqdm",
+    "coralnpu_pip_deps_typing_extensions",
     "cvfpu",
+    "flatbuffers",
     "fpu_div_sqrt_mvp",
+    "freertos",
+    "gemmlowp",
+    "hedron_compile_commands",
+    "internal_check",
+    "ispyocto",
+    "kissfft",
+    "libsystemctlm_soc",
     "llvm_firtool",
+    "lowrisc_opentitan_gh",
     "net_zlib",
+    "nonhermetic",
+    "org_antlr4_cpp_runtime",
+    "org_antlr_tool",
     "org_gnu_bison",
     "org_gnu_gnulib",
     "org_gnu_m4",
+    "pybind11_abseil",
+    "riscv-tests",
     "riscv_isa_sim",
     "rules_hdl",
+    "ruy",
+    "srecord",
+    "svdpi_h_file",
+    "synthesis_internal",
+    "tflite_micro",
+    "toolchain_coralnpu_v2",
     "uvm",
     "verilator",
+)
+
+local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
+
+local_repository(
+    name = "netlist_test",
+    path = "internal/netlist_test",
 )

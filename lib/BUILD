@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_scala//scala:scala.bzl", "scala_library")
 load("@rules_java//java:defs.bzl", "java_import")
 load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
+load("@rules_scala//scala:scala.bzl", "scala_library")
 
 scala_library(
     name = "chisel_lib",

@@ -12,16 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load(":patches.bzl", "MPACT_RISCV_PATCH_FILES")
+
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "mpact_riscv_fma_underflow.patch",
-    "mpact_riscv_vector_memory.patch",
-    "mpact_riscv_rmm_f_instructions.patch",
-    "mpact_riscv_rmm_helpers.patch",
-    "mpact_riscv_vrgather.patch",
-    "mpact_riscv_vstart_trap.patch",
-    "mpact_riscv_vector_csr.patch",
-    "mpact_riscv_vsetvl_preserve_vl.patch",
-    "mpact_riscv_vectored_trap.patch",
-])
+exports_files(MPACT_RISCV_PATCH_FILES + ["patches.bzl"])

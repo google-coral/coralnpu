@@ -109,20 +109,12 @@ http_archive(
 # MPACT-RiscV repo.
 # Note: Loads exception trap patches from @coralnpu_hw, requiring
 # --override_repository=coralnpu_hw=... when building standalone.
+load("@coralnpu_hw//third_party/patches:patches.bzl", "MPACT_RISCV_PATCHES")
+
 http_archive(
     name = "com_google_mpact-riscv",
     patch_args = ["-p1"],
-    patches = [
-        "@coralnpu_hw//third_party/patches:mpact_riscv_vector_memory.patch",
-        "@coralnpu_hw//third_party/patches:mpact_riscv_vstart_trap.patch",
-        "@coralnpu_hw//third_party/patches:mpact_riscv_vrgather.patch",
-        "@coralnpu_hw//third_party/patches:mpact_riscv_fma_underflow.patch",
-        "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_helpers.patch",
-        "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_f_instructions.patch",
-        "@coralnpu_hw//third_party/patches:mpact_riscv_vector_csr.patch",
-        "@coralnpu_hw//third_party/patches:mpact_riscv_vsetvl_preserve_vl.patch",
-        "@coralnpu_hw//third_party/patches:mpact_riscv_vectored_trap.patch",
-    ],
+    patches = MPACT_RISCV_PATCHES,
     repo_mapping = {
         "@abseil-cpp": "@com_google_absl",
     },

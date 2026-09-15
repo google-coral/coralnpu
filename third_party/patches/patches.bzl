@@ -1,0 +1,34 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""MPACT-RiscV patch declarations for com_google_mpact-riscv."""
+
+MPACT_RISCV_PATCH_FILES = [
+    "mpact_riscv_fma_underflow.patch",
+    "mpact_riscv_rmm_f_instructions.patch",
+    "mpact_riscv_rmm_helpers.patch",
+    "mpact_riscv_vector_csr.patch",
+    "mpact_riscv_vector_memory.patch",
+    "mpact_riscv_vectored_trap.patch",
+    "mpact_riscv_vrgather.patch",
+    "mpact_riscv_vsetvl_preserve_vl.patch",
+    "mpact_riscv_vstart_trap.patch",
+]
+
+MPACT_RISCV_PATCHES = [
+    "@coralnpu_hw//third_party:mpact-riscv-openat.patch",
+] + [
+    "@coralnpu_hw//third_party/patches:" + patch
+    for patch in MPACT_RISCV_PATCH_FILES
+]

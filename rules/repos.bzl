@@ -19,6 +19,13 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 load("@coralnpu_hw//third_party/verilator:gnulib.bzl", "org_gnu_gnulib")
+load(
+    "//rules:repo_defs.bzl",
+    "define_fpga_repos",
+    "define_mpact_repos",
+    "define_pybind11_abseil",
+    "define_sim_repos",
+)
 
 def _rules_hdl_compat_impl(rctx):
     rctx.file("WORKSPACE", "workspace(name = 'rules_hdl')\n")
@@ -45,17 +52,7 @@ def coralnpu_repos():
         name = "rules_hdl",
     )
 
-    http_archive(
-        name = "uvm",
-        urls = ["https://github.com/chipsalliance/uvm-verilator/archive/refs/tags/uvm-2020-3.2.tar.gz"],
-        sha256 = "9647bfe69439340f1f5c8c969b9814aed06cde9fe4c355111bd5e7cd325c0e0f",
-        strip_prefix = "uvm-verilator-uvm-2020-3.2",
-        build_file = "@coralnpu_hw//third_party/verilator:uvm.BUILD",
-        patch_args = ["-p1"],
-        patches = [
-            "@coralnpu_hw//third_party/verilator:0002-uvm-optional-reg-tlm2.patch",
-        ],
-    )
+    define_sim_repos()
 
     http_archive(
         name = "bazel_skylib",
@@ -141,14 +138,6 @@ def coralnpu_repos():
         sha256 = "cae680670bfa6e82703c03f2a3c995408cdcbf43616d7bdd198ef45d3c327731",
     )
 
-    http_archive(
-        name = "freertos",
-        urls = ["https://github.com/FreeRTOS/FreeRTOS-Kernel/archive/refs/tags/V11.1.0.tar.gz"],
-        sha256 = "0e21928b3bcc4f9bcaf7333fb1c8c0299d97e2ec9e13e3faa2c5a7ac8a3bc573",
-        strip_prefix = "FreeRTOS-Kernel-11.1.0",
-        build_file = "@coralnpu_hw//third_party/freertos:freertos.BUILD",
-    )
-
 def verilator_repos():
     http_archive(
         name = "verilator",
@@ -215,20 +204,15 @@ def coralnpu_repos2():
         urls = ["https://github.com/pybind/pybind11/archive/v3.0.1.zip"],
         sha256 = "20fb420fe163d0657a262a8decb619b7c3101ea91db35f1a7227e67c426d4c7e",
     )
-    http_archive(
-        name = "pybind11_abseil",
-        strip_prefix = "pybind11_abseil-54b34dd0e8afb8a4febb9508c69410e708b43515",
-        urls = ["https://github.com/pybind/pybind11_abseil/archive/54b34dd0e8afb8a4febb9508c69410e708b43515.tar.gz"],
-        sha256 = "26328a74f367208ae8d490dc640030111df4ba0869619c6445bb4a1c5964e2a7",
-    )
+    define_pybind11_abseil()
 
     verilator_repos()
 
     http_archive(
-        name = "io_bazel_rules_scala",
-        sha256 = "e734eef95cf26c0171566bdc24d83bd82bdaf8ca7873bec6ce9b0d524bdaf05d",
-        strip_prefix = "rules_scala-6.6.0",
-        url = "https://github.com/bazelbuild/rules_scala/releases/download/v6.6.0/rules_scala-v6.6.0.tar.gz",
+        name = "rules_scala",
+        sha256 = "f526a27aab750f8ece83e2003c792cbfd1e76106b5bc175e2664a76781de55c5",
+        strip_prefix = "rules_scala-7.2.6",
+        url = "https://github.com/bazelbuild/rules_scala/releases/download/v7.2.6/rules_scala-v7.2.6.tar.gz",
     )
 
     http_archive(
@@ -236,75 +220,6 @@ def coralnpu_repos2():
         sha256 = "2a4d07cd64b0719b39a7c12218a3e507672b82a97b98c6a89d38565894cf7c51",
         strip_prefix = "rules_foreign_cc-0.9.0",
         url = "https://github.com/bazelbuild/rules_foreign_cc/archive/refs/tags/0.9.0.tar.gz",
-    )
-
-    http_archive(
-        name = "llvm_firtool",
-        urls = ["https://repo1.maven.org/maven2/org/chipsalliance/llvm-firtool/1.114.0/llvm-firtool-1.114.0.jar"],
-        build_file = "@coralnpu_hw//third_party/llvm-firtool:BUILD.bazel",
-        sha256 = "f93a831e6b5696df2e3327626df3cc183e223bf0c9c0fddf9ae9e51f502d0492",
-    )
-
-    http_archive(
-        name = "libsystemctlm_soc",
-        urls = [
-            "https://github.com/Xilinx/libsystemctlm-soc/archive/79d624f3c7300a2ead97ca35e683c38f0b6f5021.zip",
-        ],
-        strip_prefix = "libsystemctlm-soc-79d624f3c7300a2ead97ca35e683c38f0b6f5021",
-        sha256 = "5c9d08bd33eb6738e3b4a0dda81e24a6d30067e8149bada6ae05aedcab5b786c",
-        build_file = "@coralnpu_hw//third_party/libsystemctlm-soc:BUILD.bazel",
-    )
-
-    http_archive(
-        name = "chipsalliance_rocket_chip",
-        build_file = "@coralnpu_hw//third_party/rocket_chip:BUILD.bazel",
-        urls = ["https://github.com/chipsalliance/rocket-chip/archive/f517abbf41abb65cea37421d3559f9739efd00a9.zip"],
-        sha256 = "e77bb13328e919ca43ba83a1c110b5314900841125b9ff22813a4b9fe73672a2",
-        strip_prefix = "rocket-chip-f517abbf41abb65cea37421d3559f9739efd00a9",
-    )
-
-    http_archive(
-        name = "chipsalliance_diplomacy",
-        urls = ["https://github.com/chipsalliance/diplomacy/archive/6590276fa4dac315ae7c7c01371b954c5687a473.zip"],
-        sha256 = "3f536b2eba360eb71a542d2a201eabe3a45cfa86302f14d1d565def0ed43ee20",
-        strip_prefix = "diplomacy-6590276fa4dac315ae7c7c01371b954c5687a473",
-        build_file_content = """
-exports_files(["diplomacy/src/diplomacy/nodes/HeterogeneousBag.scala"])
-        """,
-    )
-
-    http_archive(
-        name = "srecord",
-        urls = ["https://sourceforge.net/projects/srecord/files/srecord/1.65/srecord-1.65.0-Source.tar.gz/download"],
-        type = "tar.gz",
-        sha256 = "81c3d07cf15ce50441f43a82cefd0ac32767c535b5291bcc41bd2311d1337644",
-        strip_prefix = "srecord-1.65.0-Source",
-        build_file = "@coralnpu_hw//third_party/srecord:srecord.BUILD",
-        patches = [
-            "@coralnpu_hw//third_party/srecord:0001-Disable-docs-and-tests.patch",
-        ],
-        patch_args = ["-p1"],
-    )
-
-    http_archive(
-        name = "riscv-tests",
-        urls = ["https://github.com/riscv-software-src/riscv-tests/archive/fd4e6cdd033d9075632be9dd207c848181ca474c.zip"],
-        sha256 = "e7d84eaa149b57c0e5ff69a76c80f35f4ee64c5dc985dbba5c287adf8b56ec5d",
-        strip_prefix = "riscv-tests-fd4e6cdd033d9075632be9dd207c848181ca474c",
-        patches = [
-            "@coralnpu_hw//third_party/riscv-tests:0001-Find-env-from-environment.patch",
-        ],
-        patch_args = ["-p1"],
-        build_file_content = """
-package(default_visibility = ["//visibility:public"])
-exports_files(glob(["**"]))
-filegroup(
-    name = "all_srcs",
-    srcs = glob([
-        "**/*",
-    ]),
-)
-        """,
     )
 
 def cvfpu_repos():
@@ -358,28 +273,7 @@ def rvvi_repos():
     )
 
 def fpga_repos():
-    http_archive(
-        name = "lowrisc_opentitan_gh",
-        urls = ["https://github.com/lowRISC/opentitan/archive/0e3cf62211004443d6d29f8f6120882376da499a.zip"],
-        sha256 = "5de3d4ba7a2d02ea58f189f0d9bc46051368dc138a7f8c0fb89af78dcd43a0f8",
-        strip_prefix = "opentitan-0e3cf62211004443d6d29f8f6120882376da499a",
-        patches = [
-            "@coralnpu_hw//fpga:0001-Export-hw-ip_templates.patch",
-            "@coralnpu_hw//fpga:0002-Use-hermetic-verilator-in-fusesoc-build.patch",
-            "@coralnpu_hw//fpga:0003-Support-vivado-elab-in-fusesoc-build.patch",
-        ],
-        patch_args = ["-p1"],
-    )
-
-    http_archive(
-        name = "ispyocto",
-        urls = ["https://opensecura.googlesource.com/3p/ip/isp/+archive/d53dc0e0ce2605cea2e3b3fc5b97e9dd40f8d55a.tar.gz"],
-        build_file = "@coralnpu_hw//fpga/ip/ispyocto:ispyocto.BUILD",
-        sha256 = "",
-        patch_cmds = [
-            "rm -f ispyocto/BUILD axi2sramcrs/BUILD ispyocto/rtl/ispyocto_filelist.txt",
-        ],
-    )
+    define_fpga_repos()
 
 def tflite_repos():
     http_archive(
@@ -402,49 +296,4 @@ def tflite_repos():
     )
 
 def mpact_repos():
-    http_archive(
-        name = "com_google_mpact-riscv",
-        sha256 = "38faef26745f34a82de0daf3b65a207c8d2ecf825f37484a4a27132512583574",
-        strip_prefix = "mpact-riscv-cb68bd4a2cb80dea24d9760dc6397b5854ea41bd",
-        url = "https://github.com/google/mpact-riscv/archive/cb68bd4a2cb80dea24d9760dc6397b5854ea41bd.tar.gz",
-        patches = [
-            "@coralnpu_hw//third_party:mpact-riscv-openat.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_vector_memory.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_vstart_trap.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_vrgather.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_fma_underflow.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_helpers.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_rmm_f_instructions.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_vector_csr.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_vsetvl_preserve_vl.patch",
-            "@coralnpu_hw//third_party/patches:mpact_riscv_vectored_trap.patch",
-        ],
-        patch_args = ["-p1"],
-    )
-
-    http_archive(
-        name = "coralnpu_mpact",
-        urls = ["https://github.com/google-coral/coralnpu-mpact/archive/e2a26e6d983f13d4c10875e4e5878a6171c04a06.zip"],
-        sha256 = "426328af9681929b262147538e61c7b6545bebf70e4db2d483c94d9613ac5909",
-        strip_prefix = "coralnpu-mpact-e2a26e6d983f13d4c10875e4e5878a6171c04a06",
-        workspace_file = "@coralnpu_hw//third_party/coralnpu_mpact:WORKSPACE",
-        patches = [
-            "@coralnpu_hw//third_party/coralnpu_mpact:0002-Patch-mpact_riscv-WORKSPACE.patch",
-            "@coralnpu_hw//third_party/coralnpu_mpact:0003-Hardwire-mtvec-direct-mode.patch",
-        ],
-        patch_args = ["-p1"],
-    )
-
-    http_file(
-        name = "cc_static_library_external",
-        downloaded_file_path = "cc_static_libarary.bzl",
-        sha256 = "1287ce9f7e5fe31ad1b5937781531e4ab3f4656edabf650cca9ca720ceb31806",
-        urls = ["https://raw.githubusercontent.com/project-oak/oak/fcceea755f0274d3a0eb7c0461b30af3dc28e40a/cc/build_defs.bzl"],
-    )
-
-    http_file(
-        name = "svdpi_h_file",
-        downloaded_file_path = "svdpi.h",
-        sha256 = "2528c8e529b66dd8e795c8a0fee326166cc51f7dee8fc6a0c6c930534fc780a6",
-        urls = ["https://raw.githubusercontent.com/verilator/verilator/v5.028/include/vltstd/svdpi.h"],
-    )
+    define_mpact_repos()
