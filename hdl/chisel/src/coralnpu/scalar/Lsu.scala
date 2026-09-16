@@ -1969,8 +1969,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         val vmeValid = vmeData.map(_.valid).getOrElse(false.B)
         Mux(isVmeInst, vmeValid, vectorData.get.valid && vectorData.get.bits.mask.valid)
       }
-      val vectorDataActive = Option.when(p.enableRvv) {
-        val enableLane = MuxLookup(
+      val enableLane = Option.when(p.enableRvv) {
+        MuxLookup(
           Cat(vector.get.dataSubvector.curr, vector.get.dataSubvectorTheoretical),
           ~0.U(p.rvvVlenb.W) // All enabled by default
         )(
@@ -1991,62 +1991,77 @@ class LsuSuperSlot(p: Parameters) extends Module {
             "b11_11".U -> Cat(~0.U((p.rvvVlenb / 4).W), 0.U((p.rvvVlenb * 3 / 4).W)) // 4 of 4
           )
         )
+      }
+      val vectorDataActive = Option.when(p.enableRvv) {
         VecInit.tabulate(p.rvvVlenb) { i =>
-          Mux(enableLane(i), UIntToOH(vector.get.dataActiveCells(i)), 0.U)
+          Mux(enableLane.get(i), UIntToOH(vector.get.dataActiveCells(i)), 0.U)
         }
       }
       val vectorIndices = Option.when(p.enableRvv) {
-        val allIndices  = vectorData.get.bits.idx.bits.data
-        val selectFrom2 = (
-          (vector.get.indexEew === LsuVectorElementWidth.E8 && vector.get.dataEew === LsuVectorElementWidth.E16) ||
-            (vector.get.indexEew === LsuVectorElementWidth.E16 && vector.get.dataEew === LsuVectorElementWidth.E32)
-        )
-        val selectFrom4 = (
-          vector.get.indexEew === LsuVectorElementWidth.E8 &&
-            vector.get.dataEew === LsuVectorElementWidth.E32
-        )
-        val selected = MuxCase(
-          allIndices,
-          Seq(
-            (selectFrom2 && vector.get.dataEmul.curr(0)) -> Cat(
-              0.U((p.rvvVlen / 2).W),
-              allIndices(p.rvvVlen - 1, p.rvvVlen / 2)
-            ),
-            (selectFrom4 && vector.get.dataEmul.curr(1, 0) === "b01".U) -> Cat(
-              0.U((p.rvvVlen * 3 / 4).W),
-              allIndices(p.rvvVlen / 2 - 1, p.rvvVlen / 4)
-            ),
-            (selectFrom4 && vector.get.dataEmul.curr(1, 0) === "b10".U) -> Cat(
-              0.U((p.rvvVlen * 3 / 4).W),
-              allIndices(p.rvvVlen * 3 / 4 - 1, p.rvvVlen / 2)
-            ),
-            (selectFrom4 && vector.get.dataEmul.curr(1, 0) === "b11".U) -> Cat(
-              0.U((p.rvvVlen * 3 / 4).W),
-              allIndices(p.rvvVlen - 1, p.rvvVlen * 3 / 4)
-            )
-          )
-        )
-        val concatenated = VecInit.tabulate(p.rvvVlenb) { i =>
-          val i_ei8  = i
-          val i_ei16 = i % (p.rvvVlenb / 2)
-          val i_ei32 = i % (p.rvvVlenb / 4)
-
-          MuxLookup(vector.get.indexEew, WireInit(UInt(32.W), DontCare))(
-            Seq(
-              LsuVectorElementWidth.E8  -> Cat(0.U(24.W), selected(i_ei8 * 8 + 7, i_ei8 * 8)),
-              LsuVectorElementWidth.E16 -> Cat(0.U(16.W), selected(i_ei16 * 16 + 15, i_ei16 * 16)),
-              LsuVectorElementWidth.E32 -> selected(i_ei32 * 32 + 31, i_ei32 * 32)
-            )
-          )
+        val allIndices                                   = vectorData.get.bits.idx.bits.data
+        def getIndexSlice(indexEew: Int, idx: Int): UInt = indexEew match {
+          case 8  => Cat(0.U(24.W), allIndices(idx * 8 + 7, idx * 8))
+          case 16 => Cat(0.U(16.W), allIndices(idx * 16 + 15, idx * 16))
+          case 32 => allIndices(idx * 32 + 31, idx * 32)
         }
+
+        val idxEew = vector.get.indexEew
+        val datEew = vector.get.dataEew
+        val emul   = vector.get.dataEmul.curr(1, 0)
+
+        val is_e8  = datEew === LsuVectorElementWidth.E8
+        val is_e16 = datEew === LsuVectorElementWidth.E16
+        val is_e32 = datEew === LsuVectorElementWidth.E32
+
+        val is_ei8  = idxEew === LsuVectorElementWidth.E8
+        val is_ei16 = idxEew === LsuVectorElementWidth.E16
+        val is_ei32 = idxEew === LsuVectorElementWidth.E32
+
+        val sel_e8_ei8  = is_e8 && is_ei8
+        val sel_e8_ei16 = is_e8 && is_ei16
+        val sel_e8_ei32 = is_e8 && is_ei32
+
+        val sel_e16_ei8_0 = is_e16 && is_ei8 && !emul(0)
+        val sel_e16_ei8_1 = is_e16 && is_ei8 && emul(0)
+        val sel_e16_ei16  = is_e16 && is_ei16
+        val sel_e16_ei32  = is_e16 && is_ei32
+
+        val sel_e32_ei8_0  = is_e32 && is_ei8 && emul === 0.U
+        val sel_e32_ei8_1  = is_e32 && is_ei8 && emul === 1.U
+        val sel_e32_ei8_2  = is_e32 && is_ei8 && emul === 2.U
+        val sel_e32_ei8_3  = is_e32 && is_ei8 && emul === 3.U
+        val sel_e32_ei16_0 = is_e32 && is_ei16 && !emul(0)
+        val sel_e32_ei16_1 = is_e32 && is_ei16 && emul(0)
+        val sel_e32_ei32   = is_e32 && is_ei32
+
         VecInit.tabulate(p.rvvVlenb) { i =>
-          MuxLookup(vector.get.dataEew, WireInit(UInt(32.W), DontCare))(
-            Seq(
-              LsuVectorElementWidth.E8  -> concatenated(i),
-              LsuVectorElementWidth.E16 -> concatenated(i / 2),
-              LsuVectorElementWidth.E32 -> concatenated(i / 4)
-            )
+          val rawMappings: Seq[(Bool, (Int, Int))] = Seq(
+            // Data EEW 8 (e8)
+            sel_e8_ei8  -> (8, i),
+            sel_e8_ei16 -> (16, i % (p.rvvVlenb / 2)),
+            sel_e8_ei32 -> (32, i % (p.rvvVlenb / 4)),
+            // Data EEW 16 (e16)
+            sel_e16_ei8_0 -> (8, i / 2),
+            sel_e16_ei8_1 -> (8, (p.rvvVlenb / 2) + i / 2),
+            sel_e16_ei16  -> (16, i / 2),
+            sel_e16_ei32  -> (32, (i / 2) % (p.rvvVlenb / 4)),
+            // Data EEW 32 (e32)
+            sel_e32_ei8_0  -> (8, i / 4),
+            sel_e32_ei8_1  -> (8, (p.rvvVlenb / 4) + i / 4),
+            sel_e32_ei8_2  -> (8, (p.rvvVlenb / 2) + i / 4),
+            sel_e32_ei8_3  -> (8, (p.rvvVlenb * 3 / 4) + i / 4),
+            sel_e32_ei16_0 -> (16, i / 4),
+            sel_e32_ei16_1 -> (16, (p.rvvVlenb / 4) + i / 4),
+            sel_e32_ei32   -> (32, i / 4)
           )
+          val merged = rawMappings
+            .groupBy(_._2)
+            .toSeq
+            .sortBy(_._1)
+            .map { case ((eiWidth, idx), group) =>
+              group.map(_._1).reduce(_ || _) -> getIndexSlice(eiWidth, idx)
+            }
+          MuxUpTo1H(WireInit(UInt(32.W), DontCare), merged)
         }
       }
 
@@ -2158,12 +2173,24 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
       val nextRowAddrCandidates = VecInit.tabulate(windowSizeNormal + 1) { i =>
         val idx         = leadIndex +& i.U
-        val vectorIndex = cellVectorIndices.map(v =>
-          Mux(idx < nCells.U(ctrWidth.W), v(idx), MakeInvalid(UInt(32.W)))
-        )
+        val vectorIndex = Option.when(p.enableRvv) {
+          MuxUpTo1H(
+            MakeInvalid(UInt(32.W)),
+            (0 until p.rvvVlenb).map { j =>
+              (
+                vectorData.get.valid &&
+                  vectorData.get.bits.idx.valid &&
+                  (idx < nCells.U(ctrWidth.W)) &&
+                  enableLane.get(j) &&
+                  (vector.get.dataActiveCells(j) === idx(indexWidth - 1, 0)) &&
+                  (leadWindow(i).state === LsuCellState.W_DATA)
+              ) -> MakeValid(vectorIndices.get(j))
+            }
+          )
+        }
         val candidate = leadWindow(i).applyVectorIndex(vectorIndex).rowAddr
         when(idx < nCells.U(ctrWidth.W)) {
-          assert(candidate === cellsNext(idx).rowAddr)
+          assert(candidate === cellsNext(idx(indexWidth - 1, 0)).rowAddr)
         }
         candidate
       }
@@ -2174,7 +2201,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.faulted   -> (faulted || fault),
         _.cells     -> cellsNext,
         _.leadIndex -> (leadIndex + moveLead),
-        _.rowAddr   -> nextRowAddrCandidates(moveLead),
+        _.rowAddr   -> nextRowAddrCandidates(moveLead(windowIndexWidthNormal, 0)),
         _.isDone    -> allCellsDone
       )
       ret.vector.foreach { x =>
