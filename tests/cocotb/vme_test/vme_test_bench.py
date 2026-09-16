@@ -956,3 +956,128 @@ async def vme_msettm_matmul_test(dut):
         "Checking whether msettm(32) updated the tile accumulator..."
     )
     _check_matmul_result("int8", case, actual, expected)
+
+
+@cocotb.test()
+async def vme_altfmt_test(dut):
+    """Test VME altfmt configuration via msetmtype, vtype CSR, and vill/mtwiden=0 handling."""
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_altfmt_test_program.elf"
+    )
+    if not elf_path:
+        raise ValueError("Could not find ELF file. Build the target first.")
+
+    with open(elf_path, "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+    with open(elf_path, "rb") as f:
+        num_cases_addr = core_mini_axi.lookup_symbol(f, "vme_altfmt_num_cases")
+        inputs_addr = core_mini_axi.lookup_symbol(f, "vme_altfmt_inputs")
+        results_addr = core_mini_axi.lookup_symbol(f, "vme_altfmt_results")
+
+    # struct VmeAltfmtCase { uint32_t mtype_value; uint32_t vtype_value; };
+    # struct VmeAltfmtResult { uint32_t mtype_readback; uint32_t vtype_readback; };
+    # vtype CSR Bit Layout (RV32 with VME / Zvt §1.2 & §15.1.1.4):
+    #   [31]   : vill
+    #   [30:9] : reserved (0)
+    #   [8]    : altfmt
+    #   [7]    : vma (forced to 1 when mtwiden != 0)
+    #   [6]    : vta (forced to 1 when mtwiden != 0)
+    #   [5:3]  : vsew (001 for SEW16)
+    #   [2:0]  : vlmul (derived as LMUL2 = 001 for SEW16 when mtwiden != 0)
+    #
+    # Case 0: Normal configuration with altfmt=1:
+    #   mtype in rs1: 0x4042 (tm=16, tk=2, mtwiden=2)
+    #   vtype in rs2: 0x108 (altfmt=1, sew=16, lmul=1)
+    #   Expected mtype: 0x4042
+    #   Expected vtype: 0x1C9 (altfmt=1, ma=1, ta=1, sew=16, derived lmul=2)
+    #
+    # Case 1: Normal configuration with altfmt=0:
+    #   mtype in rs1: 0x4042 (tm=16, tk=2, mtwiden=2)
+    #   vtype in rs2: 0x008 (altfmt=0, sew=16, lmul=1)
+    #   Expected mtype: 0x4042
+    #   Expected vtype: 0x0C9 (altfmt=0, ma=1, ta=1, sew=16, derived lmul=2)
+    #
+    # Case 2: vill edge case (illegal configuration):
+    #   mtype: tm=16, tk=4, mtwiden=3 (TWIDEN=4) with sew=16 (0x108, altfmt=1)
+    #   SEW16 * TWIDEN4 = 64 > ELEN32 -> vill = 1.
+    #   When vill=1, RISC-V vector spec 3.4 requires vtype[31]=1 and vtype[30:0]=0.
+    #   So altfmt must be cleared to 0, mtype must be cleared to 0.
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x80000000
+    #
+    # Case 3: unconfigured matrix unit (mtwiden=0):
+    #   mtype: 0x0 (mtwiden=0)
+    #   vtype in rs2: 0x108 (altfmt=1, sew=16, lmul=0)
+    #   When mtwiden == 0, matrix unit is unconfigured, so altfmt should be 0.
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x008 (altfmt=0, ma=0, ta=0, sew=16, lmul=1)
+    cases = [
+        dict(
+            desc="altfmt=1 with valid mtwiden=2 (sew=16)",
+            mtype=0x4042,
+            vtype=0x108,
+            expected_mtype=0x4042,
+            expected_vtype=0x1C9,
+        ),
+        dict(
+            desc="altfmt=0 with valid mtwiden=2 (sew=16)",
+            mtype=0x4042,
+            vtype=0x008,
+            expected_mtype=0x4042,
+            expected_vtype=0x0C9,
+        ),
+        dict(
+            desc="vill edge case: sew=16 with mtwiden=3 (TEW=64 > ELEN=32)",
+            mtype=0x4083,
+            vtype=0x108,
+            expected_mtype=0x0000,
+            expected_vtype=0x80000000,
+        ),
+        dict(
+            desc="unconfigured matrix unit (mtwiden=0) clears altfmt",
+            mtype=0x0000,
+            vtype=0x108,
+            expected_mtype=0x0000,
+            expected_vtype=0x008,
+        ),
+    ]
+
+    num_cases = len(cases)
+    inputs_packed = np.array([[c["mtype"], c["vtype"]] for c in cases],
+                             dtype=np.uint32).flatten()
+    await core_mini_axi.write(inputs_addr, inputs_packed)
+    await core_mini_axi.write(
+        num_cases_addr, np.array([num_cases], dtype=np.uint32)
+    )
+
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_halted()
+
+    raw = await core_mini_axi.read(results_addr, num_cases * 2 * 4)
+    results = np.frombuffer(raw, dtype=np.uint32).reshape(num_cases, 2)
+
+    for i, case in enumerate(cases):
+        actual_mtype = int(results[i][0])
+        actual_vtype = int(results[i][1])
+        cocotb.log.info(
+            f"[altfmt case {i}: {case['desc']}]\n"
+            f"  mtype expected=0x{case['expected_mtype']:08x} actual=0x{actual_mtype:08x}\n"
+            f"  vtype expected=0x{case['expected_vtype']:08x} actual=0x{actual_vtype:08x}"
+        )
+        assert actual_mtype == case["expected_mtype"], (
+            f"case {i} ({case['desc']}) mtype mismatch: "
+            f"got 0x{actual_mtype:08x}, expected 0x{case['expected_mtype']:08x}"
+        )
+        assert actual_vtype == case["expected_vtype"], (
+            f"case {i} ({case['desc']}) vtype mismatch: "
+            f"got 0x{actual_vtype:08x}, expected 0x{case['expected_vtype']:08x}"
+        )
+
+    cocotb.log.info(f"[altfmt] ✓ All {num_cases} test cases passed")

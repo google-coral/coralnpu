@@ -156,6 +156,7 @@ object GenerateCoreShimSource {
         |    output [2:0] configLmul,
         |    output [2:0] configLmulOrig,
         |    output configVill,
+        |    output configAltfmt,
         |    output [31:0] configMtype,
         |    output logic rvv_idle,
         |    output logic [3:0] queue_capacity,
@@ -192,6 +193,7 @@ object GenerateCoreShimSource {
             |    output [1:0]  rd_rob2rt_o_GENI_vector_csr_mtwiden,
             |    output [13:0] rd_rob2rt_o_GENI_vector_csr_tm,
             |    output [1:0]  rd_rob2rt_o_GENI_vector_csr_tk,
+            |    output rd_rob2rt_o_GENI_vector_csr_altfmt,
             |""".stripMargin.replaceAll("GENI", i.toString)
       }
       moduleInterface += "    output [15:0] rd_rob2rt_o_GENI_vxsaturate,\n".replaceAll(
@@ -494,7 +496,8 @@ object GenerateCoreShimSource {
           ("  assign rd_rob2rt_o_GENI_vector_csr_mtype   = 32'd0;\n" +
             "  assign rd_rob2rt_o_GENI_vector_csr_mtwiden = 2'd0;\n" +
             "  assign rd_rob2rt_o_GENI_vector_csr_tm     = 14'd0;\n" +
-            "  assign rd_rob2rt_o_GENI_vector_csr_tk     = 2'd0;\n").replaceAll("GENI", i.toString)
+            "  assign rd_rob2rt_o_GENI_vector_csr_tk     = 2'd0;\n" +
+            "  assign rd_rob2rt_o_GENI_vector_csr_altfmt = 1'b0;\n").replaceAll("GENI", i.toString)
       }
     }
     coreInstantiation += """  assign trap_bits_rob_tag = trap_data.rob_tag;
@@ -523,6 +526,12 @@ object GenerateCoreShimSource {
     coreInstantiation += "  assign configLmul = config_state.lmul;\n"
     coreInstantiation += "  assign configLmulOrig = config_state.lmul_orig;\n"
     coreInstantiation += "  assign configVill = config_state.vill;\n"
+    coreInstantiation +=
+      "`ifdef ZVT_ON\n" +
+        "  assign configAltfmt = config_state.altfmt;\n" +
+        "`else\n" +
+        "  assign configAltfmt = 1'b0;\n" +
+        "`endif\n"
 
     // VME (Zvt) packed mtype CSR view assembled from {tm, tk, mtwiden} per
     // spec §15.1.1.2. Tied to 0 when ZVT_ON is not defined.
@@ -632,9 +641,10 @@ class RvvCoreWrapper(p: Parameters)
     // This is the original one set in vset(i)vl(i)
     val configLmulOrig = Output(UInt(3.W))
 
-    val configVill  = Output(Bool())
-    val configMtype = Output(UInt(32.W))
-    val rvv_idle    = Output(Bool())
+    val configVill   = Output(Bool())
+    val configAltfmt = Output(Bool())
+    val configMtype  = Output(UInt(32.W))
+    val rvv_idle     = Output(Bool())
 
     val queue_capacity = Output(UInt(4.W))
   })
@@ -878,6 +888,7 @@ class RvvCoreShim(p: Parameters) extends Module {
     io.configState.bits.mtwiden.get := mt(1, 0)
     io.configState.bits.tk.get      := mt(7, 5)
     io.configState.bits.tm.get      := mt(23, 10)
+    io.configState.bits.altfmt.get  := rvvCoreWrapper.io.configAltfmt
   }
   io.rvv_idle       := rvvCoreWrapper.io.rvv_idle
   io.queue_capacity := rvvCoreWrapper.io.queue_capacity

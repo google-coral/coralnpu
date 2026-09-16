@@ -32,6 +32,7 @@ VME_TEST_TESTCASES = [
     "vme_msettk_clamp_test",
     "vme_msettm_clamp_test",
     "vme_msettm_matmul_test",
+    "vme_altfmt_test",
 ]
 
 cocotb_test_suite(
@@ -54,6 +55,7 @@ cocotb_test_suite(
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
+            ":vme_altfmt_test_program",
             ":vme_matmul_test_program",
             ":vme_test_program",
             ":vme_decode_test",
@@ -64,6 +66,7 @@ cocotb_test_suite(
     },
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [
+        ":vme_altfmt_test_program",
         ":vme_matmul_test_program",
         ":vme_test_program",
         ":vme_decode_test",
@@ -81,6 +84,12 @@ cocotb_test_suite(
         "//hdl/chisel/src/coralnpu:vme_core_mini_axi_cc_library_verilog",
     ],
     verilator_model = "//tests/cocotb:vme_core_mini_axi_model",
+)
+
+coralnpu_v2_binary(
+    name = "vme_altfmt_test_program",
+    srcs = ["vme_altfmt_test_program.cc"],
+    hdrs = ["vme_test_utils.h"],
 )
 
 coralnpu_v2_binary(

@@ -40,11 +40,17 @@ class RvvConfigState(p: Parameters) extends Bundle {
   val mtwiden = Option.when(p.enableVme)(Output(UInt(2.W)))
   val tm      = Option.when(p.enableVme)(Output(UInt(14.W)))
   val tk      = Option.when(p.enableVme)(Output(UInt(3.W)))
+  val altfmt  = Option.when(p.enableVme)(Output(Bool()))
 
-  /** Construct the vtype CSR value. See section 3.4 of the RISC-V Vector Specification v1.0.
+  /** Construct the vtype CSR value. See section 3.4 of the RISC-V Vector Specification v1.0. Bit 8
+    * is altfmt when VME is enabled (Zvt §1.2).
     */
   def vtype: UInt = {
-    Cat(vill, 0.U((p.xlen - 9).W), ma, ta, sew, lmul_orig)
+    if (p.enableVme) {
+      Cat(vill, 0.U((p.xlen - 10).W), altfmt.get, ma, ta, sew, lmul_orig)
+    } else {
+      Cat(vill, 0.U((p.xlen - 9).W), ma, ta, sew, lmul_orig)
+    }
   }
 }
 

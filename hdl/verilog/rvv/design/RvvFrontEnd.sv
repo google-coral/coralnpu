@@ -239,6 +239,7 @@ module RvvFrontEnd#(parameter N = 4,
             //   SEW8  -> LMUL1 (3'b000)
             //   SEW16 -> LMUL2 (3'b001)
             //   SEW32 -> LMUL4 (3'b010)
+            inst_config_state[i+1].altfmt = reg_read_data_i[(2*i) + 1][8];
             inst_config_state[i+1].ta = 1'b1;
             inst_config_state[i+1].ma = 1'b1;
             unique case (inst_config_state[i+1].sew)
@@ -267,6 +268,7 @@ module RvvFrontEnd#(parameter N = 4,
                                         ? TILE_EDGE_DIM : reg_read_data_i[2*i][23:10];
           end else begin
             // Unconfigured (mtwiden == 0): mtype is 0, vtype takes rs2 as if by vsetvl.
+            inst_config_state[i+1].altfmt    = 1'b0;
             inst_config_state[i+1].tk        = 3'b000;
             inst_config_state[i+1].tm        = 14'd0;
             inst_config_state[i+1].lmul_orig =
@@ -313,6 +315,7 @@ module RvvFrontEnd#(parameter N = 4,
             end
             3'b011: begin  // msetmtypei - imm[4:0] -> mtype low bits,
                             // imm[1:0] (bits[17:16]) -> vtype.sew, rest zeroed.
+              inst_config_state[i+1].altfmt  = 1'b0;
               inst_config_state[i+1].mtwiden = inst_q[i].bits[9:8];
               inst_config_state[i+1].tk     = 3'b000;
               inst_config_state[i+1].tm     = 14'd0;
@@ -403,6 +406,7 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].ma = 0;
 `ifdef ZVT_ON
           // Zvt §15.1.1.4: if vtype.vill || mtype.mtwiden == 0: mtype = 0
+          inst_config_state[i+1].altfmt  = 1'b0;
           inst_config_state[i+1].mtwiden = 2'b00;
           inst_config_state[i+1].tk     = 3'b000;
           inst_config_state[i+1].tm     = 14'd0;
