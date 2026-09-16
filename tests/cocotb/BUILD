@@ -145,6 +145,7 @@ CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_minstret_test",
     "fencei_test",
     "core_mini_axi_misa_test",
+    "core_mini_axi_wrap_burst_test",
 ]
 # END_TESTCASES_FOR_core_mini_axi_sim_cocotb
 
@@ -175,6 +176,7 @@ RVV_CORE_MINI_AXI_SIM_TESTCASES = [
     "fencei_test",
     "core_mini_axi_misa_test",
     "rvv_misa_test",
+    "core_mini_axi_wrap_burst_test",
 ]
 # END_TESTCASES_FOR_rvv_core_mini_axi_sim_cocotb
 
@@ -394,6 +396,7 @@ HIGHMEM_TESTCASES = [
     "core_mini_axi_run_wfi_in_all_slots_highmem",
     "core_mini_rvv_matmul_test",
     "core_mini_axi_basic_write_read_memory",
+    "core_mini_axi_wrap_burst_highmem_test",
 ]
 # END_TESTCASES_FOR_highmem_test
 

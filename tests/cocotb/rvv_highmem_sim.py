@@ -165,3 +165,38 @@ async def core_mini_axi_basic_write_read_memory(dut):
                 0x200000 - 1024 + (i * txn_bytes), txn_bytes
             )
             assert (rdata == wdata).all()
+
+
+@cocotb.test()
+async def core_mini_axi_wrap_burst_highmem_test(dut):
+    """Test using highmem addresses"""
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+
+    wrap_boundary = 0x001FD200
+    start_addr = 0x001FD210
+
+    zeros = np.zeros(32, dtype=np.uint8)
+    await core_mini_axi.write(wrap_boundary, zeros, burst=AxiBurst.INCR)
+
+    beat0 = np.full(16, 0xAA, dtype=np.uint8)
+    beat1 = np.full(16, 0x55, dtype=np.uint8)
+    wdata = np.concatenate([beat0, beat1])
+
+    await core_mini_axi.write(start_addr, wdata, burst=AxiBurst.WRAP)
+
+    rdata_200 = await core_mini_axi.read(
+        wrap_boundary, 16, burst=AxiBurst.INCR
+    )
+    rdata_210 = await core_mini_axi.read(start_addr, 16, burst=AxiBurst.INCR)
+
+    assert (rdata_200 == beat1).all(), (
+        f"Expected 0x55..55 at wrap boundary {hex(wrap_boundary)}, "
+        f"got {rdata_200.tobytes().hex()}"
+    )
+    assert (rdata_210 == beat0).all(), (
+        f"Expected 0xAA..AA at start addr {hex(start_addr)}, "
+        f"got {rdata_210.tobytes().hex()}"
+    )

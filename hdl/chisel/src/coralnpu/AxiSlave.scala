@@ -139,10 +139,10 @@ class AxiSlave(p: Parameters) extends Module {
   assert(!readIssued.valid || readDataQueue.io.enq.ready)
 
   // Update address between beats
-  val baseAddrMask = VecInit(
-    (0 until axiAddrCmd.bits.addr.addr.getWidth).map(x => !(x.U < axiAddrCmd.bits.addr.size))
-  )
-  val cmdAddrBase         = axiAddrCmd.bits.addr.addr & baseAddrMask.asUInt
+  val wrapWindowSize =
+    ((axiAddrCmd.bits.addr.len +& 1.U) << axiAddrCmd.bits.addr.size).pad(p.axi2AddrBits)
+  val baseAddrMask        = ~(wrapWindowSize - 1.U(p.axi2AddrBits.W))
+  val cmdAddrBase         = axiAddrCmd.bits.addr.addr & baseAddrMask
   val (burst, burstValid) = AxiBurstType.safe(axiAddrCmd.bits.addr.burst)
   val validBurst          = axiAddrCmd.valid && burstValid
   val addrNext            = MuxUpTo1H(
@@ -152,10 +152,14 @@ class AxiSlave(p: Parameters) extends Module {
       (validBurst && (burst === AxiBurstType.INCR))  ->
         (cmdAddr + (1.U << axiAddrCmd.bits.addr.size)),
       (validBurst && (burst === AxiBurstType.WRAP)) -> {
-        val newAddr        = cmdAddr + (1.U << axiAddrCmd.bits.addr.size)
+        val newAddr        = cmdAddr +& (1.U << axiAddrCmd.bits.addr.size)
         val newAddrWrapped =
-          Mux(newAddr >= cmdAddrBase + (p.axi2DataBits / 8).U, cmdAddrBase, newAddr)
-        newAddrWrapped(31, 0)
+          Mux(
+            newAddr >= (cmdAddrBase +& wrapWindowSize),
+            cmdAddrBase,
+            newAddr(p.axi2AddrBits - 1, 0)
+          )
+        newAddrWrapped
       }
     )
   )

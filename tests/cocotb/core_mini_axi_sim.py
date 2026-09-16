@@ -422,16 +422,17 @@ async def core_mini_axi_burst_types_test(dut):
 
     # AxiBurst.WRAP
     for _ in tqdm.trange(1000):
-        beats = random.randint(2, 255)
+        beats = random.choice([2, 4, 8, 16])
         wdata = np.random.randint(0, 255, 16 * beats, dtype=np.uint8)
-        write_offset = random.randint(1, 15)
-        read_offset = random.randint(1, 15)
-        await core_mini_axi.write(write_offset, wdata, burst=AxiBurst.WRAP)
-        rdata = await core_mini_axi.read(read_offset, 16, burst=AxiBurst.WRAP)
-        expected = np.concatenate([
-            wdata[-write_offset:], wdata[-16:-write_offset]
-        ])
-        assert (expected == np.roll(rdata, read_offset)).all()
+        write_beat = random.randint(0, beats - 1)
+        read_beat = random.randint(0, beats - 1)
+        await core_mini_axi.write(write_beat * 16, wdata, burst=AxiBurst.WRAP)
+        rdata = await core_mini_axi.read(
+            read_beat * 16, 16 * beats, burst=AxiBurst.WRAP
+        )
+        expected_mem = np.roll(wdata, write_beat * 16)
+        expected_read = np.roll(expected_mem, -read_beat * 16)
+        assert (expected_read == rdata).all()
 
 
 @cocotb.test()
@@ -903,3 +904,47 @@ async def core_mini_axi_retire_buffer_full_illegal_inst_test(dut):
     assert trap_count == 1, f"Expected 1 trap, got {trap_count}"
     assert mcause == 2, f"Expected mcause=2 (Illegal instruction), got {mcause}"
     assert mepc == illegal_inst_addr, f"Expected mepc={hex(illegal_inst_addr)}, got {hex(mepc)}"
+
+
+@cocotb.test()
+async def core_mini_axi_wrap_burst_test(dut):
+    """Test for AXI slave WRAP boundary calculation."""
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+
+    # DTCM in default memory map is 0x00010000..0x00017FFF.
+    # Use 0x00017210 (wrap boundary 0x00017200 for 32-byte window: AWSIZE=4, AWLEN=1).
+    wrap_boundary = 0x00017200
+    start_addr = 0x00017210
+
+    # Zero-initialize both 16-byte lines first
+    zeros = np.zeros(32, dtype=np.uint8)
+    await core_mini_axi.write(wrap_boundary, zeros, burst=AxiBurst.INCR)
+
+    # Beat 0 = 0xAA...AA (at 0x00017210), Beat 1 = 0x55...55 (wraps to 0x00017200)
+    beat0 = np.full(16, 0xAA, dtype=np.uint8)
+    beat1 = np.full(16, 0x55, dtype=np.uint8)
+    wdata = np.concatenate([beat0, beat1])
+
+    await core_mini_axi.write(start_addr, wdata, burst=AxiBurst.WRAP)
+
+    # Single-beat 16-byte reads (ARLEN=0, ARSIZE=4)
+    rdata_200 = await core_mini_axi.read(
+        wrap_boundary, 16, burst=AxiBurst.INCR
+    )
+    rdata_210 = await core_mini_axi.read(start_addr, 16, burst=AxiBurst.INCR)
+
+    assert (rdata_200 == beat1).all(), (
+        f"Expected 0x55..55 at wrap boundary {hex(wrap_boundary)}, "
+        f"got {rdata_200.tobytes().hex()}"
+    )
+    assert (rdata_210 == beat0).all(), (
+        f"Expected 0xAA..AA at start addr {hex(start_addr)}, "
+        f"got {rdata_210.tobytes().hex()}"
+    )
+
+    # Also verify multi-beat WRAP read starting from start_addr
+    rdata_wrap = await core_mini_axi.read(start_addr, 32, burst=AxiBurst.WRAP)
+    assert (rdata_wrap == wdata).all()
