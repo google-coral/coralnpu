@@ -239,6 +239,24 @@ __attribute__((used, retain)) void vill1_store(void) {
       : "vl", "vtype");
 }
 
+// Test sequence: configure mtype/vtype, tn, tm, tk, then execute vtzero.
+// Frontend configuration instructions must not be dispatched to backend.
+__attribute__((used, retain)) void mset_dimension_config(void) {
+  asm volatile(
+      "li x6, 0x4042 \n"
+      "li x9, 0x008 \n"
+      ".word 0x82937057 \n"  // msetmtype x6, x9
+      "li x10, 4 \n"
+      ".word 0x840575D7 \n"  // msettn x11, x10
+      "li x14, 4 \n"
+      ".word 0x841776D7 \n"  // msettm x13, x14
+      "li x16, 2 \n"
+      ".word 0x842877D7 \n"  // msettk x15, x16
+      ".word 0x43E06057 \n"  // vtzero mt0
+      ::
+          : "x6", "x9", "x10", "x11", "x13", "x14", "x15", "x16", "memory");
+}
+
 test_func_t test_fn = vtle64;
 
 int main(int argc, char **argv) {

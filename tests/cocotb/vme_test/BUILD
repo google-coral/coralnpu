@@ -34,6 +34,7 @@ VME_TEST_TESTCASES = [
     "vme_msettm_matmul_test",
     "vme_altfmt_test",
     "vme_vset_mtype_reset_test",
+    "vme_mset_retire_test",
 ]
 
 cocotb_test_suite(

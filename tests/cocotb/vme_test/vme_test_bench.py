@@ -1136,3 +1136,37 @@ async def vme_vset_mtype_reset_test(dut):
     cocotb.log.info(
         "✓ All vset instructions successfully cleared mtype to zero"
     )
+
+
+@cocotb.test()
+async def vme_mset_retire_test(dut):
+    """Verify msettm and msettk are handled solely in frontend and not sent to backend.
+
+    Configuration instructions msettm and msettk only update matrix dimension
+    state in the front-end and do not generate backend execution commands.
+    Verifies that executing msetmtype, msettn, msettm, msettk, and vtzero succeeds
+    without taking illegal instruction traps or causing double retirement.
+    """
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_decode_test.elf"
+    )
+    fixture = await Fixture.Create(dut)
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        ["test_fn", "trap_count", "last_mcause", "mset_dimension_config"],
+    )
+
+    await fixture.write_ptr("test_fn", "mset_dimension_config")
+    await fixture.run_to_halt()
+
+    trap_count_val = int.from_bytes(
+        (await fixture.read_word("trap_count")).tobytes(),
+        "little",
+    )
+    last_mcause_val = int.from_bytes(
+        (await fixture.read_word("last_mcause")).tobytes(),
+        "little",
+    )
+    assert not fixture.fault(), "Core faulted unexpectedly"
+    assert trap_count_val == 0, f"Expected 0 traps, got {trap_count_val} (last_mcause={last_mcause_val})"
