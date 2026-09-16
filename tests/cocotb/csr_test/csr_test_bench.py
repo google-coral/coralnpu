@@ -43,7 +43,7 @@ async def csr_read_write_test(dut):
     await core_mini_axi.execute_from(entry_point)
     await core_mini_axi.wait_for_halted()
 
-    results_bytes = await core_mini_axi.read(results_addr, 9 * 4)
+    results_bytes = await core_mini_axi.read(results_addr, 11 * 4)
     results = results_bytes.view(np.uint32)
 
     test_1_write = int(results[0])
@@ -54,7 +54,9 @@ async def csr_read_write_test(dut):
     test_3_read = int(results[5])
     test_4_write = int(results[6])
     test_4_read = int(results[7])
-    test_status = int(results[8])
+    test_5_write = int(results[8])
+    test_5_read = int(results[9])
+    test_status = int(results[10])
 
     cocotb.log.info(
         f"[CSR Test] Test 1 (FCSR): written=0x{test_1_write:08x} read=0x{test_1_read:08x}"
@@ -69,6 +71,9 @@ async def csr_read_write_test(dut):
         f"[CSR Test] Test 4 (MSTATUSH): written=0x{test_4_write:08x} read=0x{test_4_read:08x}"
     )
     cocotb.log.info(
+        f"[CSR Test] Test 5 (MEPC): written=0x{test_5_write:08x} read=0x{test_5_read:08x}"
+    )
+    cocotb.log.info(
         f"[CSR Test] Overall status: {'PASS' if test_status == 0 else 'FAIL'}"
     )
 
@@ -80,6 +85,8 @@ async def csr_read_write_test(dut):
         f"Test 3 failed: 0x{test_3_write:08x} != 0x{test_3_read:08x}"
     assert (test_4_read == 0x00000000), \
         f"Test 4 failed: 0x{test_4_write:08x} != 0x{test_4_read:08x}"
+    assert (test_5_read == (test_5_write & ~0x3)), \
+        f"Test 5 failed: 0x{test_5_write:08x} != 0x{test_5_read:08x}"
     assert test_status == 0, "CSR test failed in program"
 
     cocotb.log.info("[CSR Test] ✓ All tests passed!")

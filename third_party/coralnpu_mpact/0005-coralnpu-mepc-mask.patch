@@ -1,0 +1,14 @@
+--- a/sim/coralnpu_v2_state.cc
++++ b/sim/coralnpu_v2_state.cc
+@@ -57,4 +57,11 @@ CoralNPUV2State::CoralNPUV2State(
+     mtvec_csr->set_read_mask(~0x3U);
+   }
++  auto mepc_result = csr_set()->GetCsr("mepc");
++  if (mepc_result.ok()) {
++    auto* mepc_csr =
++        static_cast<::mpact::sim::riscv::RiscV32SimpleCsr*>(*mepc_result);
++    mepc_csr->set_write_mask(mepc_csr->write_mask() & ~static_cast<uint32_t>(2));
++    mepc_csr->set_read_mask(mepc_csr->read_mask() & ~static_cast<uint32_t>(2));
++  }
+ }
+ 

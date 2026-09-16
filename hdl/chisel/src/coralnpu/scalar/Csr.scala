@@ -464,6 +464,8 @@ class Csr(p: Parameters) extends Module {
     Cat(0.U((p.xlen - log2Ceil(p.rvvVlen)).W), v(log2Ceil(p.rvvVlen) - 1, 0))
   private def vxrmWord(v: UInt): UInt  = Cat(0.U((p.xlen - 2).W), v(1, 0))
   private def vxsatWord(v: UInt): UInt = Cat(0.U((p.xlen - 1).W), v(0))
+  private def mepcWord(v: UInt): UInt  =
+    Cat(v(p.programCounterBits - 1, 2), 0.U(2.W))
 
   val mip = Cat(
     0.U((p.xlen - 12).W),
@@ -576,7 +578,7 @@ class Csr(p: Parameters) extends Module {
     when(mtvecEn) { mtvec := mtvec_w }
     // Writes to mstatush are ignored (hardwired zero)
     when(mscratchEn) { mscratch := wdata }
-    when(mepcEn) { mepc := localWdata(mepc) }
+    when(mepcEn) { mepc := mepcWord(localWdata(mepc)) }
     when(mcauseEn) { mcause := wdata }
     when(mtvalEn) { mtval := wdata }
     when(mpcEn) { mpc := wdata }
@@ -713,7 +715,7 @@ class Csr(p: Parameters) extends Module {
   }
 
   when(io.bru.in.mepc.valid) {
-    mepc := io.bru.in.mepc.bits
+    mepc := mepcWord(io.bru.in.mepc.bits)
   }
 
   if (p.enableFloat || p.enableRvv) {
@@ -763,7 +765,7 @@ class Csr(p: Parameters) extends Module {
 
   // Forwarding.
   io.bru.out.mode  := mode
-  io.bru.out.mepc  := Mux(mepcEn && req.valid, localWdata(mepc), mepc)
+  io.bru.out.mepc  := Mux(mepcEn && req.valid, mepcWord(localWdata(mepc)), mepc)
   io.bru.out.mtvec := Mux(mtvecEn && req.valid, mtvec_w, mtvec)
 
   val frmBypass = MuxCase(
@@ -804,7 +806,7 @@ class Csr(p: Parameters) extends Module {
       mstatusEn  -> mstatusWord(wdata(3), wdata(7)),
       mieEn      -> (wdata & "h888".U),
       mtvecEn    -> mtvec_w,
-      mepcEn     -> localWdata(mepc),
+      mepcEn     -> mepcWord(localWdata(mepc)),
       misaEn     -> misa,
       mstatushEn -> 0.U,
       mipEn      -> mip,

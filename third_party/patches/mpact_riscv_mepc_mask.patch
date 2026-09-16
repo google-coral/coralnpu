@@ -1,0 +1,7 @@
+--- a/riscv/riscv_state.cc
++++ b/riscv/riscv_state.cc
+@@ -201,3 +201,3 @@ void CreateCsrs(RiscVState* state, std::vector<RiscVCsrInterface*>& csr_vec) {
+   CHECK_NE(CreateCsr<RiscVSimpleCsr<T>>(state, state->mepc_, csr_vec, "mepc",
+-                                        RiscVCsrEnum::kMEpc, 0, state),
++                                        RiscVCsrEnum::kMEpc, 0, ~static_cast<T>(1), ~static_cast<T>(1), state),
+            nullptr);

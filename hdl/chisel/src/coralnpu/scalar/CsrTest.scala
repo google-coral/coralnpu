@@ -101,16 +101,34 @@ class CsrSpec extends AnyFreeSpec with ChiselSim {
         "mstatus trace data must not output raw 0xffffffff"
       )
 
-      // 4. Deassert request and verify readback of read-only registers is unchanged
+      // 4. Writes to mepc (0x341) must clear bits 1:0 (WARL, IALIGN=32)
+      dut.io.req.bits.index.poke(0x341.U) // mepc
+      dut.io.rs1.data.poke("hffffffff".U)
+      dut.clock.step()
+      assert(dut.io.trace.valid.peek().litToBoolean, "mepc is in R/W space")
+      assert(
+        dut.io.trace.data.peek().litValue == BigInt("fffffffc", 16),
+        s"mepc trace data must mask bits 1:0 to zero, got 0x${dut.io.trace.data.peek().litValue.toString(16)}"
+      )
+
+      // 5. Deassert request and verify readback of read-only registers is unchanged
       dut.io.req.valid.poke(false.B)
       dut.clock.step()
 
-      // Read vl (0xc20) - must remain 0
+      // Read mepc (0x341) - bits 1:0 must read back zero
       dut.io.req.valid.poke(true.B)
       dut.io.req.bits.op.poke(CsrOp.CSRRS)
-      dut.io.req.bits.index.poke(0xc20.U)
+      dut.io.req.bits.index.poke(0x341.U)
       dut.io.req.bits.addr.poke(5.U)
       dut.io.req.bits.rs1.poke(0.U) // csrr
+      dut.clock.step()
+      assert(
+        dut.io.rd.bits.data.peek().litValue == BigInt("fffffffc", 16),
+        s"mepc readback must have bits 1:0 as zero, got 0x${dut.io.rd.bits.data.peek().litValue.toString(16)}"
+      )
+
+      // Read vl (0xc20) - must remain 0
+      dut.io.req.bits.index.poke(0xc20.U)
       dut.clock.step()
       assert(dut.io.rd.bits.data.peek().litValue == 0, "vl must remain 0")
 

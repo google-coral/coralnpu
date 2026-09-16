@@ -86,6 +86,7 @@ def define_mpact_repos():
             "@coralnpu_hw//third_party/coralnpu_mpact:0002-Patch-mpact_riscv-WORKSPACE.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0003-Hardwire-mtvec-direct-mode.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0004-Fix-mpact-riscv-includes.patch",
+            "@coralnpu_hw//third_party/coralnpu_mpact:0005-coralnpu-mepc-mask.patch",
         ],
         patch_args = ["-p1"],
     )

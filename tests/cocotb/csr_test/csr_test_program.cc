@@ -23,6 +23,8 @@ struct CsrTestResults {
   uint32_t test_3_read_value;
   uint32_t test_4_write_value;
   uint32_t test_4_read_value;
+  uint32_t test_5_write_value;
+  uint32_t test_5_read_value;
   uint32_t test_status;
 };
 
@@ -57,8 +59,16 @@ int main(int argc, char **argv) {
   csr_results.test_4_write_value = test4_write;
   csr_results.test_4_read_value  = test4_read;
 
+  uint32_t test5_write = 0x1234567f;
+  asm volatile("csrw mepc, %0" : : "r"(test5_write));
+  uint32_t test5_read = 0;
+  asm volatile("csrr %0, mepc" : "=r"(test5_read));
+  csr_results.test_5_write_value = test5_write;
+  csr_results.test_5_read_value  = test5_read;
+
   if ((test1_read & test1_write) == test1_write && (test2_read & test2_write) == test2_write &&
-      (test3_read & test3_write) == test3_write && (test4_read == 0x00000000)) {
+      (test3_read & test3_write) == test3_write && (test4_read == 0x00000000) &&
+      (test5_read == (test5_write & ~0x3u))) {
     csr_results.test_status = 0;
   } else {
     csr_results.test_status = 1;

@@ -16,6 +16,7 @@
 
 MPACT_RISCV_PATCH_FILES = [
     "mpact_riscv_fma_underflow.patch",
+    "mpact_riscv_mepc_mask.patch",
     "mpact_riscv_rmm_f_instructions.patch",
     "mpact_riscv_rmm_helpers.patch",
     "mpact_riscv_vector_csr.patch",
