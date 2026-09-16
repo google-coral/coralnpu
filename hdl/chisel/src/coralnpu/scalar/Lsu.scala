@@ -220,6 +220,9 @@ class LsuCmd(p: Parameters) extends Bundle {
 }
 
 class LsuUOp(p: Parameters) extends Bundle {
+  val nCells   = if (p.enableRvv) 8 * p.rvvVlenb else 4
+  val ctrWidth = log2Ceil(nCells + 1)
+
   val store = Bool()
   val rd    = UInt(log2Ceil(p.scalarRegCount).W)
   val op    = LsuOp()
@@ -241,6 +244,18 @@ class LsuUOp(p: Parameters) extends Bundle {
   val vstart         = Option.when(p.enableRvv) { UInt(log2Ceil(p.rvvVlen).W) }
   // Whether or not a vector L/S instruction is masked. Unused in other ops.
   val masked = Option.when(p.enableRvv) { Bool() }
+
+  // Inclusive lower bound: cells at indices < startCell are pre-start (inactive).
+  val startCell = Option.when(p.enableRvv) { UInt(ctrWidth.W) }
+  // Exclusive upper bound of active data: cells at indices in [startCell, endCell)
+  // are active; cells in [endCell, unreachableCell) are tail elements (inactive).
+  val endCell = Option.when(p.enableRvv) { UInt(ctrWidth.W) }
+  // Exclusive upper bound of allocated cells across active registers (LMUL * nfields).
+  // Cells at indices >= unreachableCell are unreachable/disabled (DONE).
+  val unreachableCell = UInt(ctrWidth.W)
+
+  val initAsConstStride = Bool()
+  val bytesPerSegment   = Option.when(p.enableRvv) { UInt(6.W) }
 
   override def toPrintable: Printable = {
     cf"LsuUOp(store -> ${store}, rd -> ${rd}, op -> ${op}, " +
@@ -269,6 +284,18 @@ object LsuUOp {
       result.addr := sbus.addr(i)
       result.data := sbus.data(i)
     }
+    val scalarBytes = MuxLookup(cmd.op, 4.U(result.ctrWidth.W))(
+      Seq(
+        LsuOp.LB      -> 1.U,
+        LsuOp.LBU     -> 1.U,
+        LsuOp.SB      -> 1.U,
+        LsuOp.LH      -> 2.U,
+        LsuOp.LHU     -> 2.U,
+        LsuOp.SH      -> 2.U,
+        LsuOp.FLOAT_H -> 2.U
+      )
+    )
+
     if (p.enableRvv) {
       val isTile  = if (p.enableVme) LsuOp.isTile(cmd.op) else false.B
       val tileEew = Option
@@ -326,6 +353,28 @@ object LsuUOp {
         )
       }
 
+      val isVector  = LsuOp.isVector(cmd.op) || isTile
+      val isIndexed = LsuOp.isIndexedVector(cmd.op)
+      val isStrided = cmd.op.isOneOf(LsuOp.VLOAD_STRIDED, LsuOp.VSTORE_STRIDED)
+
+      val dataElemBytesShift = Mux(
+        isIndexed,
+        MuxLookup(sew, 0.U(2.W))(
+          Seq(
+            "b000".U -> 0.U,
+            "b001".U -> 1.U,
+            "b010".U -> 2.U
+          )
+        ),
+        MuxLookup(eew, 0.U(2.W))(
+          Seq(
+            "b000".U -> 0.U,
+            "b101".U -> 1.U,
+            "b110".U -> 2.U
+          )
+        )
+      )
+
       result.elemWidth.get      := eew
       result.emul_data.get      := lmulToDataEmul(lmul_eff)
       result.emul_data_orig.get := lmulToDataEmul(lmul_orig)
@@ -333,7 +382,7 @@ object LsuUOp {
         rvvState.get.bits.vl,
         Seq(
           cmd.isMaskOperation() -> ((rvvState.get.bits.vl >> 3) + rvvState.get.bits.vl.take(3).orR),
-          cmd.isWholeRegister() -> MuxUpTo1H(
+          cmd.isWholeRegister() -> (MuxUpTo1H(
             WireInit(UInt(result.vl.get.getWidth.W), DontCare),
             Seq(
               (cmd.nfields.get === 0.U) -> p.rvvVlenb.U,       // NF1 -> LMUL1
@@ -341,7 +390,7 @@ object LsuUOp {
               (cmd.nfields.get === 3.U) -> (p.rvvVlenb * 4).U, // NF4 -> LMUL4
               (cmd.nfields.get === 7.U) -> (p.rvvVlenb * 8).U  // NF8 -> LMUL8
             )
-          ),
+          ) >> dataElemBytesShift),
           isTile -> Mux(rvvState.get.bits.vl < p.vmeTe.U, rvvState.get.bits.vl, p.vmeTe.U)
         )
       )
@@ -357,14 +406,72 @@ object LsuUOp {
         )
       )
       result.sew.get := rvvState.get.bits.sew
+
       // We only care about const stride here.
       // Ordered indexed is apparent on the op.
       result.strict.get := (
-        cmd.op.isOneOf(LsuOp.VLOAD_STRIDED, LsuOp.VSTORE_STRIDED) &&
+        isStrided &&
           cmd.rs2.get =/= 0.U &&
           sbus.data(i) === 0.U
       )
-      result.masked.get := !cmd.vm.get && !isTile
+      result.masked.get := isVector && !cmd.vm.get && !isTile
+
+      result.initAsConstStride := isStrided || isIndexed
+
+      val segMultiplier = result.nfields.get +& 1.U
+      result.bytesPerSegment.foreach(_ := segMultiplier << dataElemBytesShift)
+
+      val isFractional = result.emul_data.get(2)
+      val emulMag      = result.emul_data.get(1, 0)
+
+      // vectorsPerSegmentShift: 0 for m1 and fractional, 1 for m2, 2 for m4, 3 for m8
+      val vectorsPerSegmentShift = Mux(isFractional, 0.U(2.W), emulMag)
+      val totalActiveRegs        = segMultiplier << vectorsPerSegmentShift
+
+      val vecStartCell =
+        ((result.vstart.get * segMultiplier) << dataElemBytesShift)(result.ctrWidth - 1, 0)
+      val vecEndCell =
+        ((result.vl.get * segMultiplier) << dataElemBytesShift)(result.ctrWidth - 1, 0)
+      val vecUnreachableCell = (totalActiveRegs * p.rvvVlenb.U)(result.ctrWidth - 1, 0)
+
+      // Active cell count for indexed operations: accounts for fractional LMUL (mf2, mf4, mf8),
+      // where fewer cells than a full vector register are allocated to W_DATA.
+      val activeCellCount = Mux(
+        isFractional,
+        vecUnreachableCell >> (4.U(3.W) - emulMag),
+        vecUnreachableCell
+      )(result.ctrWidth - 1, 0)
+
+      val isRvvStore = cmd.store && !isTile
+
+      // Cell boundary indices:
+      // - Unindexed vector loads (and tile ops) are bounded by vl/vstart.
+      // - Indexed operations initialize all cells up to activeCellCount to W_DATA.
+      // - RVV stores initialize all cells up to vecUnreachableCell to W_DATA.
+      // - Scalar/float operations use scalarBytes.
+      result.startCell.foreach(_ := Mux(isVector && !isIndexed && !isRvvStore, vecStartCell, 0.U))
+
+      result.endCell.foreach(
+        _ := MuxUpTo1H(
+          scalarBytes,
+          Seq(
+            isIndexed                               -> activeCellCount,
+            (isVector && !isIndexed && isRvvStore)  -> vecUnreachableCell,
+            (isVector && !isIndexed && !isRvvStore) -> vecEndCell
+          )
+        )
+      )
+
+      result.unreachableCell := MuxUpTo1H(
+        scalarBytes,
+        Seq(
+          isIndexed                -> activeCellCount,
+          (isVector && !isIndexed) -> vecUnreachableCell
+        )
+      )
+    } else {
+      result.initAsConstStride := false.B
+      result.unreachableCell   := scalarBytes
     }
 
     result
@@ -1465,48 +1572,6 @@ class LsuCell(p: Parameters) extends Bundle {
       }
       .getOrElse(this)
   }
-
-  def initDone(): LsuCell = {
-    MakeWireBundle[LsuCell](
-      new LsuCell(p),
-      _       -> this,
-      _.state -> LsuCellState.DONE
-    )
-  }
-
-  def initSkip(): LsuCell = {
-    MakeWireBundle[LsuCell](
-      new LsuCell(p),
-      _       -> this,
-      _.state -> LsuCellState.W_WB
-    )
-  }
-
-  def initLoad(addr: UInt, needData: Bool): LsuCell = {
-    MakeWireBundle[LsuCell](
-      new LsuCell(p),
-      _       -> this,
-      _.state -> Mux(needData, LsuCellState.W_DATA, LsuCellState.W_START)
-    ).setAddr(addr)
-  }
-
-  def initScalarStore(addr: UInt, data: UInt): LsuCell = {
-    MakeWireBundle[LsuCell](
-      new LsuCell(p),
-      _       -> this,
-      _.state -> LsuCellState.W_START,
-      _.data  -> data
-    ).setAddr(addr)
-  }
-
-  def initVectorStore(addr: UInt): LsuCell = {
-    assert(p.enableRvv)
-    MakeWireBundle[LsuCell](
-      new LsuCell(p),
-      _       -> this,
-      _.state -> LsuCellState.W_DATA
-    ).setAddr(addr)
-  }
 }
 
 object LsuCell {
@@ -1538,6 +1603,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val nCells                 = if (p.enableRvv) 8 * p.rvvVlenb else 4
   val indexWidth             = log2Ceil(nCells)
   val ctrWidth               = log2Ceil(nCells + 1)
+  val maxConsecutiveRows     = (nCells + p.lsuDataBytes - 1) / p.lsuDataBytes + 1
   val windowSizeNormal       = math.min(nCells, p.lsuDataBytes)
   val windowSizeStrict       = math.min(windowSizeNormal, p.lsuStrictWindowBytes)
   val windowIndexWidthNormal = log2Ceil(windowSizeNormal)
@@ -2170,828 +2236,184 @@ class LsuSuperSlot(p: Parameters) extends Module {
       ret
     }
 
-    def initInt(pc: UInt, addr: UInt, write: Boolean): State = {
-      val ret = MakeWireBundle[State](
-        new State(),
-        _            -> this,
-        _.pc         -> pc,
-        _.write      -> write.B,
-        _.faulted    -> false.B,
-        _.strictMode -> false.B,
-        // rd to be filled by caller
-        _.skipWriteback -> write.B,
-        // scalarWritebackMode to be filled by caller
-        // cells to be filled by caller
-        _.leadIndex -> 0.U,
-        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
-        _.isDone    -> false.B
-      )
-      ret.float.foreach { x =>
-        x.writeback := false.B
-      }
-      ret.vector.foreach { x =>
-        x.isVme.foreach(_ := false.B)
-        x.segmentStep                := 0.U
-        x.emulStep                   := 0.U
-        x.endCell                    := 0.U
-        x.faultingCell               := nCells.U
-        x.dataSubvector              := LoopingCounter(0.U)
-        x.dataSubvectorTheoretical   := 0.U
-        x.dataSegment                := LoopingCounter(0.U)
-        x.dataEmul                   := LoopingCounter(0.U)
-        x.writebackSegment           := LoopingCounter(0.U)
-        x.writebackEmul              := LoopingCounter(0.U)
-        x.writebackActiveCells.valid := false.B
-      }
+    def fromUop(uop: LsuUOp): State = {
+      val isTile    = if (p.enableVme) LsuOp.isTile(uop.op) else false.B
+      val isVector  = if (p.enableRvv) LsuOp.isVector(uop.op) || isTile else false.B
+      val isIndexed = if (p.enableRvv) LsuOp.isIndexedVector(uop.op) else false.B
+      val isFloat   = if (p.enableFloat) uop.op.isOneOf(LsuOp.FLOAT, LsuOp.FLOAT_H) else false.B
+      val isScalar  = !isVector && !isFloat
+      val isOrderedIndexed =
+        if (p.enableRvv) uop.op.isOneOf(LsuOp.VLOAD_OINDEXED, LsuOp.VSTORE_OINDEXED) else false.B
 
-      ret
-    }
-
-    def initIntLoad(
-      pc: UInt,
-      addr: UInt,
-      rd: UInt,
-      bytes: Int,
-      sext: Boolean
-    ): State = {
-      MakeWireBundle[State](
-        new State(),
-        _                     -> initInt(pc, addr, write = false),
-        _.rd                  -> rd,
-        _.scalarWritebackMode -> ((bytes, sext) match {
-          case (1, false) => LsuScalarWritebackMode.U1
-          case (1, true)  => LsuScalarWritebackMode.S1
-          case (2, false) => LsuScalarWritebackMode.U2
-          case (2, true)  => LsuScalarWritebackMode.S2
-          case (4, _)     => LsuScalarWritebackMode.U4
-          // TODO: add assertion for this.
-          case _ => LsuScalarWritebackMode.NONE
-        }),
-        _.cells -> VecInit.tabulate(nCells) { i =>
-          if (i < bytes) {
-            cells(i).initLoad(addr + i.U, needData = false.B)
-          } else {
-            cells(i).initDone()
-          }
-        }
-      )
-    }
-
-    def initIntStore(pc: UInt, addr: UInt, data: UInt, bytes: Int): State = {
-      MakeWireBundle[State](
-        new State(),
-        _ -> initInt(pc, addr, write = true),
-        // _.rd is untouched
-        _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
-        _.cells               -> VecInit.tabulate(nCells) { i =>
-          if (i < bytes) {
-            cells(i).initScalarStore(addr + i.U, data(i * 8 + 7, i * 8))
-          } else {
-            cells(i).initDone()
-          }
-        }
-      )
-    }
-
-    def initFloat(pc: UInt, addr: UInt, write: Boolean): State = {
-      val ret = MakeWireBundle[State](
-        new State(),
-        _            -> this,
-        _.pc         -> pc,
-        _.write      -> write.B,
-        _.faulted    -> false.B,
-        _.strictMode -> false.B,
-        // rd to be filled by caller
-        _.skipWriteback -> write.B,
-        // scalarWritebackMode to be filled by caller
-        // cells to be filled by caller
-        _.leadIndex -> 0.U,
-        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
-        _.isDone    -> false.B
-      )
-      ret.vector.foreach { x =>
-        x.isVme.foreach(_ := false.B)
-        x.segmentStep                := 0.U
-        x.emulStep                   := 0.U
-        x.endCell                    := 0.U
-        x.faultingCell               := nCells.U
-        x.dataSubvector              := LoopingCounter(0.U)
-        x.dataSubvectorTheoretical   := 0.U
-        x.dataSegment                := LoopingCounter(0.U)
-        x.dataEmul                   := LoopingCounter(0.U)
-        x.writebackSegment           := LoopingCounter(0.U)
-        x.writebackEmul              := LoopingCounter(0.U)
-        x.writebackActiveCells.valid := false.B
-      }
-
-      ret
-    }
-
-    def initFloatLoad(
-      pc: UInt,
-      addr: UInt,
-      rd: UInt,
-      bytes: Int
-    ): State = {
-      val ret = MakeWireBundle[State](
-        new State(),
-        _                     -> initFloat(pc, addr, write = false),
-        _.rd                  -> rd,
-        _.scalarWritebackMode -> (if (bytes == 2) {
-                                    LsuScalarWritebackMode.F2
-                                  } else {
-                                    LsuScalarWritebackMode.U4
-                                  }),
-        _.cells -> VecInit.tabulate(nCells) { i =>
-          if (i < bytes) {
-            cells(i).initLoad(addr + i.U, needData = false.B)
-          } else {
-            cells(i).initDone()
-          }
-        }
-      )
-      ret.float.foreach { x =>
-        x.writeback := true.B
-      }
-
-      ret
-    }
-
-    def initFloatStore(pc: UInt, addr: UInt, data: UInt, bytes: Int): State = {
-      // Only 4 bytes is supported atm.
-      // TODO: assert
-      val ret = MakeWireBundle[State](
-        new State(),
-        _                     -> initFloat(pc, addr, write = true),
-        _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
-        _.cells               -> VecInit.tabulate(nCells) { i =>
-          if (i < bytes) {
-            cells(i).initScalarStore(addr + i.U, data(i * 8 + 7, i * 8))
-          } else {
-            cells(i).initDone()
-          }
-        }
-      )
-      ret.float.foreach { x =>
-        x.writeback := false.B
-      }
-
-      ret
-    }
-
-    def initVectorUS(
-      pc: UInt,
-      addr: UInt,
-      vd: UInt,
-      nfields: UInt,
-      maxVectorPerSegment: UInt,
-      maxVectorPerSegmentOrig: UInt,
-      elemWidth: UInt,
-      write: Boolean,
-      isVme: Bool,
-      endCell: UInt = nCells.U
-    ): State = {
-      val ret = MakeWireBundle[State](
-        new State(),
-        _                     -> this,
-        _.pc                  -> pc,
-        _.write               -> write.B,
-        _.faulted             -> false.B,
-        _.strictMode          -> false.B,
-        _.rd                  -> vd,
-        _.skipWriteback       -> (write.B && isVme),
-        _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
-        // cells to be filled by caller
-        _.leadIndex -> 0.U,
-        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
-        _.isDone    -> false.B
-      )
-      ret.float.foreach { x =>
-        x.writeback := false.B
-      }
-      ret.vector.foreach { x =>
-        x.isVme.foreach(_ := isVme)
-        x.endCell      := endCell
-        x.faultingCell := nCells.U
-        // TODO: assert
-        x.segmentStep := MuxLookup(elemWidth, WireInit(UInt(3.W), DontCare))(
-          Seq(
-            "b000".U -> 1.U,
-            "b101".U -> 2.U,
-            "b110".U -> 4.U
+      // 1. Cell State Array (cellsInitState)
+      val inactiveState = MuxCase(
+        LsuCellState.W_WB,
+        Option
+          .when(p.enableVme)(
+            // RVV stores never have inactive cells because all cells in active registers
+            // must perform handshakes with the vector core (endCell = vecUnreachableCell).
+            // Therefore, an inactive store cell can only ever occur for tile stores (VTSTORE),
+            // which have no register writeback and complete immediately as DONE.
+            (isTile && uop.store) -> LsuCellState.DONE
           )
-        )
-        x.emulStep := MuxLookup(elemWidth, WireInit(UInt(3.W), DontCare))(
-          Seq(
-            "b000".U -> (nfields * (p.rvvVlenb - 1).U + p.rvvVlenb.U),
-            "b101".U -> (nfields * (p.rvvVlenb - 2).U + p.rvvVlenb.U),
-            "b110".U -> (nfields * (p.rvvVlenb - 4).U + p.rvvVlenb.U)
-          )
-        )
-        x.vectorsPerSegMinusOneOrig := maxVectorPerSegmentOrig
-        // Non indexed cannot have subvectors
-        x.dataSubvector            := LoopingCounter(0.U)
-        x.dataSubvectorTheoretical := 0.U
-        x.dataSegment              := LoopingCounter(nfields)
-        // This is the number, not lmul/emul encoding
-        x.dataEmul        := LoopingCounter(maxVectorPerSegment)
-        x.dataActiveCells := State.makeVectorStartingActiveCells(
-          nfields = nfields,
-          elemWidth = elemWidth,
-          isIndexed = false
-        )
-        x.writebackSegment     := LoopingCounter(nfields)
-        x.writebackEmul        := LoopingCounter(maxVectorPerSegment)
-        x.writebackActiveCells := MakeValid(
-          !write.B || !isVme,
-          State.makeVectorStartingActiveCells(
-            nfields = nfields,
-            elemWidth = elemWidth,
-            isIndexed = false
-          )
-        )
-      }
-
-      ret
-    }
-
-    def initVectorLoadUS(
-      pc: UInt,
-      addr: UInt,
-      vd: UInt,
-      nfields: UInt,
-      maxVectorPerSegment: UInt,
-      maxVectorPerSegmentOrig: UInt,
-      elemWidth: UInt,
-      vl: UInt,
-      vstart: UInt,
-      masked: Bool,
-      isVme: Bool
-    ): State = {
-      // From lmul and nfields, inclusive
-      val maxActiveReg = maxVectorPerSegment * nfields + nfields + maxVectorPerSegment
-      // From vstart and nfields, inclusive
-      val startElem = vstart * nfields + vstart
-      val startCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
-        Seq(
-          "b000".U -> Cat(0.U(2.W), startElem),
-          "b101".U -> Cat(0.U(1.W), startElem, 0.U(1.W)),
-          "b110".U -> Cat(startElem, 0.U(2.W))
+          .toSeq ++ Seq(
+          // Masked vector loads must see mask to determine if elements are active.
+          (isVector && uop.masked.getOrElse(false.B)) -> LsuCellState.W_DATA
         )
       )
-      // From vl and nfields, exclusive
-      val endElem = vl * nfields + vl
-      val endCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
-        Seq(
-          "b000".U -> Cat(0.U(2.W), endElem),
-          "b101".U -> Cat(0.U(1.W), endElem, 0.U(1.W)),
-          "b110".U -> Cat(endElem, 0.U(2.W))
+
+      val activeState = Mux(
+        uop.store,
+        Mux(isVector, LsuCellState.W_DATA, LsuCellState.W_START),
+        Mux(
+          isVector && (isIndexed || uop.masked.getOrElse(false.B)),
+          LsuCellState.W_DATA,
+          LsuCellState.W_START
         )
       )
-      MakeWireBundle[State](
-        new State(),
-        _ -> initVectorUS(
-          pc,
-          addr,
-          vd,
-          nfields,
-          maxVectorPerSegment,
-          maxVectorPerSegmentOrig,
-          elemWidth,
-          write = false,
-          isVme = isVme,
-          endCell = endCell
-        ),
-        _.cells -> VecInit.tabulate(nCells) { i =>
-          MuxUpTo1H(
-            // active cells: do data HS iff masked
-            cells(i).initLoad(addr + i.U, needData = masked),
+
+      val (cellsInitState, cellIsActive) = {
+        val pairs = (0 until nCells).map { i =>
+          val isUnreachable = i.U >= uop.unreachableCell
+          val isPreStart    = uop.startCell.map(i.U < _).getOrElse(false.B)
+          val isTail        = !isUnreachable && uop.endCell.map(i.U >= _).getOrElse(false.B)
+
+          val state = MuxUpTo1H(
+            activeState,
             Seq(
-              // unmasked, prestart: skip to WB
-              (!masked && i.U < startCell) -> cells(i).initSkip(),
-              // unmasked, tail:  skip to WB
-              (!masked && i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
-                .initSkip(),
-              // unreachable cells
-              ((i / p.rvvVlenb).U > maxActiveReg) -> cells(i).initDone()
-              // default: active cells
+              isUnreachable -> LsuCellState.DONE,
+              isPreStart    -> inactiveState,
+              isTail        -> inactiveState
             )
           )
+          val isActive = !isUnreachable && !isPreStart && !isTail
+          (state, isActive)
         }
-      )
-    }
+        (VecInit(pairs.map(_._1)), VecInit(pairs.map(_._2)))
+      }
 
-    def initVectorStoreUS(
-      pc: UInt,
-      addr: UInt,
-      vd: UInt,
-      nfields: UInt,
-      maxVectorPerSegment: UInt,
-      maxVectorPerSegmentOrig: UInt,
-      elemWidth: UInt,
-      vl: UInt,
-      vstart: UInt,
-      isVme: Bool
-    ): State = {
-      val maxActiveReg = maxVectorPerSegment * nfields + nfields + maxVectorPerSegment
-      val startElem    = vstart * nfields + vstart
-      val startCell    = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
+      // 2. Cell Address Path
+      // Mode A: Continuous (Scalar and Unit-Stride base incrementer)
+      val baseRowAddr = uop.addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
+      val baseOffset  = uop.addr(p.dbusOffsetBits - 1, 0)
+      val rowTable    = VecInit.tabulate(maxConsecutiveRows) { k =>
+        (baseRowAddr + k.U)(p.dbusRowAddrBits - 1, 0)
+      }
+
+      val byteSum  = VecInit.tabulate(nCells) { i => baseOffset +& i.U }
+      val rowDelta = VecInit.tabulate(nCells) { i =>
+        (byteSum(i) >> p.dbusOffsetBits).asUInt.pad(log2Ceil(maxConsecutiveRows))
+      }
+      val byteInRow         = VecInit.tabulate(nCells) { i => byteSum(i)(p.dbusOffsetBits - 1, 0) }
+      val continuousRowAddr = VecInit.tabulate(nCells) { i => rowTable(rowDelta(i)) }
+      val continuousMask = VecInit.tabulate(nCells) { i => UIntToOH(byteInRow(i), p.lsuDataBytes) }
+
+      // Mode B: Strided / Indexed (Unified 16-entry lookup, RVV only)
+      val (cellRowAddr, cellMask) = if (p.enableRvv) {
+        val effStride         = Mux(isIndexed, 0.U(32.W), uop.data)
+        val uniqueStructSizes = Seq(1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32)
+        val stridedOffsets    = MuxLookup(
+          uop.bytesPerSegment.get,
+          VecInit.fill(nCells)(0.U(32.W))
+        )(
+          uniqueStructSizes.map { size =>
+            size.U -> State.makeStridedOffsets(size, effStride)
+          }
+        )
+        val stridedAddr    = VecInit.tabulate(nCells) { i => uop.addr + stridedOffsets(i) }
+        val stridedRowAddr = VecInit.tabulate(nCells) { i =>
+          stridedAddr(i)(p.lsuAddrBits - 1, p.dbusOffsetBits)
+        }
+        val stridedMask = VecInit.tabulate(nCells) { i =>
+          UIntToOH(stridedAddr(i)(p.dbusOffsetBits - 1, 0), p.lsuDataBytes)
+        }
+
+        val rowAddr = VecInit.tabulate(nCells) { i =>
+          Mux(uop.initAsConstStride, stridedRowAddr(i), continuousRowAddr(i))
+        }
+        val mask = VecInit.tabulate(nCells) { i =>
+          Mux(uop.initAsConstStride, stridedMask(i), continuousMask(i))
+        }
+        (rowAddr, mask)
+      } else {
+        (continuousRowAddr, continuousMask)
+      }
+
+      // 3. Assemble cells
+      val isScalarStore = (isScalar || isFloat) && uop.store
+      val cellsFromUop  = VecInit.tabulate(nCells) { i =>
+        val isActive = cellIsActive(i)
+        val cellData = if (i < 4) {
+          Mux(isActive && isScalarStore, uop.data(i * 8 + 7, i * 8), cells(i).data)
+        } else {
+          cells(i).data
+        }
+
+        MakeWireBundle[LsuCell](
+          new LsuCell(p),
+          _.state   -> cellsInitState(i),
+          _.rowAddr -> Mux(isActive, cellRowAddr(i), cells(i).rowAddr),
+          _.mask    -> Mux(isActive, cellMask(i), cells(i).mask),
+          _.data    -> cellData
+        )
+      }
+
+      // 5. Scalar Writeback Mode
+      val scalarWbMode = MuxLookup(uop.op, LsuScalarWritebackMode.NONE)(
         Seq(
-          "b000".U -> Cat(0.U(2.W), startElem),
-          "b101".U -> Cat(0.U(1.W), startElem, 0.U(1.W)),
-          "b110".U -> Cat(startElem, 0.U(2.W))
+          LsuOp.LB      -> LsuScalarWritebackMode.S1,
+          LsuOp.LBU     -> LsuScalarWritebackMode.U1,
+          LsuOp.LH      -> LsuScalarWritebackMode.S2,
+          LsuOp.LHU     -> LsuScalarWritebackMode.U2,
+          LsuOp.LW      -> LsuScalarWritebackMode.U4,
+          LsuOp.FLOAT   -> Mux(uop.store, LsuScalarWritebackMode.NONE, LsuScalarWritebackMode.U4),
+          LsuOp.FLOAT_H -> Mux(uop.store, LsuScalarWritebackMode.NONE, LsuScalarWritebackMode.F2)
         )
       )
-      val endElem = vl * nfields + vl
-      val endCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
-        Seq(
-          "b000".U -> Cat(0.U(2.W), endElem),
-          "b101".U -> Cat(0.U(1.W), endElem, 0.U(1.W)),
-          "b110".U -> Cat(endElem, 0.U(2.W))
-        )
-      )
-      MakeWireBundle[State](
-        new State(),
-        _ -> initVectorUS(
-          pc,
-          addr,
-          vd,
-          nfields,
-          maxVectorPerSegment,
-          maxVectorPerSegmentOrig,
-          elemWidth,
-          write = true,
-          isVme = isVme,
-          endCell = endCell
-        ),
-        _.cells -> VecInit.tabulate(nCells) { i =>
-          val rvvCell = Mux(
-            // TODO: consider vl/vstart
-            (i / p.rvvVlenb).U <= maxActiveReg,
-            cells(i).initVectorStore(addr + i.U),
-            // unreachable cells
-            cells(i).initDone()
-          )
-          val vmeCell = MuxUpTo1H(
-            cells(i).initDone(),
-            Seq(
-              (i.U < startCell) -> cells(i).initDone(),
-              (i.U >= startCell && i.U < endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
-                .initVectorStore(addr + i.U),
-              (i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i).initDone()
-            )
-          )
-          Mux(isVme, vmeCell, rvvCell)
-        }
-      )
-    }
 
-    def initVectorCS(
-      pc: UInt,
-      addr: UInt,
-      vd: UInt,
-      nfields: UInt,
-      maxVectorPerSegment: UInt,
-      maxVectorPerSegmentOrig: UInt,
-      elemWidth: UInt,
-      stride: UInt,
-      strict: Bool,
-      write: Boolean,
-      endCell: UInt = nCells.U
-    ): State = {
       val ret = MakeWireBundle[State](
         new State(),
-        _                     -> this,
-        _.pc                  -> pc,
-        _.write               -> write.B,
-        _.faulted             -> false.B,
-        _.strictMode          -> strict,
-        _.rd                  -> vd,
-        _.skipWriteback       -> false.B,
-        _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
-        // cells to be filled by caller
-        _.leadIndex -> 0.U,
-        _.rowAddr   -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
-        _.isDone    -> false.B
-      )
-      ret.float.foreach { x =>
-        x.writeback := false.B
-      }
-      ret.vector.foreach { x =>
-        x.isVme.foreach(_ := false.B)
-        x.endCell      := endCell
-        x.faultingCell := nCells.U
-        // TODO: assert
-        x.segmentStep := MuxLookup(elemWidth, WireInit(UInt(3.W), DontCare))(
-          Seq(
-            "b000".U -> 1.U,
-            "b101".U -> 2.U,
-            "b110".U -> 4.U
-          )
-        )
-        x.emulStep := MuxLookup(elemWidth, WireInit(UInt(3.W), DontCare))(
-          Seq(
-            "b000".U -> (nfields * (p.rvvVlenb - 1).U + p.rvvVlenb.U),
-            "b101".U -> (nfields * (p.rvvVlenb - 2).U + p.rvvVlenb.U),
-            "b110".U -> (nfields * (p.rvvVlenb - 4).U + p.rvvVlenb.U)
-          )
-        )
-        x.vectorsPerSegMinusOneOrig := maxVectorPerSegmentOrig
-        // Non indexed cannot have subvectors
-        x.dataSubvector            := LoopingCounter(0.U)
-        x.dataSubvectorTheoretical := 0.U
-        x.dataSegment              := LoopingCounter(nfields)
-        // This is the number, not lmul/emul encoding
-        x.dataEmul        := LoopingCounter(maxVectorPerSegment)
-        x.dataActiveCells := State.makeVectorStartingActiveCells(
-          nfields = nfields,
-          elemWidth = elemWidth,
-          isIndexed = false
-        )
-        x.writebackSegment     := LoopingCounter(nfields)
-        x.writebackEmul        := LoopingCounter(maxVectorPerSegment)
-        x.writebackActiveCells := MakeValid(
-          State.makeVectorStartingActiveCells(
-            nfields = nfields,
-            elemWidth = elemWidth,
-            isIndexed = false
-          )
-        )
-      }
-
-      ret
-    }
-
-    def initVectorLoadCS(
-      pc: UInt,
-      addr: UInt,
-      vd: UInt,
-      nfields: UInt,
-      maxVectorPerSegment: UInt,
-      maxVectorPerSegmentOrig: UInt,
-      elemWidth: UInt,
-      stride: UInt,
-      strict: Bool,
-      vl: UInt,
-      vstart: UInt,
-      masked: Bool
-    ): State = {
-      // From lmul and nfields, inclusive
-      val maxActiveReg = maxVectorPerSegment * nfields + nfields + maxVectorPerSegment
-      // From vstart and nfields, inclusive
-      val startElem = vstart * nfields + vstart
-      val startCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
-        Seq(
-          "b000".U -> Cat(0.U(2.W), startElem),
-          "b101".U -> Cat(0.U(1.W), startElem, 0.U(1.W)),
-          "b110".U -> Cat(startElem, 0.U(2.W))
-        )
-      )
-      // From vl and nfields, exclusive
-      val endElem = vl * nfields + vl
-      val endCell = MuxLookup(elemWidth, WireInit(UInt(32.W), DontCare))(
-        Seq(
-          "b000".U -> Cat(0.U(2.W), endElem),
-          "b101".U -> Cat(0.U(1.W), endElem, 0.U(1.W)),
-          "b110".U -> Cat(endElem, 0.U(2.W))
-        )
-      )
-      // TODO: assert
-      val offsets =
-        MuxLookup(Cat(nfields, elemWidth), VecInit.fill(nCells)(WireInit(UInt(32.W), DontCare)))(
-          Seq(
-            // e8
-            "b000_000".U -> State.makeStridedOffsets(1, stride),
-            "b001_000".U -> State.makeStridedOffsets(2, stride),
-            "b010_000".U -> State.makeStridedOffsets(3, stride),
-            "b011_000".U -> State.makeStridedOffsets(4, stride),
-            "b100_000".U -> State.makeStridedOffsets(5, stride),
-            "b101_000".U -> State.makeStridedOffsets(6, stride),
-            "b110_000".U -> State.makeStridedOffsets(7, stride),
-            "b111_000".U -> State.makeStridedOffsets(8, stride),
-            // e16
-            "b000_101".U -> State.makeStridedOffsets(2, stride),
-            "b001_101".U -> State.makeStridedOffsets(4, stride),
-            "b010_101".U -> State.makeStridedOffsets(6, stride),
-            "b011_101".U -> State.makeStridedOffsets(8, stride),
-            "b100_101".U -> State.makeStridedOffsets(10, stride),
-            "b101_101".U -> State.makeStridedOffsets(12, stride),
-            "b110_101".U -> State.makeStridedOffsets(14, stride),
-            "b111_101".U -> State.makeStridedOffsets(16, stride),
-            // e32
-            "b000_110".U -> State.makeStridedOffsets(4, stride),
-            "b001_110".U -> State.makeStridedOffsets(8, stride),
-            "b010_110".U -> State.makeStridedOffsets(12, stride),
-            "b011_110".U -> State.makeStridedOffsets(16, stride),
-            "b100_110".U -> State.makeStridedOffsets(20, stride),
-            "b101_110".U -> State.makeStridedOffsets(24, stride),
-            "b110_110".U -> State.makeStridedOffsets(28, stride),
-            "b111_110".U -> State.makeStridedOffsets(32, stride)
-          )
-        )
-      MakeWireBundle[State](
-        new State(),
-        _ -> initVectorCS(
-          pc,
-          addr,
-          vd,
-          nfields,
-          maxVectorPerSegment,
-          maxVectorPerSegmentOrig,
-          elemWidth,
-          stride,
-          strict,
-          write = false,
-          endCell = endCell
-        ),
-        _.cells -> VecInit.tabulate(nCells) { i =>
-          MuxUpTo1H(
-            // active cells: do data HS iff masked
-            cells(i).initLoad(addr + offsets(i), needData = masked),
-            Seq(
-              // unmasked, prestart: skip to WB
-              (!masked && i.U < startCell) -> cells(i).initSkip(),
-              // unmasked, tail:  skip to WB
-              (!masked && i.U >= endCell && (i / p.rvvVlenb).U <= maxActiveReg) -> cells(i)
-                .initSkip(),
-              // Default: unreachable cells
-              ((i / p.rvvVlenb).U > maxActiveReg) -> cells(i).initDone()
-              // default: active cells
-            )
-          )
-        }
-      )
-    }
-
-    def initVectorStoreCS(
-      pc: UInt,
-      addr: UInt,
-      vd: UInt,
-      nfields: UInt,
-      maxVectorPerSegment: UInt,
-      maxVectorPerSegmentOrig: UInt,
-      elemWidth: UInt,
-      stride: UInt,
-      strict: Bool
-    ): State = {
-      // TODO: assert
-      val offsets =
-        MuxLookup(Cat(nfields, elemWidth), VecInit.fill(nCells)(WireInit(UInt(32.W), DontCare)))(
-          Seq(
-            // e8
-            "b000_000".U -> State.makeStridedOffsets(1, stride),
-            "b001_000".U -> State.makeStridedOffsets(2, stride),
-            "b010_000".U -> State.makeStridedOffsets(3, stride),
-            "b011_000".U -> State.makeStridedOffsets(4, stride),
-            "b100_000".U -> State.makeStridedOffsets(5, stride),
-            "b101_000".U -> State.makeStridedOffsets(6, stride),
-            "b110_000".U -> State.makeStridedOffsets(7, stride),
-            "b111_000".U -> State.makeStridedOffsets(8, stride),
-            // e16
-            "b000_101".U -> State.makeStridedOffsets(2, stride),
-            "b001_101".U -> State.makeStridedOffsets(4, stride),
-            "b010_101".U -> State.makeStridedOffsets(6, stride),
-            "b011_101".U -> State.makeStridedOffsets(8, stride),
-            "b100_101".U -> State.makeStridedOffsets(10, stride),
-            "b101_101".U -> State.makeStridedOffsets(12, stride),
-            "b110_101".U -> State.makeStridedOffsets(14, stride),
-            "b111_101".U -> State.makeStridedOffsets(16, stride),
-            // e32
-            "b000_110".U -> State.makeStridedOffsets(4, stride),
-            "b001_110".U -> State.makeStridedOffsets(8, stride),
-            "b010_110".U -> State.makeStridedOffsets(12, stride),
-            "b011_110".U -> State.makeStridedOffsets(16, stride),
-            "b100_110".U -> State.makeStridedOffsets(20, stride),
-            "b101_110".U -> State.makeStridedOffsets(24, stride),
-            "b110_110".U -> State.makeStridedOffsets(28, stride),
-            "b111_110".U -> State.makeStridedOffsets(32, stride)
-          )
-        )
-      MakeWireBundle[State](
-        new State(),
-        _ -> initVectorCS(
-          pc,
-          addr,
-          vd,
-          nfields,
-          maxVectorPerSegment,
-          maxVectorPerSegmentOrig,
-          elemWidth,
-          stride,
-          strict,
-          write = true
-        ),
-        _.cells -> VecInit.tabulate(nCells) { i =>
-          Mux(
-            // TODO: consider vl/vstart
-            (i / p.rvvVlenb).U <= maxVectorPerSegment * nfields + nfields + maxVectorPerSegment,
-            cells(i).initVectorStore(addr + offsets(i)),
-            // unreachable cells
-            cells(i).initDone()
-          )
-        }
-      )
-    }
-
-    def initVectorIndexed(
-      pc: UInt,
-      addr: UInt,
-      vd: UInt,
-      nfields: UInt,
-      dataEmul: UInt,
-      maxVectorPerSegment: UInt,
-      maxVectorPerSegmentOrig: UInt,
-      subvectors: UInt,
-      subvectorsTheoretical: UInt,
-      elemWidth: UInt,
-      indexWidth: UInt,
-      activeCellCount: UInt,
-      offsets: Vec[UInt],
-      strict: Bool,
-      write: Bool
-    ): State = {
-      // TODO: assert
-      val elemWidthEnum = MuxLookup(elemWidth, WireInit(LsuVectorElementWidth(), DontCare))(
-        Seq(
-          "b000".U -> LsuVectorElementWidth.E8,
-          "b001".U -> LsuVectorElementWidth.E16,
-          "b010".U -> LsuVectorElementWidth.E32
-        )
-      )
-      val newCells = VecInit.tabulate(nCells) { i =>
-        val cellIsActive = i.U < activeCellCount
-        MuxUpTo1H(
-          cells(i).initDone(),
-          Seq(
-            // No skip here.
-            (cellIsActive && !write) -> cells(i).initLoad(addr + offsets(i), needData = true.B),
-            (cellIsActive && write)  -> cells(i).initVectorStore(addr + offsets(i))
-            // Default: !cellIsActive
-          )
-        )
-      }
-      val ret = MakeWireBundle[State](
-        new State(),
-        _                     -> this,
-        _.pc                  -> pc,
-        _.write               -> write,
-        _.faulted             -> false.B,
-        _.strictMode          -> strict,
-        _.rd                  -> vd,
-        _.skipWriteback       -> false.B,
-        _.scalarWritebackMode -> LsuScalarWritebackMode.NONE,
-        _.cells               -> newCells,
+        _               -> this,
+        _.pc            -> uop.pc,
+        _.write         -> uop.store,
+        _.faulted       -> false.B,
+        _.strictMode    -> (isOrderedIndexed || uop.strict.getOrElse(false.B)),
+        _.rd            -> uop.rd,
+        _.skipWriteback -> (uop.store && (isScalar || isFloat || (if (p.enableVme) isTile
+                                                                  else false.B))),
+        _.scalarWritebackMode -> scalarWbMode,
+        _.cells               -> cellsFromUop,
         _.leadIndex           -> 0.U,
+        _.rowAddr             -> baseRowAddr,
         _.isDone              -> false.B
-        // rowAddr is untouched because we need to wait for indices
       )
+
       ret.float.foreach { x =>
-        x.writeback := false.B
+        x.writeback := isFloat && !uop.store
       }
+
       ret.vector.foreach { x =>
-        x.isVme.foreach(_ := false.B)
-        x.dataEew := elemWidthEnum
-        // TODO: assert
-        x.indexEew := MuxLookup(indexWidth, WireInit(LsuVectorElementWidth(), DontCare))(
+        val nfields             = Mux(isTile, 0.U, uop.nfields.getOrElse(0.U))
+        val maxVectorPerSegment = uop.emul_data
+          .map { emul =>
+            Mux(emul(2), 0.U(3.W), ((1.U << emul(1, 0)) - 1.U)(2, 0))
+          }
+          .getOrElse(0.U)
+        val maxVectorPerSegmentOrig = uop.emul_data_orig
+          .map { emul =>
+            Mux(emul(2), 0.U(3.W), ((1.U << emul(1, 0)) - 1.U)(2, 0))
+          }
+          .getOrElse(0.U)
+
+        val elemWidth = uop.elemWidth.getOrElse(0.U)
+
+        val elemWidthEnum = MuxLookup(elemWidth, WireInit(LsuVectorElementWidth(), DontCare))(
           Seq(
             "b000".U -> LsuVectorElementWidth.E8,
             "b101".U -> LsuVectorElementWidth.E16,
             "b110".U -> LsuVectorElementWidth.E32
           )
         )
-        // TODO: assert
-        x.segmentStep := MuxLookup(elemWidth, WireInit(UInt(3.W), DontCare))(
-          Seq(
-            "b000".U -> 1.U,
-            "b001".U -> 2.U,
-            "b010".U -> 4.U
-          )
-        )
-        x.emulStep := MuxLookup(elemWidth, WireInit(UInt(3.W), DontCare))(
-          Seq(
-            "b000".U -> (nfields * (p.rvvVlenb - 1).U + p.rvvVlenb.U),
-            "b001".U -> (nfields * (p.rvvVlenb - 2).U + p.rvvVlenb.U),
-            "b010".U -> (nfields * (p.rvvVlenb - 4).U + p.rvvVlenb.U)
-          )
-        )
-        x.vectorsPerSegMinusOneOrig := maxVectorPerSegmentOrig
-        x.endCell                   := activeCellCount
-        x.faultingCell              := nCells.U
-        x.dataSubvector             := LoopingCounter(subvectors)
-        x.dataSubvectorTheoretical  := subvectorsTheoretical
-        x.dataSegment               := LoopingCounter(nfields)
-        // This is the number, not lmul/emul encoding
-        x.dataEmul        := LoopingCounter(maxVectorPerSegment)
-        x.dataActiveCells := State.makeVectorStartingActiveCells(
-          nfields = nfields,
-          elemWidth = elemWidth,
-          isIndexed = true
-        )
-        x.writebackSegment     := LoopingCounter(nfields)
-        x.writebackEmul        := LoopingCounter(maxVectorPerSegment)
-        x.writebackActiveCells := MakeValid(
-          State.makeVectorStartingActiveCells(
-            nfields = nfields,
-            elemWidth = elemWidth,
-            isIndexed = true
-          )
-        )
-      }
-
-      ret
-    }
-
-    def fromUop(uop: LsuUOp) = {
-      val isTile              = if (p.enableVme) LsuOp.isTile(uop.op) else false.B
-      val nfields             = Mux(isTile, 0.U, uop.nfields.getOrElse(0.U))
-      val maxVectorPerSegment = uop.emul_data
-        .map { x =>
-          MuxLookup(x, 0.U(3.W))(
-            Seq(
-              "b001".U -> 1.U(3.W),
-              "b010".U -> 3.U(3.W),
-              "b011".U -> 7.U(3.W)
-            )
-          )
-        }
-        .getOrElse(0.U)
-      val maxVectorPerSegmentOrig = uop.emul_data_orig
-        .map { x =>
-          MuxLookup(x, 0.U(3.W))(
-            Seq(
-              "b001".U -> 1.U(3.W),
-              "b010".U -> 3.U(3.W),
-              "b011".U -> 7.U(3.W)
-            )
-          )
-        }
-        .getOrElse(0.U)
-      val elemWidth  = uop.elemWidth.getOrElse(0.U)
-      val subvectors = uop.emul_data
-        .map { x =>
-          MuxLookup(Cat(uop.sew.getOrElse(0.U), elemWidth, x), 0.U(3.W))(
-            Seq(
-              // e8ei16
-              "b000_101_000".U -> 1.U(2.W),
-              "b000_101_001".U -> 1.U(2.W),
-              "b000_101_010".U -> 1.U(2.W),
-              // e16ei32
-              "b001_110_000".U -> 1.U(2.W),
-              "b001_110_001".U -> 1.U(2.W),
-              "b001_110_010".U -> 1.U(2.W),
-              // e8ei32
-              "b000_110_111".U -> 1.U(2.W),
-              "b000_110_000".U -> 3.U(2.W),
-              "b000_110_001".U -> 3.U(2.W)
-            )
-          )
-        }
-        .getOrElse(0.U)
-      val subvectorsTheoretical = uop.emul_data
-        .map { x =>
-          MuxLookup(Cat(uop.sew.getOrElse(0.U), elemWidth), 0.U(3.W))(
-            Seq(
-              // e8ei16
-              "b000_101".U -> 1.U(2.W),
-              // e16ei32
-              "b001_110".U -> 1.U(2.W),
-              // e8ei32
-              "b000_110".U -> 3.U(2.W)
-            )
-          )
-        }
-        .getOrElse(0.U)
-
-      val lookupSeqScalar = Seq(
-        LsuOp.LB  -> initIntLoad(uop.pc, uop.addr, uop.rd, bytes = 1, sext = true),
-        LsuOp.LH  -> initIntLoad(uop.pc, uop.addr, uop.rd, bytes = 2, sext = true),
-        LsuOp.LW  -> initIntLoad(uop.pc, uop.addr, uop.rd, bytes = 4, sext = false),
-        LsuOp.LBU -> initIntLoad(uop.pc, uop.addr, uop.rd, bytes = 1, sext = false),
-        LsuOp.LHU -> initIntLoad(uop.pc, uop.addr, uop.rd, bytes = 2, sext = false),
-        LsuOp.SB  -> initIntStore(uop.pc, uop.addr, uop.data, bytes = 1),
-        LsuOp.SH  -> initIntStore(uop.pc, uop.addr, uop.data, bytes = 2),
-        LsuOp.SW  -> initIntStore(uop.pc, uop.addr, uop.data, bytes = 4)
-        // val FENCEI = Value
-        // val FLUSHAT = Value
-        // val FLUSHALL = Value
-        // val VLDST = Value
-      )
-      val lookupSeqFloat =
-        if (p.enableFloat)
-          Seq(
-            LsuOp.FLOAT -> Mux(
-              uop.store,
-              initFloatStore(uop.pc, uop.addr, uop.data, bytes = 4),
-              initFloatLoad(uop.pc, uop.addr, uop.rd, bytes = 4)
-            ),
-            LsuOp.FLOAT_H -> Mux(
-              uop.store,
-              initFloatStore(uop.pc, uop.addr, uop.data, bytes = 2),
-              initFloatLoad(uop.pc, uop.addr, uop.rd, bytes = 2)
-            )
-          )
-        else Seq()
-      val lookupSeqVector = if (p.enableRvv) {
         val indexedElemWidthEnum =
           MuxLookup(uop.sew.getOrElse(0.U), WireInit(LsuVectorElementWidth(), DontCare))(
             Seq(
@@ -3000,175 +2422,134 @@ class LsuSuperSlot(p: Parameters) extends Module {
               "b010".U -> LsuVectorElementWidth.E32
             )
           )
-        val activeCellCount = State.countActiveVectorCells(
-          nfields = nfields,
-          elemWidth = indexedElemWidthEnum,
-          emul = uop.emul_data.getOrElse(0.U)
-        )
-        // Before applying indices, we're basically doing a stride 0 op.
-        val indexedOffsets = MuxLookup(
-          Cat(nfields, uop.sew.getOrElse(0.U)),
-          VecInit.fill(nCells)(WireInit(UInt(p.lsuAddrBits.W), DontCare))
-        )(
-          Seq(
-            // e8
-            "b000_000".U -> State.makeStride0Offsets(1),
-            "b001_000".U -> State.makeStride0Offsets(2),
-            "b010_000".U -> State.makeStride0Offsets(3),
-            "b011_000".U -> State.makeStride0Offsets(4),
-            "b100_000".U -> State.makeStride0Offsets(5),
-            "b101_000".U -> State.makeStride0Offsets(6),
-            "b110_000".U -> State.makeStride0Offsets(7),
-            "b111_000".U -> State.makeStride0Offsets(8),
-            // e16
-            "b000_001".U -> State.makeStride0Offsets(2),
-            "b001_001".U -> State.makeStride0Offsets(4),
-            "b010_001".U -> State.makeStride0Offsets(6),
-            "b011_001".U -> State.makeStride0Offsets(8),
-            "b100_001".U -> State.makeStride0Offsets(10),
-            "b101_001".U -> State.makeStride0Offsets(12),
-            "b110_001".U -> State.makeStride0Offsets(14),
-            "b111_001".U -> State.makeStride0Offsets(16),
-            // e32
-            "b000_010".U -> State.makeStride0Offsets(4),
-            "b001_010".U -> State.makeStride0Offsets(8),
-            "b010_010".U -> State.makeStride0Offsets(12),
-            "b011_010".U -> State.makeStride0Offsets(16),
-            "b100_010".U -> State.makeStride0Offsets(20),
-            "b101_010".U -> State.makeStride0Offsets(24),
-            "b110_010".U -> State.makeStride0Offsets(28),
-            "b111_010".U -> State.makeStride0Offsets(32)
-          )
-        )
-        def indexedInitFunc(strict: Bool, write: Bool) = {
-          initVectorIndexed(
-            pc = uop.pc,
-            addr = uop.addr,
-            vd = uop.rd,
-            nfields = nfields,
-            dataEmul = uop.emul_data.getOrElse(0.U),
-            maxVectorPerSegment = maxVectorPerSegment,
-            maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
-            subvectors = subvectors,
-            subvectorsTheoretical = subvectorsTheoretical,
-            elemWidth = uop.sew.getOrElse(0.U),
-            indexWidth = elemWidth,
-            activeCellCount = activeCellCount,
-            offsets = indexedOffsets,
-            strict = strict,
-            write = write
-          )
-        }
-        Seq(
-          // Vector instructions.
-          // TODO: consider vstart and vl here
-          LsuOp.VLOAD_UNIT -> initVectorLoadUS(
-            pc = uop.pc,
-            addr = uop.addr,
-            vd = uop.rd,
-            nfields = nfields,
-            maxVectorPerSegment = maxVectorPerSegment,
-            maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
-            elemWidth = elemWidth,
-            vl = uop.vl.get,
-            vstart = uop.vstart.get,
-            masked = uop.masked.get,
-            isVme = false.B
-          ),
-          LsuOp.VLOAD_STRIDED -> initVectorLoadCS(
-            pc = uop.pc,
-            addr = uop.addr,
-            vd = uop.rd,
-            nfields = nfields,
-            maxVectorPerSegment = maxVectorPerSegment,
-            maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
-            elemWidth = elemWidth,
-            stride = uop.data,
-            strict = uop.strict.getOrElse(false.B),
-            vl = uop.vl.get,
-            vstart = uop.vstart.get,
-            masked = uop.masked.get
-          ),
-          LsuOp.VLOAD_OINDEXED -> indexedInitFunc(
-            strict = true.B,
-            write = false.B
-          ),
-          LsuOp.VLOAD_UINDEXED -> indexedInitFunc(
-            strict = false.B,
-            write = false.B
-          ),
-          LsuOp.VSTORE_UNIT -> initVectorStoreUS(
-            pc = uop.pc,
-            addr = uop.addr,
-            vd = uop.rd,
-            nfields = nfields,
-            maxVectorPerSegment = maxVectorPerSegment,
-            maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
-            elemWidth = elemWidth,
-            vl = uop.vl.get,
-            vstart = uop.vstart.get,
-            isVme = false.B
-          ),
-          LsuOp.VSTORE_STRIDED -> initVectorStoreCS(
-            pc = uop.pc,
-            addr = uop.addr,
-            vd = uop.rd,
-            nfields = nfields,
-            maxVectorPerSegment = maxVectorPerSegment,
-            maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
-            elemWidth = elemWidth,
-            stride = uop.data,
-            strict = uop.strict.getOrElse(false.B)
-          ),
-          LsuOp.VSTORE_OINDEXED -> indexedInitFunc(
-            strict = true.B,
-            write = true.B
-          ),
-          LsuOp.VSTORE_UINDEXED -> indexedInitFunc(
-            strict = false.B,
-            write = true.B
-          )
-        ) ++ Option
-          .when(p.enableVme) {
-            Seq(
-              LsuOp.VTLOAD -> initVectorLoadUS(
-                pc = uop.pc,
-                addr = uop.addr,
-                vd = uop.rd,
-                nfields = nfields,
-                maxVectorPerSegment = maxVectorPerSegment,
-                maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
-                elemWidth = elemWidth,
-                vl = uop.vl.get,
-                vstart = uop.vstart.get,
-                masked = false.B,
-                isVme = true.B
-              ),
-              LsuOp.VTSTORE -> initVectorStoreUS(
-                pc = uop.pc,
-                addr = uop.addr,
-                vd = uop.rd,
-                nfields = nfields,
-                maxVectorPerSegment = maxVectorPerSegment,
-                maxVectorPerSegmentOrig = maxVectorPerSegmentOrig,
-                elemWidth = elemWidth,
-                vl = uop.vl.get,
-                vstart = uop.vstart.get,
-                isVme = true.B
+
+        val subvectors = uop.emul_data
+          .map { x =>
+            MuxLookup(Cat(uop.sew.getOrElse(0.U), elemWidth, x), 0.U(3.W))(
+              Seq(
+                // e8ei16
+                "b000_101_000".U -> 1.U(2.W),
+                "b000_101_001".U -> 1.U(2.W),
+                "b000_101_010".U -> 1.U(2.W),
+                // e16ei32
+                "b001_110_000".U -> 1.U(2.W),
+                "b001_110_001".U -> 1.U(2.W),
+                "b001_110_010".U -> 1.U(2.W),
+                // e8ei32
+                "b000_110_111".U -> 1.U(2.W),
+                "b000_110_000".U -> 3.U(2.W),
+                "b000_110_001".U -> 3.U(2.W)
               )
             )
           }
-          .getOrElse(Seq())
-      } else Seq()
-      // TODO: default value?
-      // TODO: assert vector elemWidth legal
-      MuxLookup(uop.op, this)(
-        lookupSeqScalar ++ lookupSeqFloat ++ lookupSeqVector
-      )
+          .getOrElse(0.U)
+        val subvectorsTheoretical = uop.emul_data
+          .map { x =>
+            MuxLookup(Cat(uop.sew.getOrElse(0.U), elemWidth), 0.U(3.W))(
+              Seq(
+                // e8ei16
+                "b000_101".U -> 1.U(2.W),
+                // e16ei32
+                "b001_110".U -> 1.U(2.W),
+                // e8ei32
+                "b000_110".U -> 3.U(2.W)
+              )
+            )
+          }
+          .getOrElse(0.U)
+
+        val dataElemBytesShift = Mux(
+          isIndexed,
+          MuxLookup(uop.sew.getOrElse(0.U), 0.U(2.W))(
+            Seq(
+              "b000".U -> 0.U,
+              "b001".U -> 1.U,
+              "b010".U -> 2.U
+            )
+          ),
+          MuxLookup(elemWidth, 0.U(2.W))(
+            Seq(
+              "b000".U -> 0.U,
+              "b101".U -> 1.U,
+              "b110".U -> 2.U
+            )
+          )
+        )
+
+        x.isVme.foreach(_ := isTile)
+        x.dataEew  := Mux(isIndexed, indexedElemWidthEnum, elemWidthEnum)
+        x.indexEew := Mux(isIndexed, elemWidthEnum, LsuVectorElementWidth.E8)
+
+        x.segmentStep := Mux(isVector, 1.U << dataElemBytesShift, 0.U)
+        x.emulStep    := Mux(
+          isVector,
+          MuxLookup(dataElemBytesShift, 0.U(indexWidth.W))(
+            Seq(
+              0.U -> (nfields * (p.rvvVlenb - 1).U + p.rvvVlenb.U),
+              1.U -> (nfields * (p.rvvVlenb - 2).U + p.rvvVlenb.U),
+              2.U -> (nfields * (p.rvvVlenb - 4).U + p.rvvVlenb.U)
+            )
+          ),
+          0.U
+        )
+        x.vectorsPerSegMinusOneOrig := Mux(isVector, maxVectorPerSegmentOrig, 0.U)
+        x.endCell                   := Mux(isVector, uop.endCell.getOrElse(0.U), 0.U)
+        x.faultingCell              := nCells.U
+        x.dataSubvector             := LoopingCounter(Mux(isIndexed, subvectors, 0.U))
+        x.dataSubvectorTheoretical  := Mux(isIndexed, subvectorsTheoretical, 0.U)
+        x.dataSegment               := LoopingCounter(Mux(isVector, nfields, 0.U))
+        x.dataEmul                  := LoopingCounter(Mux(isVector, maxVectorPerSegment, 0.U))
+
+        val startingActiveCells = State.makeVectorStartingActiveCells(
+          nfields = nfields,
+          dataElemBytesShift = dataElemBytesShift
+        )
+        x.dataActiveCells      := startingActiveCells
+        x.writebackSegment     := LoopingCounter(Mux(isVector, nfields, 0.U))
+        x.writebackEmul        := LoopingCounter(Mux(isVector, maxVectorPerSegment, 0.U))
+        x.writebackActiveCells := MakeValid(
+          isVector && (!uop.store || !isTile),
+          startingActiveCells
+        )
+      }
+
+      ret
     }
   }
 
   object State {
+    def makeStridedOffsets(
+      structSize: Int, // Up to 32
+      stride: UInt
+    ): Vec[UInt] = {
+      VecInit.tabulate(nCells) { i =>
+        ((i / structSize).U(indexWidth.W) * stride)(31, 0) + (i % structSize).U
+      }
+    }
+
+    def makeVectorStartingActiveCells(
+      nfields: UInt,
+      dataElemBytesShift: UInt
+    ): Vec[UInt] = {
+      val retE8 = VecInit.tabulate(p.rvvVlenb) { i =>
+        i.U * nfields + i.U
+      }
+      val retE16 = VecInit.tabulate(p.rvvVlenb) { i =>
+        Cat((i / 2).U * nfields + (i / 2).U, (i % 2).U(1.W))
+      }
+      val retE32 = VecInit.tabulate(p.rvvVlenb) { i =>
+        Cat((i / 4).U * nfields + (i / 4).U, (i % 4).U(2.W))
+      }
+
+      MuxLookup(dataElemBytesShift, retE8)(
+        Seq(
+          0.U -> retE8,
+          1.U -> retE16,
+          2.U -> retE32
+        )
+      )
+    }
+
     def apply(): State = {
       val ret = MakeWireBundle[State](
         new State,
@@ -3209,110 +2590,6 @@ class LsuSuperSlot(p: Parameters) extends Module {
       }
 
       ret
-    }
-
-    def countActiveVectorCells(
-      nfields: UInt,
-      elemWidth: LsuVectorElementWidth.Type,
-      emul: UInt
-    ): UInt = {
-      val nStructs = MuxUpTo1H(
-        0.U,
-        Seq(
-          // mf8
-          (emul === "b101".U && elemWidth === LsuVectorElementWidth.E8)  -> (p.rvvVlenb / 8).U,
-          (emul === "b101".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb / 16).U,
-          // mf4
-          (emul === "b110".U && elemWidth === LsuVectorElementWidth.E8)  -> (p.rvvVlenb / 4).U,
-          (emul === "b110".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb / 8).U,
-          (emul === "b110".U && elemWidth === LsuVectorElementWidth.E32) -> (p.rvvVlenb / 16).U,
-          // mf2
-          (emul === "b111".U && elemWidth === LsuVectorElementWidth.E8)  -> (p.rvvVlenb / 2).U,
-          (emul === "b111".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb / 4).U,
-          (emul === "b111".U && elemWidth === LsuVectorElementWidth.E32) -> (p.rvvVlenb / 8).U,
-          // m1
-          (emul === "b000".U && elemWidth === LsuVectorElementWidth.E8)  -> p.rvvVlenb.U,
-          (emul === "b000".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb / 2).U,
-          (emul === "b000".U && elemWidth === LsuVectorElementWidth.E32) -> (p.rvvVlenb / 4).U,
-          // m2
-          (emul === "b001".U && elemWidth === LsuVectorElementWidth.E8)  -> (p.rvvVlenb * 2).U,
-          (emul === "b001".U && elemWidth === LsuVectorElementWidth.E16) -> p.rvvVlenb.U,
-          (emul === "b001".U && elemWidth === LsuVectorElementWidth.E32) -> (p.rvvVlenb / 2).U,
-          // m4
-          (emul === "b010".U && elemWidth === LsuVectorElementWidth.E8)  -> (p.rvvVlenb * 4).U,
-          (emul === "b010".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb * 2).U,
-          (emul === "b010".U && elemWidth === LsuVectorElementWidth.E32) -> p.rvvVlenb.U,
-          // m8
-          (emul === "b011".U && elemWidth === LsuVectorElementWidth.E8)  -> (p.rvvVlenb * 8).U,
-          (emul === "b011".U && elemWidth === LsuVectorElementWidth.E16) -> (p.rvvVlenb * 4).U,
-          (emul === "b011".U && elemWidth === LsuVectorElementWidth.E32) -> (p.rvvVlenb * 2).U
-        )
-      )
-      val structBytes = MuxLookup(elemWidth, 0.U)(
-        Seq(
-          LsuVectorElementWidth.E8  -> (nfields +& 1.U),
-          LsuVectorElementWidth.E16 -> ((nfields +& 1.U) << 1.U),
-          LsuVectorElementWidth.E32 -> ((nfields +& 1.U) << 2.U)
-        )
-      )
-      nStructs * structBytes
-    }
-
-    // Indices of cells that will receive vector data on the first data cycle
-    // Because we only care about the first cycle, regs (or lmul) is not needed here.
-    def makeVectorStartingActiveCells(
-      nfields: UInt,
-      elemWidth: UInt,
-      isIndexed: Boolean
-    ): Vec[UInt] = {
-      // nfields is 0-7, so x * segs === x * nfields + x
-      val retE8 = VecInit.tabulate(p.rvvVlenb) { i =>
-        i.U * nfields + i.U
-      }
-      val retE16 = VecInit.tabulate(p.rvvVlenb) { i =>
-        Cat((i / 2).U * nfields + (i / 2).U, (i % 2).U(1.W))
-      }
-      val retE32 = VecInit.tabulate(p.rvvVlenb) { i =>
-        Cat((i / 4).U * nfields + (i / 4).U, (i % 4).U(2.W))
-      }
-
-      // TODO: assert
-      if (isIndexed) {
-        // This is SEW.
-        MuxLookup(elemWidth, VecInit.fill(p.rvvVlenb)(WireInit(UInt(indexWidth.W), DontCare)))(
-          Seq(
-            "b000".U -> retE8,
-            "b001".U -> retE16,
-            "b010".U -> retE32
-          )
-        )
-      } else {
-        // This is the width field in the encoding.
-        MuxLookup(elemWidth, VecInit.fill(p.rvvVlenb)(WireInit(UInt(indexWidth.W), DontCare)))(
-          Seq(
-            "b000".U -> retE8,
-            "b101".U -> retE16,
-            "b110".U -> retE32
-          )
-        )
-      }
-    }
-
-    def makeStridedOffsets(
-      structSize: Int, // Up to 32
-      stride: UInt
-    ): Vec[UInt] = {
-      VecInit.tabulate(nCells) { i =>
-        ((i / structSize).U(indexWidth.W) * stride)(31, 0) + (i % structSize).U
-      }
-    }
-
-    def makeStride0Offsets(
-      structSize: Int // Up to 32
-    ): Vec[UInt] = {
-      VecInit.tabulate(nCells) { i =>
-        (i % structSize).U(p.lsuAddrBits.W)
-      }
     }
   }
 
