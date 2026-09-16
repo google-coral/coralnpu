@@ -834,6 +834,30 @@ template_rule(
             "module_name": "VmeCoreMiniAxi",
         },
         "vme_core_mini_verification_axi_cc_library": {
+            "verilog_file_path": "VmeCoreMiniVerificationAxi.sv",
+            "extra_outs": [
+                "VVmeCoreMiniVerificationAxi_parameters.h",
+                "VmeCoreMiniVerificationAxi.zip",
+            ],
+            "gen_flags": [
+                "--moduleName=VmeCoreMiniVerification",
+                "--enableVerification=True",
+            ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
+            "module_name": "VmeCoreMiniVerificationAxi",
+        },
+        "vme_core_mini_highmem_axi_cc_library": {
+            "extra_outs": [
+                "VVmeCoreMiniHighmemAxi_parameters.h",
+                "VmeCoreMiniHighmemAxi.zip",
+            ],
+            "gen_flags": [
+                "--moduleName=VmeCoreMini",
+                "--itcmSizeKBytes=1024",
+                "--dtcmSizeKBytes=1024",
+            ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
+            "module_name": "VmeCoreMiniHighmemAxi",
+        },
+        "vme_core_mini_verification_highmem_axi_cc_library": {
             "verilog_file_path": "VmeCoreMiniVerificationHighmemAxi.sv",
             "extra_outs": [
                 "VVmeCoreMiniVerificationHighmemAxi_parameters.h",
@@ -851,6 +875,12 @@ template_rule(
     chisel_lib = ":coralnpu",
     emit_class = "coralnpu.EmitCore",
     vopts = VME_CORE_MINI_AXI_VOPTS,
+)
+
+filter_files_by_extension(
+    name = "vme_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
+    src = ":vme_core_mini_verification_axi_cc_library_emit_verilog",
+    extensions = ["sv"],
 )
 
 vcstatic_lint(

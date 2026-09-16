@@ -159,3 +159,68 @@ vcs_model(
         "//sw/coralnpu_sim:spike_cosim_dpi",
     ],
 )
+
+# TODO: Move / merge once VME is the default target.
+verilator_model(
+    name = "uvm_vme_sim_verilator",
+    cflags = [
+        "+define+UVM_NO_DEPRECATED",
+        "+define+TB_SUPPORT",
+        "+define+VLEN_128",
+        "+define+ZVE32F_ON",
+        "+define+ZVT_ON",
+        "+define+ZVTBF16FMM_ON",
+        "+define+DUT_MODULE=VmeCoreMiniVerificationAxi",
+        "-Wno-PINMISSING",
+        "-Wno-lint",
+        "-Wno-style",
+        "-Wno-fatal",
+        "--timing",
+        "--timescale 1ns/1ps",
+    ],
+    hdl_toplevel = "coralnpu_tb_top",
+    include_dirs = [":include_dirs"],
+    verilog_sources = [
+        "//hdl/chisel/src/coralnpu:vme_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
+        ":source_files",
+    ],
+    deps = [
+        ":coralnpu_cosim_lib_clang",
+        ":include_dirs_deps",
+        ":uvm_dpi",
+        "//hdl/verilog:sram_backdoor",
+        "//sw/coralnpu_sim:spike_cosim_dpi",
+    ],
+)
+
+# TODO: Move / merge once VME is the default target.
+vcs_model(
+    name = "uvm_vme_sim_vcs",
+    cflags = [
+        "+define+UVM_NO_DEPRECATED",
+        "+define+TB_SUPPORT",
+        "+define+VLEN_128",
+        "+define+ZVE32F_ON",
+        "+define+ZVT_ON",
+        "+define+ZVTBF16FMM_ON",
+        "+define+DUT_MODULE=VmeCoreMiniVerificationAxi",
+        "+define+USE_GENERIC",
+        "-ntb_opts",
+        "uvm-1.2",
+        "-timescale=1ns/1ps",
+        "-debug_access+all",
+    ],
+    coralnpu_mpact_lib = ":coralnpu_cosim_lib_static_archive",
+    hdl_toplevel = "coralnpu_tb_top",
+    include_dirs = [":include_dirs"],
+    tags = ["vcs"],
+    verilog_sources = [
+        ":source_files",
+        "//hdl/chisel/src/coralnpu:vme_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
+    ],
+    deps = [
+        ":include_dirs_deps",
+        "//hdl/verilog:dpi_files",
+        "//sw/coralnpu_sim:spike_cosim_dpi",
+    ],
+)

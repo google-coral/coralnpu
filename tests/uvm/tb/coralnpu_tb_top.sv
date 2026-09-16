@@ -179,7 +179,11 @@ module coralnpu_tb_top;
   //--------------------------------------------------------------------------
   // DUT Instantiation
   //--------------------------------------------------------------------------
-  RvvCoreMiniVerificationAxi u_dut (
+`ifndef DUT_MODULE
+  `define DUT_MODULE RvvCoreMiniVerificationAxi
+`endif
+
+  `DUT_MODULE u_dut (
       .io_aclk                             (clk),
       .io_aresetn                          (resetn),
       .io_axi_slave_write_addr_ready       (master_axi_if.awready),
