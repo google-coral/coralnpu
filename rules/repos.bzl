@@ -270,6 +270,7 @@ def rvvi_repos():
         build_file = "@coralnpu_hw//third_party/RVVI:BUILD.bazel",
         patches = [
             "@coralnpu_hw//third_party/RVVI:0001-Rename-name-queue-to-avoid-conflict.patch",
+            "@coralnpu_hw//third_party/RVVI:0002-Add-rvviTrace-matrix-tile-interface.patch",
         ],
         patch_args = ["-p1"],
     )

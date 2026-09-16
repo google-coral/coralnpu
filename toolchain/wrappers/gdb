@@ -48,7 +48,8 @@ if [[ -z "${GDB}" ]]; then
     exit 1
 fi
 
-LIBMPFR_PATH=$(ldconfig -p | grep 'mpfr.so$' | awk '{print $4}')
+LIBMPFR_PATH=$(ldconfig -p | grep 'libmpfr\.so' | grep -E 'x86-64|x86_64' | head -1 | awk '{print $4}')
+[[ -z "${LIBMPFR_PATH}" ]] && LIBMPFR_PATH=$(ldconfig -p | grep 'libmpfr\.so' | head -1 | awk '{print $4}')
 WORKDIR=$(mktemp -d)
 trap "rm -rf ${WORKDIR}" EXIT
 [[ -n "${LIBMPFR_PATH}" ]] && ln -sf "${LIBMPFR_PATH}" "${WORKDIR}/libmpfr.so.4"

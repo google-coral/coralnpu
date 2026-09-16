@@ -17,6 +17,7 @@ package coralnpu
 import chisel3._
 import chisel3.util._
 import common._
+import coralnpu.rvv.RvvCompressedInstruction
 
 class RetirementBufferIO(p: Parameters) extends Bundle {
   val inst            = Input(Vec(p.instructionLanes, Decoupled(new FetchInstruction(p))))
@@ -35,16 +36,20 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
     Option.when(p.enableRvv)(
       Input(Vec(p.rvvRetireLanes, Valid(new VectorWriteDataIO(p))))
     )
-  val enqPtr      = Output(UInt(log2Ceil(p.retirementBufferSize).W))
-  val fault       = Input(Valid(new FaultManagerOutput(p)))
-  val nSpace      = Output(UInt(log2Ceil(p.retirementBufferSize + 1).W))
-  val nRetired    = Output(UInt(log2Ceil(p.retirementLanes + 1).W))
-  val empty       = Output(Bool())
-  val trapPending = Output(Bool())
-  val trapRetired = Output(Bool())
-  val isVector    = Option.when(p.enableRvv)(Input(Vec(p.instructionLanes, Bool())))
-  val clearVstart = Option.when(p.enableRvv)(Output(Bool()))
-  val debug       = Option.when(p.shouldExposeDebugPorts)(Output(new RetirementBufferDebugIO(p)))
+  val enqPtr        = Output(UInt(log2Ceil(p.retirementBufferSize).W))
+  val fault         = Input(Valid(new FaultManagerOutput(p)))
+  val nSpace        = Output(UInt(log2Ceil(p.retirementBufferSize + 1).W))
+  val nRetired      = Output(UInt(log2Ceil(p.retirementLanes + 1).W))
+  val empty         = Output(Bool())
+  val trapPending   = Output(Bool())
+  val trapRetired   = Output(Bool())
+  val isVector      = Option.when(p.enableRvv)(Input(Vec(p.instructionLanes, Bool())))
+  val clearVstart   = Option.when(p.enableRvv)(Output(Bool()))
+  val writeDataTile = Option.when(p.enableVme && p.enableVerification)(
+    Input(Valid(new TileWriteDataIO(p)))
+  )
+  val mtype = Option.when(p.enableVme)(Input(UInt(p.xlen.W)))
+  val debug = Option.when(p.shouldExposeDebugPorts)(Output(new RetirementBufferDebugIO(p)))
 }
 
 /** The Retirement Buffer manages the lifecycle of instructions from dispatch to retirement.
@@ -363,6 +368,20 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     debugVectorWrites.get     := vectorWriteAccumulator.get
   }
 
+  val tileWriteAccumulator = Option.when(!mini && p.enableVme && p.enableVerification)(
+    RegInit(VecInit.fill(bufferSize)(VecInit.fill(4)(0.U.asTypeOf(Valid(new TileWrite(p))))))
+  )
+  val tileAccumulatorNext = Option.when(!mini && p.enableVme && p.enableVerification)(
+    Wire(Vec(bufferSize, Vec(4, Valid(new TileWrite(p)))))
+  )
+  val debugTileWrites = Option.when(!mini && p.enableVme && p.enableVerification)(
+    Wire(Vec(bufferSize, Vec(4, Valid(new TileWrite(p)))))
+  )
+  if (!mini && p.enableVme && p.enableVerification) {
+    tileAccumulatorNext.get := tileWriteAccumulator.get
+    debugTileWrites.get     := tileWriteAccumulator.get
+  }
+
   // Compute update based on register writeback.
   // Note: The shift when committing instructions will be handled in a later block.
   val resultUpdate = Wire(Vec(bufferSize, Valid(new InstructionUpdate)))
@@ -466,6 +485,31 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         .get(pIdx) := Mux(validBufferEntry, nextEntry, vectorWriteAccumulator.get(pIdx))
       debugVectorWrites
         .get(pIdx) := Mux(validBufferEntry, nextEntry, vectorWriteAccumulator.get(pIdx))
+    }
+
+    if (!mini && p.enableVme && p.enableVerification) {
+      val nextTileEntry = Wire(Vec(4, Valid(new TileWrite(p))))
+      val tilePort      = io.writeDataTile.get
+      val tileTagMatch  =
+        tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === pIdx)
+      for (k <- 0 until 4) {
+        val hit = tileTagMatch && tilePort.bits.mask(k)
+        nextTileEntry(k).valid    := Mux(hit, true.B, tileWriteAccumulator.get(pIdx)(k).valid)
+        nextTileEntry(k).bits.idx := Mux(
+          hit,
+          tilePort.bits.idx(k),
+          tileWriteAccumulator.get(pIdx)(k).bits.idx
+        )
+        nextTileEntry(k).bits.data := Mux(
+          hit,
+          tilePort.bits.data(k),
+          tileWriteAccumulator.get(pIdx)(k).bits.data
+        )
+      }
+      tileAccumulatorNext
+        .get(pIdx) := Mux(validBufferEntry, nextTileEntry, tileWriteAccumulator.get(pIdx))
+      debugTileWrites
+        .get(pIdx) := Mux(validBufferEntry, nextTileEntry, tileWriteAccumulator.get(pIdx))
     }
 
     // If the entry is active and its data dependency is met (or it has no dependency)...
@@ -643,6 +687,21 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
           vectorAccumulatorNext.get(x)
         )
       }
+      if (p.enableVme && p.enableVerification) {
+        for (x <- 0 until bufferSize) {
+          val isEnqueuing = (0 until p.instructionLanes)
+            .map { k =>
+              val slotIdx = if (bufferSize > 1) (accEnqPtr +& k.U)(tagWidth - 1, 0) else 0.U
+              (k.U < instBuffer.io.enqValid) && (x.U === slotIdx)
+            }
+            .reduce(_ || _)
+          tileWriteAccumulator.get(x) := Mux(
+            trapRetired || isEnqueuing,
+            0.U.asTypeOf(tileWriteAccumulator.get(0)),
+            tileAccumulatorNext.get(x)
+          )
+        }
+      }
     }
   }
 
@@ -696,6 +755,32 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         } else {
           debug.inst(i).bits.vecWrites.get := 0.U.asTypeOf(debug.inst(i).bits.vecWrites.get)
         }
+      }
+      if (p.enableVme) {
+        if (!mini && p.enableVerification) {
+          val tagWidth         = log2Ceil(bufferSize)
+          val pIdx             = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
+          val maskedTileWrites = Wire(Vec(4, Valid(new TileWrite(p))))
+          for (k <- 0 until 4) {
+            maskedTileWrites(k).valid := debugTileWrites.get(pIdx)(k).valid && !resultUpdate(
+              i
+            ).bits.trap
+            maskedTileWrites(k).bits := debugTileWrites.get(pIdx)(k).bits
+          }
+          debug.inst(i).bits.tileWrites.get := maskedTileWrites
+        } else {
+          debug.inst(i).bits.tileWrites.get := 0.U.asTypeOf(debug.inst(i).bits.tileWrites.get)
+        }
+        val inst              = instBuffer.io.dataOut(i).inst
+        val isMsetWritesMtype = RvvCompressedInstruction.isMsetWritesMtype(inst)
+        debug.inst(i).bits.mtype.get.valid := valid && !resultUpdate(
+          i
+        ).bits.trap && isMsetWritesMtype
+        debug.inst(i).bits.mtype.get.bits := Mux(
+          valid && !resultUpdate(i).bits.trap && isMsetWritesMtype,
+          io.mtype.getOrElse(0.U),
+          0.U
+        )
       }
     }
   }

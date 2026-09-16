@@ -192,6 +192,10 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     isVset() && bits(24, 18) === "b1000010".U && bits(15, 13) === "b011".U
   def isMsetAny(): Bool =
     isMsetmtype() || isMsettn() || isMsettm() || isMsettk() || isMsetmtypei()
+  def isMsetWritesMtype(): Bool =
+    isMsetmtype() || isMsettm() || isMsettk() || isMsetmtypei()
+  def isMsetWritesVtype(): Bool =
+    isMsetmtype() || isMsetmtypei()
 
   def isLoadStore(): Bool = {
     opcode.isOneOf(RvvCompressedOpcode.RVVLOAD, RvvCompressedOpcode.RVVSTORE)
@@ -342,6 +346,24 @@ object RvvCompressedInstruction {
       _.bits.bits    -> bits,
       _.bits.rob_tag -> 0.U
     )
+  }
+
+  def isMsetWritesMtype(inst: UInt): Bool = {
+    val opcode   = inst(6, 0)
+    val funct3   = inst(14, 12)
+    val funct7   = inst(31, 25)
+    val subFunct = inst(22, 20)
+    val isVset   = opcode === "b1010111".U && funct3 === "b111".U
+    isVset && ((funct7 === "b1000001".U) || (funct7 === "b1000010".U && (subFunct === 1.U || subFunct === 2.U || subFunct === 3.U)))
+  }
+
+  def isMsetWritesVtype(inst: UInt): Bool = {
+    val opcode   = inst(6, 0)
+    val funct3   = inst(14, 12)
+    val funct7   = inst(31, 25)
+    val subFunct = inst(22, 20)
+    val isVset   = opcode === "b1010111".U && funct3 === "b111".U
+    isVset && ((funct7 === "b1000001".U) || (funct7 === "b1000010".U && subFunct === 3.U))
   }
 }
 

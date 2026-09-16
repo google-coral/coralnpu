@@ -58,6 +58,25 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
     io.out_op    := out.bits.op.asUInt
   }
 
+  class TesterMset(p: Parameters) extends Module {
+    val io = IO(new Bundle {
+      val inst            = Input(UInt(32.W))
+      val rawWritesMtype  = Output(Bool())
+      val rawWritesVtype  = Output(Bool())
+      val compWritesMtype = Output(Bool())
+      val compWritesVtype = Output(Bool())
+      val compIsMsettn    = Output(Bool())
+    })
+
+    io.rawWritesMtype := RvvCompressedInstruction.isMsetWritesMtype(io.inst)
+    io.rawWritesVtype := RvvCompressedInstruction.isMsetWritesVtype(io.inst)
+
+    val comp = RvvCompressedInstruction.from_uncompressed(p, io.inst, 0.U)
+    io.compWritesMtype := comp.valid && comp.bits.isMsetWritesMtype()
+    io.compWritesVtype := comp.valid && comp.bits.isMsetWritesVtype()
+    io.compIsMsettn    := comp.valid && comp.bits.isMsettn()
+  }
+
   private def test_decode(
     dut: Tester,
     // Long because Scala has no unsigned int.
@@ -469,6 +488,83 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
 
       // Errata 1: Decode VAlu ops with vd=vm
       test_decode_compressed(dut, test_cases_errata1)
+    }
+  }
+
+  "Decode Mset Instructions and CSR write properties" in {
+    simulate(new TesterMset(p)) { dut =>
+      case class TestCase(
+        inst: Long,
+        writesMtype: Boolean,
+        writesVtype: Boolean,
+        isMsettn: Boolean
+      )
+      val cases = Seq(
+        TestCase(
+          0x82007057L,
+          writesMtype = true,
+          writesVtype = true,
+          isMsettn = false
+        ), // msetmtype
+        TestCase(
+          0x82b57057L,
+          writesMtype = true,
+          writesVtype = true,
+          isMsettn = false
+        ), // msetmtype with rs1/rs2
+        TestCase(0x84007057L, writesMtype = false, writesVtype = false, isMsettn = true), // msettn
+        TestCase(
+          0x840572d7L,
+          writesMtype = false,
+          writesVtype = false,
+          isMsettn = true
+        ), // msettn with rd/rs1
+        TestCase(0x84107057L, writesMtype = true, writesVtype = false, isMsettn = false), // msettm
+        TestCase(
+          0x841572d7L,
+          writesMtype = true,
+          writesVtype = false,
+          isMsettn = false
+        ), // msettm with rd/rs1
+        TestCase(0x84207057L, writesMtype = true, writesVtype = false, isMsettn = false), // msettk
+        TestCase(
+          0x842572d7L,
+          writesMtype = true,
+          writesVtype = false,
+          isMsettn = false
+        ), // msettk with rd/rs1
+        TestCase(
+          0x84307057L,
+          writesMtype = true,
+          writesVtype = true,
+          isMsettn = false
+        ), // msetmtypei
+        // Standard vset* (do not count as msetWritesMtype/Vtype)
+        TestCase(
+          0x00007057L,
+          writesMtype = false,
+          writesVtype = false,
+          isMsettn = false
+        ), // vsetvli
+        TestCase(
+          0xc0007057L,
+          writesMtype = false,
+          writesVtype = false,
+          isMsettn = false
+        ), // vsetivli
+        TestCase(0x80007057L, writesMtype = false, writesVtype = false, isMsettn = false), // vsetvl
+        // Non-vset instruction
+        TestCase(0x02000057L, writesMtype = false, writesVtype = false, isMsettn = false) // vadd.vv
+      )
+
+      for (c <- cases) {
+        dut.io.inst.poke(c.inst.U)
+        dut.io.rawWritesMtype.expect(c.writesMtype.B)
+        dut.io.rawWritesVtype.expect(c.writesVtype.B)
+        dut.io.compWritesMtype.expect(c.writesMtype.B)
+        dut.io.compWritesVtype.expect(c.writesVtype.B)
+        dut.io.compIsMsettn.expect(c.isMsettn.B)
+      }
     }
   }
 }

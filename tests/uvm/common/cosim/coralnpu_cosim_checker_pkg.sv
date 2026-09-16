@@ -45,6 +45,7 @@ package coralnpu_cosim_checker_pkg;
     logic [31:0] x_wb;
     logic [31:0] f_wb;
     logic [31:0] v_wb;
+    logic [15:0] t_wb;
     int          retire_index;
   } retired_instr_info_s;
 
@@ -266,6 +267,7 @@ package coralnpu_cosim_checker_pkg;
           info.x_wb = rvvi_vif.x_wb[0][i];
           info.f_wb = rvvi_vif.f_wb[0][i];
           info.v_wb = rvvi_vif.v_wb[0][i];
+          info.t_wb = rvvi_vif.t_wb[0][i];
           info.retire_index = i;
           retired_instr_q.push_back(info);
           `uvm_info(get_type_name(), $sformatf("RTL Retired: PC=0x%h, Insn=0x%h", info.pc,
@@ -751,6 +753,21 @@ package coralnpu_cosim_checker_pkg;
                     (mpact_enabled && has_spike) ? (mpact_vval == spike_vval) : 1'b1);
                 return 0;
               end
+            end
+          end
+        end
+      end
+
+      // 4. Tile Writeback Detection
+      if (rtl_info.t_wb != 0) begin
+        for (int i = 0; i < 16; i++) begin
+          if (rtl_info.t_wb[i]) begin
+            reg_name = $sformatf("mt%0d", i);
+            if (trace_logging_enabled) begin
+              `uvm_info("COSIM_TRACE",
+                        $sformatf("PC=0x%08h Insn=0x%08h | RTL: %s writeback (retire_index=%0d)",
+                                  rtl_info.pc, rtl_info.insn, reg_name, rtl_info.retire_index),
+                        UVM_NONE)
             end
           end
         end

@@ -97,6 +97,12 @@ class SCore(p: Parameters) extends Module {
       }
       rob_io.writeDataVector.get(i).bits.last_uop_valid := rvvRdPipedBits(i).last_uop_valid
     })
+    if (p.enableVme) {
+      if (p.enableVerification) {
+        rob_io.writeDataTile.get := io.rvvcore.get.vmeRt.get
+      }
+      rob_io.mtype.get := io.rvvcore.get.configState.bits.mtype.get
+    }
   }
   rob_io.fault         := fault_manager.io.out
   rob_io.storeComplete := lsu.io.storeComplete

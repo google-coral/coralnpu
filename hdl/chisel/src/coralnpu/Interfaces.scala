@@ -191,6 +191,20 @@ class DFlushIO(p: Parameters) extends Bundle {
   def fire: Bool = valid && ready
 }
 
+class TileWrite(p: Parameters) extends Bundle {
+  val idx  = UInt(4.W)
+  val data = Vec((p.vmeTe * p.vmeTe) / 16, UInt(128.W))
+}
+
+class TileWriteDataIO(p: Parameters) extends Bundle {
+  val rob_tag  = UInt(log2Ceil(p.retirementBufferSize).W)
+  val is_store = Bool()
+  val mask     = UInt(4.W)
+  val idx      = Vec(4, UInt(4.W))
+  val data     = Vec(4, Vec((p.vmeTe * p.vmeTe) / 16, UInt(128.W)))
+  val pc       = Option.when(p.enableVerification)(UInt(32.W))
+}
+
 class RetirementBufferDebugIO(p: Parameters) extends Bundle {
   val inst = Vec(
     p.retirementLanes,
@@ -208,7 +222,14 @@ class RetirementBufferDebugIO(p: Parameters) extends Bundle {
           })
         )
       )
-      val trap = Bool()
+      val tileWrites = Option.when(p.enableVme)(
+        Vec(
+          4,
+          Valid(new TileWrite(p))
+        )
+      )
+      val mtype = Option.when(p.enableVme)(Valid(UInt(p.xlen.W)))
+      val trap  = Bool()
     })
   )
 }

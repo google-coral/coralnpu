@@ -231,6 +231,26 @@ object GenerateCoreShimSource {
         |    output wr_fflags_valid_o,
         |    output [4:0] wr_fflags_o,""".stripMargin
 
+    if (p.enableVme && p.enableVerification) {
+      val subtiles = (p.vmeTe * p.vmeTe) / 16
+      val tileBits = subtiles * 128
+      moduleInterface +=
+        s"""
+           |    output vmeRt_valid,
+           |    output [3:0] vmeRt_rob_tag,
+           |    output vmeRt_is_store,
+           |    output [3:0] vmeRt_mask,
+           |    output [3:0] vmeRt_idx_0,
+           |    output [3:0] vmeRt_idx_1,
+           |    output [3:0] vmeRt_idx_2,
+           |    output [3:0] vmeRt_idx_3,
+           |    output [${tileBits - 1}:0] vmeRt_data_0,
+           |    output [${tileBits - 1}:0] vmeRt_data_1,
+           |    output [${tileBits - 1}:0] vmeRt_data_2,
+           |    output [${tileBits - 1}:0] vmeRt_data_3,
+           |    output [31:0] vmeRt_pc,""".stripMargin
+    }
+
     // Remove last comma/linebreak
     moduleInterface = moduleInterface.dropRight(1)
     moduleInterface += "\n);\n"
@@ -385,6 +405,14 @@ object GenerateCoreShimSource {
     coreInstantiation += s"  ROB2RT_t [${numRetireLanes - 1}:0] rd_rob2rt_o;\n"
     coreInstantiation += s"  logic [${numRetireLanes - 1}:0] rd_valid_rob2rt_o;\n"
     coreInstantiation += "  RVVInstruction trap_data;\n"
+    if (p.enableVme) {
+      coreInstantiation +=
+        """`ifdef ZVT_ON
+          |  logic   vmeRtVld_o;
+          |  VMERT_t vmeRt_o;
+          |`endif
+          |""".stripMargin
+    }
 
     coreInstantiation += """  RvvCore#(
         |      .N (GENN),
@@ -457,11 +485,64 @@ object GenerateCoreShimSource {
           |      .uop_vme2lsu_ready(vme2lsu_ready),
           |      .uop_lsu2vme_valid(lsu2vme_valid),
           |      .uop_lsu2vme_data(lsu2vme_bits_data),
-          |      .uop_lsu2vme_ready(lsu2vme_ready)
+          |      .uop_lsu2vme_ready(lsu2vme_ready),
+          |      .vmeRtVld_o(vmeRtVld_o),
+          |      .vmeRt_o(vmeRt_o),
+          |      .vmeRtRdy_i(1'b1)
           |`endif
           |""".stripMargin
     }
     coreInstantiation += "  );\n"
+
+    if (p.enableVme && p.enableVerification) {
+      coreInstantiation +=
+        """`ifdef ZVT_ON
+          |  assign vmeRt_valid    = vmeRtVld_o;
+          |  assign vmeRt_rob_tag  = vmeRt_o.rob_tag;
+          |  assign vmeRt_is_store = vmeRt_o.isStore;
+          |`ifdef RVVI_ON
+          |  assign vmeRt_mask     = vmeRt_o.mtIdxVld;
+          |  assign vmeRt_idx_0    = vmeRt_o.mtIdx[0];
+          |  assign vmeRt_idx_1    = vmeRt_o.mtIdx[1];
+          |  assign vmeRt_idx_2    = vmeRt_o.mtIdx[2];
+          |  assign vmeRt_idx_3    = vmeRt_o.mtIdx[3];
+          |  assign vmeRt_data_0   = vmeRt_o.mtData[0];
+          |  assign vmeRt_data_1   = vmeRt_o.mtData[1];
+          |  assign vmeRt_data_2   = vmeRt_o.mtData[2];
+          |  assign vmeRt_data_3   = vmeRt_o.mtData[3];
+          |`else
+          |  assign vmeRt_mask     = 4'b0;
+          |  assign vmeRt_idx_0    = 4'b0;
+          |  assign vmeRt_idx_1    = 4'b0;
+          |  assign vmeRt_idx_2    = 4'b0;
+          |  assign vmeRt_idx_3    = 4'b0;
+          |  assign vmeRt_data_0   = '0;
+          |  assign vmeRt_data_1   = '0;
+          |  assign vmeRt_data_2   = '0;
+          |  assign vmeRt_data_3   = '0;
+          |`endif
+          |`ifdef TB_SUPPORT
+          |  assign vmeRt_pc       = vmeRt_o.inst_pc;
+          |`else
+          |  assign vmeRt_pc       = 32'b0;
+          |`endif
+          |`else
+          |  assign vmeRt_valid    = 1'b0;
+          |  assign vmeRt_rob_tag  = 4'b0;
+          |  assign vmeRt_is_store = 1'b0;
+          |  assign vmeRt_mask     = 4'b0;
+          |  assign vmeRt_idx_0    = 4'b0;
+          |  assign vmeRt_idx_1    = 4'b0;
+          |  assign vmeRt_idx_2    = 4'b0;
+          |  assign vmeRt_idx_3    = 4'b0;
+          |  assign vmeRt_data_0   = '0;
+          |  assign vmeRt_data_1   = '0;
+          |  assign vmeRt_data_2   = '0;
+          |  assign vmeRt_data_3   = '0;
+          |  assign vmeRt_pc       = 32'b0;
+          |`endif
+          |""".stripMargin
+    }
 
     coreInstantiation += """  /* verilator lint_on WIDTHEXPAND */
                            |  /* verilator lint_on WIDTHTRUNC */
@@ -496,13 +577,20 @@ object GenerateCoreShimSource {
           .replaceAll("GENI", i.toString)
       }
       if (enableVme) {
-        // Rob2Rt does not carry the VME mtype state; tie off to 0.
         coreInstantiation +=
-          ("  assign rd_rob2rt_o_GENI_vector_csr_mtype   = 32'd0;\n" +
+          ("`ifdef ZVT_ON\n" +
+            "  assign rd_rob2rt_o_GENI_vector_csr_mtype   = {8'd0, rd_rob2rt_o[GENI].vector_csr.tm, 2'd0, rd_rob2rt_o[GENI].vector_csr.tk, 3'd0, rd_rob2rt_o[GENI].vector_csr.mtwiden};\n" +
+            "  assign rd_rob2rt_o_GENI_vector_csr_mtwiden = rd_rob2rt_o[GENI].vector_csr.mtwiden;\n" +
+            "  assign rd_rob2rt_o_GENI_vector_csr_tm     = rd_rob2rt_o[GENI].vector_csr.tm;\n" +
+            "  assign rd_rob2rt_o_GENI_vector_csr_tk     = rd_rob2rt_o[GENI].vector_csr.tk;\n" +
+            "  assign rd_rob2rt_o_GENI_vector_csr_altfmt = rd_rob2rt_o[GENI].vector_csr.altfmt;\n" +
+            "`else\n" +
+            "  assign rd_rob2rt_o_GENI_vector_csr_mtype   = 32'd0;\n" +
             "  assign rd_rob2rt_o_GENI_vector_csr_mtwiden = 2'd0;\n" +
             "  assign rd_rob2rt_o_GENI_vector_csr_tm     = 14'd0;\n" +
             "  assign rd_rob2rt_o_GENI_vector_csr_tk     = 3'd0;\n" +
-            "  assign rd_rob2rt_o_GENI_vector_csr_altfmt = 1'b0;\n").replaceAll("GENI", i.toString)
+            "  assign rd_rob2rt_o_GENI_vector_csr_altfmt = 1'b0;\n" +
+            "`endif\n").replaceAll("GENI", i.toString)
       }
     }
     coreInstantiation += """  assign trap_bits_rob_tag = trap_data.rob_tag;
@@ -652,6 +740,28 @@ class RvvCoreWrapper(p: Parameters)
     val rvv_idle     = Output(Bool())
 
     val queue_capacity = Output(UInt(4.W))
+
+    val vmeRt_valid    = Option.when(p.enableVme && p.enableVerification)(Output(Bool()))
+    val vmeRt_rob_tag  = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
+    val vmeRt_is_store = Option.when(p.enableVme && p.enableVerification)(Output(Bool()))
+    val vmeRt_mask     = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
+    val vmeRt_idx_0    = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
+    val vmeRt_idx_1    = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
+    val vmeRt_idx_2    = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
+    val vmeRt_idx_3    = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
+    val vmeRt_data_0   = Option.when(p.enableVme && p.enableVerification)(
+      Output(UInt((((p.vmeTe * p.vmeTe) / 16) * 128).W))
+    )
+    val vmeRt_data_1 = Option.when(p.enableVme && p.enableVerification)(
+      Output(UInt((((p.vmeTe * p.vmeTe) / 16) * 128).W))
+    )
+    val vmeRt_data_2 = Option.when(p.enableVme && p.enableVerification)(
+      Output(UInt((((p.vmeTe * p.vmeTe) / 16) * 128).W))
+    )
+    val vmeRt_data_3 = Option.when(p.enableVme && p.enableVerification)(
+      Output(UInt((((p.vmeTe * p.vmeTe) / 16) * 128).W))
+    )
+    val vmeRt_pc = Option.when(p.enableVme && p.enableVerification)(Output(UInt(32.W)))
   })
   dontTouch(io.rd_rob2rt_o)
 
@@ -869,6 +979,24 @@ class RvvCoreShim(p: Parameters) extends Module {
   if (p.enableVme) {
     io.vme2lsu.get <> rvvCoreWrapper.io.vme2lsu.get
     io.lsu2vme.get <> rvvCoreWrapper.io.lsu2vme.get
+  }
+  if (p.enableVme && p.enableVerification) {
+    val subtiles = (p.vmeTe * p.vmeTe) / 16
+    io.vmeRt.get.valid         := rvvCoreWrapper.io.vmeRt_valid.get
+    io.vmeRt.get.bits.rob_tag  := rvvCoreWrapper.io.vmeRt_rob_tag.get
+    io.vmeRt.get.bits.is_store := rvvCoreWrapper.io.vmeRt_is_store.get
+    io.vmeRt.get.bits.mask     := rvvCoreWrapper.io.vmeRt_mask.get
+    io.vmeRt.get.bits.idx(0)   := rvvCoreWrapper.io.vmeRt_idx_0.get
+    io.vmeRt.get.bits.idx(1)   := rvvCoreWrapper.io.vmeRt_idx_1.get
+    io.vmeRt.get.bits.idx(2)   := rvvCoreWrapper.io.vmeRt_idx_2.get
+    io.vmeRt.get.bits.idx(3)   := rvvCoreWrapper.io.vmeRt_idx_3.get
+    for (s <- 0 until subtiles) {
+      io.vmeRt.get.bits.data(0)(s) := rvvCoreWrapper.io.vmeRt_data_0.get((s + 1) * 128 - 1, s * 128)
+      io.vmeRt.get.bits.data(1)(s) := rvvCoreWrapper.io.vmeRt_data_1.get((s + 1) * 128 - 1, s * 128)
+      io.vmeRt.get.bits.data(2)(s) := rvvCoreWrapper.io.vmeRt_data_2.get((s + 1) * 128 - 1, s * 128)
+      io.vmeRt.get.bits.data(3)(s) := rvvCoreWrapper.io.vmeRt_data_3.get((s + 1) * 128 - 1, s * 128)
+    }
+    io.vmeRt.get.bits.pc.foreach(_ := rvvCoreWrapper.io.vmeRt_pc.get)
   }
 
   // Conservatively mark config state as invalid the cycle when CSR instruction

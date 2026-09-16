@@ -1,0 +1,20 @@
+--- a/source/host/rvvi/rvviTrace.sv
++++ b/source/host/rvvi/rvviTrace.sv
+@@ -60,6 +60,7 @@ interface rvviTrace
+     parameter int FLEN   = 32,  // FPR length in bits
+     parameter int VLEN   = 256, // Vector register size in bits
++    parameter int MTE    = 16,  // Matrix Tile Elements per dimension
+     parameter int NHART  = 1,   // Number of harts reported
+     parameter int RETIRE = 1    // Number of instructions that can retire during valid event
+ );
+@@ -88,6 +89,10 @@ interface rvviTrace
+     wire [31:0][(VLEN-1):0]   v_wdata    [(NHART-1):0][(RETIRE-1):0];   // V data value
+     wire [31:0]               v_wb       [(NHART-1):0][(RETIRE-1):0];   // V data writeback (change) flag
+ 
++    // T (Tile) Registers
++    wire [15:0][((MTE*MTE)/16)-1:0][127:0] t_wdata [(NHART-1):0][(RETIRE-1):0]; // Tile write data [15:0][MTE*MTE/16-1:0][127:0]
++    wire [15:0]                            t_wb    [(NHART-1):0][(RETIRE-1):0]; // Tile writeback flag [15:0]
++
+     // Control and Status Registers
+     wire [4095:0][(XLEN-1):0] csr        [(NHART-1):0][(RETIRE-1):0];   // Full CSR Address range
+     wire [4095:0]             csr_wb     [(NHART-1):0][(RETIRE-1):0];   // CSR writeback (change) flag

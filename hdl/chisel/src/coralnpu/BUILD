@@ -103,6 +103,7 @@ chisel_library(
     ],
     deps = [
         ":coralnpu_base",
+        ":coralnpu_rvv",
         "//hdl/chisel/src/common:aligner",
         "//hdl/chisel/src/common:circular_buffer_multi",
         "//hdl/chisel/src/common:library",

@@ -46,6 +46,11 @@ object GenerateRvviTraceSource {
         "  input logic [4095:0] v_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
         "  input logic [31:0] v_wb_i_GENI,\n".replaceAll("GENI", i.toString)
+      val tileDataMsb = (16 * ((p.vmeTe * p.vmeTe) / 16) * 128) - 1
+      moduleInterface +=
+        s"  input logic [${tileDataMsb}:0] t_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
+      moduleInterface +=
+        "  input logic [15:0] t_wb_i_GENI,\n".replaceAll("GENI", i.toString)
       for (j <- 0 until p.retirementLanes) {
         moduleInterface +=
           "  input logic [GENSZ:0] csr_i_GENIDX,\n"
@@ -65,10 +70,14 @@ object GenerateRvviTraceSource {
         |    .XLEN(32),
         |    .FLEN(32),
         |    .VLEN(128),
+        |    .MTE(GEN_MTE),
         |    .NHART(1),
         |    .RETIRE(GEN_retirementLanes)
         |  ) rvvi();
-        |""".replaceAll("GEN_retirementLanes", p.retirementLanes.toString).stripMargin
+        |"""
+      .replaceAll("GEN_MTE", p.vmeTe.toString)
+      .replaceAll("GEN_retirementLanes", p.retirementLanes.toString)
+      .stripMargin
 
     coreInstantiation += "  assign rvvi.clk = clk_i;\n"
     for (i <- 0 until p.retirementLanes) {
@@ -120,6 +129,14 @@ object GenerateRvviTraceSource {
         "GENI",
         i.toString
       )
+      coreInstantiation += "  assign rvvi.t_wdata[0][GENI] = t_wdata_i_GENI;\n".replaceAll(
+        "GENI",
+        i.toString
+      )
+      coreInstantiation += "  assign rvvi.t_wb[0][GENI] = t_wb_i_GENI;\n".replaceAll(
+        "GENI",
+        i.toString
+      )
       for (j <- 0 until p.retirementLanes) {
         coreInstantiation += "  assign rvvi.csr[0][GENi][MSB:LSB] = csr_i_GENIDX;\n"
           .replaceAll("GENi", i.toString)
@@ -166,7 +183,9 @@ class RvviTraceBlackBox(p: Parameters)
     val f_wb_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
     val v_wdata_i    = Input(Vec(p.retirementLanes, UInt((32 * 128).W)))
     val v_wb_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
-    val csr_i        = Input(
+    val t_wdata_i = Input(Vec(p.retirementLanes, UInt((16 * ((p.vmeTe * p.vmeTe) / 16) * 128).W)))
+    val t_wb_i    = Input(Vec(p.retirementLanes, UInt(16.W)))
+    val csr_i     = Input(
       Vec(
         p.retirementLanes * p.retirementLanes,
         UInt(((4096 / p.retirementLanes) * 32).W)
@@ -189,6 +208,8 @@ class RvviTrace(p: Parameters) extends Module {
   val f_wb    = Wire(Vec(p.retirementLanes, Vec(32, Bool())))
   val v_wdata = Wire(Vec(p.retirementLanes, Vec(32, UInt(128.W))))
   val v_wb    = Wire(Vec(p.retirementLanes, Vec(32, Bool())))
+  val t_wdata = Wire(Vec(p.retirementLanes, Vec(16, Vec((p.vmeTe * p.vmeTe) / 16, UInt(128.W)))))
+  val t_wb    = Wire(Vec(p.retirementLanes, Vec(16, Bool())))
   val csr     = Wire(Vec(p.retirementLanes, Vec(4096, UInt(32.W))))
   val csr_wb  = Wire(Vec(p.retirementLanes, Vec(4096, Bool())))
 
@@ -204,6 +225,8 @@ class RvviTrace(p: Parameters) extends Module {
     rvviTraceBlackBox.io.f_wb_i(i)    := f_wb(i).asUInt
     rvviTraceBlackBox.io.v_wdata_i(i) := v_wdata(i).asUInt
     rvviTraceBlackBox.io.v_wb_i(i)    := v_wb(i).asUInt
+    rvviTraceBlackBox.io.t_wdata_i(i) := t_wdata(i).asUInt
+    rvviTraceBlackBox.io.t_wb_i(i)    := t_wb(i).asUInt
     for (j <- 0 until p.retirementLanes) {
       val subsize = rvviTraceBlackBox.io.csr_i(i).getWidth
       rvviTraceBlackBox.io
@@ -257,10 +280,36 @@ class RvviTrace(p: Parameters) extends Module {
       }
     }
 
+    if (p.enableVme) {
+      val tileWrites = io.rb.inst(i).bits.tileWrites.get
+      for (j <- 0 until 16) {
+        val hits    = tileWrites.map(w => valid && !trap && w.valid && (w.bits.idx === j.U))
+        val hit     = hits.reduce(_ | _)
+        val hitData = PriorityMux(hits, tileWrites.map(_.bits.data))
+        t_wdata(i)(j) := Mux(hit, hitData, 0.U.asTypeOf(t_wdata(i)(j)))
+        t_wb(i)(j)    := hit
+      }
+    } else {
+      for (j <- 0 until 16) {
+        t_wdata(i)(j) := 0.U.asTypeOf(t_wdata(i)(j))
+        t_wb(i)(j)    := false.B
+      }
+    }
+
     for (j <- 0 until 4096) {
       val csr_wb_valid = valid && io.csr.valid && (io.csr.addr === j.U)
-      csr(i)(j)    := MuxOR(csr_wb_valid, io.csr.data)
-      csr_wb(i)(j) := csr_wb_valid
+      val isMtypeCsr   = if (p.enableVme) {
+        (j.U === 0xc23.U) && io.rb.inst(i).bits.mtype.map(_.valid).getOrElse(false.B)
+      } else {
+        false.B
+      }
+      val mtypeVal = if (p.enableVme) {
+        io.rb.inst(i).bits.mtype.map(_.bits).getOrElse(0.U)
+      } else {
+        0.U
+      }
+      csr(i)(j)    := Mux(isMtypeCsr, mtypeVal, MuxOR(csr_wb_valid, io.csr.data))
+      csr_wb(i)(j) := csr_wb_valid || isMtypeCsr
     }
   }
 }
