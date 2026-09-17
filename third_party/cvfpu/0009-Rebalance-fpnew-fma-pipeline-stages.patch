@@ -1,0 +1,516 @@
+diff -Naur a/src/fpnew_fma.sv b/src/fpnew_fma.sv
+--- a/src/fpnew_fma.sv	2026-08-27 21:39:15.353671045 +0000
++++ b/src/fpnew_fma.sv	2026-09-16 19:28:03.627881359 +0000
+@@ -86,6 +86,8 @@
+                           : (PipeConfig == fpnew_pkg::DISTRIBUTED
+                              ? ((NumPipeRegs + 2) / 3) // First to get distributed regs
+                              : 0); // no regs here otherwise
++  localparam NUM_SUM_REGS = (NUM_MID_REGS > 1) ? (NUM_MID_REGS - 1) : NUM_MID_REGS;
++  localparam NUM_NORM_REGS = (NUM_MID_REGS > 1) ? 1 : 0;
+   localparam NUM_OUT_REGS = PipeConfig == fpnew_pkg::AFTER
+                             ? NumPipeRegs
+                             : (PipeConfig == fpnew_pkg::DISTRIBUTED
+@@ -411,24 +413,24 @@
+   fp_t                           special_result_q;
+   fpnew_pkg::status_t            special_status_q;
+   // Internal pipeline signals, index i holds signal after i register stages
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_eff_sub_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_eff_sub_q;
+   logic signed           [0:NUM_MID_REGS][EXP_WIDTH-1:0]          mid_pipe_exp_prod_q;
+   logic signed           [0:NUM_MID_REGS][EXP_WIDTH-1:0]          mid_pipe_exp_diff_q;
+   logic signed           [0:NUM_MID_REGS][EXP_WIDTH-1:0]          mid_pipe_tent_exp_q;
+   logic                  [0:NUM_MID_REGS][SHIFT_AMOUNT_WIDTH-1:0] mid_pipe_add_shamt_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_sticky_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_sticky_q;
+   logic                  [0:NUM_MID_REGS][3*PRECISION_BITS+3:0]   mid_pipe_sum_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_final_sign_q;
+-  fpnew_pkg::roundmode_e [0:NUM_MID_REGS]                         mid_pipe_rnd_mode_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_res_is_spec_q;
+-  fp_t                   [0:NUM_MID_REGS]                         mid_pipe_spec_res_q;
+-  fpnew_pkg::status_t    [0:NUM_MID_REGS]                         mid_pipe_spec_stat_q;
+-  TagType                [0:NUM_MID_REGS]                         mid_pipe_tag_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_mask_q;
+-  AuxType                [0:NUM_MID_REGS]                         mid_pipe_aux_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_valid_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_final_sign_q;
++  fpnew_pkg::roundmode_e [0:NUM_SUM_REGS]                         mid_pipe_rnd_mode_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_res_is_spec_q;
++  fp_t                   [0:NUM_SUM_REGS]                         mid_pipe_spec_res_q;
++  fpnew_pkg::status_t    [0:NUM_SUM_REGS]                         mid_pipe_spec_stat_q;
++  TagType                [0:NUM_SUM_REGS]                         mid_pipe_tag_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_mask_q;
++  AuxType                [0:NUM_SUM_REGS]                         mid_pipe_aux_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_valid_q;
+   // Ready signal is combinatorial for all stages
+-  logic [0:NUM_MID_REGS] mid_pipe_ready;
++  logic [0:NUM_SUM_REGS] mid_pipe_ready;
+ 
+   // Input stage: First element of pipeline is taken from upstream logic
+   assign mid_pipe_eff_sub_q[0]     = effective_subtraction;
+@@ -451,7 +453,7 @@
+   assign inp_pipe_ready[NUM_INP_REGS] = mid_pipe_ready[0];
+ 
+   // Generate the register stages
+-  for (genvar i = 0; i < NUM_MID_REGS; i++) begin : gen_inside_pipeline
++  for (genvar i = 0; i < NUM_SUM_REGS; i++) begin : gen_inside_pipeline
+     // Internal register enable for this stage
+     logic reg_ena;
+     // Determine the ready signal of the current stage - advance the pipeline:
+@@ -480,18 +482,18 @@
+     `FFL(mid_pipe_aux_q[i+1],         mid_pipe_aux_q[i],         reg_ena, AuxType'('0))
+   end
+   // Output stage: assign selected pipe outputs to signals for later use
+-  assign effective_subtraction_q = mid_pipe_eff_sub_q[NUM_MID_REGS];
+-  assign exponent_product_q      = mid_pipe_exp_prod_q[NUM_MID_REGS];
+-  assign exponent_difference_q   = mid_pipe_exp_diff_q[NUM_MID_REGS];
+-  assign tentative_exponent_q    = mid_pipe_tent_exp_q[NUM_MID_REGS];
+-  assign addend_shamt_q          = mid_pipe_add_shamt_q[NUM_MID_REGS];
+-  assign sticky_before_add_q     = mid_pipe_sticky_q[NUM_MID_REGS];
+-  assign sum_q                   = mid_pipe_sum_q[NUM_MID_REGS];
+-  assign final_sign_q            = mid_pipe_final_sign_q[NUM_MID_REGS];
+-  assign rnd_mode_q              = mid_pipe_rnd_mode_q[NUM_MID_REGS];
+-  assign result_is_special_q     = mid_pipe_res_is_spec_q[NUM_MID_REGS];
+-  assign special_result_q        = mid_pipe_spec_res_q[NUM_MID_REGS];
+-  assign special_status_q        = mid_pipe_spec_stat_q[NUM_MID_REGS];
++  assign effective_subtraction_q = mid_pipe_eff_sub_q[NUM_SUM_REGS];
++  assign exponent_product_q      = mid_pipe_exp_prod_q[NUM_SUM_REGS];
++  assign exponent_difference_q   = mid_pipe_exp_diff_q[NUM_SUM_REGS];
++  assign tentative_exponent_q    = mid_pipe_tent_exp_q[NUM_SUM_REGS];
++  assign addend_shamt_q          = mid_pipe_add_shamt_q[NUM_SUM_REGS];
++  assign sticky_before_add_q     = mid_pipe_sticky_q[NUM_SUM_REGS];
++  assign sum_q                   = mid_pipe_sum_q[NUM_SUM_REGS];
++  assign final_sign_q            = mid_pipe_final_sign_q[NUM_SUM_REGS];
++  assign rnd_mode_q              = mid_pipe_rnd_mode_q[NUM_SUM_REGS];
++  assign result_is_special_q     = mid_pipe_res_is_spec_q[NUM_SUM_REGS];
++  assign special_result_q        = mid_pipe_spec_res_q[NUM_SUM_REGS];
++  assign special_status_q        = mid_pipe_spec_stat_q[NUM_SUM_REGS];
+ 
+   // --------------
+   // Normalization
+@@ -606,24 +608,80 @@
+   // In case of overflow, the round and sticky bits are set for proper rounding
+   assign round_sticky_bits  = (of_before_round) ? 2'b11 : {final_mantissa[0], sticky_after_norm};
+ 
++  // ----------------------
++  // Normalization Pipeline
++  // ----------------------
++  logic [0:NUM_NORM_REGS][EXP_BITS+MAN_BITS-1:0] norm_pipe_abs_q;
++  logic [0:NUM_NORM_REGS]                        norm_pipe_sign_q;
++  logic [0:NUM_NORM_REGS][1:0]                   norm_pipe_round_sticky_q;
++  fpnew_pkg::roundmode_e [0:NUM_NORM_REGS]       norm_pipe_rnd_mode_q;
++  logic [0:NUM_NORM_REGS]                        norm_pipe_eff_sub_q;
++  logic [0:NUM_NORM_REGS]                        norm_pipe_of_before_round_q;
++  logic [0:NUM_NORM_REGS]                        norm_pipe_sum_sticky_msb_q;
++  logic [0:NUM_NORM_REGS]                        norm_pipe_res_is_spec_q;
++  fp_t  [0:NUM_NORM_REGS]                        norm_pipe_spec_res_q;
++  fpnew_pkg::status_t [0:NUM_NORM_REGS]          norm_pipe_spec_stat_q;
++  TagType [0:NUM_NORM_REGS]                      norm_pipe_tag_q;
++  logic   [0:NUM_NORM_REGS]                      norm_pipe_mask_q;
++  AuxType [0:NUM_NORM_REGS]                      norm_pipe_aux_q;
++  logic   [0:NUM_NORM_REGS]                      norm_pipe_valid_q;
++  logic   [0:NUM_NORM_REGS]                      norm_pipe_ready;
++
++  assign norm_pipe_abs_q[0]             = pre_round_abs;
++  assign norm_pipe_sign_q[0]            = pre_round_sign;
++  assign norm_pipe_round_sticky_q[0]    = round_sticky_bits;
++  assign norm_pipe_rnd_mode_q[0]        = rnd_mode_q;
++  assign norm_pipe_eff_sub_q[0]         = effective_subtraction_q;
++  assign norm_pipe_of_before_round_q[0] = of_before_round;
++  assign norm_pipe_sum_sticky_msb_q[0]  = sum_sticky_bits[MAN_BITS*2 + 4];
++  assign norm_pipe_res_is_spec_q[0]     = result_is_special_q;
++  assign norm_pipe_spec_res_q[0]        = special_result_q;
++  assign norm_pipe_spec_stat_q[0]       = special_status_q;
++  assign norm_pipe_tag_q[0]             = mid_pipe_tag_q[NUM_SUM_REGS];
++  assign norm_pipe_mask_q[0]            = mid_pipe_mask_q[NUM_SUM_REGS];
++  assign norm_pipe_aux_q[0]             = mid_pipe_aux_q[NUM_SUM_REGS];
++  assign norm_pipe_valid_q[0]           = mid_pipe_valid_q[NUM_SUM_REGS];
++
++  assign mid_pipe_ready[NUM_SUM_REGS]   = norm_pipe_ready[0];
++
++  for (genvar i = 0; i < NUM_NORM_REGS; i++) begin : gen_norm_pipeline
++    logic reg_ena;
++    assign norm_pipe_ready[i] = norm_pipe_ready[i+1] | ~norm_pipe_valid_q[i+1];
++    `FFLARNC(norm_pipe_valid_q[i+1], norm_pipe_valid_q[i], norm_pipe_ready[i], flush_i, 1'b0, clk_i, rst_ni)
++    assign reg_ena = (norm_pipe_ready[i] & norm_pipe_valid_q[i]) | reg_ena_i[NUM_INP_REGS + NUM_SUM_REGS + i];
++    `FFL(norm_pipe_abs_q[i+1],             norm_pipe_abs_q[i],             reg_ena, '0)
++    `FFL(norm_pipe_sign_q[i+1],            norm_pipe_sign_q[i],            reg_ena, '0)
++    `FFL(norm_pipe_round_sticky_q[i+1],    norm_pipe_round_sticky_q[i],    reg_ena, '0)
++    `FFL(norm_pipe_rnd_mode_q[i+1],        norm_pipe_rnd_mode_q[i],        reg_ena, fpnew_pkg::RNE)
++    `FFL(norm_pipe_eff_sub_q[i+1],         norm_pipe_eff_sub_q[i],         reg_ena, '0)
++    `FFL(norm_pipe_of_before_round_q[i+1], norm_pipe_of_before_round_q[i], reg_ena, '0)
++    `FFL(norm_pipe_sum_sticky_msb_q[i+1],  norm_pipe_sum_sticky_msb_q[i],  reg_ena, '0)
++    `FFL(norm_pipe_res_is_spec_q[i+1],     norm_pipe_res_is_spec_q[i],     reg_ena, '0)
++    `FFL(norm_pipe_spec_res_q[i+1],        norm_pipe_spec_res_q[i],        reg_ena, '0)
++    `FFL(norm_pipe_spec_stat_q[i+1],       norm_pipe_spec_stat_q[i],       reg_ena, '0)
++    `FFL(norm_pipe_tag_q[i+1],             norm_pipe_tag_q[i],             reg_ena, TagType'('0))
++    `FFL(norm_pipe_mask_q[i+1],            norm_pipe_mask_q[i],            reg_ena, '0)
++    `FFL(norm_pipe_aux_q[i+1],             norm_pipe_aux_q[i],             reg_ena, AuxType'('0))
++  end
++
+   // Perform the rounding
+   fpnew_rounding #(
+     .AbsWidth ( EXP_BITS + MAN_BITS )
+   ) i_fpnew_rounding (
+-    .abs_value_i             ( pre_round_abs           ),
+-    .sign_i                  ( pre_round_sign          ),
+-    .round_sticky_bits_i     ( round_sticky_bits       ),
+-    .rnd_mode_i              ( rnd_mode_q              ),
+-    .effective_subtraction_i ( effective_subtraction_q ),
+-    .abs_rounded_o           ( rounded_abs             ),
+-    .sign_o                  ( rounded_sign            ),
+-    .exact_zero_o            ( result_zero             )
++    .abs_value_i             ( norm_pipe_abs_q[NUM_NORM_REGS]           ),
++    .sign_i                  ( norm_pipe_sign_q[NUM_NORM_REGS]          ),
++    .round_sticky_bits_i     ( norm_pipe_round_sticky_q[NUM_NORM_REGS]  ),
++    .rnd_mode_i              ( norm_pipe_rnd_mode_q[NUM_NORM_REGS]      ),
++    .effective_subtraction_i ( norm_pipe_eff_sub_q[NUM_NORM_REGS]       ),
++    .abs_rounded_o           ( rounded_abs                              ),
++    .sign_o                  ( rounded_sign                             ),
++    .exact_zero_o            ( result_zero                              )
+   );
+ 
+   // Classification after rounding
+   assign uf_after_round = (rounded_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == '0) // denormal
+-        || ((pre_round_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == '0) && (rounded_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == 1) &&
+-           ((round_sticky_bits != 2'b11) || (!sum_sticky_bits[MAN_BITS*2 + 4] && ((rnd_mode_q == fpnew_pkg::RNE) || (rnd_mode_q == fpnew_pkg::RMM)))));
++        || ((norm_pipe_abs_q[NUM_NORM_REGS][EXP_BITS+MAN_BITS-1:MAN_BITS] == '0) && (rounded_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == 1) &&
++           ((norm_pipe_round_sticky_q[NUM_NORM_REGS] != 2'b11) || (!norm_pipe_sum_sticky_msb_q[NUM_NORM_REGS] && ((norm_pipe_rnd_mode_q[NUM_NORM_REGS] == fpnew_pkg::RNE) || (norm_pipe_rnd_mode_q[NUM_NORM_REGS] == fpnew_pkg::RMM)))));
+   assign of_after_round = rounded_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == '1; // exponent all ones
+ 
+   // -----------------
+@@ -636,17 +694,17 @@
+   assign regular_result    = {rounded_sign, rounded_abs};
+   assign regular_status.NV = 1'b0; // only valid cases are handled in regular path
+   assign regular_status.DZ = 1'b0; // no divisions
+-  assign regular_status.OF = of_before_round | of_after_round;   // rounding can introduce overflow
++  assign regular_status.OF = norm_pipe_of_before_round_q[NUM_NORM_REGS] | of_after_round;   // rounding can introduce overflow
+   assign regular_status.UF = uf_after_round & regular_status.NX; // only inexact results raise UF
+-  assign regular_status.NX = (| round_sticky_bits) | of_before_round | of_after_round;
++  assign regular_status.NX = (| norm_pipe_round_sticky_q[NUM_NORM_REGS]) | norm_pipe_of_before_round_q[NUM_NORM_REGS] | of_after_round;
+ 
+   // Final results for output pipeline
+   fp_t                result_d;
+   fpnew_pkg::status_t status_d;
+ 
+   // Select output depending on special case detection
+-  assign result_d = result_is_special_q ? special_result_q : regular_result;
+-  assign status_d = result_is_special_q ? special_status_q : regular_status;
++  assign result_d = norm_pipe_res_is_spec_q[NUM_NORM_REGS] ? norm_pipe_spec_res_q[NUM_NORM_REGS] : regular_result;
++  assign status_d = norm_pipe_res_is_spec_q[NUM_NORM_REGS] ? norm_pipe_spec_stat_q[NUM_NORM_REGS] : regular_status;
+ 
+   // ----------------
+   // Output Pipeline
+@@ -664,12 +722,12 @@
+   // Input stage: First element of pipeline is taken from inputs
+   assign out_pipe_result_q[0] = result_d;
+   assign out_pipe_status_q[0] = status_d;
+-  assign out_pipe_tag_q[0]    = mid_pipe_tag_q[NUM_MID_REGS];
+-  assign out_pipe_mask_q[0]   = mid_pipe_mask_q[NUM_MID_REGS];
+-  assign out_pipe_aux_q[0]    = mid_pipe_aux_q[NUM_MID_REGS];
+-  assign out_pipe_valid_q[0]  = mid_pipe_valid_q[NUM_MID_REGS];
+-  // Input stage: Propagate pipeline ready signal to inside pipe
+-  assign mid_pipe_ready[NUM_MID_REGS] = out_pipe_ready[0];
++  assign out_pipe_tag_q[0]    = norm_pipe_tag_q[NUM_NORM_REGS];
++  assign out_pipe_mask_q[0]   = norm_pipe_mask_q[NUM_NORM_REGS];
++  assign out_pipe_aux_q[0]    = norm_pipe_aux_q[NUM_NORM_REGS];
++  assign out_pipe_valid_q[0]  = norm_pipe_valid_q[NUM_NORM_REGS];
++  // Input stage: Propagate pipeline ready signal to normalization pipe
++  assign norm_pipe_ready[NUM_NORM_REGS] = out_pipe_ready[0];
+   // Generate the register stages
+   for (genvar i = 0; i < NUM_OUT_REGS; i++) begin : gen_output_pipeline
+     // Internal register enable for this stage
+@@ -699,15 +757,18 @@
+   assign mask_o          = out_pipe_mask_q[NUM_OUT_REGS];
+   assign aux_o           = out_pipe_aux_q[NUM_OUT_REGS];
+   assign out_valid_o     = out_pipe_valid_q[NUM_OUT_REGS];
+-  assign busy_o          = (| {inp_pipe_valid_q, mid_pipe_valid_q, out_pipe_valid_q});
++  assign busy_o          = (| {inp_pipe_valid_q, mid_pipe_valid_q, norm_pipe_valid_q, out_pipe_valid_q});
+ 
+   // Early valid_o signal. This is used for dispatching instructions for dual-issue processor.
+   if (NUM_OUT_REGS > 0) begin
+     assign early_out_valid_o = |{out_pipe_valid_q[NUM_OUT_REGS] & ~out_pipe_ready[NUM_OUT_REGS],
+                                  out_pipe_valid_q[NUM_OUT_REGS-1]};
+-  end else if (NUM_MID_REGS > 0) begin
+-    assign early_out_valid_o = |{mid_pipe_valid_q[NUM_MID_REGS] & ~mid_pipe_ready[NUM_OUT_REGS],
+-                                 mid_pipe_valid_q[NUM_MID_REGS-1]};
++  end else if (NUM_NORM_REGS > 0) begin
++    assign early_out_valid_o = |{norm_pipe_valid_q[NUM_NORM_REGS] & ~norm_pipe_ready[NUM_NORM_REGS],
++                                 norm_pipe_valid_q[NUM_NORM_REGS-1]};
++  end else if (NUM_SUM_REGS > 0) begin
++    assign early_out_valid_o = |{mid_pipe_valid_q[NUM_SUM_REGS] & ~mid_pipe_ready[NUM_SUM_REGS],
++                                 mid_pipe_valid_q[NUM_SUM_REGS-1]};
+   end else if (NUM_INP_REGS > 0) begin
+     assign early_out_valid_o = |{inp_pipe_valid_q[NUM_INP_REGS] & ~inp_pipe_ready[NUM_INP_REGS],
+                                  inp_pipe_valid_q[NUM_INP_REGS-1]};
+diff -Naur a/src/fpnew_fma_multi.sv b/src/fpnew_fma_multi.sv
+--- a/src/fpnew_fma_multi.sv	2026-08-27 21:39:15.351671048 +0000
++++ b/src/fpnew_fma_multi.sv	2026-09-16 19:28:03.628881357 +0000
+@@ -93,6 +93,8 @@
+                           : (PipeConfig == fpnew_pkg::DISTRIBUTED
+                              ? ((NumPipeRegs + 2) / 3) // First to get distributed regs
+                              : 0); // no regs here otherwise
++  localparam NUM_SUM_REGS = (NUM_MID_REGS > 1) ? (NUM_MID_REGS - 1) : NUM_MID_REGS;
++  localparam NUM_NORM_REGS = (NUM_MID_REGS > 1) ? 1 : 0;
+   localparam NUM_OUT_REGS = PipeConfig == fpnew_pkg::AFTER
+                             ? NumPipeRegs
+                             : (PipeConfig == fpnew_pkg::DISTRIBUTED
+@@ -558,26 +560,26 @@
+   fp_t                           special_result_q;
+   fpnew_pkg::status_t            special_status_q;
+   // Internal pipeline signals, index i holds signal after i register stages
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_eff_sub_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_eff_sub_q;
+   logic signed           [0:NUM_MID_REGS][EXP_WIDTH-1:0]          mid_pipe_exp_prod_q;
+   logic signed           [0:NUM_MID_REGS][EXP_WIDTH-1:0]          mid_pipe_exp_diff_q;
+   logic signed           [0:NUM_MID_REGS][EXP_WIDTH-1:0]          mid_pipe_tent_exp_q;
+   logic                  [0:NUM_MID_REGS][SHIFT_AMOUNT_WIDTH-1:0] mid_pipe_add_shamt_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_sticky_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_sticky_q;
+   logic                  [0:NUM_MID_REGS][3*PRECISION_BITS+3:0]   mid_pipe_sum_q;
+   logic                  [0:NUM_MID_REGS][LZC_RESULT_WIDTH-1:0]   mid_pipe_lza_count_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_final_sign_q;
+-  fpnew_pkg::roundmode_e [0:NUM_MID_REGS]                         mid_pipe_rnd_mode_q;
+-  fpnew_pkg::fp_format_e [0:NUM_MID_REGS]                         mid_pipe_dst_fmt_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_res_is_spec_q;
+-  fp_t                   [0:NUM_MID_REGS]                         mid_pipe_spec_res_q;
+-  fpnew_pkg::status_t    [0:NUM_MID_REGS]                         mid_pipe_spec_stat_q;
+-  TagType                [0:NUM_MID_REGS]                         mid_pipe_tag_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_mask_q;
+-  AuxType                [0:NUM_MID_REGS]                         mid_pipe_aux_q;
+-  logic                  [0:NUM_MID_REGS]                         mid_pipe_valid_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_final_sign_q;
++  fpnew_pkg::roundmode_e [0:NUM_SUM_REGS]                         mid_pipe_rnd_mode_q;
++  fpnew_pkg::fp_format_e [0:NUM_SUM_REGS]                         mid_pipe_dst_fmt_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_res_is_spec_q;
++  fp_t                   [0:NUM_SUM_REGS]                         mid_pipe_spec_res_q;
++  fpnew_pkg::status_t    [0:NUM_SUM_REGS]                         mid_pipe_spec_stat_q;
++  TagType                [0:NUM_SUM_REGS]                         mid_pipe_tag_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_mask_q;
++  AuxType                [0:NUM_SUM_REGS]                         mid_pipe_aux_q;
++  logic                  [0:NUM_SUM_REGS]                         mid_pipe_valid_q;
+   // Ready signal is combinatorial for all stages
+-  logic [0:NUM_MID_REGS] mid_pipe_ready;
++  logic [0:NUM_SUM_REGS] mid_pipe_ready;
+ 
+   // Input stage: First element of pipeline is taken from upstream logic
+   assign mid_pipe_eff_sub_q[0]     = effective_subtraction;
+@@ -602,7 +604,7 @@
+   assign inp_pipe_ready[NUM_INP_REGS] = mid_pipe_ready[0];
+ 
+   // Generate the register stages
+-  for (genvar i = 0; i < NUM_MID_REGS; i++) begin : gen_inside_pipeline
++  for (genvar i = 0; i < NUM_SUM_REGS; i++) begin : gen_inside_pipeline
+     // Internal register enable for this stage
+     logic reg_ena;
+     // Determine the ready signal of the current stage - advance the pipeline:
+@@ -633,20 +635,20 @@
+     `FFL(mid_pipe_aux_q[i+1],         mid_pipe_aux_q[i],         reg_ena, AuxType'('0))
+   end
+   // Output stage: assign selected pipe outputs to signals for later use
+-  assign effective_subtraction_q = mid_pipe_eff_sub_q[NUM_MID_REGS];
+-  assign exponent_product_q      = mid_pipe_exp_prod_q[NUM_MID_REGS];
+-  assign exponent_difference_q   = mid_pipe_exp_diff_q[NUM_MID_REGS];
+-  assign tentative_exponent_q    = mid_pipe_tent_exp_q[NUM_MID_REGS];
+-  assign addend_shamt_q          = mid_pipe_add_shamt_q[NUM_MID_REGS];
+-  assign sticky_before_add_q     = mid_pipe_sticky_q[NUM_MID_REGS];
+-  assign sum_q                   = mid_pipe_sum_q[NUM_MID_REGS];
+-  assign lza_count_q             = mid_pipe_lza_count_q[NUM_MID_REGS];
+-  assign final_sign_q            = mid_pipe_final_sign_q[NUM_MID_REGS];
+-  assign rnd_mode_q              = mid_pipe_rnd_mode_q[NUM_MID_REGS];
+-  assign dst_fmt_q2              = mid_pipe_dst_fmt_q[NUM_MID_REGS];
+-  assign result_is_special_q     = mid_pipe_res_is_spec_q[NUM_MID_REGS];
+-  assign special_result_q        = mid_pipe_spec_res_q[NUM_MID_REGS];
+-  assign special_status_q        = mid_pipe_spec_stat_q[NUM_MID_REGS];
++  assign effective_subtraction_q = mid_pipe_eff_sub_q[NUM_SUM_REGS];
++  assign exponent_product_q      = mid_pipe_exp_prod_q[NUM_SUM_REGS];
++  assign exponent_difference_q   = mid_pipe_exp_diff_q[NUM_SUM_REGS];
++  assign tentative_exponent_q    = mid_pipe_tent_exp_q[NUM_SUM_REGS];
++  assign addend_shamt_q          = mid_pipe_add_shamt_q[NUM_SUM_REGS];
++  assign sticky_before_add_q     = mid_pipe_sticky_q[NUM_SUM_REGS];
++  assign sum_q                   = mid_pipe_sum_q[NUM_SUM_REGS];
++  assign lza_count_q             = mid_pipe_lza_count_q[NUM_SUM_REGS];
++  assign final_sign_q            = mid_pipe_final_sign_q[NUM_SUM_REGS];
++  assign rnd_mode_q              = mid_pipe_rnd_mode_q[NUM_SUM_REGS];
++  assign dst_fmt_q2              = mid_pipe_dst_fmt_q[NUM_SUM_REGS];
++  assign result_is_special_q     = mid_pipe_res_is_spec_q[NUM_SUM_REGS];
++  assign special_result_q        = mid_pipe_spec_res_q[NUM_SUM_REGS];
++  assign special_status_q        = mid_pipe_spec_stat_q[NUM_SUM_REGS];
+ 
+   // --------------
+   // Normalization
+@@ -803,18 +805,77 @@
+   // In case of overflow, the round and sticky bits are set for proper rounding
+   assign round_sticky_bits  = fmt_round_sticky_bits[dst_fmt_q2];
+ 
++  // ----------------------
++  // Normalization Pipeline
++  // ----------------------
++  logic [0:NUM_NORM_REGS][SUPER_EXP_BITS+SUPER_MAN_BITS-1:0] norm_pipe_abs_q;
++  logic [0:NUM_NORM_REGS]                                    norm_pipe_sign_q;
++  logic [0:NUM_NORM_REGS][1:0]                               norm_pipe_round_sticky_q;
++  fpnew_pkg::roundmode_e [0:NUM_NORM_REGS]                   norm_pipe_rnd_mode_q;
++  fpnew_pkg::fp_format_e [0:NUM_NORM_REGS]                   norm_pipe_dst_fmt_q;
++  logic [0:NUM_NORM_REGS]                                    norm_pipe_eff_sub_q;
++  logic [0:NUM_NORM_REGS]                                    norm_pipe_of_before_round_q;
++  logic [0:NUM_NORM_REGS][3*SUPER_EXP_BITS+4:0]              norm_pipe_sum_sticky_q;
++  logic [0:NUM_NORM_REGS]                                    norm_pipe_res_is_spec_q;
++  fp_t  [0:NUM_NORM_REGS]                                    norm_pipe_spec_res_q;
++  fpnew_pkg::status_t [0:NUM_NORM_REGS]                      norm_pipe_spec_stat_q;
++  TagType [0:NUM_NORM_REGS]                                  norm_pipe_tag_q;
++  logic   [0:NUM_NORM_REGS]                                  norm_pipe_mask_q;
++  AuxType [0:NUM_NORM_REGS]                                  norm_pipe_aux_q;
++  logic   [0:NUM_NORM_REGS]                                  norm_pipe_valid_q;
++  logic   [0:NUM_NORM_REGS]                                  norm_pipe_ready;
++
++  assign norm_pipe_abs_q[0]             = pre_round_abs;
++  assign norm_pipe_sign_q[0]            = pre_round_sign;
++  assign norm_pipe_round_sticky_q[0]    = round_sticky_bits;
++  assign norm_pipe_rnd_mode_q[0]        = rnd_mode_q;
++  assign norm_pipe_dst_fmt_q[0]         = dst_fmt_q2;
++  assign norm_pipe_eff_sub_q[0]         = effective_subtraction_q;
++  assign norm_pipe_of_before_round_q[0] = of_before_round;
++  assign norm_pipe_sum_sticky_q[0]      = sum_sticky_bits;
++  assign norm_pipe_res_is_spec_q[0]     = result_is_special_q;
++  assign norm_pipe_spec_res_q[0]        = special_result_q;
++  assign norm_pipe_spec_stat_q[0]       = special_status_q;
++  assign norm_pipe_tag_q[0]             = mid_pipe_tag_q[NUM_SUM_REGS];
++  assign norm_pipe_mask_q[0]            = mid_pipe_mask_q[NUM_SUM_REGS];
++  assign norm_pipe_aux_q[0]             = mid_pipe_aux_q[NUM_SUM_REGS];
++  assign norm_pipe_valid_q[0]           = mid_pipe_valid_q[NUM_SUM_REGS];
++
++  assign mid_pipe_ready[NUM_SUM_REGS]   = norm_pipe_ready[0];
++
++  for (genvar i = 0; i < NUM_NORM_REGS; i++) begin : gen_norm_pipeline
++    logic reg_ena;
++    assign norm_pipe_ready[i] = norm_pipe_ready[i+1] | ~norm_pipe_valid_q[i+1];
++    `FFLARNC(norm_pipe_valid_q[i+1], norm_pipe_valid_q[i], norm_pipe_ready[i], flush_i, 1'b0, clk_i, rst_ni)
++    assign reg_ena = (norm_pipe_ready[i] & norm_pipe_valid_q[i]) | reg_ena_i[NUM_INP_REGS + NUM_SUM_REGS + i];
++    `FFL(norm_pipe_abs_q[i+1],             norm_pipe_abs_q[i],             reg_ena, '0)
++    `FFL(norm_pipe_sign_q[i+1],            norm_pipe_sign_q[i],            reg_ena, '0)
++    `FFL(norm_pipe_round_sticky_q[i+1],    norm_pipe_round_sticky_q[i],    reg_ena, '0)
++    `FFL(norm_pipe_rnd_mode_q[i+1],        norm_pipe_rnd_mode_q[i],        reg_ena, fpnew_pkg::RNE)
++    `FFL(norm_pipe_dst_fmt_q[i+1],         norm_pipe_dst_fmt_q[i],         reg_ena, fpnew_pkg::fp_format_e'(0))
++    `FFL(norm_pipe_eff_sub_q[i+1],         norm_pipe_eff_sub_q[i],         reg_ena, '0)
++    `FFL(norm_pipe_of_before_round_q[i+1], norm_pipe_of_before_round_q[i], reg_ena, '0)
++    `FFL(norm_pipe_sum_sticky_q[i+1],      norm_pipe_sum_sticky_q[i],      reg_ena, '0)
++    `FFL(norm_pipe_res_is_spec_q[i+1],     norm_pipe_res_is_spec_q[i],     reg_ena, '0)
++    `FFL(norm_pipe_spec_res_q[i+1],        norm_pipe_spec_res_q[i],        reg_ena, '0)
++    `FFL(norm_pipe_spec_stat_q[i+1],       norm_pipe_spec_stat_q[i],       reg_ena, '0)
++    `FFL(norm_pipe_tag_q[i+1],             norm_pipe_tag_q[i],             reg_ena, TagType'('0))
++    `FFL(norm_pipe_mask_q[i+1],            norm_pipe_mask_q[i],            reg_ena, '0)
++    `FFL(norm_pipe_aux_q[i+1],             norm_pipe_aux_q[i],             reg_ena, AuxType'('0))
++  end
++
+   // Perform the rounding
+   fpnew_rounding #(
+     .AbsWidth ( SUPER_EXP_BITS + SUPER_MAN_BITS )
+   ) i_fpnew_rounding (
+-    .abs_value_i             ( pre_round_abs           ),
+-    .sign_i                  ( pre_round_sign          ),
+-    .round_sticky_bits_i     ( round_sticky_bits       ),
+-    .rnd_mode_i              ( rnd_mode_q              ),
+-    .effective_subtraction_i ( effective_subtraction_q ),
+-    .abs_rounded_o           ( rounded_abs             ),
+-    .sign_o                  ( rounded_sign            ),
+-    .exact_zero_o            ( result_zero             )
++    .abs_value_i             ( norm_pipe_abs_q[NUM_NORM_REGS]           ),
++    .sign_i                  ( norm_pipe_sign_q[NUM_NORM_REGS]          ),
++    .round_sticky_bits_i     ( norm_pipe_round_sticky_q[NUM_NORM_REGS]  ),
++    .rnd_mode_i              ( norm_pipe_rnd_mode_q[NUM_NORM_REGS]      ),
++    .effective_subtraction_i ( norm_pipe_eff_sub_q[NUM_NORM_REGS]       ),
++    .abs_rounded_o           ( rounded_abs                              ),
++    .sign_o                  ( rounded_sign                             ),
++    .exact_zero_o            ( result_zero                              )
+   );
+ 
+   logic [NUM_FORMATS-1:0][WIDTH-1:0] fmt_result;
+@@ -829,8 +890,8 @@
+       always_comb begin : post_process
+         // detect of / uf
+         fmt_uf_after_round[fmt] = (rounded_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == '0) // denormal
+-        || ((pre_round_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == '0) && (rounded_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == 1) &&
+-              ((round_sticky_bits != 2'b11) || (!sum_sticky_bits[MAN_BITS*2 + 4] && ((rnd_mode_q == fpnew_pkg::RNE) || (rnd_mode_q == fpnew_pkg::RMM)))));
++        || ((norm_pipe_abs_q[NUM_NORM_REGS][EXP_BITS+MAN_BITS-1:MAN_BITS] == '0) && (rounded_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == 1) &&
++              ((norm_pipe_round_sticky_q[NUM_NORM_REGS] != 2'b11) || (!norm_pipe_sum_sticky_q[NUM_NORM_REGS][MAN_BITS*2 + 4] && ((norm_pipe_rnd_mode_q[NUM_NORM_REGS] == fpnew_pkg::RNE) || (norm_pipe_rnd_mode_q[NUM_NORM_REGS] == fpnew_pkg::RMM)))));
+         fmt_of_after_round[fmt] = rounded_abs[EXP_BITS+MAN_BITS-1:MAN_BITS] == '1; // inf exp.
+ 
+         // Assemble regular result, nan box short ones.
+@@ -845,8 +906,8 @@
+   end
+ 
+   // Classification after rounding select by destination format
+-  assign uf_after_round = fmt_uf_after_round[dst_fmt_q2];
+-  assign of_after_round = fmt_of_after_round[dst_fmt_q2];
++  assign uf_after_round = fmt_uf_after_round[norm_pipe_dst_fmt_q[NUM_NORM_REGS]];
++  assign of_after_round = fmt_of_after_round[norm_pipe_dst_fmt_q[NUM_NORM_REGS]];
+ 
+ 
+   // -----------------
+@@ -856,20 +917,20 @@
+   fpnew_pkg::status_t   regular_status;
+ 
+   // Assemble regular result
+-  assign regular_result = fmt_result[dst_fmt_q2];
++  assign regular_result = fmt_result[norm_pipe_dst_fmt_q[NUM_NORM_REGS]];
+   assign regular_status.NV = 1'b0; // only valid cases are handled in regular path
+   assign regular_status.DZ = 1'b0; // no divisions
+-  assign regular_status.OF = of_before_round | of_after_round;   // rounding can introduce overflow
++  assign regular_status.OF = norm_pipe_of_before_round_q[NUM_NORM_REGS] | of_after_round;   // rounding can introduce overflow
+   assign regular_status.UF = uf_after_round & regular_status.NX; // only inexact results raise UF
+-  assign regular_status.NX = (| round_sticky_bits) | of_before_round | of_after_round;
++  assign regular_status.NX = (| norm_pipe_round_sticky_q[NUM_NORM_REGS]) | norm_pipe_of_before_round_q[NUM_NORM_REGS] | of_after_round;
+ 
+   // Final results for output pipeline
+   logic [WIDTH-1:0]   result_d;
+   fpnew_pkg::status_t status_d;
+ 
+   // Select output depending on special case detection
+-  assign result_d = result_is_special_q ? special_result_q : regular_result;
+-  assign status_d = result_is_special_q ? special_status_q : regular_status;
++  assign result_d = norm_pipe_res_is_spec_q[NUM_NORM_REGS] ? norm_pipe_spec_res_q[NUM_NORM_REGS] : regular_result;
++  assign status_d = norm_pipe_res_is_spec_q[NUM_NORM_REGS] ? norm_pipe_spec_stat_q[NUM_NORM_REGS] : regular_status;
+ 
+   // ----------------
+   // Output Pipeline
+@@ -887,12 +948,12 @@
+   // Input stage: First element of pipeline is taken from inputs
+   assign out_pipe_result_q[0] = result_d;
+   assign out_pipe_status_q[0] = status_d;
+-  assign out_pipe_tag_q[0]    = mid_pipe_tag_q[NUM_MID_REGS];
+-  assign out_pipe_mask_q[0]   = mid_pipe_mask_q[NUM_MID_REGS];
+-  assign out_pipe_aux_q[0]    = mid_pipe_aux_q[NUM_MID_REGS];
+-  assign out_pipe_valid_q[0]  = mid_pipe_valid_q[NUM_MID_REGS];
+-  // Input stage: Propagate pipeline ready signal to inside pipe
+-  assign mid_pipe_ready[NUM_MID_REGS] = out_pipe_ready[0];
++  assign out_pipe_tag_q[0]    = norm_pipe_tag_q[NUM_NORM_REGS];
++  assign out_pipe_mask_q[0]   = norm_pipe_mask_q[NUM_NORM_REGS];
++  assign out_pipe_aux_q[0]    = norm_pipe_aux_q[NUM_NORM_REGS];
++  assign out_pipe_valid_q[0]  = norm_pipe_valid_q[NUM_NORM_REGS];
++  // Input stage: Propagate pipeline ready signal to normalization pipe
++  assign norm_pipe_ready[NUM_NORM_REGS] = out_pipe_ready[0];
+   // Generate the register stages
+   for (genvar i = 0; i < NUM_OUT_REGS; i++) begin : gen_output_pipeline
+     // Internal register enable for this stage
+@@ -922,15 +983,18 @@
+   assign mask_o          = out_pipe_mask_q[NUM_OUT_REGS];
+   assign aux_o           = out_pipe_aux_q[NUM_OUT_REGS];
+   assign out_valid_o     = out_pipe_valid_q[NUM_OUT_REGS];
+-  assign busy_o          = (| {inp_pipe_valid_q, mid_pipe_valid_q, out_pipe_valid_q});
++  assign busy_o          = (| {inp_pipe_valid_q, mid_pipe_valid_q, norm_pipe_valid_q, out_pipe_valid_q});
+ 
+   // Early valid_o signal. This is used for dispatching instructions for dual-issue processor.
+   if (NUM_OUT_REGS > 0) begin
+     assign early_out_valid_o = |{out_pipe_valid_q[NUM_OUT_REGS] & ~out_pipe_ready[NUM_OUT_REGS],
+                                  out_pipe_valid_q[NUM_OUT_REGS-1]};
+-  end else if (NUM_MID_REGS > 0) begin
+-    assign early_out_valid_o = |{mid_pipe_valid_q[NUM_MID_REGS] & ~mid_pipe_ready[NUM_OUT_REGS],
+-                                 mid_pipe_valid_q[NUM_MID_REGS-1]};
++  end else if (NUM_NORM_REGS > 0) begin
++    assign early_out_valid_o = |{norm_pipe_valid_q[NUM_NORM_REGS] & ~norm_pipe_ready[NUM_NORM_REGS],
++                                 norm_pipe_valid_q[NUM_NORM_REGS-1]};
++  end else if (NUM_SUM_REGS > 0) begin
++    assign early_out_valid_o = |{mid_pipe_valid_q[NUM_SUM_REGS] & ~mid_pipe_ready[NUM_SUM_REGS],
++                                 mid_pipe_valid_q[NUM_SUM_REGS-1]};
+   end else if (NUM_INP_REGS > 0) begin
+     assign early_out_valid_o = |{inp_pipe_valid_q[NUM_INP_REGS] & ~inp_pipe_ready[NUM_INP_REGS],
+                                  inp_pipe_valid_q[NUM_INP_REGS-1]};

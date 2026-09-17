@@ -220,7 +220,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "/GnSeu0C2KOQXovWYx80DSwOEbs6Htw0cx5SYXFwLww=",
+        "bzlTransitiveDigest": "IybHvahe+/o6zFVK8GXq94oQuRssuZIr/OZzuZcNT2I=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -247,7 +247,8 @@
                 "@@//third_party/cvfpu:0005-Fix-fsm-complete.patch",
                 "@@//third_party/cvfpu:0006-Fix-syn-tool-compatibility-issues.patch",
                 "@@//third_party/cvfpu:0007-Fix-nan-boxing-divsqrt.patch",
-                "@@//third_party/cvfpu:0008-Fix-num-lanes-multifmt-slice.patch"
+                "@@//third_party/cvfpu:0008-Fix-num-lanes-multifmt-slice.patch",
+                "@@//third_party/cvfpu:0009-Rebalance-fpnew-fma-pipeline-stages.patch"
               ],
               "patch_args": [
                 "-p1"
@@ -403,6 +404,7 @@
               "patches": [
                 "@@//third_party:mpact-riscv-openat.patch",
                 "@@//third_party/patches:mpact_riscv_fma_underflow.patch",
+                "@@//third_party/patches:mpact_riscv_mepc_mask.patch",
                 "@@//third_party/patches:mpact_riscv_rmm_f_instructions.patch",
                 "@@//third_party/patches:mpact_riscv_rmm_helpers.patch",
                 "@@//third_party/patches:mpact_riscv_vector_csr.patch",
@@ -410,7 +412,8 @@
                 "@@//third_party/patches:mpact_riscv_vectored_trap.patch",
                 "@@//third_party/patches:mpact_riscv_vrgather.patch",
                 "@@//third_party/patches:mpact_riscv_vsetvl_preserve_vl.patch",
-                "@@//third_party/patches:mpact_riscv_vstart_trap.patch"
+                "@@//third_party/patches:mpact_riscv_vstart_trap.patch",
+                "@@//third_party/patches:mpact_riscv_widening_reduction.patch"
               ],
               "patch_args": [
                 "-p1"
@@ -429,7 +432,8 @@
               "patches": [
                 "@@//third_party/coralnpu_mpact:0002-Patch-mpact_riscv-WORKSPACE.patch",
                 "@@//third_party/coralnpu_mpact:0003-Hardwire-mtvec-direct-mode.patch",
-                "@@//third_party/coralnpu_mpact:0004-Fix-mpact-riscv-includes.patch"
+                "@@//third_party/coralnpu_mpact:0004-Fix-mpact-riscv-includes.patch",
+                "@@//third_party/coralnpu_mpact:0005-coralnpu-mepc-mask.patch"
               ],
               "patch_args": [
                 "-p1"

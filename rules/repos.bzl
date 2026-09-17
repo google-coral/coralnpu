@@ -238,6 +238,7 @@ def cvfpu_repos():
             "@coralnpu_hw//third_party/cvfpu:0006-Fix-syn-tool-compatibility-issues.patch",
             "@coralnpu_hw//third_party/cvfpu:0007-Fix-nan-boxing-divsqrt.patch",
             "@coralnpu_hw//third_party/cvfpu:0008-Fix-num-lanes-multifmt-slice.patch",
+            "@coralnpu_hw//third_party/cvfpu:0009-Rebalance-fpnew-fma-pipeline-stages.patch",
         ],
         patch_args = ["-p1"],
     )
