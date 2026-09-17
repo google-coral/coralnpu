@@ -284,20 +284,30 @@ object LsuUOp {
       result.addr := sbus.addr(i)
       result.data := sbus.data(i)
     }
-    val scalarBytes = MuxLookup(cmd.op, 4.U(result.ctrWidth.W))(
-      Seq(
-        LsuOp.LB      -> 1.U,
-        LsuOp.LBU     -> 1.U,
-        LsuOp.SB      -> 1.U,
-        LsuOp.LH      -> 2.U,
-        LsuOp.LHU     -> 2.U,
-        LsuOp.SH      -> 2.U,
-        LsuOp.FLOAT_H -> 2.U
-      )
+    val isScalar1B  = cmd.op.isOneOf(LsuOp.LB, LsuOp.LBU, LsuOp.SB)
+    val isScalar2B  = cmd.op.isOneOf(LsuOp.LH, LsuOp.LHU, LsuOp.SH, LsuOp.FLOAT_H)
+    val scalarBytes = Cat(
+      0.U((result.ctrWidth - 3).W),
+      !isScalar1B && !isScalar2B,
+      isScalar2B,
+      isScalar1B
     )
 
     if (p.enableRvv) {
-      val isTile  = if (p.enableVme) LsuOp.isTile(cmd.op) else false.B
+      val isTile     = if (p.enableVme) LsuOp.isTile(cmd.op) else false.B
+      val isVector   = LsuOp.isVector(cmd.op) || isTile
+      val isIndexed  = LsuOp.isIndexedVector(cmd.op)
+      val isStrided  = cmd.op.isOneOf(LsuOp.VLOAD_STRIDED, LsuOp.VSTORE_STRIDED)
+      val isMask     = cmd.isMaskOperation()
+      val isWholeReg = cmd.isWholeRegister()
+      val isRvvStore = cmd.store && !isTile
+
+      val sew       = rvvState.get.bits.sew // From vtype
+      val lmul_eff  = rvvState.get.bits.lmul
+      val lmul_orig = rvvState.get.bits.lmul_orig
+      val vstart    = rvvState.get.bits.vstart
+      val vl_raw    = rvvState.get.bits.vl
+
       val tileEew = Option
         .when(p.enableVme) {
           MuxLookup(cmd.nfields.get, "b000".U)(
@@ -309,10 +319,16 @@ object LsuUOp {
           )
         }
         .getOrElse("b000".U)
-      val eew       = Mux(isTile, tileEew, cmd.elemWidth.get)
-      val sew       = rvvState.get.bits.sew // From vtype
-      val lmul_eff  = rvvState.get.bits.lmul
-      val lmul_orig = rvvState.get.bits.lmul_orig
+      val eew = Mux(isTile, tileEew, cmd.elemWidth.get)
+
+      def elemShift(w: UInt): UInt = MuxLookup(w, 0.U(2.W))(
+        Seq("b000".U -> 0.U, "b001".U -> 1.U, "b010".U -> 2.U, "b101".U -> 1.U, "b110".U -> 2.U)
+      )
+      val shift_eew          = elemShift(cmd.elemWidth.get)
+      val shift_sew          = elemShift(sew)
+      val shift_tile         = elemShift(tileEew)
+      val dataElemBytesShift = Mux(isIndexed, shift_sew, Mux(isTile, shift_tile, shift_eew))
+
       // TODO(davidgao): Add checks for illegal LMUL values in the frontend.
       def lmulToDataEmul(lmul: UInt): UInt = {
         // Unit-stride, const-stride. Default value applies when eew == sew.
@@ -335,10 +351,10 @@ object LsuUOp {
           lmul,
           Seq(
             // If mask operation, always make LMUL=1.
-            cmd.isMaskOperation() -> 0.U,
+            isMask -> 0.U,
             // Section 7.9 of RVV Spec: "The nf field encodes how many vector
             // registers to load and store".
-            cmd.isWholeRegister() -> MuxUpTo1H(
+            isWholeReg -> MuxUpTo1H(
               0.U,
               Seq(
                 (cmd.nfields.get === 0.U) -> 0.U, // NF1 -> LMUL1
@@ -353,25 +369,15 @@ object LsuUOp {
         )
       }
 
-      val isVector  = LsuOp.isVector(cmd.op) || isTile
-      val isIndexed = LsuOp.isIndexedVector(cmd.op)
-      val isStrided = cmd.op.isOneOf(LsuOp.VLOAD_STRIDED, LsuOp.VSTORE_STRIDED)
-
-      val dataElemBytesShift = Mux(
-        isIndexed,
-        MuxLookup(sew, 0.U(2.W))(
-          Seq(
-            "b000".U -> 0.U,
-            "b001".U -> 1.U,
-            "b010".U -> 2.U
-          )
-        ),
-        MuxLookup(eew, 0.U(2.W))(
-          Seq(
-            "b000".U -> 0.U,
-            "b101".U -> 1.U,
-            "b110".U -> 2.U
-          )
+      val vl_mask    = (vl_raw >> 3) + vl_raw.take(3).orR
+      val vl_tile    = Mux(vl_raw < p.vmeTe.U, vl_raw, p.vmeTe.U)
+      val wholeBytes = MuxUpTo1H(
+        WireInit(UInt(result.vl.get.getWidth.W), DontCare),
+        Seq(
+          (cmd.nfields.get === 0.U) -> p.rvvVlenb.U,       // NF1 -> LMUL1
+          (cmd.nfields.get === 1.U) -> (p.rvvVlenb * 2).U, // NF2 -> LMUL2
+          (cmd.nfields.get === 3.U) -> (p.rvvVlenb * 4).U, // NF4 -> LMUL4
+          (cmd.nfields.get === 7.U) -> (p.rvvVlenb * 8).U  // NF8 -> LMUL8
         )
       )
 
@@ -379,33 +385,18 @@ object LsuUOp {
       result.emul_data.get      := lmulToDataEmul(lmul_eff)
       result.emul_data_orig.get := lmulToDataEmul(lmul_orig)
       result.vl.get             := MuxUpTo1H(
-        rvvState.get.bits.vl,
+        vl_raw,
         Seq(
-          cmd.isMaskOperation() -> ((rvvState.get.bits.vl >> 3) + rvvState.get.bits.vl.take(3).orR),
-          cmd.isWholeRegister() -> (MuxUpTo1H(
-            WireInit(UInt(result.vl.get.getWidth.W), DontCare),
-            Seq(
-              (cmd.nfields.get === 0.U) -> p.rvvVlenb.U,       // NF1 -> LMUL1
-              (cmd.nfields.get === 1.U) -> (p.rvvVlenb * 2).U, // NF2 -> LMUL2
-              (cmd.nfields.get === 3.U) -> (p.rvvVlenb * 4).U, // NF4 -> LMUL4
-              (cmd.nfields.get === 7.U) -> (p.rvvVlenb * 8).U  // NF8 -> LMUL8
-            )
-          ) >> dataElemBytesShift),
-          isTile -> Mux(rvvState.get.bits.vl < p.vmeTe.U, rvvState.get.bits.vl, p.vmeTe.U)
+          isMask     -> vl_mask,
+          isWholeReg -> (wholeBytes >> shift_eew),
+          isTile     -> vl_tile
         )
       )
-      result.vstart.get := rvvState.get.bits.vstart
+      result.vstart.get := vstart
 
       // If mask operation or tile operation, force fields to zero
-      result.nfields.get := MuxUpTo1H(
-        cmd.nfields.get,
-        Seq(
-          cmd.isMaskOperation() -> 0.U,
-          cmd.isWholeRegister() -> 0.U,
-          isTile                -> 0.U
-        )
-      )
-      result.sew.get := rvvState.get.bits.sew
+      result.nfields.get := Mux(isMask || isWholeReg || isTile, 0.U, cmd.nfields.get)
+      result.sew.get     := sew
 
       // We only care about const stride here.
       // Ordered indexed is apparent on the op.
@@ -414,35 +405,53 @@ object LsuUOp {
           cmd.rs2.get =/= 0.U &&
           sbus.data(i) === 0.U
       )
-      result.masked.get := isVector && !cmd.vm.get && !isTile
-
+      result.masked.get        := isVector && !cmd.vm.get && !isTile
       result.initAsConstStride := isStrided || isIndexed
 
-      val segMultiplier = result.nfields.get +& 1.U
+      val rawSegMult    = cmd.nfields.get +& 1.U
+      val segMultiplier = Mux(isMask || isWholeReg || isTile, 1.U, rawSegMult)
       result.bytesPerSegment.foreach(_ := segMultiplier << dataElemBytesShift)
 
-      val isFractional = result.emul_data.get(2)
-      val emulMag      = result.emul_data.get(1, 0)
+      // 1. Unreachable cell count:
+      // Combine (segMultiplier << vectorsPerSegmentShift) * rvvVlenb into a single left shift.
+      val emulEff            = result.emul_data.get
+      val unreachShift       = Mux(emulEff(2), 0.U(2.W), emulEff(1, 0)) +& log2Ceil(p.rvvVlenb).U
+      val vecUnreachableCell = (segMultiplier << unreachShift)(result.ctrWidth - 1, 0)
 
-      // vectorsPerSegmentShift: 0 for m1 and fractional, 1 for m2, 2 for m4, 3 for m8
-      val vectorsPerSegmentShift = Mux(isFractional, 0.U(2.W), emulMag)
-      val totalActiveRegs        = segMultiplier << vectorsPerSegmentShift
+      // 2. Indexed active cell count:
+      // For indexed ops, emul is always lmul_eff (2's complement signed log2(LMUL))
+      // and segMultiplier is always rawSegMult. Computed directly from registered
+      // rvvState.lmul and raw inst wires with a single shift, completely independent of cmd.op.
+      val idxActiveShift  = (log2Ceil(p.rvvVlenb).S(5.W) + lmul_eff.asSInt).asUInt
+      val activeCellCount = (rawSegMult << idxActiveShift)(result.ctrWidth - 1, 0)
 
-      val vecStartCell =
-        ((result.vstart.get * segMultiplier) << dataElemBytesShift)(result.ctrWidth - 1, 0)
-      val vecEndCell =
-        ((result.vl.get * segMultiplier) << dataElemBytesShift)(result.ctrWidth - 1, 0)
-      val vecUnreachableCell = (totalActiveRegs * p.rvvVlenb.U)(result.ctrWidth - 1, 0)
+      // 3. Start and End cell counts:
+      // Multiplication by rawSegMult is ONLY needed for normal unit-stride/strided ops, where
+      // vl is always vl_raw (from register) and shift is shift_eew (wire from inst).
+      // By placing the multiplier directly on (vl_raw * rawSegMult) << shift_eew BEFORE muxing
+      // special cases (mask/whole-reg/tile where segMultiplier == 1), the multiplier runs in
+      // parallel with DispatchV2 decoding cmd.op.
+      val normalStartCell =
+        ((vstart * rawSegMult) << shift_eew).pad(result.ctrWidth)(result.ctrWidth - 1, 0)
+      val normalEndCell =
+        ((vl_raw * rawSegMult) << shift_eew).pad(result.ctrWidth)(result.ctrWidth - 1, 0)
 
-      // Active cell count for indexed operations: accounts for fractional LMUL (mf2, mf4, mf8),
-      // where fewer cells than a full vector register are allocated to W_DATA.
-      val activeCellCount = Mux(
-        isFractional,
-        vecUnreachableCell >> (4.U(3.W) - emulMag),
-        vecUnreachableCell
-      )(result.ctrWidth - 1, 0)
-
-      val isRvvStore = cmd.store && !isTile
+      val vecStartCell = MuxCase(
+        normalStartCell,
+        Seq(
+          (isMask || isWholeReg) -> (vstart << shift_eew)
+            .pad(result.ctrWidth)(result.ctrWidth - 1, 0),
+          isTile -> (vstart << shift_tile).pad(result.ctrWidth)(result.ctrWidth - 1, 0)
+        )
+      )
+      val vecEndCell = MuxCase(
+        normalEndCell,
+        Seq(
+          isMask     -> vl_mask.pad(result.ctrWidth),
+          isWholeReg -> wholeBytes.pad(result.ctrWidth),
+          isTile     -> (vl_tile << shift_tile).pad(result.ctrWidth)(result.ctrWidth - 1, 0)
+        )
+      )
 
       // Cell boundary indices:
       // - Unindexed vector loads (and tile ops) are bounded by vl/vstart.
