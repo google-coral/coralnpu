@@ -1081,3 +1081,58 @@ async def vme_altfmt_test(dut):
         )
 
     cocotb.log.info(f"[altfmt] ✓ All {num_cases} test cases passed")
+
+
+@cocotb.test()
+async def vme_vset_mtype_reset_test(dut):
+    """Verify vsetvli, vsetivli, and vsetvl instructions clear mtype CSR to zero."""
+
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_vset_mtype_reset_test_program.elf"
+    )
+    if not elf_path:
+        raise ValueError("Could not find ELF file. Build the target first.")
+
+    with open(elf_path, "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+    with open(elf_path, "rb") as f:
+        results_addr = core_mini_axi.lookup_symbol(f, "vme_vset_results")
+
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_halted()
+
+    # struct VmeResetMtypeResult: 4 x uint32 per case (configured, mtype, vtype, vl)
+    num_cases = 3
+    words_per_case = 4
+    raw = await core_mini_axi.read(
+        results_addr, num_cases * words_per_case * 4
+    )
+    results = np.frombuffer(
+        raw, dtype=np.uint32
+    ).reshape(num_cases, words_per_case)
+
+    case_names = ["vsetvli", "vsetivli", "vsetvl"]
+    for i, name in enumerate(case_names):
+        configured_mtype = int(results[i][0])
+        actual_mtype = int(results[i][1])
+        actual_vtype = int(results[i][2])
+        actual_vl = int(results[i][3])
+        cocotb.log.info(
+            f"[{name}] configured_mtype=0x{configured_mtype:08x}, "
+            f"mtype_after=0x{actual_mtype:08x}, vtype=0x{actual_vtype:08x}, vl={actual_vl}"
+        )
+        assert configured_mtype != 0, f"{name}: configured_mtype unexpectedly zero"
+        assert actual_mtype == 0, (
+            f"{name} failed to reset mtype to 0: got 0x{actual_mtype:08x}"
+        )
+
+    cocotb.log.info(
+        "✓ All vset instructions successfully cleared mtype to zero"
+    )

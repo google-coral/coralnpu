@@ -193,6 +193,12 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].sew = RVVSEW'(inst_q[i].bits[18:16]);
           inst_config_state[i+1].ta = inst_q[i].bits[19];
           inst_config_state[i+1].ma = inst_q[i].bits[20];
+`ifdef ZVT_ON
+          inst_config_state[i+1].altfmt  = 1'b0;
+          inst_config_state[i+1].mtwiden = 2'b00;
+          inst_config_state[i+1].tk      = 3'b000;
+          inst_config_state[i+1].tm      = 14'd0;
+`endif
           is_setvl[i] = 1;
         end else if (inst_q[i].bits[24:23] == 2'b11) begin  // vsetivli
           avl[i] =
@@ -201,6 +207,12 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].sew = RVVSEW'(inst_q[i].bits[18:16]);
           inst_config_state[i+1].ta = inst_q[i].bits[19];
           inst_config_state[i+1].ma = inst_q[i].bits[20];
+`ifdef ZVT_ON
+          inst_config_state[i+1].altfmt  = 1'b0;
+          inst_config_state[i+1].mtwiden = 2'b00;
+          inst_config_state[i+1].tk      = 3'b000;
+          inst_config_state[i+1].tm      = 14'd0;
+`endif
           is_setvl[i] = 1;
         end else if (inst_q[i].bits[24:18] == 7'b1000000) begin  // vsetvl
           // Tightened from "bits[24:23] == 2'b10" so we don't accidentally
@@ -220,6 +232,12 @@ module RvvFrontEnd#(parameter N = 4,
               RVVSEW'(reg_read_data_i[(2*i) + 1][5:3]);
           inst_config_state[i+1].ta = reg_read_data_i[(2*i) + 1][6];
           inst_config_state[i+1].ma = reg_read_data_i[(2*i) + 1][7];
+`ifdef ZVT_ON
+          inst_config_state[i+1].altfmt  = 1'b0;
+          inst_config_state[i+1].mtwiden = 2'b00;
+          inst_config_state[i+1].tk      = 3'b000;
+          inst_config_state[i+1].tm      = 14'd0;
+`endif
           is_setvl[i] = 1;
         end
 `ifdef ZVT_ON

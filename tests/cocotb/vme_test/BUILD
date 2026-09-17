@@ -33,6 +33,7 @@ VME_TEST_TESTCASES = [
     "vme_msettm_clamp_test",
     "vme_msettm_matmul_test",
     "vme_altfmt_test",
+    "vme_vset_mtype_reset_test",
 ]
 
 cocotb_test_suite(
@@ -61,6 +62,7 @@ cocotb_test_suite(
             ":vme_decode_test",
             ":vme_load_store_test",
             ":vme_transpose_test",
+            ":vme_vset_mtype_reset_test_program",
         ],
         "size": "medium",
     },
@@ -72,6 +74,7 @@ cocotb_test_suite(
         ":vme_decode_test",
         ":vme_load_store_test",
         ":vme_transpose_test",
+        ":vme_vset_mtype_reset_test_program",
         "//tests/cocotb:coverage_exclude.cfg",
         "//hdl/verilog:dpi_files",
     ],
@@ -117,4 +120,10 @@ coralnpu_v2_binary(
 coralnpu_v2_binary(
     name = "vme_transpose_test",
     srcs = ["vme_transpose_test.cc"],
+)
+
+coralnpu_v2_binary(
+    name = "vme_vset_mtype_reset_test_program",
+    srcs = ["vme_vset_mtype_reset_test_program.cc"],
+    hdrs = ["vme_test_utils.h"],
 )
