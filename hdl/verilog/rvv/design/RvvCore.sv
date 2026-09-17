@@ -92,14 +92,9 @@ module RvvCore #(parameter N = 4,
   output logic rvv_idle,
   output logic [$clog2(2*N + 1)-1:0] queue_capacity,
 
-  // Writeback from reorder buffer
-`ifdef TB_SUPPORT
+  // Writeback from reorder buffer and decode stage
   output ROB2RT_t [`NUM_RT_UOP+`NUM_DE_INST-1:0] rd_rob2rt_o,
   output logic    [`NUM_RT_UOP+`NUM_DE_INST-1:0] rd_valid_rob2rt_o,
-`else
-  output ROB2RT_t [`NUM_RT_UOP-1:0] rd_rob2rt_o,
-  output logic    [`NUM_RT_UOP-1:0] rd_valid_rob2rt_o,
-`endif
 
   // Trap output
   output logic trap_valid_o,

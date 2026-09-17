@@ -175,24 +175,26 @@ object GenerateCoreShimSource {
           i.toString
         )
       }
-      moduleInterface += """    output rd_rob2rt_o_GENI_w_type,
-            |    output [15:0] rd_rob2rt_o_GENI_vd_type,
+      moduleInterface += """    output [1:0] rd_rob2rt_o_GENI_w_type,
+            |    output [31:0] rd_rob2rt_o_GENI_vd_type,
             |    output rd_rob2rt_o_GENI_trap_flag,
-            |    output rd_rob2rt_o_GENI_vector_csr_vl,
-            |    output rd_rob2rt_o_GENI_vector_csr_vstart,
+            |    output [7:0] rd_rob2rt_o_GENI_vector_csr_vl,
+            |    output [VSTART_LEN:0] rd_rob2rt_o_GENI_vector_csr_vstart,
             |    output rd_rob2rt_o_GENI_vector_csr_ma,
             |    output rd_rob2rt_o_GENI_vector_csr_ta,
-            |    output rd_rob2rt_o_GENI_vector_csr_xrm,
-            |    output rd_rob2rt_o_GENI_vector_csr_sew,
-            |    output rd_rob2rt_o_GENI_vector_csr_lmul,
-            |    output rd_rob2rt_o_GENI_vector_csr_lmul_orig,
+            |    output [1:0] rd_rob2rt_o_GENI_vector_csr_xrm,
+            |    output [2:0] rd_rob2rt_o_GENI_vector_csr_sew,
+            |    output [2:0] rd_rob2rt_o_GENI_vector_csr_lmul,
+            |    output [2:0] rd_rob2rt_o_GENI_vector_csr_lmul_orig,
             |    output rd_rob2rt_o_GENI_vector_csr_vill,
-            |""".stripMargin.replaceAll("GENI", i.toString)
+            |""".stripMargin
+        .replaceAll("GENI", i.toString)
+        .replaceAll("VSTART_LEN", (log2Ceil(vlen) - 1).toString)
       if (p.enableVme) {
         moduleInterface += """    output [31:0] rd_rob2rt_o_GENI_vector_csr_mtype,
             |    output [1:0]  rd_rob2rt_o_GENI_vector_csr_mtwiden,
             |    output [13:0] rd_rob2rt_o_GENI_vector_csr_tm,
-            |    output [1:0]  rd_rob2rt_o_GENI_vector_csr_tk,
+            |    output [2:0]  rd_rob2rt_o_GENI_vector_csr_tk,
             |    output rd_rob2rt_o_GENI_vector_csr_altfmt,
             |""".stripMargin.replaceAll("GENI", i.toString)
       }
@@ -461,6 +463,9 @@ object GenerateCoreShimSource {
     }
     coreInstantiation += "  );\n"
 
+    coreInstantiation += """  /* verilator lint_on WIDTHEXPAND */
+                           |  /* verilator lint_on WIDTHTRUNC */
+                           |""".stripMargin
     for (i <- 0 until numRetireLanes) {
       coreInstantiation += """  assign rd_rob2rt_o_GENI_valid = rd_valid_rob2rt_o[GENI];
       |  assign rd_rob2rt_o_GENI_w_valid = rd_rob2rt_o[GENI].w_valid;
@@ -496,7 +501,7 @@ object GenerateCoreShimSource {
           ("  assign rd_rob2rt_o_GENI_vector_csr_mtype   = 32'd0;\n" +
             "  assign rd_rob2rt_o_GENI_vector_csr_mtwiden = 2'd0;\n" +
             "  assign rd_rob2rt_o_GENI_vector_csr_tm     = 14'd0;\n" +
-            "  assign rd_rob2rt_o_GENI_vector_csr_tk     = 2'd0;\n" +
+            "  assign rd_rob2rt_o_GENI_vector_csr_tk     = 3'd0;\n" +
             "  assign rd_rob2rt_o_GENI_vector_csr_altfmt = 1'b0;\n").replaceAll("GENI", i.toString)
       }
     }

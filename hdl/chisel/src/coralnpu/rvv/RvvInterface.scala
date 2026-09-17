@@ -123,8 +123,8 @@ class Rob2Rt(p: Parameters) extends Bundle {
   val w_valid        = Bool()
   val w_index        = UInt(5.W)
   val w_data         = Option.when(p.enableVerification)(UInt(p.rvvVlen.W))
-  val w_type         = Bool() // 0 for VRF, 1 for XRF
-  val vd_type        = UInt(p.rvvVlenb.W)
+  val w_type         = UInt(2.W)                // W_DATA_TYPE_e: 0=NOWRITE, 1=VRF, 2=XRF, 3=FRF
+  val vd_type        = UInt((p.rvvVlenb * 2).W) // BYTE_TYPE_t: 2 bits per byte
   val trap_flag      = Bool()
   val vector_csr     = new RvvConfigState(p)
   val vxsaturate     = UInt(p.rvvVlenb.W)
