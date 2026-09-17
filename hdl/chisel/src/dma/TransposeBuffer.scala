@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bus
+package dma
+
+import bus._
 
 import chisel3._
 import chisel3.util._
@@ -29,15 +31,18 @@ class TransposeConfig(val sWidth: Int, val eWidth: Int, val jWidth: Int) extends
 
 class TransposeBuffer(p: TLULParameters) extends Module {
   val N      = p.w
-  val gMax   = log2Ceil(N) // widest group index; g at elemSize 1
-  val eMax   = gMax - 1    // largest log2(elemSize)
+  val gMax   = DmaGeometry.gMax(p)
+  val eMax   = DmaGeometry.eMax(p)
   val jMax   = log2Ceil(N) // largest trailing zero count from the max stride N
-  val eWidth = log2Ceil(eMax + 1)
+  val eWidth = DmaGeometry.eWidth(p)
   val jWidth = log2Ceil(jMax + 1)
-  val sWidth = log2Ceil(N + 1)
+  val sWidth = DmaGeometry.sWidth(p)
 
   val io = IO(new Bundle {
-    val in        = Flipped(Decoupled(Vec(N, UInt(8.W))))
+    val in = Flipped(Decoupled(new Bundle {
+      val row  = UInt(sWidth.W)
+      val data = Vec(N, UInt(8.W))
+    }))
     val out       = Decoupled(Vec(N, UInt(8.W)))
     val fillDone  = Output(Bool())
     val drainDone = Output(Bool())
@@ -67,12 +72,13 @@ class TransposeBuffer(p: TLULParameters) extends Module {
     io.cfg.fire
   )
 
-  val r         = RegInit(0.U(sWidth.W))
-  val beatCount = RegInit(0.U(sWidth.W))
-  val phase     = RegInit(0.U(log2Ceil(N).W))
+  val beatCount      = RegInit(0.U(sWidth.W))
+  val drainBeatCount = RegInit(0.U(sWidth.W))
+  val phase          = RegInit(0.U(log2Ceil(N).W))
+  val scoreboard     = RegInit(0.U(N.W))
 
-  val lastRow  = r === reg_cfg.s - 1.U
-  val lastBeat = beatCount === reg_cfg.s - 1.U
+  val lastRow  = beatCount === reg_cfg.s - 1.U
+  val lastBeat = drainBeatCount === reg_cfg.s - 1.U
 
   state := MuxCase(
     state,
@@ -83,8 +89,17 @@ class TransposeBuffer(p: TLULParameters) extends Module {
     )
   )
 
-  r         := Mux(io.cfg.fire, 0.U, Mux(filling && io.in.fire, r + 1.U, r))
-  beatCount := Mux(io.cfg.fire, 0.U, Mux(draining && io.out.fire, beatCount + 1.U, beatCount))
+  beatCount      := Mux(io.cfg.fire, 0.U, Mux(io.in.fire, beatCount + 1.U, beatCount))
+  drainBeatCount := Mux(
+    io.cfg.fire,
+    0.U,
+    Mux(draining && io.out.fire, drainBeatCount + 1.U, drainBeatCount)
+  )
+  scoreboard := Mux(
+    io.cfg.fire,
+    0.U,
+    Mux(io.in.fire, scoreboard | UIntToOH(io.in.bits.row, N), scoreboard)
+  )
 
   assert(
     !io.cfg.fire || ((io.cfg.bits.stride =/= 0.U) && (io.cfg.bits.stride <= N.U)),
@@ -93,6 +108,14 @@ class TransposeBuffer(p: TLULParameters) extends Module {
   assert(
     !io.cfg.fire || (io.cfg.bits.logElemSize <= eMax.U),
     s"logElemSize must be less than or equal to $eMax"
+  )
+  assert(
+    !io.in.fire || (io.in.bits.row < reg_cfg.s),
+    "Incoming row must be less than stride s"
+  )
+  assert(
+    !io.in.fire || !scoreboard(io.in.bits.row),
+    "Duplicate row index received at write port"
   )
 
   io.in.ready  := filling
@@ -124,7 +147,7 @@ class TransposeBuffer(p: TLULParameters) extends Module {
 
   // Write row hash component per jc
   val aWrite = VecInit.tabulate(jMax + 1) { jc =>
-    if (jc == 0) 0.U(gMax.W) else ((r & ((1 << jc) - 1).U) << (gMax - jc))(gMax - 1, 0)
+    if (jc == 0) 0.U(gMax.W) else ((io.in.bits.row & ((1 << jc) - 1).U) << (gMax - jc))(gMax - 1, 0)
   }
 
   // Runtime masks and per-bank group/offset
@@ -148,10 +171,10 @@ class TransposeBuffer(p: TLULParameters) extends Module {
     ((srcCandidate(reg_cfg.j)(b) << reg_cfg.E) | t_rt(b))(gMax - 1, 0)
   }
 
-  val memAddr = r
+  val memAddr = io.in.bits.row
 
   for (b <- 0 until N) {
-    banks(b)(memAddr) := Mux(io.in.fire, io.in.bits(src_b(b)), banks(b)(memAddr))
+    banks(b)(memAddr) := Mux(io.in.fire, io.in.bits.data(src_b(b)), banks(b)(memAddr))
   }
 
   // ==========================================
@@ -222,7 +245,11 @@ class TransposeBuffer(p: TLULParameters) extends Module {
     val gc   = gMax - ec
     val lane = p >> ec
     val t    = p & ((1 << ec) - 1)
-    val idx  = if (ec == 0) grp_k_d(lane) else Cat(grp_k_d(lane)(gc - 1, 0), t.U(ec.W))
+    // gc == 0: single group (G == 1), index is the byte offset alone
+    val idx =
+      if (ec == 0) grp_k_d(lane)
+      else if (gc == 0) t.U(ec.W)
+      else Cat(grp_k_d(lane)(gc - 1, 0), t.U(ec.W))
     bankData(idx)
   }
 
