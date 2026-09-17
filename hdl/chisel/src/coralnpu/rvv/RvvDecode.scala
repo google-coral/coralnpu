@@ -39,11 +39,13 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
   val rob_tag = UInt(4.W)
 
   def originalEncoding(): UInt = {
+    val isZvtOpVe = (funct6() === "b111100".U) &&
+      (funct3() === "b000".U || funct3() === "b001".U)
     val lower7bits = MuxLookup(opcode, 0.U)(
       Seq(
         RvvCompressedOpcode.RVVLOAD  -> "b0000111".U,
         RvvCompressedOpcode.RVVSTORE -> "b0100111".U,
-        RvvCompressedOpcode.RVVALU   -> "b1010111".U
+        RvvCompressedOpcode.RVVALU   -> Mux(isZvtOpVe, "b1110111".U, "b1010111".U)
       )
     )
     Cat(bits, lower7bits)
@@ -321,7 +323,8 @@ object RvvCompressedInstruction {
       Seq(
         "b0000111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVLOAD),
         "b0100111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVSTORE),
-        "b1010111".U -> MakeValid(!illegal_float, RvvCompressedOpcode.RVVALU)
+        "b1010111".U -> MakeValid(!illegal_float, RvvCompressedOpcode.RVVALU),
+        "b1110111".U -> MakeValid(RvvCompressedOpcode.RVVALU)
       )
     )
 
@@ -660,6 +663,7 @@ object RvvS1DecodeInstruction extends RvvS1DecodeInstructionBase {
     MuxLookup(opcode, invalid())(
       Seq(
         "b1010111".U -> s1decode_opv(bits),
+        "b1110111".U -> s1decode_opv(bits),
         "b0000111".U -> invalid(), // TODO LOAD-FP
         "b0100111".U -> invalid()  // TODO STORE-FP
       )

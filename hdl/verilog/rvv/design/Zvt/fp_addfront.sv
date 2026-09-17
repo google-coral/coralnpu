@@ -186,8 +186,8 @@ module fp_addfront#(
     .IN_SIG_BITS(SUM_TOTAL_WIDTH),
     .OUT_EXP_BITS(OUT_EXP_BITS),
     .OUT_SIG_BITS(OUT_SIG_BITS),
-    .USE_EXT_LZC(1'b1),
-    .USE_LZA_POSTFIX(1'b1)
+    .USE_EXT_LZC(1'b0),
+    .USE_LZA_POSTFIX(1'b0)
   ) u_sum_align (
     .in_exponent(signed'({2'b0, sum_exponent}) + 1'b1),  // +1 to adjust point position, P(sum) == 2
     .in_significand(sum_concat),
