@@ -471,8 +471,13 @@ class AxiMasterReadDriver : Clock::Observer {
       axi_addr_.addr_bits_region = *read_addr_bits_region_;
 
       if (read_cb_) {
-        AxiRData read_result = read_cb_(axi_addr_);
-        data_queue_.push(read_result);
+        uint32_t beats = axi_addr_.addr_bits_len + 1;
+        for (uint32_t i = 0; i < beats; ++i) {
+          AxiRData read_result            = read_cb_(axi_addr_);
+          read_result.read_data_bits_last = (i == beats - 1);
+          data_queue_.push(read_result);
+          axi_addr_.addr_bits_addr += (1u << axi_addr_.addr_bits_size);
+        }
       } else {
         assert(false && "Read callback is empty!");
       }
@@ -576,7 +581,8 @@ class AxiMasterWriteDriver final : Clock::Observer {
     }
 
     // Receive Addr
-    if (*write_addr_valid_) {
+    *write_addr_ready_ = write_beats_remaining_ == 0 && *write_addr_valid_;
+    if (*write_addr_ready_) {
       axi_addr_.addr_bits_addr = *write_addr_bits_addr_;
       axi_addr_.addr_bits_prot = *write_addr_bits_prot_;
       axi_addr_.addr_bits_id = *write_addr_bits_id_;
@@ -587,26 +593,26 @@ class AxiMasterWriteDriver final : Clock::Observer {
       axi_addr_.addr_bits_cache = *write_addr_bits_cache_;
       axi_addr_.addr_bits_qos = *write_addr_bits_qos_;
       axi_addr_.addr_bits_region = *write_addr_bits_region_;
+      write_beats_remaining_     = axi_addr_.addr_bits_len + 1;
     }
+
     // Receive Data
-    if (*write_data_valid_) {
+    *write_data_ready_ = write_beats_remaining_ > 0 && *write_data_valid_;
+    if (*write_data_ready_) {
       axi_data_.write_data_bits_data = *write_data_bits_data_;
       axi_data_.write_data_bits_strb = *write_data_bits_strb_;
       axi_data_.write_data_bits_last = *write_data_bits_last_;
-    }
 
-    if (*write_addr_valid_ && *write_data_valid_) {
-      *write_addr_ready_ = 1;
-      *write_data_ready_ = 1;
       if (write_cb_) {
         AxiWResp resp_result = write_cb_(axi_addr_, axi_data_);
-        resp_queue_.push(resp_result);
+        axi_addr_.addr_bits_addr += (1u << axi_addr_.addr_bits_size);
+        if (*write_data_bits_last_ || --write_beats_remaining_ == 0) {
+          resp_queue_.push(resp_result);
+          write_beats_remaining_ = 0;
+        }
       } else {
         assert(false && "Write callback is empty!");
       }
-    } else {
-      *write_addr_ready_ = 0;
-      *write_data_ready_ = 0;
     }
   }
 
@@ -635,6 +641,8 @@ class AxiMasterWriteDriver final : Clock::Observer {
   uint8_t* const write_resp_bits_id_;
   uint8_t* const write_resp_bits_resp_;
   const uint8_t* const write_resp_ready_;
+
+  uint32_t write_beats_remaining_ = 0;
 
   std::queue<AxiWResp> resp_queue_;
   AxiAddr axi_addr_;
