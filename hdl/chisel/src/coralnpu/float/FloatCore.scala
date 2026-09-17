@@ -169,7 +169,9 @@ object GenerateCoreShimSource {
         |"""
       .replaceAll(
         "DIVSQRT_SEL",
-        if (p.floatPulpDivsqrt != 0 || p.enableZfbfmin) "fpnew_pkg::PULP" else "fpnew_pkg::TH32"
+        if (p.floatPulpDivsqrt != 0) "fpnew_pkg::PULP"
+        else if (p.enableZfbfmin) "fpnew_pkg::THMULTI"
+        else "fpnew_pkg::TH32"
       )
       .replaceAll(
         "FEATURES", {
@@ -223,7 +225,43 @@ class FloatCoreWrapper(p: Parameters)
   addResource("external/cvfpu/src/fpnew_pkg.sv")
   addResource("external/cvfpu/src/fpnew_cast_multi.sv")
   addResource("external/cvfpu/src/fpnew_classifier.sv")
-  if (p.floatPulpDivsqrt == 0 && !p.enableZfbfmin) {
+  if (p.floatPulpDivsqrt != 0) {
+    addResource("external/fpu_div_sqrt_mvp/hdl/defs_div_sqrt_mvp.sv")
+    addResource("external/fpu_div_sqrt_mvp/hdl/iteration_div_sqrt_mvp.sv")
+    addResource("external/fpu_div_sqrt_mvp/hdl/control_mvp.sv")
+    addResource("external/fpu_div_sqrt_mvp/hdl/norm_div_sqrt_mvp.sv")
+    addResource("external/fpu_div_sqrt_mvp/hdl/preprocess_mvp.sv")
+    addResource("external/fpu_div_sqrt_mvp/hdl/nrbd_nrsc_mvp.sv")
+    addResource("external/fpu_div_sqrt_mvp/hdl/div_sqrt_top_mvp.sv")
+    addResource("external/fpu_div_sqrt_mvp/hdl/div_sqrt_mvp_wrapper.sv")
+    addResource("external/cvfpu/src/fpnew_divsqrt_multi.sv")
+  } else if (p.enableZfbfmin) {
+    addResource("external/cvfpu/vendor/opene906/E906_RTL_FACTORY/gen_rtl/clk/rtl/gated_clk_cell.v")
+    addResource("external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_ctrl.v")
+    addResource("external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_ff1.v")
+    addResource(
+      "external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_double.v"
+    )
+    addResource("external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_pack.v")
+    addResource(
+      "external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_prepare.v"
+    )
+    addResource(
+      "external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_round.v"
+    )
+    addResource(
+      "external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_scalar_dp.v"
+    )
+    addResource("external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_srt.v")
+    addResource(
+      "external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_srt_radix16_bound_table.v"
+    )
+    addResource(
+      "external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_srt_radix16_with_sqrt.v"
+    )
+    addResource("external/cvfpu/vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_top.v")
+    addResource("external/cvfpu/src/fpnew_divsqrt_th_64_multi.sv")
+  } else {
     addResource("external/cvfpu/vendor/opene906/E906_RTL_FACTORY/gen_rtl/clk/rtl/gated_clk_cell.v")
     addResource("external/cvfpu/vendor/opene906/E906_RTL_FACTORY/gen_rtl/fdsu/rtl/pa_fdsu_ctrl.v")
     addResource("external/cvfpu/vendor/opene906/E906_RTL_FACTORY/gen_rtl/fdsu/rtl/pa_fdsu_ff1.v")
@@ -247,16 +285,6 @@ class FloatCoreWrapper(p: Parameters)
     addResource("external/cvfpu/vendor/opene906/E906_RTL_FACTORY/gen_rtl/fpu/rtl/pa_fpu_frbus.v")
     addResource("external/cvfpu/vendor/opene906/E906_RTL_FACTORY/gen_rtl/fpu/rtl/pa_fpu_src_type.v")
     addResource("external/cvfpu/src/fpnew_divsqrt_th_32.sv")
-  } else {
-    addResource("external/fpu_div_sqrt_mvp/hdl/defs_div_sqrt_mvp.sv")
-    addResource("external/fpu_div_sqrt_mvp/hdl/iteration_div_sqrt_mvp.sv")
-    addResource("external/fpu_div_sqrt_mvp/hdl/control_mvp.sv")
-    addResource("external/fpu_div_sqrt_mvp/hdl/norm_div_sqrt_mvp.sv")
-    addResource("external/fpu_div_sqrt_mvp/hdl/preprocess_mvp.sv")
-    addResource("external/fpu_div_sqrt_mvp/hdl/nrbd_nrsc_mvp.sv")
-    addResource("external/fpu_div_sqrt_mvp/hdl/div_sqrt_top_mvp.sv")
-    addResource("external/fpu_div_sqrt_mvp/hdl/div_sqrt_mvp_wrapper.sv")
-    addResource("external/cvfpu/src/fpnew_divsqrt_multi.sv")
   }
   addResource("external/cvfpu/vendor/cvw/fma/fmalza.sv")
   addResource("external/cvfpu/src/fpnew_fma.sv")
