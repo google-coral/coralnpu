@@ -221,7 +221,7 @@ class Regfile(p: Parameters) extends Module {
 
   for (i <- 0 until p.instructionLanes) {
     io.busPort.addr(i) := busAddr(i)
-    io.busPort.data(i) := nxtReadDataBits(2 * i + 1)
+    io.busPort.data(i) := rdata(2 * i + 1)
   }
 
   // Branch target address combinatorial.

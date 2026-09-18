@@ -396,7 +396,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   val rs1Addr            = io.inst.map(_.bits.inst(19, 15))
   val rs2Addr            = io.inst.map(_.bits.inst(24, 20))
   val usesRs1Regd        = decodedInsts.map(d => d.jalr || d.isLsu())
-  val usesRs2Regd        = decodedInsts.map(d => d.isScalarStore())
+  val usesRs2Regd        = decodedInsts.map(d => d.isLsu() && d.readsRs2())
   val readScoreboardRegd = (0 until p.instructionLanes).map(i =>
     MuxOR(usesRs1Regd(i), UIntToOH(rs1Addr(i), 32)) |
       MuxOR(usesRs2Regd(i), UIntToOH(rs2Addr(i), 32))
