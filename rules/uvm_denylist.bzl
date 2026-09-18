@@ -35,6 +35,8 @@ DENYLIST = [
     "//tests/cocotb:fencei_test",
     # Requires custom testbench / delayed external memory
     "//tests/cocotb:retire_buffer_full_illegal_inst",
+    # Requires custom testbench
+    "//tests/cocotb:csr_illegal_write_test",
     # Actual RVV bugs?
     "//tests/cocotb/rvv:vmsif_test",
     "//tests/cocotb/rvv:vmsbf_test",
@@ -81,7 +83,6 @@ SPIKE_DENYLIST = [
     "//tests/cocotb/exceptions:store_fault_0",
     "//tests/cocotb/rvv/load_store:load_store8_fault",
     "//tests/cocotb/rvv:vill_whole_reg_test",
-    "//tests/cocotb:csr_illegal_write_test",
     "//tests/cocotb:loop",
     "//tests/cocotb:registers",
     "//tests/cocotb:software_interrupt_test",

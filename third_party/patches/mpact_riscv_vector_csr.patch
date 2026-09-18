@@ -1,3 +1,4 @@
+diff --git a/riscv/riscv_vector_state.h b/riscv/riscv_vector_state.h
 --- a/riscv/riscv_vector_state.h
 +++ b/riscv/riscv_vector_state.h
 @@ -39,6 +39,8 @@
@@ -62,3 +63,52 @@
  
   private:
    RiscVVectorState* const vector_state_;
+@@ -171,7 +191,7 @@
+   void set_vector_mask_agnostic(bool value) { vector_mask_agnostic_ = value; }
+ 
+   RiscVState* state_ = nullptr;
+-  uint32_t vtype_;
++  uint32_t vtype_ = 0x80000000;
+   bool vector_exception_ = false;
+   int vector_register_byte_length_ = 0;
+   int vstart_ = 0;
+diff --git a/riscv/riscv_zicsr_instructions.cc b/riscv/riscv_zicsr_instructions.cc
+--- a/riscv/riscv_zicsr_instructions.cc
++++ b/riscv/riscv_zicsr_instructions.cc
+@@ -45,14 +45,21 @@
+ 
+ // Helper function to check that the CSR permission is valid. If not, throw
+ // an illegal instruction exception.
+-bool CheckCsrPermission(int csr_index, Instruction* instruction) {
++bool CheckCsrPermission(int csr_index, Instruction* instruction,
++                        bool is_write = true) {
+   auto required_mode = (csr_index >> 8) & 0x3;
++  bool is_read_only = ((csr_index >> 10) & 0x3) == 0x3;
+   auto* state = static_cast<RiscVState*>(instruction->state());
+   auto current_mode = state->privilege_mode();
+-  // If the privilege mode is too low, throw an exception.
+-  if (*current_mode < required_mode) {
+-    state->Trap(/*is_interrupt*/ false, 0, *ExceptionCode::kIllegalInstruction,
+-                instruction->address(), instruction);
++  // If the privilege mode is too low, or writing a read-only CSR, throw an exception.
++  if ((*current_mode < required_mode) || (is_write && is_read_only)) {
++    uint64_t address = instruction->address();
++    auto db = state->db_factory()->Allocate<uint32_t>(1);
++    state->LoadMemory(instruction, address, db, nullptr, nullptr);
++    uint32_t inst_word = db->Get<uint32_t>(0);
++    db->DecRef();
++    state->Trap(/*is_interrupt*/ false, inst_word,
++                *ExceptionCode::kIllegalInstruction, address, instruction);
+     return false;
+   }
+   // Check for any special case CSRs that have special access conditions.
+@@ -187,8 +194,8 @@
+ static inline void RVZiCsrrNw(Instruction* instruction) {
+   // Get a handle to the state instance.
+   auto state = static_cast<RiscVState*>(instruction->state());
+   // Get the csr index.
+   int csr_index = instruction->Source(0)->AsInt32(0);
+-  if (!CheckCsrPermission(csr_index, instruction)) return;
++  if (!CheckCsrPermission(csr_index, instruction, /*is_write=*/false)) return;
+   // Read the csr.
+   auto result = state->csr_set()->GetCsr(csr_index);

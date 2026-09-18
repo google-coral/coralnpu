@@ -948,3 +948,53 @@ async def core_mini_axi_wrap_burst_test(dut):
     # Also verify multi-beat WRAP read starting from start_addr
     rdata_wrap = await core_mini_axi.read(start_addr, 32, burst=AxiBurst.WRAP)
     assert (rdata_wrap == wdata).all()
+
+
+@cocotb.test()
+async def core_mini_axi_csr_illegal_write_test(dut):
+    """Verifies that writes to read-only CSRs (vl, vlenb, vtype) raise illegal-instruction exceptions."""
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+    r = runfiles.Create()
+
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/csr_illegal_write_test.elf"
+    )
+    with open(elf_path, "rb") as f:
+        trap_info_addr = core_mini_axi.lookup_symbol(f, "trap_info")
+        entry_point = await core_mini_axi.load_elf(f)
+
+    await core_mini_axi.write(trap_info_addr, np.zeros(6, dtype=np.uint32))
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_halted()
+
+    trap_info = (await core_mini_axi.read(trap_info_addr, 24)).view(np.uint32)
+    trap_count, last_mcause, last_mtval, vl_val, vlenb_val, vtype_val = [
+        int(x) for x in trap_info
+    ]
+
+    dut._log.info(
+        f"CSR illegal write test: trap_count={trap_count}, "
+        f"last_mcause=0x{last_mcause:x}, last_mtval=0x{last_mtval:08x}, "
+        f"vl={vl_val}, vlenb={vlenb_val}, vtype=0x{vtype_val:08x}"
+    )
+
+    assert trap_count == 9, (
+        f"Expected 9 illegal-instruction traps on read-only CSR writes, got {trap_count}"
+    )
+    assert last_mcause == 2, (
+        f"Expected mcause=2 (Illegal instruction), got {last_mcause}"
+    )
+    assert last_mtval == 0xC2105073, (
+        f"Expected mtval=0xC2105073 (csrwi vtype, 0), got 0x{last_mtval:08x}"
+    )
+    assert dut.io_fault.value == 0, "DUT halted with unexpected fault (ebreak)"
+
+    if "Rvv" in dut._name:
+        assert vl_val == 0, f"Expected vl=0, got {vl_val}"
+        assert vlenb_val == 16, f"Expected vlenb=16, got {vlenb_val}"
+        assert vtype_val == 0x80000000, (
+            f"Expected vtype=0x80000000 (vill=1), got 0x{vtype_val:08x}"
+        )

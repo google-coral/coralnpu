@@ -31,6 +31,7 @@ package(default_visibility = ["//visibility:public"])
 
 COCOTB_TEST_BINARY_TARGETS = glob(["**/*.elf"]) + glob(["**/*.o"]) + [
     ":align_test.elf",
+    ":csr_illegal_write_test.elf",
     ":fcsr_frm_hazard_test.elf",
     ":rvv_frm_hazard_test.elf",
     ":frm_test.elf",
@@ -133,6 +134,7 @@ CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_riscv_tests",
     "core_mini_axi_riscv_dv",
     "core_mini_axi_csr_test",
+    "core_mini_axi_csr_illegal_write_test",
     "core_mini_axi_exceptions_test",
     "core_mini_axi_coralnpu_isa_test",
     ("core_mini_axi_rand_instr_test", "large"),
@@ -162,6 +164,7 @@ RVV_CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_riscv_tests",
     "core_mini_axi_riscv_dv",
     ("core_mini_axi_csr_test", "large"),
+    "core_mini_axi_csr_illegal_write_test",
     "core_mini_axi_exceptions_test",
     "rvv_exceptions_test",
     "core_mini_axi_coralnpu_isa_test",

@@ -141,7 +141,7 @@ class FaultManager(p: Parameters) extends Module {
       load_fault           -> io.in.memory_fault.bits.addr,
       store_fault          -> io.in.memory_fault.bits.addr,
       rvv_fault            -> io.in.rvv_fault.map(_.bits.mtval).getOrElse(0.U),
-      first_fault_is_csr   -> 0.U,
+      first_fault_is_csr   -> io.in.undef(csr_fault_idx).inst,
       first_fault_is_jal   -> io.in.jal(jal_fault_idx).target,
       first_fault_is_jalr  -> (io.in.jalr(jalr_fault_idx).target & ~1.U(p.programCounterBits.W)),
       first_fault_is_bxx   -> 0.U(p.xlen.W),
