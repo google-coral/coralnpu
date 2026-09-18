@@ -56,6 +56,31 @@ def define_pybind11_abseil():
         sha256 = "26328a74f367208ae8d490dc640030111df4ba0869619c6445bb4a1c5964e2a7",
     )
 
+def _svdpi_repo_impl(rctx):
+    rctx.download(
+        url = "https://raw.githubusercontent.com/verilator/verilator/v5.028/include/vltstd/svdpi.h",
+        output = "include/svdpi.h",
+        sha256 = "2528c8e529b66dd8e795c8a0fee326166cc51f7dee8fc6a0c6c930534fc780a6",
+    )
+    rctx.symlink("include/svdpi.h", "file/svdpi.h")
+    rctx.file("BUILD.bazel", """package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "svdpi",
+    hdrs = ["include/svdpi.h"],
+    includes = ["include"],
+)
+
+filegroup(
+    name = "file",
+    srcs = ["file/svdpi.h"],
+)
+""")
+
+svdpi_repo = repository_rule(
+    implementation = _svdpi_repo_impl,
+)
+
 def define_mpact_repos():
     """Defines MPACT and CoralNPU-MPACT dependencies."""
     maybe(
@@ -87,6 +112,7 @@ def define_mpact_repos():
             "@coralnpu_hw//third_party/coralnpu_mpact:0003-Hardwire-mtvec-direct-mode.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0004-Fix-mpact-riscv-includes.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0005-coralnpu-mepc-mask.patch",
+            "@coralnpu_hw//third_party/coralnpu_mpact:0006-Fix-svdpi-includes.patch",
         ],
         patch_args = ["-p1"],
     )
@@ -135,11 +161,8 @@ def define_mpact_repos():
     )
 
     maybe(
-        http_file,
+        svdpi_repo,
         name = "svdpi_h_file",
-        downloaded_file_path = "svdpi.h",
-        sha256 = "2528c8e529b66dd8e795c8a0fee326166cc51f7dee8fc6a0c6c930534fc780a6",
-        urls = ["https://raw.githubusercontent.com/verilator/verilator/v5.028/include/vltstd/svdpi.h"],
     )
 
 def _tflm_pip_deps_compat_impl(rctx):
@@ -147,13 +170,62 @@ def _tflm_pip_deps_compat_impl(rctx):
     rctx.file("BUILD.bazel", "package(default_visibility = ['//visibility:public'])\n")
     rctx.file("requirements.bzl", """
 def requirement(name):
-    return "@tflm_pip_deps//" + name + ":pkg"
+    clean_name = name.replace("-", "_").replace(".", "_").lower()
+    return "@coralnpu_pip_deps_" + clean_name + "//:pkg"
 
 all_requirements = []
 """)
 
 tflm_pip_deps_compat = repository_rule(
     implementation = _tflm_pip_deps_compat_impl,
+)
+
+def _ot_python_deps_compat_impl(rctx):
+    rctx.file("WORKSPACE", "workspace(name = 'ot_python_deps')\n")
+    rctx.file("BUILD.bazel", "package(default_visibility = ['//visibility:public'])\n")
+    rctx.file("requirements.bzl", """
+def requirement(name):
+    clean_name = name.replace("-", "_").replace(".", "_").lower()
+    return "@coralnpu_pip_deps_" + clean_name + "//:pkg"
+
+all_requirements = [
+    requirement("argcomplete"),
+    requirement("attrs"),
+    requirement("edalize"),
+    requirement("fastjsonschema"),
+    requirement("fusesoc"),
+    requirement("hjson"),
+    requirement("jinja2"),
+    requirement("mako"),
+    requirement("markupsafe"),
+    requirement("okonomiyaki"),
+    requirement("packaging"),
+    requirement("pyelftools"),
+    requirement("pyparsing"),
+    requirement("pyyaml"),
+    requirement("simplesat"),
+]
+""")
+
+ot_python_deps_compat = repository_rule(
+    implementation = _ot_python_deps_compat_impl,
+)
+
+def _python311_compat_impl(rctx):
+    rctx.file("WORKSPACE", "workspace(name = 'python311_x86_64-unknown-linux-gnu')\n")
+    rctx.file("BUILD.bazel", """package(default_visibility = ["//visibility:public"])
+alias(
+    name = "python",
+    actual = "@@rules_python++python+python_3_11_6_x86_64-unknown-linux-gnu//:python",
+)
+alias(
+    name = "files",
+    actual = "@@rules_python++python+python_3_11_6_x86_64-unknown-linux-gnu//:files",
+)
+""")
+
+python311_compat = repository_rule(
+    implementation = _python311_compat_impl,
 )
 
 def _flatbuffers_repo_impl(rctx):

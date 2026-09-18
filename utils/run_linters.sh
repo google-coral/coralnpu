@@ -167,6 +167,7 @@ detect_base_branch() {
 FIX_MODE=false
 ALL_MODE=false
 CHECK_PARITY=""
+CHECK_LOCKFILE=""
 TARGET_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -187,18 +188,28 @@ while [[ $# -gt 0 ]]; do
             CHECK_PARITY=false
             shift
             ;;
+        --check-lockfile)
+            CHECK_LOCKFILE=true
+            shift
+            ;;
+        --no-lockfile)
+            CHECK_LOCKFILE=false
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [--fix] [--all] [--check-parity] [--no-parity] [file/dir ...]"
+            echo "Usage: $0 [--fix] [--all] [--check-parity] [--no-parity] [--check-lockfile] [--no-lockfile] [file/dir ...]"
             echo ""
             echo "By default (when no targets or --all are specified), this script lints all local"
             echo "changes (staged and unstaged) relative to the base branch (${BASE_BRANCH:-auto-detected})."
             echo ""
             echo "Options:"
-            echo "  --fix           Fix formatting and lint issues where supported"
-            echo "  --all           Lint all tracked files across the repository"
-            echo "  --check-parity  Force running Bzlmod / WORKSPACE equivalence check"
-            echo "  --no-parity     Skip Bzlmod / WORKSPACE equivalence check"
-            echo "  -h, --help      Show this help message and exit"
+            echo "  --fix             Fix formatting and lint issues where supported"
+            echo "  --all             Lint all tracked files across the repository"
+            echo "  --check-parity    Force running Bzlmod / WORKSPACE equivalence check"
+            echo "  --no-parity       Skip Bzlmod / WORKSPACE equivalence check"
+            echo "  --check-lockfile  Force running MODULE.bazel.lock check"
+            echo "  --no-lockfile     Skip MODULE.bazel.lock check"
+            echo "  -h, --help        Show this help message and exit"
             exit 0
             ;;
         -*)
@@ -363,6 +374,53 @@ if [[ "${RUN_PARITY_CHECK}" == "true" ]]; then
         if ! "${REPO_ROOT}/utils/check_bzlmod_parity.sh"; then
             echo "❌ Bzlmod parity check failed."
             TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        fi
+    fi
+fi
+
+# --- Bzlmod Lockfile Check ---
+RUN_LOCKFILE_CHECK=false
+if [[ "${CHECK_LOCKFILE}" == "true" ]]; then
+    RUN_LOCKFILE_CHECK=true
+elif [[ "${CHECK_LOCKFILE}" != "false" ]]; then
+    if [[ "${CI:-}" == "true" ]] || [[ "${ALL_MODE}" == "true" ]] || [[ -f "${LINT_TMP}/buildifier" ]] || [[ -n "${ALL_FILES["MODULE.bazel.lock"]:-}" ]]; then
+        RUN_LOCKFILE_CHECK=true
+    fi
+fi
+
+if [[ "${RUN_LOCKFILE_CHECK}" == "true" ]] && command -v bazel >/dev/null 2>&1; then
+    if [[ "${FIX_MODE}" == "true" ]]; then
+        echo "🔧 Updating MODULE.bazel.lock via 'bazel mod deps --lockfile_mode=update'..."
+        if ! bazel mod deps --lockfile_mode=update >/dev/null 2>&1; then
+            echo "❌ Failed to update MODULE.bazel.lock."
+            TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        else
+            echo "✅ MODULE.bazel.lock updated."
+        fi
+    else
+        echo "🔍 Checking that MODULE.bazel.lock is up-to-date..."
+        if ! bazel mod deps --lockfile_mode=error >"${LINT_TMP}/mod_deps.log" 2>&1; then
+            echo "❌ MODULE.bazel.lock is out-of-date."
+            grep -E '^ERROR:' "${LINT_TMP}/mod_deps.log" 2>/dev/null || cat "${LINT_TMP}/mod_deps.log"
+            echo "   Run 'bazel mod deps --lockfile_mode=update' (or '$0 --fix') to update it."
+            TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        fi
+
+        # Verify MODULE.bazel.lock is part of the commit (not left unstaged or uncommitted)
+        lockfile_status=$(git status --porcelain MODULE.bazel.lock 2>/dev/null || true)
+        if [[ -n "${lockfile_status}" ]]; then
+            if [[ "${CI:-}" == "true" ]]; then
+                echo "❌ MODULE.bazel.lock has uncommitted changes in CI."
+                TOTAL_FAILED=$((TOTAL_FAILED + 1))
+            elif [[ "${IS_DIFF_LINT}" == "true" ]] && git diff --name-only "${LINT_BASE}..HEAD" 2>/dev/null | grep -qE '(MODULE\.bazel|\.bzl)$'; then
+                echo "❌ MODULE.bazel.lock has uncommitted changes and was not included in the commit."
+                echo "   Please run 'git add MODULE.bazel.lock && git commit --amend' to include it."
+                TOTAL_FAILED=$((TOTAL_FAILED + 1))
+            elif git diff --cached --name-only 2>/dev/null | grep -qE '(MODULE\.bazel|\.bzl)$' && git diff --name-only MODULE.bazel.lock 2>/dev/null | grep -q 'MODULE.bazel.lock'; then
+                echo "❌ MODULE.bazel.lock has unstaged changes while Bazel files are staged."
+                echo "   Please stage MODULE.bazel.lock using 'git add MODULE.bazel.lock'."
+                TOTAL_FAILED=$((TOTAL_FAILED + 1))
+            fi
         fi
     fi
 fi

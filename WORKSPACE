@@ -276,16 +276,6 @@ load("@tflm_pip_deps//:requirements.bzl", "install_deps")
 
 install_deps()
 
-pip_parse(
-    name = "gemma_deps",
-    python_interpreter_target = "@python311_x86_64-unknown-linux-gnu//:python",
-    requirements_lock = "//third_party:gemma_requirements.txt",
-)
-
-load("@gemma_deps//:requirements.bzl", gemma_install_deps = "install_deps")
-
-gemma_install_deps()
-
 mpact_repos()
 
 load("@com_google_mpact-riscv//:repos.bzl", "mpact_riscv_repos")

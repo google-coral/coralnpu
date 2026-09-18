@@ -197,12 +197,19 @@ diff --git a/util/fusesoc_build.py b/util/fusesoc_build.py
 index 8c7c3ac..8b6c15c 100755
 --- a/util/fusesoc_build.py
 +++ b/util/fusesoc_build.py
-@@ -18,7 +18,20 @@ if __name__ == "__main__":
+@@ -18,7 +18,27 @@ if __name__ == "__main__":
      if path_env is not None:
          path_env = ":" + path_env
      path_env = os.path.dirname(sys.executable) + path_env
 -    os.environ["PATH"] = path_env
 +
++    # Propagate PYTHONPATH to subprocesses so child scripts find runfiles packages.
++    cur_pythonpath = os.environ.get("PYTHONPATH", "")
++    runfiles_paths = [os.path.abspath(p) for p in sys.path if p]
++    if cur_pythonpath:
++        os.environ["PYTHONPATH"] = ":".join(runfiles_paths) + ":" + cur_pythonpath
++    else:
++        os.environ["PYTHONPATH"] = ":".join(runfiles_paths)
 +
 +    # Resolve relative PATH entries to absolute paths so that tools remain
 +    # findable after FuseSoC changes the working directory.

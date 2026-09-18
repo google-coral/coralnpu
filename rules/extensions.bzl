@@ -25,6 +25,8 @@ load(
     "define_sim_repos",
     "define_synthesis_internal",
     "define_tflite_repos",
+    "ot_python_deps_compat",
+    "python311_compat",
 )
 load("//rules:repos.bzl", "cvfpu_repos", "rules_hdl_compat", "rvvi_repos", "verilator_repos")
 load("//third_party/python:requirements.bzl", "install_deps")
@@ -46,6 +48,10 @@ def _coralnpu_deps_ext_impl(_ctx):
     define_internal_check()
     define_synthesis_internal()
     define_sim_repos()
+
+    # Bzlmod compatibility repos
+    ot_python_deps_compat(name = "ot_python_deps")
+    python311_compat(name = "python311_x86_64-unknown-linux-gnu")
 
     # Install hermetic Python wheel repos (coralnpu_pip_deps_*)
     install_deps()

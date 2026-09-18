@@ -408,9 +408,125 @@ def install_deps():
             pypi_name = "fusesoc",
             pypi_version = "2.4.3",
             deps = [
+                "@coralnpu_pip_deps_argcomplete//:pkg",
+                "@coralnpu_pip_deps_edalize//:pkg",
+                "@coralnpu_pip_deps_fastjsonschema//:pkg",
                 "@coralnpu_pip_deps_hjson//:pkg",
+                "@coralnpu_pip_deps_pyparsing//:pkg",
+                "@coralnpu_pip_deps_pyyaml//:pkg",
+                "@coralnpu_pip_deps_simplesat//:pkg",
             ],
         ),
+    )
+
+    http_archive(
+        name = "coralnpu_pip_deps_argcomplete",
+        urls = [
+            "https://files.pythonhosted.org/packages/f5/c8/9fa0e6fa97c328d44e089278399b0a1a08268b06a4a71f7448c6b6effb9f/argcomplete-3.6.1-py3-none-any.whl",
+        ],
+        sha256 = "cef54d7f752560570291214f0f1c48c3b8ef09aca63d65de7747612666725dbc",
+        type = "zip",
+        build_file_content = _build_file_content(pypi_name = "argcomplete", pypi_version = "3.6.1"),
+    )
+
+    http_archive(
+        name = "coralnpu_pip_deps_markupsafe",
+        urls = [
+            "https://files.pythonhosted.org/packages/f1/a4/aefb044a2cd8d7334c8a47d3fb2c9f328ac48cb349468cc31c20b539305f/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "a123e330ef0853c6e822384873bef7507557d8e4a082961e1defa947aa59ba84",
+        type = "zip",
+        build_file_content = _build_file_content(pypi_name = "MarkupSafe", pypi_version = "3.0.2"),
+    )
+
+    http_archive(
+        name = "coralnpu_pip_deps_jinja2",
+        urls = [
+            "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+        ],
+        sha256 = "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+        type = "zip",
+        build_file_content = _build_file_content(
+            pypi_name = "Jinja2",
+            pypi_version = "3.1.6",
+            deps = [
+                "@coralnpu_pip_deps_markupsafe//:pkg",
+            ],
+        ),
+    )
+
+    http_archive(
+        name = "coralnpu_pip_deps_edalize",
+        urls = [
+            "https://files.pythonhosted.org/packages/a3/16/47dc8bbbefb395c275c4ba8b2e46a0b54f8c37ba6ca0757478f8139aedc8/edalize-0.6.1-py3-none-any.whl",
+        ],
+        sha256 = "2773339a404310b3b076ac8bcc68cadec8c937eba5a76c0a9b941064cd5ff9d7",
+        type = "zip",
+        build_file_content = _build_file_content(
+            pypi_name = "edalize",
+            pypi_version = "0.6.1",
+            deps = [
+                "@coralnpu_pip_deps_jinja2//:pkg",
+            ],
+        ),
+    )
+
+    http_archive(
+        name = "coralnpu_pip_deps_pyparsing",
+        urls = [
+            "https://files.pythonhosted.org/packages/05/e7/df2285f3d08fee213f2d041540fa4fc9ca6c2d44cf36d3a035bf2a8d2bcc/pyparsing-3.2.3-py3-none-any.whl",
+        ],
+        sha256 = "a749938e02d6fd0b59b356ca504a24982314bb090c383e3cf201c95ef7e2bfcf",
+        type = "zip",
+        build_file_content = _build_file_content(pypi_name = "pyparsing", pypi_version = "3.2.3"),
+    )
+
+    http_archive(
+        name = "coralnpu_pip_deps_attrs",
+        urls = [
+            "https://files.pythonhosted.org/packages/77/06/bb80f5f86020c4551da315d78b3ab75e8228f89f0162f2c3a819e407941a/attrs-25.3.0-py3-none-any.whl",
+        ],
+        sha256 = "427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3",
+        type = "zip",
+        build_file_content = _build_file_content(pypi_name = "attrs", pypi_version = "25.3.0"),
+    )
+
+    http_archive(
+        name = "coralnpu_pip_deps_okonomiyaki",
+        urls = [
+            "https://files.pythonhosted.org/packages/6e/d2/c7e021fb8e591fa586a8aa8fd8728ffded2f80deebf6198cd1bd92c68447/okonomiyaki-3.0.0-py2.py3-none-any.whl",
+        ],
+        sha256 = "a5193286e9db0ded2d3ae80d7c3ebb9923bca89e94ba03d612bb9c2c0948cd77",
+        type = "zip",
+        build_file_content = _build_file_content(pypi_name = "okonomiyaki", pypi_version = "3.0.0"),
+    )
+
+    http_archive(
+        name = "coralnpu_pip_deps_simplesat",
+        urls = [
+            "https://files.pythonhosted.org/packages/76/d0/1dd0d4adb376ad1076331e9f5f38641fd58890d134f8050ab00160836988/simplesat-0.9.1-py3-none-any.whl",
+        ],
+        sha256 = "4f7d7a121ba13db987ea635205db8897d7d01220962e8a9c8cfd41b9886e6b8a",
+        type = "zip",
+        build_file_content = _build_file_content(
+            pypi_name = "simplesat",
+            pypi_version = "0.9.1",
+            deps = [
+                "@coralnpu_pip_deps_attrs//:pkg",
+                "@coralnpu_pip_deps_okonomiyaki//:pkg",
+                "@coralnpu_pip_deps_six//:pkg",
+            ],
+        ),
+    )
+
+    http_archive(
+        name = "coralnpu_pip_deps_fastjsonschema",
+        urls = [
+            "https://files.pythonhosted.org/packages/90/2b/0817a2b257fe88725c25589d89aec060581aabf668707a8d03b2e9e0cb2a/fastjsonschema-2.21.1-py3-none-any.whl",
+        ],
+        sha256 = "c9e5b7e908310918cf494a434eeb31384dd84a98b57a30bcb1f535015b554667",
+        type = "zip",
+        build_file_content = _build_file_content(pypi_name = "fastjsonschema", pypi_version = "2.21.1"),
     )
 
     http_archive(

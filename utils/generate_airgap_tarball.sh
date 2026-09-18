@@ -15,10 +15,10 @@
 
 ## Generates a tar file or directory containing required artifacts to build and test CoralNPU without
 # an internet connection.
-# To use the artifacts, extract them to a known location (or use the generated directory), and use the --repository_cache
+# To use the artifacts, extract them to a known location (or use the generated directory), and use the --vendor_dir
 # arguments for Bazel.
 # An example command which will build and test is as follows:
-# bazel test --repository_cache=coralnpu_airgap_7d188ddd04e3ecd80527a41889e0c6175102af8b/bazel-cachedir \
+# bazel test --vendor_dir=coralnpu_airgap_7d188ddd04e3ecd80527a41889e0c6175102af8b/vendor \
 #            --build_tag_filters="-verilator" --test_tag_filters="-verilator" //...
 # Additionally, the bazel binary is included, in case
 # it is not available on your system.
@@ -63,7 +63,6 @@ done
 REPO_TOP="$(git rev-parse --show-toplevel)"
 CORALNPU_VERSION="$(git rev-parse HEAD)"
 BAZEL_VERSION="$(cat "${REPO_TOP}/.bazelversion")"
-VENVDIR=$(mktemp -d)
 
 if [[ "${CREATE_TAR}" == "true" ]]; then
     WORKDIR=$(mktemp -d)
@@ -79,9 +78,6 @@ function clean {
     if [[ "${CREATE_TAR}" == "true" && -n "${WORKDIR:-}" && -d "${WORKDIR}" ]]; then
         rm -rf "${WORKDIR}"
     fi
-    if [[ -n "${VENVDIR:-}" && -d "${VENVDIR}" ]]; then
-        rm -rf "${VENVDIR}"
-    fi
 }
 
 trap clean EXIT
@@ -90,7 +86,6 @@ trap clean EXIT
 # Download Bazel
 ################################################################################
 
-mkdir "${WORKDIR}/bazel-distdir"
 cd "${WORKDIR}"
 curl --location \
     "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-linux-x86_64" \
@@ -99,53 +94,34 @@ chmod +x "bazel-${BAZEL_VERSION}-linux-x86_64"
 ln -s "bazel-${BAZEL_VERSION}-linux-x86_64" bazel
 
 ################################################################################
-# Cache bazel deps for CoralNPU
+# Vendor external dependencies for CoralNPU
 ################################################################################
 
 cd "${REPO_TOP}"
-mkdir "${WORKDIR}/bazel-cachedir"
-"${WORKDIR}/bazel" clean --expunge
-"${WORKDIR}/bazel" sync \
-    --show_progress_rate_limit=30 \
-    --repository_cache="${WORKDIR}/bazel-cachedir"
+mkdir -p "${WORKDIR}/vendor"
+"${WORKDIR}/bazel" vendor \
+    --vendor_dir="${WORKDIR}/vendor" \
+    //...
 
-CORALNPU_MPACT_DIR="$("${WORKDIR}/bazel" info output_base)/external/coralnpu_mpact"
-if [[ -d "${CORALNPU_MPACT_DIR}" ]]; then
-    echo "Syncing coralnpu_mpact dependencies..."
-    (cd "${CORALNPU_MPACT_DIR}" && "${WORKDIR}/bazel" sync \
-        --show_progress_rate_limit=30 \
-        --repository_cache="${WORKDIR}/bazel-cachedir" \
-        --override_repository=coralnpu_hw="${REPO_TOP}") || true
-fi
-
-################################################################################
-# Cache pip deps for CoralNPU
-################################################################################
-
-mkdir -p "${WORKDIR}/pip-cache"
-python3.11 -m venv "${VENVDIR}"
-# shellcheck disable=SC1091
-source "${VENVDIR}/bin/activate"
-echo "Querying for requirements files..."
-OPENTITAN_REQS=$("${WORKDIR}/bazel" query @lowrisc_opentitan_gh//:python-requirements.txt --output=location 2>/dev/null | sed 's/:.*//')
-TFLITE_REQS=$("${WORKDIR}/bazel" query @tflite_micro//third_party:python_requirements.txt --output=location 2>/dev/null | sed 's/:.*//')
-
-if [[ -f "${OPENTITAN_REQS}" ]]; then
-    echo "Downloading OpenTitan pip dependencies from ${OPENTITAN_REQS}..."
-    # pass --no-deps to restrict download to only listed packages
-    pip download --no-deps --require-hashes -r "${OPENTITAN_REQS}" -d "${WORKDIR}/pip-cache"
-else
-    echo "Warning: Could not find OpenTitan requirements file."
-fi
-
-if [[ -f "${TFLITE_REQS}" ]]; then
-    echo "Downloading TFLite Micro pip dependencies from ${TFLITE_REQS}..."
-    # pass --no-deps to restrict download to only listed packages
-    pip download --no-deps --require-hashes -r "${TFLITE_REQS}" -d "${WORKDIR}/pip-cache"
-else
-    echo "Warning: Could not find TFLite Micro requirements file."
-fi
-deactivate
+# Pin all vendored repositories in VENDOR.bazel so Bazel uses them offline
+# unconditionally without checking marker files or attempting network re-fetches.
+# Ignore non-hermetic local tool detection repositories so they evaluate dynamically
+# against the runner's installed tools (e.g. Vivado).
+for repo in "${WORKDIR}/vendor/"*/; do
+    repo_name="$(basename "${repo}")"
+    if [[ "${repo_name}" != "bazel-external" && -d "${repo}" ]]; then
+        if [[ "${repo_name}" == *"nonhermetic"* ]]; then
+            rm -rf "${repo}"
+            echo "ignore(\"@@${repo_name}\")" >> "${WORKDIR}/vendor/VENDOR.bazel"
+        else
+            echo "pin(\"@@${repo_name}\")" >> "${WORKDIR}/vendor/VENDOR.bazel"
+        fi
+    fi
+done
+echo "ignore(\"@@nonhermetic\")" >> "${WORKDIR}/vendor/VENDOR.bazel"
+echo "ignore(\"@@+coralnpu_deps_ext+nonhermetic\")" >> "${WORKDIR}/vendor/VENDOR.bazel"
+rm -f "${WORKDIR}/vendor/bazel-external"
+chmod -R a+rX "${WORKDIR}/vendor"
 
 ################################################################################
 # Create bazel wrapper script
@@ -153,17 +129,9 @@ deactivate
 
 cat <<EOF >"${WORKDIR}/bazel.sh"
 SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-# Export variables for local usage and pass to Bazel for repository rules
-export PIP_NO_INDEX=true
-export PIP_FIND_LINKS="\${SCRIPT_DIR}/pip-cache"
-export BAZEL_CACHE="\${SCRIPT_DIR}/bazel-cachedir"
 
 \${SCRIPT_DIR}/bazel \$* \\
-    --distdir=\${SCRIPT_DIR}/bazel-distdir \\
-    --repository_cache=\${SCRIPT_DIR}/bazel-cachedir \\
-    --repo_env=PIP_NO_INDEX=true \\
-    --repo_env=PIP_FIND_LINKS="\${SCRIPT_DIR}/pip-cache" \\
-    --repo_env=BAZEL_CACHE="\${SCRIPT_DIR}/bazel-cachedir" \\
+    --vendor_dir="\${SCRIPT_DIR}/vendor" \\
     --test_tag_filters="-verilator" \\
     --build_tag_filters="-verilator"
 EOF

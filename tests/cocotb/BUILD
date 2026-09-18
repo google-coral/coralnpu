@@ -13,7 +13,6 @@
 # limitations under the License.
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
-load("@gemma_deps//:requirements.bzl", gemma_requirement = "requirement")
 load("@rules_pkg//:pkg.bzl", "pkg_zip")
 load("//rules:coco_tb.bzl", "cocotb_test_suite", "vcs_test_macro_smoke_test", "verilator_cocotb_model")
 load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
@@ -906,32 +905,6 @@ RVV_ML_OPS_TESTCASES = [
     "core_mini_rvv_bf16_matmul_c_test",
 ]
 # END_TESTCASES_FOR_rvv_ml_ops_cocotb_test
-
-py_binary(
-    name = "dump_gemma_tensors",
-    srcs = ["dump_gemma_tensors.py"],
-    tags = ["manual"],
-    deps = [
-        gemma_requirement("torch"),
-        gemma_requirement("transformers"),
-        gemma_requirement("accelerate"),
-        gemma_requirement("numpy"),
-    ],
-)
-
-genrule(
-    name = "generate_gemma_tensors",
-    outs = [
-        "gemma_q.npy",
-        "gemma_k.npy",
-        "gemma_v.npy",
-        "gemma_o.npy",
-    ],
-    cmd = "$(location :dump_gemma_tensors) --out_dir $(RULEDIR)",
-    local = True,
-    tags = ["manual"],
-    tools = [":dump_gemma_tensors"],
-)
 
 cocotb_test_suite(
     name = "rvv_ml_ops_cocotb_test",

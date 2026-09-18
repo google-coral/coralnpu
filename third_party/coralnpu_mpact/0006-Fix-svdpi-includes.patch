@@ -1,0 +1,67 @@
+diff --git a/sim/cosim/BUILD b/sim/cosim/BUILD
+index 4f460d4..ab98c09 100644
+--- a/sim/cosim/BUILD
++++ b/sim/cosim/BUILD
+@@ -30,10 +30,10 @@ cc_library(
+     ],
+     hdrs = [
+         "coralnpu_cosim_dpi.h",
+-        "@svdpi_h_file//file",
+     ],
+     visibility = ["//visibility:public"],
+     deps = [
++        "@svdpi_h_file//:svdpi",
+         "//sim:coralnpu_architecture",
+         "//sim:coralnpu_simulator",
+         "//sim:coralnpu_v2_state",
+diff --git a/sim/cosim/coralnpu_cosim_dpi.h b/sim/cosim/coralnpu_cosim_dpi.h
+index ec7a7e2..c07bd79 100644
+--- a/sim/cosim/coralnpu_cosim_dpi.h
++++ b/sim/cosim/coralnpu_cosim_dpi.h
+@@ -27,7 +27,7 @@
+ #include <cstdint>
+ 
+ #include "sim/coralnpu_architecture.h"
+-#include "external/svdpi_h_file/file/svdpi.h"
++#include "svdpi.h"
+ 
+ typedef struct {
+   uint32_t itcm_start_address;  // Start address of the ITCM range.
+diff --git a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
+index a7d5010..93ad7a7 100644
+--- a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
++++ b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
+@@ -26,7 +26,7 @@
+ #include "absl/status/status.h"
+ #include "absl/types/span.h"
+ #include "mpact/sim/generic/data_buffer.h"
+-#include "external/svdpi_h_file/file/svdpi.h"
++#include "svdpi.h"
+ 
+ using ::coralnpu::sim::Architecture;
+ using ::coralnpu::sim::CoralNPUSimulator;
+diff --git a/sim/test/BUILD b/sim/test/BUILD
+index b1e6b90..2b2359d 100644
+--- a/sim/test/BUILD
++++ b/sim/test/BUILD
+@@ -268,6 +268,7 @@ cc_test(
+         ":frm_test_generated",
+         "//sim:coralnpu_architecture",
+         "//sim/cosim:coralnpu_cosim_lib",
++        "@svdpi_h_file//:svdpi",
+         "@com_google_googletest//:gtest_main",
+         "@com_google_absl//absl/container:flat_hash_map",
+         "@com_google_absl//absl/strings:str_format",
+diff --git a/sim/test/coralnpu_cosim_dpi_wrapper_test.cc b/sim/test/coralnpu_cosim_dpi_wrapper_test.cc
+index e6354ea..a804211 100644
+--- a/sim/test/coralnpu_cosim_dpi_wrapper_test.cc
++++ b/sim/test/coralnpu_cosim_dpi_wrapper_test.cc
+@@ -23,7 +23,7 @@
+ #include "googletest/include/gtest/gtest.h"
+ #include "absl/container/flat_hash_map.h"
+ #include "absl/strings/str_format.h"
+-#include "external/svdpi_h_file/file/svdpi.h"
++#include "svdpi.h"
+ 
+ namespace {
+ 

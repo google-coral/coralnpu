@@ -37,3 +37,31 @@ To proactively prevent divergence (e.g., if a developer adds a new argument to o
 This tool parses the Starlark macro definitions in [rules/coco_tb.bzl](../../rules/coco_tb.bzl) using Python's `ast` library and compares their formal signatures and popped `kwargs` keys.
 
 It is integrated into the pre-upload hooks ([PREUPLOAD.cfg](../../PREUPLOAD.cfg)) and will automatically block commits that introduce unsynchronized parameters.
+
+---
+
+## Gemma Model Tensor Extraction (Manual Utility)
+
+[`tests/cocotb/dump_gemma_tensors.py`](dump_gemma_tensors.py) extracts reference Attention and RMSNorm tensors from `google/gemma-3-270m-it` on Hugging Face for local kernel evaluation.
+
+### Why This Tool is Run Outside Bazel
+
+During the Bzlmod airgap migration (September 2026), the `@gemma_deps` pip hub and manual Bazel targets were de-Bazel'd. Because `bazel vendor //...` vendors all declared external dependencies across the repository for offline airgapped CI, keeping heavy PyTorch and Transformers wheels in the Bazel graph would bloat the vendored airgap dataset by several gigabytes. Furthermore, downloading pre-trained weights from Hugging Face requires public internet access, making it fundamentally incompatible with airgapped CI runners. Automated CI tests instead use deterministic synthetic test vectors.
+
+### Manual Execution Path
+
+To run the extraction utility manually:
+
+```bash
+# 1. Set up a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2. Install pinned dependencies
+pip install -r third_party/gemma_requirements.txt
+
+# 3. Extract sample tensors
+python3 tests/cocotb/dump_gemma_tensors.py --out_dir tests/cocotb/rvv/ml_ops/gemma_kernels/test_data
+```
+
+When present in `test_data/`, these `.npy` tensors are automatically loaded by [`rvv_flashattention_cocotb_test.py`](rvv/ml_ops/gemma_kernels/cocotb_tests/rvv_flashattention_cocotb_test.py).

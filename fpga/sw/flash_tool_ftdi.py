@@ -21,7 +21,10 @@ import time
 
 from elftools.elf.elffile import ELFFile
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_hw.coralnpu_test_utils.run_binary import BinaryRunner
+try:
+    from coralnpu_hw.coralnpu_test_utils.run_binary import BinaryRunner
+except ImportError:
+    from coralnpu_test_utils.run_binary import BinaryRunner
 from fpga.sw.flash_tool_lib import FlashTool
 
 

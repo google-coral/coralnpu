@@ -32,6 +32,7 @@ scala_config.settings(
 # Load Scala dependencies
 scala_deps = use_extension("@rules_scala//scala/extensions:deps.bzl", "scala_deps")
 scala_deps.scala()
+scala_deps.scalatest()
 
 # Configure Maven dependencies for Chisel
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
@@ -88,15 +89,6 @@ python.toolchain(
 )
 use_repo(python, "python_3_11", "python_versions")
 
-# Configure gemma_deps pip dependencies
-pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
-pip.parse(
-    hub_name = "gemma_deps",
-    python_version = "3.11",
-    requirements_lock = "//third_party:gemma_requirements.txt",
-)
-use_repo(pip, "gemma_deps")
-
 # Local extension for legacy non-module dependencies
 coralnpu_deps_ext = use_extension("//rules:extensions.bzl", "coralnpu_deps_ext")
 use_repo(
@@ -113,9 +105,13 @@ use_repo(
     "common_cells",
     "coralnpu_host_cpus",
     "coralnpu_mpact",
+    "coralnpu_pip_deps_argcomplete",
+    "coralnpu_pip_deps_attrs",
     "coralnpu_pip_deps_cocotb",
     "coralnpu_pip_deps_colorama",
+    "coralnpu_pip_deps_edalize",
     "coralnpu_pip_deps_exceptiongroup",
+    "coralnpu_pip_deps_fastjsonschema",
     "coralnpu_pip_deps_find_libpython",
     "coralnpu_pip_deps_fusesoc",
     "coralnpu_pip_deps_hjson",
@@ -124,12 +120,15 @@ use_repo(
     "coralnpu_pip_deps_iniconfig",
     "coralnpu_pip_deps_intelhex",
     "coralnpu_pip_deps_intervaltree",
+    "coralnpu_pip_deps_jinja2",
     "coralnpu_pip_deps_lark",
     "coralnpu_pip_deps_libusb_package",
     "coralnpu_pip_deps_mako",
+    "coralnpu_pip_deps_markupsafe",
     "coralnpu_pip_deps_ml_dtypes",
     "coralnpu_pip_deps_natsort",
     "coralnpu_pip_deps_numpy",
+    "coralnpu_pip_deps_okonomiyaki",
     "coralnpu_pip_deps_packaging",
     "coralnpu_pip_deps_pillow",
     "coralnpu_pip_deps_pluggy",
@@ -138,10 +137,13 @@ use_repo(
     "coralnpu_pip_deps_pyelftools",
     "coralnpu_pip_deps_pyftdi",
     "coralnpu_pip_deps_pylink_square",
+    "coralnpu_pip_deps_pyocd",
+    "coralnpu_pip_deps_pyparsing",
     "coralnpu_pip_deps_pyserial",
     "coralnpu_pip_deps_pytest",
     "coralnpu_pip_deps_pyusb",
     "coralnpu_pip_deps_pyyaml",
+    "coralnpu_pip_deps_simplesat",
     "coralnpu_pip_deps_six",
     "coralnpu_pip_deps_sortedcontainers",
     "coralnpu_pip_deps_tqdm",
@@ -165,7 +167,9 @@ use_repo(
     "org_gnu_bison",
     "org_gnu_gnulib",
     "org_gnu_m4",
+    "ot_python_deps",
     "pybind11_abseil",
+    "python311_x86_64-unknown-linux-gnu",
     "riscv-tests",
     "riscv_isa_sim",
     "rules_hdl",

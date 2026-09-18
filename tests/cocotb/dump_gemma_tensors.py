@@ -11,6 +11,33 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Manual utility to extract reference Attention and RMSNorm tensors from Gemma.
+
+Why this script is not executed via Bazel:
+    During the pure Bzlmod airgap migration (September 2026), the `@gemma_deps`
+    pip hub and its manual Bazel targets were de-Bazel'd. Because `bazel vendor //...`
+    vendors all declared dependencies across the workspace for offline airgapped
+    CI, keeping PyTorch and Hugging Face Transformers in the
+    Bazel build graph would unnecessarily bloat the vendored dataset by multiple
+    gigabytes for dependencies never used by CI (which uses deterministic synthetic
+    vectors). Furthermore, this script downloads weights from Hugging Face over
+    the public internet, which cannot function in airgapped environments.
+
+Manual Execution Instructions:
+    1. Create and activate a Python virtual environment:
+       python3 -m venv .venv
+       source .venv/bin/activate
+
+    2. Install pinned dependencies:
+       pip install -r third_party/gemma_requirements.txt
+
+    3. Run this script to extract sample tensors:
+       python3 tests/cocotb/dump_gemma_tensors.py --out_dir tests/cocotb/rvv/ml_ops/gemma_kernels/test_data
+
+    The generated .npy files (gemma_q.npy, gemma_k.npy, gemma_v.npy, gemma_o.npy,
+    etc.) will be automatically detected by `rvv_flashattention_cocotb_test.py`
+    when present.
+"""
 
 import argparse
 import os

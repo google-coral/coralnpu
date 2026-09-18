@@ -1,5 +1,5 @@
-# Disable bzlmod and enable workspace while we migrate
-common --noenable_bzlmod --enable_workspace
+# Bzlmod is default; WORKSPACE retained for legacy/fallback
+common --enable_bzlmod --noenable_workspace
 
 # Dual-mode configs for Bzlmod and legacy WORKSPACE
 common:bzlmod --enable_bzlmod --noenable_workspace
@@ -41,9 +41,7 @@ build --java_runtime_version=remotejdk_11
 run --java_runtime_version=remotejdk_11
 test --java_runtime_version=remotejdk_11
 
-build --repo_env BAZEL_JVM_FETCH_SOURCES=false
-run --repo_env BAZEL_JVM_FETCH_SOURCES=false
-test --repo_env BAZEL_JVM_FETCH_SOURCES=false
+common --repo_env BAZEL_JVM_FETCH_SOURCES=false
 
 # Skip VCS by default as most workstations will not have licenses.
 build --build_tag_filters="-vcs,-synthesis,-power,-spyglass"
