@@ -1483,11 +1483,12 @@ class LsuCell(p: Parameters) extends Bundle {
 
   def next(
     write: Bool,
+    initData: ValidIO[UInt],
     vectorIndex: Option[ValidIO[UInt]],
     vectorData: Option[ValidIO[UInt]],
     vectorMask: Option[ValidIO[Bool]],
     start: Bool,
-    respData: ValidIO[UInt],
+    respData: ValidIO[Vec[UInt]],
     wb: Bool
   ): LsuCell = {
     // Fundamentally we have these 5 mutually exclusive actions to do
@@ -1518,8 +1519,9 @@ class LsuCell(p: Parameters) extends Bundle {
       .isOneOf(LsuCellState.W_START, LsuCellState.W_RESP))
     // Wb must not be skipped when reading
     val noBadSkipWb      = write || !respData.valid || !wb
+    val noBadInit        = !initData.valid || (state === LsuCellState.DONE) || doWb
     val noBadTransitions =
-      noBadInvalidate && noBadData && noBadStart && noBadResp && noBadWb && noBadSkipWb
+      noBadInvalidate && noBadData && noBadStart && noBadResp && noBadWb && noBadSkipWb && noBadInit
 
     // Check for unused inputs
     val noUnusedIndex = vectorIndex.map(!_.valid || doData || doInvalidate).getOrElse(true.B)
@@ -1535,6 +1537,17 @@ class LsuCell(p: Parameters) extends Bundle {
     assert(precondition)
 
     val withAddr = applyVectorIndex(vectorIndex)
+
+    // Pre-combine early signals (uop scalar store init / vector store data / hold data)
+    // and pre-gate the byte-lane mask with takeResp so late-arriving respData sees a
+    // single flat one-hot reduction tree across all cells 0..nCells-1.
+    val takeResp      = !write && doResp
+    val holdOrVecData = Mux(
+      initData.valid,
+      initData.bits,
+      Mux(write && doData, vectorData.map(_.bits).getOrElse(this.data), this.data)
+    )
+    val effMask = Mux(takeResp, mask, 0.U(p.lsuDataBytes.W))
 
     val ret = MakeWireBundle[LsuCell](
       new LsuCell(p),
@@ -1553,12 +1566,9 @@ class LsuCell(p: Parameters) extends Bundle {
       // 1. scalar store init
       // 2. load response
       // 3. vector/matrix data, unreachable if neither is set.
-      _.data -> MuxUpTo1H(
-        data,
-        Seq(
-          (!write && doResp) -> respData.bits,
-          (write && doData)  -> vectorData.map { _.bits }.getOrElse(this.data)
-        )
+      _.data -> Mux1H(
+        effMask.asBools :+ !takeResp,
+        respData.bits :+ holdOrVecData
       )
     )
 
@@ -1963,6 +1973,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     }
 
     def act(
+      initCellsData: Vec[ValidIO[UInt]],
       starts: UInt,
       moveLead: UInt,
       resp: Bool,
@@ -2126,12 +2137,6 @@ class LsuSuperSlot(p: Parameters) extends Module {
       }
 
       val cellsNext = VecInit.tabulate(nCells) { i =>
-        val cellRespData = MuxUpTo1H(
-          WireInit(UInt(8.W), DontCare),
-          (0 until p.lsuDataBytes).map { j =>
-            cells(i).mask(j) -> respData(j)
-          }
-        )
         val acceptVectorData = Option.when(p.enableRvv) {
           vectorDataValid.get &&
           vectorDataActive.get.map(_(i)).reduce(_ || _) &&
@@ -2185,12 +2190,13 @@ class LsuSuperSlot(p: Parameters) extends Module {
           )
         }
         cells(i).next(
+          initData = initCellsData(i),
           write = write,
           vectorIndex = cellVectorIndex,
           vectorData = cellVectorData,
           vectorMask = cellVectorMask,
           start = starts(i),
-          respData = MakeValid(cellAcceptResp(i), cellRespData),
+          respData = MakeValid(cellAcceptResp(i), respData),
           wb = cellWriteback(i)
         )
       }
@@ -2792,7 +2798,12 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val canMoveLead = !state.isDone && (
     !io.busReq.valid || io.busReq.ready
   )
+  val initCellsData = VecInit.tabulate(nCells) { i =>
+    if (i < 4) MakeValid(io.uop.fire, stateFromUop.cells(i).data)
+    else MakeInvalid(UInt(8.W))
+  }
   val stateFromAction = state.act(
+    initCellsData = initCellsData,
     starts = Mux(io.busReq.ready || state.faulted || newFault, starts, 0.U),
     moveLead = Mux(canMoveLead, moveLead, 0.U),
     resp = io.busResp.valid || faultRespValid,
@@ -2819,6 +2830,14 @@ class LsuSuperSlot(p: Parameters) extends Module {
   )
   io.uop.ready := stateFromAction.isDone
   state        := Mux(io.uop.fire, stateFromUop, stateFromAction)
+  // Scalar store init on io.uop.fire for cells 0..3 is already folded into the early
+  // holdOrVecData branch inside stateFromAction (before the final Mux1H), and cells >= 4
+  // always hold state.cells(i).data when io.uop.fire is true. Driving state.cells(i).data
+  // directly from stateFromAction eliminates the post-Mux1H uop.fire mux for all cells.
+  for (i <- 0 until nCells) {
+    assert(!io.uop.fire || stateFromAction.cells(i).data === stateFromUop.cells(i).data)
+    state.cells(i).data := stateFromAction.cells(i).data
+  }
 
   io.active := state.cells.forall { x =>
     x.state === LsuCellState.DONE
