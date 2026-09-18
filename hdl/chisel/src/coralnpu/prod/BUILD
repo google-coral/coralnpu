@@ -79,6 +79,24 @@ chisel_cc_library(
     vopts = RVV_CORE_MINI_AXI_VOPTS,
 )
 
+# Production target for VmeCoreMiniAxi (verification disabled)
+chisel_cc_library(
+    name = "vme_core_mini_axi_prod_cc_library",
+    chisel_lib = "//hdl/chisel/src/coralnpu:coralnpu",
+    emit_class = "coralnpu.EmitCore",
+    extra_outs = [
+        "VVmeCoreMiniAxi_parameters.h",
+        "VmeCoreMiniAxi.zip",
+    ],
+    gen_flags = [
+        "--moduleName=VmeCoreMini",  # Generates VmeCoreMiniAxi module
+        "--enableAxiInstructionFetch=False",
+    ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
+    module_name = "VmeCoreMiniAxi",
+    verilog_file_path = "VmeCoreMiniAxi.sv",
+    vopts = VME_CORE_MINI_AXI_VOPTS,
+)
+
 # Production target for VmeCoreMiniAxi with 8kB ITCM and 128kB DTCM (verification disabled)
 chisel_cc_library(
     name = "vme_core_mini_itcm8kb_dtcm128kb_axi_prod_cc_library",
