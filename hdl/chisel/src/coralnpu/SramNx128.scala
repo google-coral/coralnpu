@@ -17,7 +17,11 @@ package coralnpu
 import chisel3._
 import chisel3.util._
 
-class Sram_Nx128(tcmEntries: Int, globalBaseAddr: Int = 0) extends Module {
+class Sram_Nx128(
+  tcmEntries: Int,
+  globalBaseAddr: Int = 0,
+  availableBlockSizes: Seq[Int] = Seq(512, 128)
+) extends Module {
   override val desiredName = "SRAM_" + tcmEntries + "x128"
   val addrBits             = log2Ceil(tcmEntries)
   val io                   = IO(new Bundle {
@@ -31,11 +35,15 @@ class Sram_Nx128(tcmEntries: Int, globalBaseAddr: Int = 0) extends Module {
   })
 
   // Setup SRAM modules
-  // Use the largest possible SRAM block (2048, then 512, then 128)
-  val blockSize =
-    if (tcmEntries % 2048 == 0) 2048
-    else if (tcmEntries % 512 == 0) 512
-    else 128
+  // Select the largest available SRAM block size that evenly divides tcmEntries
+  require(availableBlockSizes.nonEmpty, "availableBlockSizes must not be empty")
+  val blockSize = availableBlockSizes.sorted.reverse
+    .find(tcmEntries % _ == 0)
+    .getOrElse(
+      throw new IllegalArgumentException(
+        s"tcmEntries ($tcmEntries) is not divisible by any size in availableBlockSizes ($availableBlockSizes)"
+      )
+    )
 
   val nSramModules   = tcmEntries / blockSize
   val sramAddrBits   = log2Ceil(blockSize)
