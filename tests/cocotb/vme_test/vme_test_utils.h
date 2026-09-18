@@ -91,4 +91,45 @@ static constexpr uint32_t MtypeValue(uint32_t tm, uint32_t tk, uint32_t mtwiden)
   return ((tm & 0x3FFF) << 10) | ((tk & 0x7) << 5) | (mtwiden & 0x3);
 }
 
+// -----------------------------------------------------------------------------
+// Zvt instruction opcodes and word builders
+// -----------------------------------------------------------------------------
+
+// RISC-V OP-V (0x57 / 7'b1010111): Used by vector ALU, configuration, and tile moves/zero.
+static constexpr uint32_t kZvtOpcodeOpV = 0x57u;
+
+// RISC-V OP-VE (0x77 / 7'b1110111): Used by matrix arithmetic instructions (vtmmu, vtmms, vtfmm).
+static constexpr uint32_t kZvtOpcodeOpVe = 0x77u;
+
+// Generic helper to format a 32-bit vector-instruction word:
+// [31:26 funct6] [25 vm=1] [24:20 vs2] [19:15 vs1/rs1] [14:12 funct3] [11:7 rd] [6:0 opcode]
+static constexpr uint32_t ZvtWord(uint32_t funct6, uint32_t vs2, uint32_t rs1, uint32_t funct3,
+                                  uint32_t rd, uint32_t opcode) {
+  return (funct6 << 26) | (1u << 25) | (vs2 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) |
+         (opcode & 0x7Fu);
+}
+
+// Matrix multiply (vtmmu / vtmms): opcode OP-VE (0x77), funct6=111100, funct3=000 (OPIVV).
+// vs2=v8 (A operand), vs1=v16 (B operand); rd = (tile << 1) | (signed_a ? 1 : 0).
+static constexpr uint32_t ZvtMatmulIntWord(uint32_t tile, bool signed_a) {
+  return ZvtWord(0x3C, 8, 16, 0, (tile << 1) | (signed_a ? 1 : 0), kZvtOpcodeOpVe);
+}
+
+// Matrix multiply floating-point (vtfmm): opcode OP-VE (0x77), funct6=111100, funct3=001 (OPFVV).
+// vs2=v8 (A operand), vs1=v16 (B operand); rd = tile << 1.
+static constexpr uint32_t ZvtMatmulFpWord(uint32_t tile) {
+  return ZvtWord(0x3C, 8, 16, 1, tile << 1, kZvtOpcodeOpVe);
+}
+
+// Tile zero (vtzero): opcode OP-V (0x57), funct6=010000, vs2=11110, rs1=x0, funct3=110, rd=tile<<1.
+static constexpr uint32_t ZvtVtzeroWord(uint32_t tile) {
+  return ZvtWord(0x10, 30, 0, 6, tile << 1, kZvtOpcodeOpV);
+}
+
+// Tile moves (vtmv.v.t, vtmv.t.v): opcode OP-V (0x57).
+// vtmv.v.t v4, a0: funct6=010000, vs2=11111, rs1=a0(x10), funct3=110, rd=v4.
+static constexpr uint32_t kZvtVtmvVTWord = ZvtWord(0x10, 31, 10, 6, 4, kZvtOpcodeOpV);
+// vtmv.t.v a0, v4: funct6=010111, vs2=v4, rs1=a0(x10), funct3=110, rd=x0.
+static constexpr uint32_t kZvtVtmvTVWord = ZvtWord(0x17, 4, 10, 6, 0, kZvtOpcodeOpV);
+
 #endif  // TESTS_COCOTB_VME_TEST_VME_TEST_UTILS_H_

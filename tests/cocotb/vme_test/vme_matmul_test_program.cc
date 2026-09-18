@@ -43,57 +43,37 @@ static constexpr uint32_t kVtypeSew8Lmul1  = 0xC0;  // ta/ma, SEW8,  LMUL1
 static constexpr uint32_t kVtypeSew32Lmul4 = 0xD2;  // ta/ma, SEW32, LMUL4
 
 // -----------------------------------------------------------------------------
-// Zvt instruction words (opcode 0x57), emitted via .word since they use
-// vector-register operands GAS cannot name for these encodings. Fixed register
-// assignment:
+// Zvt instruction words, emitted via .word since they use vector-register
+// operands GAS cannot name for these encodings. Fixed register assignment:
 //   v4..v7   staging group for tile-row moves
 //   v8..     A operand (int8 rows at v8/v10/v12/v14: the spec's 8/KMAX row
 //            spacing; fp32 single row spans v8..v11)
 //   v16..    B operand (int8 rows at v16/v18/v20/v22; fp32 row v16..v19)
 //   a0       tile subset specifier (TSS) scalar for the moves
-// Word layout: [31:26 funct6][25 vm=1][24:20 vs2][19:15 vs1/rs1][14:12 funct3]
-//              [11:7 rd][6:0 1010111].
+//
+// Instructions:
+// - Matrix arithmetic (vtmmu, vtmms, vtfmm) uses opcode OP-VE (0x77).
+// - Tile configuration, moves, and vtzero use opcode OP-V (0x57).
 // -----------------------------------------------------------------------------
-
-static constexpr uint32_t VmeWord(uint32_t funct6, uint32_t vs2, uint32_t rs1, uint32_t funct3,
-                                  uint32_t rd) {
-  return (funct6 << 26) | (1u << 25) | (vs2 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) |
-         0x57u;
-}
-
-// Matmul: funct6=111100, vs2=v8 (A), vs1=v16 (B); rd = tile<<1 | signed_a;
-// funct3 000 (OPIVV) for int, 001 (OPFVV) for fp.
-static constexpr uint32_t MatmulIntWord(uint32_t tile, bool signed_a) {
-  return VmeWord(0x3C, 8, 16, 0, (tile << 1) | (signed_a ? 1 : 0));
-}
-static constexpr uint32_t MatmulFpWord(uint32_t tile) { return VmeWord(0x3C, 8, 16, 1, tile << 1); }
-
-// vtzero: funct6=010000, vs2 field=11110, rs1 field must be x0, rd=tile<<1.
-static constexpr uint32_t VtzeroWord(uint32_t tile) { return VmeWord(0x10, 30, 0, 6, tile << 1); }
-
-// vtmv.v.t v4, a0: funct6=010000, vs2 field=11111, rs1=a0(x10), rd=v4.
-static constexpr uint32_t kVtmvVTWord = VmeWord(0x10, 31, 10, 6, 4);
-// vtmv.t.v a0, v4: funct6=010111, vs2=v4, rs1=a0(x10), rd=x0.
-static constexpr uint32_t kVtmvTVWord = VmeWord(0x17, 4, 10, 6, 0);
 
 // TSS: tile[30:27] | pattern[26:24] (0=row) | index[23:0].
 static inline uint32_t Tss(uint32_t tile, uint32_t row) { return (tile << 27) | row; }
 
 template <uint32_t TILE>
 static inline __attribute__((always_inline)) void Vtzero() {
-  asm volatile(".word %0" : : "i"(VtzeroWord(TILE)) : "memory");
+  asm volatile(".word %0" : : "i"(ZvtVtzeroWord(TILE)) : "memory");
 }
 
 // Move v4..v7 (16 x fp32/int32 elements) into tile row `tss`.
 static inline __attribute__((always_inline)) void VtmvTV(uint32_t tss) {
   register uint32_t a0_arg asm("a0") = tss;
-  asm volatile(".word %0" : : "i"(kVtmvTVWord), "r"(a0_arg) : "memory");
+  asm volatile(".word %0" : : "i"(kZvtVtmvTVWord), "r"(a0_arg) : "memory");
 }
 
 // Move tile row `tss` into v4..v7.
 static inline __attribute__((always_inline)) void VtmvVT(uint32_t tss) {
   register uint32_t a0_arg asm("a0") = tss;
-  asm volatile(".word %0" : : "i"(kVtmvVTWord), "r"(a0_arg) : "v4", "v5", "v6", "v7", "memory");
+  asm volatile(".word %0" : : "i"(kZvtVtmvVTWord), "r"(a0_arg) : "v4", "v5", "v6", "v7", "memory");
 }
 
 // -----------------------------------------------------------------------------
@@ -178,7 +158,7 @@ static void RunIntCase() {
       : "v16", "v18", "v20", "v22", "memory");
   (void)vme_msettn(mm_tn);
 
-  asm volatile(".word %0" : : "i"(MatmulIntWord(TILE, SIGNED_A)) : "memory");
+  asm volatile(".word %0" : : "i"(ZvtMatmulIntWord(TILE, SIGNED_A)) : "memory");
 
   ReadbackTile<TILE>();
 }
@@ -199,7 +179,7 @@ static void RunFpCase() {
       : "v8", "v9", "v10", "v11", "v16", "v17", "v18", "v19", "memory");
   (void)vme_msettn(mm_tn);
 
-  asm volatile(".word %0" : : "i"(MatmulFpWord(TILE)) : "memory");
+  asm volatile(".word %0" : : "i"(ZvtMatmulFpWord(TILE)) : "memory");
 
   ReadbackTile<TILE>();
 }
