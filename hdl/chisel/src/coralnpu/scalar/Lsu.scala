@@ -648,6 +648,74 @@ class LsuSuperSlot(p: Parameters) extends Module {
   }
 
   class State extends Bundle {
+    // One-hot selection bundle for RVV indexed loads/stores.
+    // Each bit corresponds to a combination of (data EEW, index EEW, EMUL phase).
+    class IndexSliceSel extends Bundle {
+      val e8_ei8  = Bool()
+      val e8_ei16 = Bool()
+      val e8_ei32 = Bool()
+
+      val e16_ei8_0 = Bool()
+      val e16_ei8_1 = Bool()
+      val e16_ei16  = Bool()
+      val e16_ei32  = Bool()
+
+      val e32_ei8_0 = Bool()
+      val e32_ei8_1 = Bool()
+      val e32_ei8_2 = Bool()
+      val e32_ei8_3 = Bool()
+
+      val e32_ei16_0 = Bool()
+      val e32_ei16_1 = Bool()
+      val e32_ei32   = Bool()
+
+      def advance(isFull: Bool): IndexSliceSel = {
+        MakeWireBundle[IndexSliceSel](
+          new IndexSliceSel,
+          _            -> this,
+          _.e16_ei8_0  -> Mux(isFull, e16_ei8_0 || e16_ei8_1, e16_ei8_1),
+          _.e16_ei8_1  -> Mux(isFull, false.B, e16_ei8_0),
+          _.e32_ei8_0  -> Mux(isFull, e32_ei8_0 || e32_ei8_1 || e32_ei8_2 || e32_ei8_3, e32_ei8_3),
+          _.e32_ei8_1  -> Mux(isFull, false.B, e32_ei8_0),
+          _.e32_ei8_2  -> Mux(isFull, false.B, e32_ei8_1),
+          _.e32_ei8_3  -> Mux(isFull, false.B, e32_ei8_2),
+          _.e32_ei16_0 -> Mux(isFull, e32_ei16_0 || e32_ei16_1, e32_ei16_1),
+          _.e32_ei16_1 -> Mux(isFull, false.B, e32_ei16_0)
+        )
+      }
+    }
+
+    object IndexSliceSel {
+      def apply(): IndexSliceSel = 0.U.asTypeOf(new IndexSliceSel)
+
+      def fromEew(
+        dataEew: LsuVectorElementWidth.Type,
+        indexEew: LsuVectorElementWidth.Type
+      ): IndexSliceSel = {
+        val is_e8  = dataEew === LsuVectorElementWidth.E8
+        val is_e16 = dataEew === LsuVectorElementWidth.E16
+        val is_e32 = dataEew === LsuVectorElementWidth.E32
+
+        val is_ei8  = indexEew === LsuVectorElementWidth.E8
+        val is_ei16 = indexEew === LsuVectorElementWidth.E16
+        val is_ei32 = indexEew === LsuVectorElementWidth.E32
+
+        MakeWireBundle[IndexSliceSel](
+          new IndexSliceSel,
+          _            -> IndexSliceSel(),
+          _.e8_ei8     -> (is_e8 && is_ei8),
+          _.e8_ei16    -> (is_e8 && is_ei16),
+          _.e8_ei32    -> (is_e8 && is_ei32),
+          _.e16_ei8_0  -> (is_e16 && is_ei8),
+          _.e16_ei16   -> (is_e16 && is_ei16),
+          _.e16_ei32   -> (is_e16 && is_ei32),
+          _.e32_ei8_0  -> (is_e32 && is_ei8),
+          _.e32_ei16_0 -> (is_e32 && is_ei16),
+          _.e32_ei32   -> (is_e32 && is_ei32)
+        )
+      }
+    }
+
     val pc      = UInt(p.programCounterBits.W)
     val write   = Bool()
     val faulted = Bool()
@@ -678,8 +746,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
     val vector = Option.when(p.enableRvv)(new Bundle {
       val isVme                     = Option.when(p.enableVme)(Bool())
-      val dataEew                   = LsuVectorElementWidth()
-      val indexEew                  = LsuVectorElementWidth()
+      val indexSliceSel             = new IndexSliceSel
       val segmentStep               = UInt(3.W)
       val emulStep                  = UInt(indexWidth.W)
       val vectorsPerSegMinusOneOrig = UInt(3.W)
@@ -1047,54 +1114,26 @@ class LsuSuperSlot(p: Parameters) extends Module {
           case 32 => allIndices(idx * 32 + 31, idx * 32)
         }
 
-        val idxEew = vector.get.indexEew
-        val datEew = vector.get.dataEew
-        val emul   = vector.get.dataEmul.curr(1, 0)
-
-        val is_e8  = datEew === LsuVectorElementWidth.E8
-        val is_e16 = datEew === LsuVectorElementWidth.E16
-        val is_e32 = datEew === LsuVectorElementWidth.E32
-
-        val is_ei8  = idxEew === LsuVectorElementWidth.E8
-        val is_ei16 = idxEew === LsuVectorElementWidth.E16
-        val is_ei32 = idxEew === LsuVectorElementWidth.E32
-
-        val sel_e8_ei8  = is_e8 && is_ei8
-        val sel_e8_ei16 = is_e8 && is_ei16
-        val sel_e8_ei32 = is_e8 && is_ei32
-
-        val sel_e16_ei8_0 = is_e16 && is_ei8 && !emul(0)
-        val sel_e16_ei8_1 = is_e16 && is_ei8 && emul(0)
-        val sel_e16_ei16  = is_e16 && is_ei16
-        val sel_e16_ei32  = is_e16 && is_ei32
-
-        val sel_e32_ei8_0  = is_e32 && is_ei8 && emul === 0.U
-        val sel_e32_ei8_1  = is_e32 && is_ei8 && emul === 1.U
-        val sel_e32_ei8_2  = is_e32 && is_ei8 && emul === 2.U
-        val sel_e32_ei8_3  = is_e32 && is_ei8 && emul === 3.U
-        val sel_e32_ei16_0 = is_e32 && is_ei16 && !emul(0)
-        val sel_e32_ei16_1 = is_e32 && is_ei16 && emul(0)
-        val sel_e32_ei32   = is_e32 && is_ei32
-
+        val sel = vector.get.indexSliceSel
         VecInit.tabulate(p.rvvVlenb) { i =>
           val rawMappings: Seq[(Bool, (Int, Int))] = Seq(
             // Data EEW 8 (e8)
-            sel_e8_ei8  -> (8, i),
-            sel_e8_ei16 -> (16, i % (p.rvvVlenb / 2)),
-            sel_e8_ei32 -> (32, i % (p.rvvVlenb / 4)),
+            sel.e8_ei8  -> (8, i),
+            sel.e8_ei16 -> (16, i % (p.rvvVlenb / 2)),
+            sel.e8_ei32 -> (32, i % (p.rvvVlenb / 4)),
             // Data EEW 16 (e16)
-            sel_e16_ei8_0 -> (8, i / 2),
-            sel_e16_ei8_1 -> (8, (p.rvvVlenb / 2) + i / 2),
-            sel_e16_ei16  -> (16, i / 2),
-            sel_e16_ei32  -> (32, (i / 2) % (p.rvvVlenb / 4)),
+            sel.e16_ei8_0 -> (8, i / 2),
+            sel.e16_ei8_1 -> (8, (p.rvvVlenb / 2) + i / 2),
+            sel.e16_ei16  -> (16, i / 2),
+            sel.e16_ei32  -> (32, (i / 2) % (p.rvvVlenb / 4)),
             // Data EEW 32 (e32)
-            sel_e32_ei8_0  -> (8, i / 4),
-            sel_e32_ei8_1  -> (8, (p.rvvVlenb / 4) + i / 4),
-            sel_e32_ei8_2  -> (8, (p.rvvVlenb / 2) + i / 4),
-            sel_e32_ei8_3  -> (8, (p.rvvVlenb * 3 / 4) + i / 4),
-            sel_e32_ei16_0 -> (16, i / 4),
-            sel_e32_ei16_1 -> (16, (p.rvvVlenb / 4) + i / 4),
-            sel_e32_ei32   -> (32, i / 4)
+            sel.e32_ei8_0  -> (8, i / 4),
+            sel.e32_ei8_1  -> (8, (p.rvvVlenb / 4) + i / 4),
+            sel.e32_ei8_2  -> (8, (p.rvvVlenb / 2) + i / 4),
+            sel.e32_ei8_3  -> (8, (p.rvvVlenb * 3 / 4) + i / 4),
+            sel.e32_ei16_0 -> (16, i / 4),
+            sel.e32_ei16_1 -> (16, (p.rvvVlenb / 4) + i / 4),
+            sel.e32_ei32   -> (32, i / 4)
           )
           val merged = rawMappings
             .groupBy(_._2)
@@ -1253,6 +1292,11 @@ class LsuSuperSlot(p: Parameters) extends Module {
         )
         val nextDataSegment = vectorDataValid.get && curr.dataSubvector.isFull()
         val nextDataEmul    = nextDataSegment && curr.dataSegment.isFull()
+        x.indexSliceSel := Mux(
+          nextDataEmul,
+          curr.indexSliceSel.advance(curr.dataEmul.isFull()),
+          curr.indexSliceSel
+        )
         x.dataSegment := Mux(
           nextDataSegment,
           curr.dataSegment.next(),
@@ -1596,8 +1640,10 @@ class LsuSuperSlot(p: Parameters) extends Module {
         )
 
         x.isVme.foreach(_ := isTile)
-        x.dataEew  := Mux(isIndexed, indexedElemWidthEnum, elemWidthEnum)
-        x.indexEew := Mux(isIndexed, elemWidthEnum, LsuVectorElementWidth.E8)
+        x.indexSliceSel := IndexSliceSel.fromEew(
+          dataEew = Mux(isIndexed, indexedElemWidthEnum, elemWidthEnum),
+          indexEew = Mux(isIndexed, elemWidthEnum, LsuVectorElementWidth.E8)
+        )
 
         x.segmentStep := Mux(isVector, 1.U << dataElemBytesShift, 0.U)
         x.emulStep    := Mux(
@@ -1691,8 +1737,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
       }
       ret.vector.foreach { x =>
         x.isVme.foreach(_ := false.B)
-        x.dataEew                   := LsuVectorElementWidth.E8
-        x.indexEew                  := LsuVectorElementWidth.E8
+        x.indexSliceSel             := ret.IndexSliceSel()
         x.segmentStep               := 0.U
         x.emulStep                  := 0.U
         x.vectorsPerSegMinusOneOrig := 0.U
