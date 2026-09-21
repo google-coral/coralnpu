@@ -239,6 +239,7 @@ def cvfpu_repos():
             "@coralnpu_hw//third_party/cvfpu:0007-Fix-nan-boxing-divsqrt.patch",
             "@coralnpu_hw//third_party/cvfpu:0008-Fix-num-lanes-multifmt-slice.patch",
             "@coralnpu_hw//third_party/cvfpu:0009-Rebalance-fpnew-fma-pipeline-stages.patch",
+            "@coralnpu_hw//third_party/cvfpu:0010-Move-LZA-leading-zero-counter-to-norm-stage.patch",
         ],
         patch_args = ["-p1"],
     )

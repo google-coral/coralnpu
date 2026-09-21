@@ -1,0 +1,131 @@
+diff -Naur a/src/fpnew_fma_multi.sv b/src/fpnew_fma_multi.sv
+--- a/src/fpnew_fma_multi.sv	2026-09-21 00:00:00.000000000 +0000
++++ b/src/fpnew_fma_multi.sv	2026-09-21 00:00:00.000000000 +0000
+@@ -527,7 +527,7 @@
+   // ------
+   // Leading Zero Anticipator
+   // ------
+-  logic [LZC_RESULT_WIDTH-1:0] lza_count;
++  logic [LOWER_SUM_WIDTH:0] lza_pattern;
+ 
+   fmalza #(
+     .WIDTH ( LOWER_SUM_WIDTH      ),
+@@ -537,7 +537,7 @@
+     .Pm   ( product                             ),
+     .Cin  ( inject_carry_in                     ),
+     .sub  ( effective_subtraction               ),
+-    .SCnt ( lza_count                           )
++    .F    ( lza_pattern                         )
+   );
+ 
+ 
+@@ -552,7 +552,7 @@
+   logic [SHIFT_AMOUNT_WIDTH-1:0] addend_shamt_q;
+   logic                          sticky_before_add_q;
+   logic [3*PRECISION_BITS+3:0]   sum_q;
+-  logic [LZC_RESULT_WIDTH-1:0]   lza_count_q;
++  logic [LOWER_SUM_WIDTH:0]      lza_pattern_q;
+   logic                          final_sign_q;
+   fpnew_pkg::fp_format_e         dst_fmt_q2;
+   fpnew_pkg::roundmode_e         rnd_mode_q;
+@@ -561,13 +561,13 @@
+   fpnew_pkg::status_t            special_status_q;
+   // Internal pipeline signals, index i holds signal after i register stages
+   logic                  [0:NUM_SUM_REGS]                         mid_pipe_eff_sub_q;
+-  logic signed           [0:NUM_MID_REGS][EXP_WIDTH-1:0]          mid_pipe_exp_prod_q;
+-  logic signed           [0:NUM_MID_REGS][EXP_WIDTH-1:0]          mid_pipe_exp_diff_q;
+-  logic signed           [0:NUM_MID_REGS][EXP_WIDTH-1:0]          mid_pipe_tent_exp_q;
+-  logic                  [0:NUM_MID_REGS][SHIFT_AMOUNT_WIDTH-1:0] mid_pipe_add_shamt_q;
++  logic signed           [0:NUM_SUM_REGS][EXP_WIDTH-1:0]          mid_pipe_exp_prod_q;
++  logic signed           [0:NUM_SUM_REGS][EXP_WIDTH-1:0]          mid_pipe_exp_diff_q;
++  logic signed           [0:NUM_SUM_REGS][EXP_WIDTH-1:0]          mid_pipe_tent_exp_q;
++  logic                  [0:NUM_SUM_REGS][SHIFT_AMOUNT_WIDTH-1:0] mid_pipe_add_shamt_q;
+   logic                  [0:NUM_SUM_REGS]                         mid_pipe_sticky_q;
+-  logic                  [0:NUM_MID_REGS][3*PRECISION_BITS+3:0]   mid_pipe_sum_q;
+-  logic                  [0:NUM_MID_REGS][LZC_RESULT_WIDTH-1:0]   mid_pipe_lza_count_q;
++  logic                  [0:NUM_SUM_REGS][3*PRECISION_BITS+3:0]   mid_pipe_sum_q;
++  logic                  [0:NUM_SUM_REGS][LOWER_SUM_WIDTH:0]      mid_pipe_lza_pattern_q;
+   logic                  [0:NUM_SUM_REGS]                         mid_pipe_final_sign_q;
+   fpnew_pkg::roundmode_e [0:NUM_SUM_REGS]                         mid_pipe_rnd_mode_q;
+   fpnew_pkg::fp_format_e [0:NUM_SUM_REGS]                         mid_pipe_dst_fmt_q;
+@@ -589,7 +589,7 @@
+   assign mid_pipe_add_shamt_q[0]   = addend_shamt + addend_normalize_shamt;
+   assign mid_pipe_sticky_q[0]      = sticky_before_add;
+   assign mid_pipe_sum_q[0]         = sum;
+-  assign mid_pipe_lza_count_q[0]   = lza_count;
++  assign mid_pipe_lza_pattern_q[0] = lza_pattern;
+   assign mid_pipe_final_sign_q[0]  = final_sign;
+   assign mid_pipe_rnd_mode_q[0]    = inp_pipe_rnd_mode_q[NUM_INP_REGS];
+   assign mid_pipe_dst_fmt_q[0]     = dst_fmt_q;
+@@ -623,7 +623,7 @@
+     `FFL(mid_pipe_add_shamt_q[i+1],   mid_pipe_add_shamt_q[i],   reg_ena, '0)
+     `FFL(mid_pipe_sticky_q[i+1],      mid_pipe_sticky_q[i],      reg_ena, '0)
+     `FFL(mid_pipe_sum_q[i+1],         mid_pipe_sum_q[i],         reg_ena, '0)
+-    `FFL(mid_pipe_lza_count_q[i+1],   mid_pipe_lza_count_q[i],   reg_ena, '0)
++    `FFL(mid_pipe_lza_pattern_q[i+1], mid_pipe_lza_pattern_q[i], reg_ena, '0)
+     `FFL(mid_pipe_final_sign_q[i+1],  mid_pipe_final_sign_q[i],  reg_ena, '0)
+     `FFL(mid_pipe_rnd_mode_q[i+1],    mid_pipe_rnd_mode_q[i],    reg_ena, fpnew_pkg::RNE)
+     `FFL(mid_pipe_dst_fmt_q[i+1],     mid_pipe_dst_fmt_q[i],     reg_ena, fpnew_pkg::fp_format_e'(0))
+@@ -642,7 +642,7 @@
+   assign addend_shamt_q          = mid_pipe_add_shamt_q[NUM_SUM_REGS];
+   assign sticky_before_add_q     = mid_pipe_sticky_q[NUM_SUM_REGS];
+   assign sum_q                   = mid_pipe_sum_q[NUM_SUM_REGS];
+-  assign lza_count_q             = mid_pipe_lza_count_q[NUM_SUM_REGS];
++  assign lza_pattern_q           = mid_pipe_lza_pattern_q[NUM_SUM_REGS];
+   assign final_sign_q            = mid_pipe_final_sign_q[NUM_SUM_REGS];
+   assign rnd_mode_q              = mid_pipe_rnd_mode_q[NUM_SUM_REGS];
+   assign dst_fmt_q2              = mid_pipe_dst_fmt_q[NUM_SUM_REGS];
+@@ -654,6 +654,7 @@
+   // Normalization
+   // --------------
+   logic        [LOWER_SUM_WIDTH-1:0]  sum_lower;              // lower 2p+3 bits of sum are searched
++  logic        [LZC_RESULT_WIDTH-1:0] lza_count_q;            // the number of leading zeroes from LZA
+   logic        [LZC_RESULT_WIDTH-1:0] leading_zero_count;     // the number of leading zeroes
+   logic signed [LZC_RESULT_WIDTH:0]   leading_zero_count_sgn; // signed leading-zero count
+   logic                               sum_lower_zero;         // in case only zeroes found
+@@ -670,6 +671,16 @@
+ 
+   logic signed [EXP_WIDTH-1:0] final_exponent;
+ 
++  // Leading zero counter for cancellations
++  lzc #(
++    .WIDTH ( LOWER_SUM_WIDTH + 1 ),
++    .MODE  ( 1                   ) // MODE = 1 counts leading zeroes
++  ) i_lzc (
++    .in_i    ( lza_pattern_q ),
++    .cnt_o   ( lza_count_q   ),
++    .empty_o ( /*unused*/    )
++  );
++
+   assign sum_lower = sum_q[LOWER_SUM_WIDTH-1:0];
+ 
+   assign sum_lower_zero = sum_lower == '0;
+diff -Naur a/vendor/cvw/fma/fmalza.sv b/vendor/cvw/fma/fmalza.sv
+--- a/vendor/cvw/fma/fmalza.sv	2026-09-21 00:00:00.000000000 +0000
++++ b/vendor/cvw/fma/fmalza.sv	2026-09-21 00:00:00.000000000 +0000
+@@ -33,10 +33,9 @@
+   input logic [2*NF+1:0]              Pm,             // product
+   input logic                         Cin,            // carry in
+   input logic                         sub,            // subtraction
+-  output logic [$clog2(WIDTH+1)-1:0]  SCnt            // normalization shift count for the positive result
++  output logic [WIDTH:0]              F               // normalization shift leading pattern for the positive result
+ );
+ 
+-  logic [WIDTH:0]                     F;              // most significant bit of F indicates leading digit
+   logic [WIDTH-1:0]                   B;              // zero-extended product with same size as aligned A
+   logic [WIDTH-1:0]                   P, G, K;        // propagate, generate, kill for each column
+   logic [WIDTH-1:0]                   Pp1, Gm1, Km1;  // propagate shifted right by 1, generate/kill shifted left 1
+@@ -56,13 +55,4 @@
+   assign F[WIDTH]     = ~sub&P[WIDTH-1];
+   assign F[WIDTH-1:0] = (Pp1&(G&~Km1 | K&~Gm1)) | (~Pp1&(K&~Km1 | G&~Gm1));
+ 
+-  lzc #(
+-    .WIDTH ( WIDTH+1 ),
+-    .MODE  ( 1       ) // MODE = 1 counts leading zeroes
+-  ) i_lzc (
+-    .in_i    ( F          ),
+-    .cnt_o   ( SCnt       ),
+-    .empty_o ( /*unused*/ )
+-  );
+-
+ endmodule
