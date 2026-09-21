@@ -348,9 +348,9 @@ absl::Status CoreMiniAxi_tb::LoadElfAsync(const std::string& file_name) {
       }
       return dest;
     });
+    uint32_t entry_point_u32 = static_cast<uint32_t>(entry_point);
     elf_transfers.push_back(utils::Write(
-      csr_addr_ + 0x4, reinterpret_cast<uint8_t*>(&entry_point), sizeof(entry_point)
-    ));
+        csr_addr_ + 0x4, reinterpret_cast<uint8_t *>(&entry_point_u32), sizeof(entry_point_u32)));
     transfer_queue_.push(
         std::make_unique<TrafficDesc>(utils::merge(elf_transfers)));
     uint64_t tohost;
