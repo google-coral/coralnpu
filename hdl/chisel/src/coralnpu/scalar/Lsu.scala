@@ -477,8 +477,6 @@ class LsuCell(p: Parameters) extends Bundle {
   val rowAddr = UInt(p.dbusRowAddrBits.W)
   val mask    = UInt(p.lsuDataBytes.W)
 
-  def addr: UInt = Cat(rowAddr, OHToUInt(mask))
-
   def canAcceptResp(respRowAddr: UInt): Bool = {
     rowAddr === respRowAddr && state.isOneOf(LsuCellState.W_START, LsuCellState.W_RESP)
   }
@@ -577,25 +575,39 @@ class LsuCell(p: Parameters) extends Bundle {
     Mux(precondition, ret, LsuCell.unreachable(p))
   }
 
-  def setAddr(addr: UInt): LsuCell = {
-    MakeWireBundle[LsuCell](
-      new LsuCell(p),
-      _         -> this,
-      _.rowAddr -> addr(p.lsuAddrBits - 1, p.dbusOffsetBits),
-      _.mask    -> UIntToOH(addr(p.dbusOffsetBits - 1, 0), p.lsuDataBytes)
-    )
-  }
-
   def applyVectorIndex(vectorIndex: Option[ValidIO[UInt]]): LsuCell = {
     vectorIndex
       .map { x =>
-        Mux(x.valid, setAddr(addr + x.bits), this)
+        val vOffset    = x.bits(p.dbusOffsetBits - 1, 0)
+        val vRow       = x.bits(x.bits.getWidth - 1, p.dbusOffsetBits)
+        val carryMask  = (~(Fill(p.lsuDataBytes, 1.U(1.W)) >> vOffset))(p.lsuDataBytes - 1, 1)
+        val carry      = (mask(p.lsuDataBytes - 1, 1) & carryMask).orR
+        val newRowAddr = (rowAddr +& vRow +& carry)(p.dbusRowAddrBits - 1, 0)
+        val newMask    = LsuCell.rotl(mask, vOffset, p.lsuDataBytes)
+
+        MakeWireBundle[LsuCell](
+          new LsuCell(p),
+          _         -> this,
+          _.rowAddr -> Mux(x.valid, newRowAddr, rowAddr),
+          _.mask    -> Mux(x.valid, newMask, mask)
+        )
       }
       .getOrElse(this)
   }
 }
 
 object LsuCell {
+  def rotl(x: UInt, shamt: UInt, n: Int): UInt = {
+    (0 until log2Ceil(n)).foldLeft(x) { (curr, stage) =>
+      val shift = 1 << stage
+      Mux(
+        shamt(stage),
+        Cat(curr(n - 1 - shift, 0), curr(n - 1, n - shift)),
+        curr
+      )
+    }
+  }
+
   def apply(p: Parameters): LsuCell = {
     MakeWireBundle[LsuCell](
       new LsuCell(p),
