@@ -446,6 +446,8 @@ async def vme_decode_test(dut):
         "mew0_width7_store",
         "vill1_load",
         "vill1_store",
+        "opve_invalid_funct3",
+        "vfwmacc_vv_vill",
     ]
 
     r = runfiles.Create()
@@ -455,7 +457,7 @@ async def vme_decode_test(dut):
     fixture = await Fixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
-        ["test_fn", "trap_count", "last_mcause"] + test_names,
+        ["test_fn", "trap_count", "last_mcause", "last_mtval"] + test_names,
     )
 
     for name in tqdm(test_names, desc="VME decode tests"):
@@ -470,9 +472,25 @@ async def vme_decode_test(dut):
             (await fixture.read_word("last_mcause")).tobytes(),
             "little",
         )
+        last_mtval_val = int.from_bytes(
+            (await fixture.read_word("last_mtval")).tobytes(),
+            "little",
+        )
         assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
         assert trap_count_val == 1, f"[{name}] Expected 1 trap, got {trap_count_val}"
         assert last_mcause_val == 2, f"[{name}] Expected mcause=2 (illegal), got {last_mcause_val}"
+        if name == "vfwmacc_vv_vill":
+            opcode = last_mtval_val & 0x7F
+            assert opcode == 0x57, (
+                f"[{name}] Expected mtval opcode 0x57 (OP-V), but got 0x{opcode:02x} "
+                f"(mtval=0x{last_mtval_val:08x}). Round-trip reconstruction corrupted opcode!"
+            )
+        elif name == "opve_invalid_funct3":
+            opcode = last_mtval_val & 0x7F
+            assert opcode == 0x77, (
+                f"[{name}] Expected mtval opcode 0x77 (OP-VE), but got 0x{opcode:02x} "
+                f"(mtval=0x{last_mtval_val:08x})"
+            )
 
 
 @cocotb.test()

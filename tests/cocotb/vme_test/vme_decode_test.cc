@@ -20,11 +20,15 @@ typedef void (*test_func_t)(void);
 
 uint32_t trap_count  = 0;
 uint32_t last_mcause = 0;
+uint32_t last_mtval  = 0;
 
 __attribute__((interrupt)) void isr_handler(void) {
   uint32_t mcause;
+  uint32_t mtval;
   asm volatile("csrr %0, mcause" : "=r"(mcause));
+  asm volatile("csrr %0, mtval" : "=r"(mtval));
   last_mcause = mcause;
+  last_mtval  = mtval;
   if (mcause == 2) {
     trap_count++;
   }
@@ -255,6 +259,24 @@ __attribute__((used, retain)) void mset_dimension_config(void) {
       ".word 0x43E06057 \n"  // vtzero mt0
       ::
           : "x6", "x9", "x10", "x11", "x13", "x14", "x15", "x16", "memory");
+}
+
+// OP-VE (0x77) with reserved funct3=0b010 (must trap as illegal instruction)
+__attribute__((used, retain)) void opve_invalid_funct3(void) {
+  // Emit custom opcode 0x77 with funct6=111100, funct3=010 (reserved), vm=1
+  asm volatile(".word 0xF8002077 \n");
+}
+
+// Standard RVV vfwmacc.vv (0x57, funct6=111100, funct3=001) under vill=1.
+// Tests that mtval reconstructs opcode 0x57 faithfully without being corrupted to 0x77.
+__attribute__((used, retain)) void vfwmacc_vv_vill(void) {
+  uint32_t vl_discard;
+  asm volatile(
+      "vsetvli %[vl_discard], zero, e64, m1, ta, ma \n"  // Set vill=1
+      ".word 0xF2001057 \n"                              // vfwmacc.vv v0, v0, v0 (opcode 0x57)
+      : [vl_discard] "=&r"(vl_discard)
+      :
+      : "vl", "vtype");
 }
 
 test_func_t test_fn = vtle64;

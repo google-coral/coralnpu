@@ -39,13 +39,11 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
   val rob_tag = UInt(4.W)
 
   def originalEncoding(): UInt = {
-    val isZvtOpVe = (funct6() === "b111100".U) &&
-      (funct3() === "b000".U || funct3() === "b001".U)
     val lower7bits = MuxLookup(opcode, 0.U)(
       Seq(
         RvvCompressedOpcode.RVVLOAD  -> "b0000111".U,
         RvvCompressedOpcode.RVVSTORE -> "b0100111".U,
-        RvvCompressedOpcode.RVVALU   -> Mux(isZvtOpVe, "b1110111".U, "b1010111".U)
+        RvvCompressedOpcode.RVVALU   -> "b1010111".U
       )
     )
     Cat(bits, lower7bits)
@@ -106,21 +104,16 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     val isBf16OnlyWiden = (funct6Val === "b111011".U) ||
       (funct6Val === "b010010".U && (vs1Val === "b11101".U || vs1Val === "b01101".U))
 
-    val isVmeMatmulFp = if (p.enableVme) {
-      (funct6Val === "b111100".U) && (funct3() === "b001".U)
-    } else {
-      false.B
-    }
-
-    val isIllegalWiden = (if (p.enableVectorBf16) isWidenFloat
-                          else (isWidenFloat || isBf16OnlyWiden)) && !isVmeMatmulFp
+    val isIllegalWiden =
+      if (p.enableVectorBf16) isWidenFloat
+      else (isWidenFloat || isBf16OnlyWiden)
 
     Mux(
       isFloat,
       if (p.enableFloat) {
         isIllegalWiden
       } else {
-        !isBf16 && !isVmeMatmulFp
+        !isBf16
       },
       false.B
     )
@@ -319,12 +312,24 @@ object RvvCompressedInstruction {
     temp_inst.rob_tag := 0.U
     val illegal_float = temp_inst.isIllegalFloat(p)
 
+    val isOpVeValid = if (p.enableVme) {
+      val funct6  = inst(31, 26)
+      val funct3  = inst(14, 12)
+      val vm      = inst(25)
+      val isFp    = funct3 === "b001".U
+      val isInt   = funct3 === "b000".U
+      val fpValid = if (p.enableFloat) true.B else false.B
+      (funct6 === "b111100".U) && vm && (isInt || (isFp && fpValid))
+    } else {
+      false.B
+    }
+
     val new_opcode = MuxLookup(old_opcode, MakeInvalid(RvvCompressedOpcode()))(
       Seq(
         "b0000111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVLOAD),
         "b0100111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVSTORE),
         "b1010111".U -> MakeValid(!illegal_float, RvvCompressedOpcode.RVVALU),
-        "b1110111".U -> MakeValid(RvvCompressedOpcode.RVVALU)
+        "b1110111".U -> MakeValid(isOpVeValid, RvvCompressedOpcode.RVVALU)
       )
     )
 
