@@ -907,6 +907,82 @@ async def core_mini_axi_retire_buffer_full_illegal_inst_test(dut):
 
 
 @cocotb.test()
+async def core_mini_axi_cf_fault_retire_test(dut):
+    """Verifies that control flow instructions (jal, jalr, branch) retire cleanly
+
+    with trap=0 and link register writeback when targeting or preceding a decode fault,
+    and that the decode fault instruction retires independently at slot 0 with trap=1.
+    """
+    core_mini_axi = CoreMiniAxiInterface(dut)
+    await core_mini_axi.init()
+    await core_mini_axi.reset()
+    cocotb.start_soon(core_mini_axi.clock.start())
+    r = runfiles.Create()
+
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/cf_fault_retire_test.elf")
+    if not elf_path:
+        raise ValueError("elf_path must be a valid path")
+
+    with open(elf_path, "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+
+    with open(elf_path, "rb") as f:
+        jump_jal = core_mini_axi.lookup_symbol(f, "jump_jal")
+        fault_jal = core_mini_axi.lookup_symbol(f, "fault_jal")
+        jump_jalr = core_mini_axi.lookup_symbol(f, "jump_jalr")
+        fault_jalr = core_mini_axi.lookup_symbol(f, "fault_jalr")
+        branch_inst = core_mini_axi.lookup_symbol(f, "branch_inst")
+        fault_branch = core_mini_axi.lookup_symbol(f, "fault_branch")
+        trap_record_addr = core_mini_axi.lookup_symbol(f, "trap_record")
+        total_traps_addr = core_mini_axi.lookup_symbol(f, "total_traps")
+        failed_flag_addr = core_mini_axi.lookup_symbol(f, "test_failed_flag")
+
+    await core_mini_axi.execute_from(entry_point)
+    await core_mini_axi.wait_for_wfi()
+
+    failed_flag = (await
+                   core_mini_axi.read_word(failed_flag_addr)).view(np.uint32
+                                                                   )[0]
+    assert failed_flag == 0, "Test execution reached test_fail!"
+
+    total_traps = (await
+                   core_mini_axi.read_word(total_traps_addr)).view(np.uint32
+                                                                   )[0]
+    assert total_traps == 3, f"Expected exactly 3 traps, got {total_traps}"
+
+    records = (await core_mini_axi.read(trap_record_addr, 48)).view(np.uint32)
+
+    # Trap 0: JAL
+    mcause0, mepc0, mtval0, ra0 = records[0:4]
+    dut._log.info(
+        f"TRAP 0 (JAL): mcause={mcause0}, mepc={hex(mepc0)}, mtval={hex(mtval0)}, ra={hex(ra0)}"
+    )
+    assert mcause0 == 2, f"Expected mcause=2, got {mcause0}"
+    assert mepc0 == fault_jal, f"Expected mepc={hex(fault_jal)}, got {hex(mepc0)} (jump was {hex(jump_jal)})"
+    assert mtval0 == 0x7B, f"Expected mtval=0x7b, got {hex(mtval0)}"
+    assert ra0 == jump_jal + 4, f"Expected ra={hex(jump_jal + 4)}, got {hex(ra0)}"
+
+    # Trap 1: JALR
+    mcause1, mepc1, mtval1, ra1 = records[4:8]
+    dut._log.info(
+        f"TRAP 1 (JALR): mcause={mcause1}, mepc={hex(mepc1)}, mtval={hex(mtval1)}, ra={hex(ra1)}"
+    )
+    assert mcause1 == 2, f"Expected mcause=2, got {mcause1}"
+    assert mepc1 == fault_jalr, f"Expected mepc={hex(fault_jalr)}, got {hex(mepc1)} (jump was {hex(jump_jalr)})"
+    assert mtval1 == 0x7B, f"Expected mtval=0x7b, got {hex(mtval1)}"
+    assert ra1 == jump_jalr + 4, f"Expected ra={hex(jump_jalr + 4)}, got {hex(ra1)}"
+
+    # Trap 2: Branch
+    mcause2, mepc2, mtval2, _ = records[8:12]
+    dut._log.info(
+        f"TRAP 2 (BNE): mcause={mcause2}, mepc={hex(mepc2)}, mtval={hex(mtval2)}"
+    )
+    assert mcause2 == 2, f"Expected mcause=2, got {mcause2}"
+    assert mepc2 == fault_branch, f"Expected mepc={hex(fault_branch)}, got {hex(mepc2)} (branch was {hex(branch_inst)})"
+    assert mtval2 == 0x7B, f"Expected mtval=0x7b, got {hex(mtval2)}"
+
+
+@cocotb.test()
 async def core_mini_axi_wrap_burst_test(dut):
     """Test for AXI slave WRAP boundary calculation."""
     core_mini_axi = CoreMiniAxiInterface(dut)

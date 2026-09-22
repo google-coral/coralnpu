@@ -105,8 +105,8 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   )
 
   val decodeFaultValid = (io.fault.valid && io.fault.bits.decode)
-  // Valid fault, no fire, also not a load/store: those faults should be handled purely in the update stage
-  val noFire0Fault = (io.fault.valid && !io
+  // Valid decode fault, no fire: non-decode faults (load/store/fetch) are handled separately
+  val noFire0Fault = (decodeFaultValid && !io
     .inst(0)
     .fire && (io.fault.bits.mcause =/= 7.U) && (io.fault.bits.mcause =/= 5.U) &&
     !io.fault.bits.is_rvv.getOrElse(false.B))
@@ -119,8 +119,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   // command-queue credit, and dispatch ready. The enqueued entry carries the
   // trap flag, so retiring it one cycle later loses nothing, and the BRU
   // fault interlock stalls dispatch during that cycle.
-  val faultRetire        = Pipe(io.fault)
-  val noFire0FaultRetire = RegNext(noFire0Fault, false.B)
+  val faultRetire = Pipe(io.fault)
 
   // Mini-mode optimization state: Track the expected PC of the next instruction across dispatch cycles.
   // These are used to verify control flow continuity (linkOk) for the first instruction of a dispatch group.
@@ -569,14 +568,12 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     // Only allow new data/cf updates if the entry is actually valid in instBuffer
     val newCfDone = validBufferEntry && cfReady
     val isMpause  = bufferEntry.isMpause
-    // A no-fire fault is attributed as a trap on the control-flow instruction
-    // that preceded it (its retirement then flushes the enqueued fault entry,
-    // keeping it out of the retire stream). The registered flag preserves that
-    // attribution one cycle later, when the fault entry has entered the buffer
-    // and provides nextValid/nextLinkOk.
+    // Control-flow instructions only trap if their target check fails (!cfMatch).
+    // Subsequent decode faults (noFire0Fault) are enqueued as their own buffer entries
+    // and retire independently at slot 0 rather than being attributed to the preceding jump.
     val currentTrap = resultBuffer(
       i
-    ).bits.trap || faultingInstr || (validBufferEntry && bufferEntry.trap) || (validBufferEntry && isControlFlow && newCfDone && (!cfMatch || noFire0FaultRetire) && !isMpause)
+    ).bits.trap || faultingInstr || (validBufferEntry && bufferEntry.trap) || (validBufferEntry && isControlFlow && newCfDone && !cfMatch && !isMpause)
 
     val trapReady =
       bufferEntry.trap || (isControlFlow && newCfDone) || (faultingInstr && (!bufferEntry.isVector || isRvvFault))
@@ -618,9 +615,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         ),
         resultBuffer(i).bits.result
       )
-
-      val allowWritebackTrap = validBufferEntry && isControlFlow && newCfDone && noFire0FaultRetire
-      resultUpdate(i).bits.result := Mux(currentTrap && !allowWritebackTrap, 0.U, result)
+      resultUpdate(i).bits.result := Mux(currentTrap, 0.U, result)
     }
   }
 
@@ -728,16 +723,14 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
 
   io.debug.foreach { debug =>
     for (i <- 0 until p.retirementLanes) {
-      val valid      = (i.U < instBuffer.io.deqReady)
-      val allowDebug =
-        resultUpdate(i).bits.trap && instBuffer.io.dataOut(i).isControlFlow && noFire0FaultRetire
+      val valid = (i.U < instBuffer.io.deqReady)
       debug.inst(i).valid     := valid
       debug.inst(i).bits.pc   := MuxOR(valid, instBuffer.io.dataOut(i).addr)
       debug.inst(i).bits.inst := MuxOR(valid && !mini.B, instBuffer.io.dataOut(i).inst)
       debug.inst(i).bits.data := MuxOR(valid && !mini.B, resultUpdate(i).bits.result)
       debug.inst(i).bits.idx  := MuxOR(
         valid,
-        Mux(resultUpdate(i).bits.trap && !allowDebug, noWriteRegIdx, instBuffer.io.dataOut(i).idx)
+        Mux(resultUpdate(i).bits.trap, noWriteRegIdx, instBuffer.io.dataOut(i).idx)
       )
       debug.inst(i).bits.trap := MuxOR(valid, resultUpdate(i).bits.trap)
       if (p.enableRvv) {
