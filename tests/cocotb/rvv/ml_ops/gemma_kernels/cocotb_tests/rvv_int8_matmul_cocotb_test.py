@@ -18,14 +18,14 @@ import cocotb
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_matmul_metrics
 
 
 async def _impl(dut, shapes, test_label_prefix):
     """Unified test runner for Int8 MatMul & GeMV variants."""
     r = runfiles.Create()
-    fixture = await Fixture.Create(
+    fixture = await VerilatorTestFixture.Create(
         dut,
         highmem=True,
         ext_mem_base_addr=0x80000000,
@@ -66,8 +66,7 @@ async def _impl(dut, shapes, test_label_prefix):
 
         await fixture.run_to_halt(timeout_cycles=100000)
 
-        npu_cycles = int((await
-                          fixture.read_word('cycle_count')).view(np.uint32)[0])
+        npu_cycles = int(await fixture.read_word('cycle_count'))
         actual_output = (await fixture.read('result_output',
                                             M * N * 4)).view(dtype=np.int32
                                                              ).reshape(M, N)

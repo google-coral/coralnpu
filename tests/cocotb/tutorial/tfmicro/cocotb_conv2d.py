@@ -16,7 +16,7 @@ import cocotb
 import numpy as np
 
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 
 
 def tolerate(target: int, tolerance=1.2) -> int:
@@ -42,7 +42,7 @@ class Conv2DTest:
         self.fixture = None
 
     async def load_and_populate_input(self, dut):
-        self.fixture = await Fixture.Create(dut, highmem=True)
+        self.fixture = await VerilatorTestFixture.Create(dut, highmem=True)
         await self.fixture.load_elf_and_lookup_symbols(
             self.elf_file, [
                 'impl',

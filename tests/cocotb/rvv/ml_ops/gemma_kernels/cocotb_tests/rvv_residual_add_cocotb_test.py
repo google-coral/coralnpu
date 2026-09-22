@@ -18,7 +18,7 @@ import cocotb
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_vector_metrics
 
 
@@ -27,7 +27,7 @@ async def core_mini_rvv_residual_add_test(dut):
     """FP32 Residual Add Test."""
     r = runfiles.Create()
 
-    fixture = await Fixture.Create(
+    fixture = await VerilatorTestFixture.Create(
         dut,
         highmem=True,
         ext_mem_base_addr=0x80000000,
@@ -102,7 +102,7 @@ async def core_mini_rvv_bf16_residual_add_test(dut):
     import ml_dtypes
 
     r = runfiles.Create()
-    fixture = await Fixture.Create(
+    fixture = await VerilatorTestFixture.Create(
         dut,
         highmem=True,
         ext_mem_base_addr=0x80000000,

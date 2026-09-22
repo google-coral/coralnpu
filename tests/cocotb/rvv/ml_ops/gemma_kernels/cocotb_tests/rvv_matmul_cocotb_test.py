@@ -18,14 +18,14 @@ import cocotb
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_matmul_metrics
 
 
 async def _run_f32_matmul_test_impl(dut, shapes, test_label_prefix):
     """Unified test runner for FP32 MatMul & GeMV variants."""
     r = runfiles.Create()
-    fixture = await Fixture.Create(
+    fixture = await VerilatorTestFixture.Create(
         dut,
         highmem=True,
         ext_mem_base_addr=0x80000000,
@@ -100,7 +100,7 @@ def bf16_u16_to_fp32(arr):
 async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
     """Unified test runner for BFloat16 MatMul & GeMV variants."""
     r = runfiles.Create()
-    fixture = await Fixture.Create(
+    fixture = await VerilatorTestFixture.Create(
         dut,
         highmem=True,
         ext_mem_base_addr=0x80000000,

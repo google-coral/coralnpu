@@ -95,20 +95,6 @@ py_library(
 )
 
 py_library(
-    name = "sim_test_fixture",
-    srcs = [
-        "sim_test_fixture.py",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("cocotb"),
-        requirement("numpy"),
-        ":core_mini_axi_sim_interface",
-        "@bazel_tools//tools/python/runfiles",
-    ],
-)
-
-py_library(
     name = "core_mini_axi_pyocd_gdbserver",
     srcs = [
         "core_mini_axi_pyocd_gdbserver.py",
@@ -146,27 +132,6 @@ py_binary(
     ],
 )
 
-py_library(
-    name = "fpga_test_fixture",
-    srcs = ["fpga_test_fixture.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":ftdi_spi_master_lib",
-        requirement("numpy"),
-        requirement("pyelftools"),
-        "@bazel_tools//tools/python/runfiles",
-    ],
-)
-
-py_test(
-    name = "fpga_test_fixture_test",
-    srcs = ["fpga_test_fixture_test.py"],
-    deps = [
-        ":fpga_test_fixture",
-        requirement("numpy"),
-    ],
-)
-
 py_binary(
     name = "run_matmul_test",
     srcs = ["run_matmul_test.py"],
@@ -175,7 +140,7 @@ py_binary(
         "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem",
     ],
     deps = [
-        ":fpga_test_fixture",
+        "//coralnpu_test_utils/sim_backends:fpga_test_fixture",
         "//sw/utils:metrics",
         requirement("numpy"),
         "@bazel_tools//tools/python/runfiles",
@@ -189,7 +154,7 @@ py_binary(
         "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_optimized",
     ],
     deps = [
-        ":fpga_test_fixture",
+        "//coralnpu_test_utils/sim_backends:fpga_test_fixture",
         "//sw/utils:metrics",
         requirement("numpy"),
         "@bazel_tools//tools/python/runfiles",
@@ -225,7 +190,7 @@ py_binary(
     srcs = ["run_ddr_test.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":fpga_test_fixture",
+        "//coralnpu_test_utils/sim_backends:fpga_test_fixture",
         requirement("numpy"),
         "@bazel_tools//tools/python/runfiles",
     ],
@@ -267,7 +232,7 @@ py_binary(
     srcs = ["run_binary.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":fpga_test_fixture",
+        "//coralnpu_test_utils/sim_backends:fpga_test_fixture",
     ],
 )
 
@@ -283,15 +248,4 @@ cc_library(
     name = "rvv_cpp_util",
     hdrs = [":rvv_cpp_util.h"],
     visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "uvm_test_fixture",
-    srcs = ["uvm_test_fixture.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("numpy"),
-        requirement("pyelftools"),
-        "@bazel_tools//tools/python/runfiles",
-    ],
 )

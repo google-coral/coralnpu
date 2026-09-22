@@ -1,5 +1,20 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import asyncio
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_v2_sim_utils import CoralNPUV2Simulator
+from coralnpu_test_utils.sim_backends.mpact_npusim_test_fixture import MpactNpuSimTestFixture
 import numpy as np
 
 
@@ -25,11 +40,11 @@ class MpactDepthwiseConvTest:
         self.elf_file = r.Rlocation(
             'coralnpu_hw/tests/cocotb/tutorial/tfmicro/depthwise_conv_test.elf'
         )
+        self.fixture = None
 
-    def load_and_populate_input(self):
-
-        self.npu_sim = CoralNPUV2Simulator(highmem_ld=True)
-        self.entry_point, self.symbol_map = self.npu_sim.get_elf_entry_and_symbol(
+    async def load_and_populate_input(self):
+        self.fixture = await MpactNpuSimTestFixture.Create(highmem=True)
+        await self.fixture.load_elf_and_lookup_symbols(
             self.elf_file, [
                 'impl',
                 'run_ref',
@@ -46,7 +61,6 @@ class MpactDepthwiseConvTest:
                 'output_data',
             ]
         )
-        self.npu_sim.load_program(self.elf_file)
         rng = np.random.default_rng()
         self.filter_data = rng.integers(-128, 128, self.f_shape, dtype=np.int8)
         filter_data_flat = self.filter_data.flatten()
@@ -56,48 +70,29 @@ class MpactDepthwiseConvTest:
         input_data = rng.integers(
             -128, 128, self.in_shape, dtype=np.int8
         ).flatten()
-        self.npu_sim.write_word(
-            self.symbol_map['stride'], np.uint32(self.stride)
-        )
-        self.npu_sim.write_word(self.symbol_map['dm'], np.uint32(self.dm))
-        self.npu_sim.write_memory(
-            self.symbol_map['filter_shape'], self.f_shape
-        )
-        self.npu_sim.write_memory(
-            self.symbol_map['filter_data'], filter_data_flat
-        )
-        self.npu_sim.write_memory(
-            self.symbol_map['bias_shape'], self.bias_shape
-        )
-        self.npu_sim.write_memory(self.symbol_map['bias_data'], bias_data)
-        self.npu_sim.write_memory(
-            self.symbol_map['input_shape'], self.in_shape
-        )
-        self.npu_sim.write_memory(self.symbol_map['input_data'], input_data)
-        self.npu_sim.write_memory(
-            self.symbol_map['output_shape'], self.out_shape
-        )
+        await self.fixture.write_word('stride', int(self.stride))
+        await self.fixture.write_word('dm', int(self.dm))
+        await self.fixture.write('filter_shape', self.f_shape)
+        await self.fixture.write('filter_data', filter_data_flat)
+        await self.fixture.write('bias_shape', self.bias_shape)
+        await self.fixture.write('bias_data', bias_data)
+        await self.fixture.write('input_shape', self.in_shape)
+        await self.fixture.write('input_data', input_data)
+        await self.fixture.write('output_shape', self.out_shape)
 
-    def run(self, fun_ptr):
-        self.npu_sim.write_register('pc', self.entry_point)
-        self.npu_sim.write_ptr(
-            self.symbol_map['impl'], self.symbol_map[fun_ptr]
+    async def run(self, fun_ptr):
+        await self.fixture.write_ptr('impl', fun_ptr)
+        await self.fixture.write(
+            'output_data', np.zeros([self.out_size], dtype=np.int8)
         )
-        self.npu_sim.write_memory(
-            self.symbol_map['output_data'],
-            np.zeros([self.out_size], dtype=np.int8)
-        )
-        self.npu_sim.run()
-        self.npu_sim.wait()
-        cycles = self.npu_sim.get_cycle_count()
-        outputs = self.npu_sim.read_memory(
-            self.symbol_map['output_data'], self.out_size
-        ).view(np.int8)
+        cycles = await self.fixture.run_to_halt()
+        outputs = (await self.fixture.read('output_data',
+                                           self.out_size)).view(np.int8)
         return cycles, outputs
 
-    def test(self, ref_target, opt_target):
-        opt_cycles, ref_outputs = self.run(fun_ptr="run_optimized")
-        ref_cycles, opt_outputs = self.run(fun_ptr="run_ref")
+    async def test(self, ref_target, opt_target):
+        opt_cycles, ref_outputs = await self.run(fun_ptr="run_optimized")
+        ref_cycles, opt_outputs = await self.run(fun_ptr="run_ref")
         print(f"opt_cycles {opt_cycles}")
         print(f"ref_cycles {ref_cycles}")
         assert (opt_outputs == ref_outputs).all()
@@ -105,34 +100,34 @@ class MpactDepthwiseConvTest:
         assert ref_cycles < tolerate(ref_target)
 
 
-def run_tests():
+async def run_tests():
 
     print("Running functional tests...")
     print("test_dwconv8to8stride1")
     t = MpactDepthwiseConvTest(in_d=32)
-    t.load_and_populate_input()
-    t.test(ref_target=171_880, opt_target=7_907)
+    await t.load_and_populate_input()
+    await t.test(ref_target=171_880, opt_target=7_907)
 
     print("test_dwconv32to32stride2")
     t = MpactDepthwiseConvTest(in_d=32, stride=2)
-    t.load_and_populate_input()
-    t.test(ref_target=182_500, opt_target=7_752)
+    await t.load_and_populate_input()
+    await t.test(ref_target=182_500, opt_target=7_752)
 
     print("test_dwconv64to64stride1")
     t = MpactDepthwiseConvTest(in_d=64)
-    t.load_and_populate_input()
-    t.test(ref_target=337_804, opt_target=10_800)
+    await t.load_and_populate_input()
+    await t.test(ref_target=337_804, opt_target=10_800)
 
     print("test_dwconv64to64stride2")
     t = MpactDepthwiseConvTest(in_d=64, stride=2)
-    t.load_and_populate_input()
-    t.test(ref_target=359_251, opt_target=10_675)
+    await t.load_and_populate_input()
+    await t.test(ref_target=359_251, opt_target=10_675)
 
     print("test_dwconv16to32stride2")
     t = MpactDepthwiseConvTest(in_d=16, dm=2, stride=2)
-    t.load_and_populate_input()
-    t.test(ref_target=177_961, opt_target=9_586)
+    await t.load_and_populate_input()
+    await t.test(ref_target=177_961, opt_target=9_586)
 
 
 if __name__ == "__main__":
-    run_tests()
+    asyncio.run(run_tests())

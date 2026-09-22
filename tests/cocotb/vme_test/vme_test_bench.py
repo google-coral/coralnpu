@@ -27,7 +27,7 @@ single hard-coded variant and the harness verifies the readback separately.
 import cocotb
 import numpy as np
 from coralnpu_test_utils.core_mini_axi_interface import CoreMiniAxiInterface
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 from tqdm import tqdm
 
@@ -290,7 +290,7 @@ _MM_SYMBOLS = [
 
 
 async def _load_matmul_fixture(dut):
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_matmul_test_program.elf"
@@ -454,7 +454,7 @@ async def vme_decode_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_decode_test.elf"
     )
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
         ["test_fn", "trap_count", "last_mcause", "last_mtval"] + test_names,
@@ -584,7 +584,7 @@ async def vme_load_store_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_load_store_test.elf"
     )
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
         ["test_fn", "trap_count", "last_mcause", "in_buf", "out_buf"] +
@@ -665,7 +665,7 @@ async def vme_transpose_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_transpose_test.elf"
     )
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
         ["test_fn", "trap_count", "last_mcause", "in_buf", "out_buf"] +
@@ -1169,7 +1169,7 @@ async def vme_mset_retire_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_decode_test.elf"
     )
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
         ["test_fn", "trap_count", "last_mcause", "mset_dimension_config"],

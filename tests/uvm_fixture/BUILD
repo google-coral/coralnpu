@@ -14,13 +14,9 @@
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 
-py_test(
+alias(
     name = "test_uvm_fixture_unit",
-    srcs = ["test_uvm_fixture_unit.py"],
-    deps = [
-        "//coralnpu_test_utils:uvm_test_fixture",
-        requirement("numpy"),
-    ],
+    actual = "//coralnpu_test_utils/sim_backends:uvm_test_fixture_test",
 )
 
 py_test(
@@ -46,7 +42,7 @@ py_test(
         "uvm",
     ],
     deps = [
-        "//coralnpu_test_utils:uvm_test_fixture",
+        "//coralnpu_test_utils/sim_backends:uvm_test_fixture",
         requirement("numpy"),
         "@bazel_tools//tools/python/runfiles",
     ],

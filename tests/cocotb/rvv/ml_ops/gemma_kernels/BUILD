@@ -221,7 +221,7 @@ cocotb_test_suite(
         "tags": ["manual"],
         "test_module": ["cocotb_tests/rvv_rms_norm_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             "//sw/utils:metrics",
             requirement("ml_dtypes"),
@@ -261,7 +261,7 @@ cocotb_test_suite(
         "tags": ["manual"],
         "test_module": ["cocotb_tests/rvv_residual_add_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             "//sw/utils:metrics",
             requirement("ml_dtypes"),
@@ -301,7 +301,7 @@ cocotb_test_suite(
         "tags": ["manual"],
         "test_module": ["cocotb_tests/rvv_tanh_gelu_mul_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             "//sw/utils:metrics",
             requirement("ml_dtypes"),
@@ -341,7 +341,7 @@ cocotb_test_suite(
         "tags": ["manual"],
         "test_module": ["cocotb_tests/rvv_matmul_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             "//sw/utils:metrics",
             requirement("ml_dtypes"),
@@ -381,7 +381,7 @@ cocotb_test_suite(
         "tags": ["manual"],
         "test_module": ["cocotb_tests/rvv_flashattention_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             "//sw/utils:metrics",
             requirement("ml_dtypes"),
@@ -425,7 +425,7 @@ cocotb_test_suite(
         "tags": ["manual"],
         "test_module": ["cocotb_tests/rvv_int8_matmul_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             "//sw/utils:metrics",
         ],
@@ -454,7 +454,7 @@ py_binary(
         ":rvv_matmul",
     ],
     deps = [
-        "//coralnpu_test_utils:fpga_test_fixture",
+        "//coralnpu_test_utils/sim_backends:fpga_test_fixture",
         "//sw/utils:metrics",
         requirement("numpy"),
         "@bazel_tools//tools/python/runfiles",
@@ -468,7 +468,7 @@ py_binary(
         ":rvv_bf16_matmul",
     ],
     deps = [
-        "//coralnpu_test_utils:fpga_test_fixture",
+        "//coralnpu_test_utils/sim_backends:fpga_test_fixture",
         "//sw/utils:metrics",
         requirement("ml_dtypes"),
         requirement("numpy"),

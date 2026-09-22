@@ -49,7 +49,7 @@ cocotb_test_suite(
         "test_module": ["cocotb_counter_test.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@rules_python//python/runfiles",
         ],
         "data": [":inst_cycle_counter_example"],

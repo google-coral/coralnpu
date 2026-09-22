@@ -12,47 +12,53 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_v2_sim_utils import CoralNPUV2Simulator
+import asyncio
 import numpy as np
 
+from coralnpu_test_utils.sim_backends.mpact_npusim_test_fixture import (
+    MpactNpuSimTestFixture,
+)
 
-def run_full_mobilenet():
-    print(f"Running full mobilenet...")
-    npu_sim = CoralNPUV2Simulator(highmem_ld=True, exit_on_ebreak=True)
-    r = runfiles.Create()
-    elf_file = r.Rlocation(
-        'coralnpu_hw/tests/npusim_examples/run_full_mobilenet_v1_binary.elf'
+
+async def _run_full_mobilenet():
+    print("Running full mobilenet...")
+    fixture = await MpactNpuSimTestFixture.Create(
+        highmem=True, exit_on_ebreak=True
+    )
+    symbols = await fixture.load_elf_and_lookup_symbols(
+        "tests/npusim_examples/run_full_mobilenet_v1_binary.elf",
+        symbols=["inference_status", "inference_input", "inference_output"],
+        optional=True,
     )
 
-    entry_point, symbol_map = npu_sim.get_elf_entry_and_symbol(
-        elf_file, ['inference_status', 'inference_input', 'inference_output']
-    )
-    npu_sim.load_program(elf_file, entry_point)
-
-    if symbol_map.get('inference_input'):
+    if symbols.get("inference_input"):
         input_data = np.random.randint(
             -128, 127, size=(224 * 224 * 3, ), dtype=np.int8
         )
-        npu_sim.write_memory(symbol_map['inference_input'], input_data)
+        await fixture.write("inference_input", input_data)
 
     print("Running simulation...", flush=True)
-    npu_sim.run()
-    npu_sim.wait()
-    print(f"cycles taken by the simulation {npu_sim.get_cycle_count()}")
-    if symbol_map.get('inference_output'):
-        output_data = npu_sim.read_memory(symbol_map['inference_output'], 5)
-        output_data = np.array(output_data, dtype=np.int8)
+    await fixture.run_to_halt()
+    print(f"cycles taken by the simulation {fixture.get_cycle_count()}")
+
+    if symbols.get("inference_output"):
+        output_data = await fixture.read(
+            "inference_output", size=5, dtype=np.int8, shape=(5, )
+        )
         max_idx = np.argmax(output_data)
         print(
             f"Output info: Top index {max_idx} with value {output_data[max_idx]} from {output_data}"
         )
 
-    if symbol_map.get('inference_status'):
-        inference_status = npu_sim.read_memory(
-            symbol_map['inference_status'], 1
+    if symbols.get("inference_status"):
+        inference_status = (
+            await fixture.read("inference_status", size=1, dtype=np.uint8)
         )[0]
         print(f"inference_status {inference_status}")
+
+
+def run_full_mobilenet():
+    asyncio.run(_run_full_mobilenet())
 
 
 if __name__ == "__main__":

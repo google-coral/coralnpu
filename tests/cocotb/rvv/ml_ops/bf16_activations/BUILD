@@ -83,7 +83,7 @@ cocotb_test_suite(
         "tags": ["manual"],
         "test_module": ["rvv_math_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             requirement("ml_dtypes"),
         ],
@@ -119,7 +119,7 @@ cocotb_test_suite(
         "tags": ["manual"],
         "test_module": ["sigmoid_bf16_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             requirement("ml_dtypes"),
         ],
@@ -155,7 +155,7 @@ cocotb_test_suite(
         "tags": ["manual"],
         "test_module": ["softmax_bf16_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             requirement("ml_dtypes"),
         ],

@@ -15,14 +15,14 @@
 import cocotb
 import numpy as np
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 
 
 @cocotb.test()
 async def core_mini_rvv_mobilenet_v1(dut):
 
-    fixture = await Fixture.Create(dut, highmem=True)
+    fixture = await VerilatorTestFixture.Create(dut, highmem=True)
     r = runfiles.Create()
     elf_files = ['run_mobilenet_v1_025_partial_binary.elf']
     for elf_file in elf_files:

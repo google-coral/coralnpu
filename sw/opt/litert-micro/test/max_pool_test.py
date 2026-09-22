@@ -1,11 +1,12 @@
+import asyncio
 import os
 import sys
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_v2_sim_utils import CoralNPUV2Simulator
+from coralnpu_test_utils.sim_backends.mpact_npusim_test_fixture import MpactNpuSimTestFixture
 
 
-def run_test_case(npu_sim, elf_file, input_shape):
+async def run_test_case(elf_file, input_shape):
     # Symbols to resolve
     symbols = [
         "input_dims",
@@ -26,12 +27,8 @@ def run_test_case(npu_sim, elf_file, input_shape):
         "heartbeat",
     ]
 
-    entry_point, symbol_map = npu_sim.get_elf_entry_and_symbol(
-        elf_file, symbols
-    )
-
-    # Initialize simulator
-    npu_sim.load_program(elf_file, entry_point)
+    fixture = await MpactNpuSimTestFixture.Create(highmem=True)
+    await fixture.load_elf_and_lookup_symbols(elf_file, symbols)
 
     # Parameters for MaxPool 2x2
     filter_height = 2
@@ -58,86 +55,61 @@ def run_test_case(npu_sim, elf_file, input_shape):
     # Generate random input data
     input_data = np.random.randint(-128, 127, size=input_shape, dtype=np.int8)
 
-    # Helper to write data
-    def write_symbol_data(name, data):
-        addr = symbol_map.get(name)
-        if addr is None:
-            raise ValueError(f"Symbol {name} not found")
-        # Ensure data is numpy array or bytes
-        if isinstance(data, np.ndarray):
-            pass
-        elif isinstance(data, (bytes, bytearray)):
-            data = np.frombuffer(data, dtype=np.uint8)
-        elif isinstance(data, (int, float)):
-            data = int(data).to_bytes(4, byteorder="little", signed=True)
-            data = np.frombuffer(data, dtype=np.uint8)
-        else:
-            data = np.array(data, dtype=np.uint8)
-        npu_sim.write_memory(addr, data)
+    await fixture.write("input_dims", np.array(input_shape, dtype=np.int32))
+    await fixture.write("input_data", input_data)
+    await fixture.write("output_dims", np.array(output_shape, dtype=np.int32))
 
-    def read_symbol_val(name, size=4):
-        addr = symbol_map.get(name)
-        val = npu_sim.read_memory(addr, size)
-        return int.from_bytes(val, "little")
-
-    write_symbol_data("input_dims", np.array(input_shape, dtype=np.int32))
-    write_symbol_data("input_data", input_data)
-    write_symbol_data("output_dims", np.array(output_shape, dtype=np.int32))
-
-    write_symbol_data("params_stride_width", stride_width)
-    write_symbol_data("params_stride_height", stride_height)
-    write_symbol_data("params_filter_width", filter_width)
-    write_symbol_data("params_filter_height", filter_height)
-    write_symbol_data("params_padding_width", pad_w)
-    write_symbol_data("params_padding_height", pad_h)
-    write_symbol_data("params_activation_min", activation_min)
-    write_symbol_data("params_activation_max", activation_max)
+    await fixture.write_word("params_stride_width", stride_width, signed=True)
+    await fixture.write_word(
+        "params_stride_height", stride_height, signed=True
+    )
+    await fixture.write_word("params_filter_width", filter_width, signed=True)
+    await fixture.write_word(
+        "params_filter_height", filter_height, signed=True
+    )
+    await fixture.write_word("params_padding_width", pad_w, signed=True)
+    await fixture.write_word("params_padding_height", pad_h, signed=True)
+    await fixture.write_word(
+        "params_activation_min", activation_min, signed=True
+    )
+    await fixture.write_word(
+        "params_activation_max", activation_max, signed=True
+    )
 
     # Run Simulation
-    total_cycles = 0
-    step_size = 500_000
-    while True:
-        actual_steps = npu_sim.step(step_size)
-        total_cycles += actual_steps
-        if actual_steps < step_size:
-            break
-        if total_cycles > 100_000_000:
-            print("Timeout reached.")
-            break
+    await fixture.run_to_halt(timeout_cycles=100_000_000)
 
     # Read Results
-    ref_cycles = read_symbol_val("ref_cycles", 8)
+    ref_cycles = int.from_bytes((await fixture.read("ref_cycles",
+                                                    8)).tobytes(), "little")
     print(f"  Ref Cycles: {ref_cycles}")
 
-    ref_out = npu_sim.read_memory(
-        symbol_map.get("output_data_ref"), np.prod(output_shape)
+    out_size = int(np.prod(output_shape))
+    ref_out = await fixture.read(
+        "output_data_ref", dtype=np.int8, shape=(out_size, )
     )
-    ref_out = np.frombuffer(ref_out, dtype=np.int8)
 
-    opt_cycles = read_symbol_val("opt_cycles", 8)
+    opt_cycles = int.from_bytes((await fixture.read("opt_cycles",
+                                                    8)).tobytes(), "little")
     print(f"  Opt Cycles: {opt_cycles}")
 
     if opt_cycles > 0:
         print(f"  Speedup: {ref_cycles / opt_cycles:.2f}x")
 
-    opt_out = npu_sim.read_memory(
-        symbol_map.get("output_data"), np.prod(output_shape)
+    opt_out = await fixture.read(
+        "output_data", dtype=np.int8, shape=(out_size, )
     )
-    opt_out = np.frombuffer(opt_out, dtype=np.int8)
 
     # Verify
     mismatches = np.sum(opt_out != ref_out)
     if mismatches > 0:
         print(f"  FAILED: {mismatches} mismatches found!", flush=True)
-        # sys.exit(1) # Don't exit on first dim failure, but let's see.
-        # Actually better to exit to notice errors.
         sys.exit(1)
     else:
         print("  SUCCESS: Outputs match.", flush=True)
 
 
-def run_max_pool_sim_test():
-    npu_sim = CoralNPUV2Simulator(highmem_ld=True)
+async def run_max_pool_sim_test():
     r = runfiles.Create()
     elf_file = r.Rlocation(
         "coralnpu_hw/sw/opt/litert-micro/test/max_pool_test.elf"
@@ -146,19 +118,14 @@ def run_max_pool_sim_test():
     if not os.path.exists(elf_file):
         raise FileNotFoundError(f"ELF file not found: {elf_file}")
 
-    # Shapes from HPS (Depth 16, 48)
-    # [1, 200, 200, 16] - Large input to verify caching/bandwidth
-    # [1, 50, 50, 48]
-
     test_shapes = [
         [1, 100, 100, 16],
         [1, 50, 50, 48],
     ]
 
     for shape in test_shapes:
-        npu_sim = CoralNPUV2Simulator(highmem_ld=True)
-        run_test_case(npu_sim, elf_file, shape)
+        await run_test_case(elf_file, shape)
 
 
 if __name__ == "__main__":
-    run_max_pool_sim_test()
+    asyncio.run(run_max_pool_sim_test())

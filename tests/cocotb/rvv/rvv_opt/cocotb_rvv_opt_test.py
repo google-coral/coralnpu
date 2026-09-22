@@ -15,14 +15,14 @@
 import cocotb
 import numpy as np
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 
 
 @cocotb.test()
 async def core_mini_rvv_memcpy_test(dut):
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.
@@ -49,7 +49,7 @@ async def core_mini_rvv_memcpy_test(dut):
 @cocotb.test()
 async def core_mini_rvv_memset_test(dut):
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.

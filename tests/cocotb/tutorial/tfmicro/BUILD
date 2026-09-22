@@ -102,7 +102,7 @@ cocotb_test_suite(
         "test_module": ["cocotb_run_mobilenet_v1.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@rules_python//python/runfiles",
         ],
         "data": ["run_mobilenet_v1_025_partial_binary.elf"],
@@ -151,7 +151,7 @@ cocotb_test_suite(
         "test_module": ["cocotb_depthwise_conv.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@rules_python//python/runfiles",
         ],
         "data": ["depthwise_conv_test.elf"],
@@ -169,7 +169,7 @@ py_binary(
     srcs = ["npusim_depthwise_conv.py"],
     data = [":depthwise_conv_test"],
     deps = [
-        "//sw/coralnpu_sim:coralnpu_v2_sim_utils_lib",
+        "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
         requirement("numpy"),
     ],
@@ -180,7 +180,7 @@ py_binary(
     srcs = ["npusim_conv2d.py"],
     data = [":conv2d_test"],
     deps = [
-        "//sw/coralnpu_sim:coralnpu_v2_sim_utils_lib",
+        "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
         requirement("numpy"),
     ],
@@ -223,7 +223,7 @@ cocotb_test_suite(
         "test_module": ["cocotb_conv2d.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@rules_python//python/runfiles",
         ],
         "data": ["conv2d_test.elf"],
@@ -266,7 +266,7 @@ cocotb_test_suite(
         "test_module": ["cocotb_pooling.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@rules_python//python/runfiles",
         ],
         "data": ["pooling_test.elf"],
@@ -306,7 +306,7 @@ cocotb_test_suite(
         "test_module": ["cocotb_fully_connected.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@rules_python//python/runfiles",
         ],
         "data": ["fully_connected_test.elf"],
@@ -340,7 +340,7 @@ cocotb_test_suite(
         "test_module": ["cocotb_logistic.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@rules_python//python/runfiles",
         ],
         "data": ["logistic_test.elf"],

@@ -20,7 +20,7 @@ import tqdm
 import random
 
 from coralnpu_test_utils.core_mini_axi_interface import AxiBurst, AxiResp, CoreMiniAxiInterface
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 
 
@@ -30,12 +30,12 @@ async def core_mini_axi_run_wfi_in_all_slots_itcm512kb_dtcm512kb(dut):
     # Note: 'highmem' usage in Fixture might need adjustment if it strictly implies 1024KB.
     # Checking Fixture usage: it likely sets up the memory map.
     # If standard map supports 512KB without overlap issues, this might be fine.
-    # Assuming Fixture.Create(dut, highmem=True) is safe or we use default if 512KB doesn't need highmem flag.
+    # Assuming VerilatorTestFixture.Create(dut, highmem=True) is safe or we use default if 512KB doesn't need highmem flag.
     # However, 512KB might not need the "highmem" flag in Fixture if that flag is only for 1024KB specific overlaps.
     # But usually custom sizes might need some flag. Let's assume highmem=False (default) or check if we need a new flag.
     # Given the user context, Highmem usually meant 1024KB. 512KB might fit in standard map or explicit map.
     # For now, I will use highmem=False as 512KB is not "Highmem" (1024KB).
-    fixture = await Fixture.Create(dut, csr_base_addr=0x200000)
+    fixture = await VerilatorTestFixture.Create(dut, csr_base_addr=0x200000)
     core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
@@ -64,7 +64,7 @@ async def core_mini_rvv_matmul_test(dut):
     RHS_COLS = 4
     INNER = 64
 
-    fixture = await Fixture.Create(dut, csr_base_addr=0x200000)
+    fixture = await VerilatorTestFixture.Create(dut, csr_base_addr=0x200000)
     r = runfiles.Create()
     elf_files = [
         'rvv_matmul_itcm512kb_dtcm512kb.elf',

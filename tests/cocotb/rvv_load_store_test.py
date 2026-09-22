@@ -19,7 +19,7 @@ import tqdm
 
 from bazel_tools.tools.python.runfiles import runfiles
 from coralnpu_test_utils.rvv_type_util import construct_vtype, DTYPE_TO_SEW, SEWS, SEW_TO_LMULS_AND_VLMAXS, LMUL_TO_EMUL
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 
 
 async def vector_load_store(
@@ -34,7 +34,7 @@ async def vector_load_store(
 
     Each test performs some kind of patterned copy from `in_buf` to `out_buf`.
     """
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/load_store/' + elf_name),
@@ -77,7 +77,7 @@ async def vector_load_store_v2(
 
     Each test performs some kind of patterned copy from `in_buf` to `out_buf`.
     """
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/load_store/' + elf_name),
@@ -132,7 +132,7 @@ async def vector_load_segmented_indexed(
 
     Each test performs a gather-unzip operation and writes the result to an output.
     """
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/load_store/' + elf_name),
@@ -206,7 +206,7 @@ async def vector_store_segmented_indexed(
 
     Each test loads indices and data and performs a scatter operation.
     """
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/load_store/' + elf_name),
@@ -298,7 +298,7 @@ async def vector_store_segmented_indexed(
 async def load_store_bits(dut):
     """Test vlm/vsm usage accessible from intrinsics."""
     # mask is not accessible from here.
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     cases = [
         {
@@ -409,7 +409,7 @@ async def load_store_bits(dut):
 async def load_unit_masked(dut):
     """Test masked unit stores."""
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -514,7 +514,7 @@ async def load_unit_masked(dut):
 async def load_unit_ff(dut):
     """Test fault-only-first unit loads (vle8ff.v, vle16ff.v, vle32ff.v) across all SEWs and LMULs."""
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -763,7 +763,7 @@ async def load_unit_ff(dut):
 @cocotb.test()
 async def store_unit_masked(dut):
     """Test masked unit stores."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -3288,7 +3288,7 @@ async def store32_seg_unit(dut):
 
 
 async def _setup_lsu_fault_fixture(dut):
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation(
@@ -3359,23 +3359,23 @@ async def _run_and_verify_lsu_fault(
     fault_count = (await fixture.read_word('fault_count')).view(np.int32)[0]
     assert fault_count == 1, f"Expected exactly 1 fault, got {fault_count}"
 
-    fault_mcause = (await fixture.read_word('fault_mcause')).view(np.uint32)[0]
+    fault_mcause = await fixture.read_word('fault_mcause')
     assert fault_mcause == expected_mcause, (
         f"Expected mcause={expected_mcause}, got {fault_mcause}"
     )
 
-    fault_mepc = (await fixture.read_word('fault_mepc')).view(np.uint32)[0]
+    fault_mepc = await fixture.read_word('fault_mepc')
     expected_pc = fixture.symbols[faulting_insn_symbol]
     assert fault_mepc == expected_pc, (
         f"Expected PC {hex(expected_pc)}, got {hex(fault_mepc)}"
     )
 
-    fault_mtval = (await fixture.read_word('fault_mtval')).view(np.uint32)[0]
+    fault_mtval = await fixture.read_word('fault_mtval')
     assert fault_mtval == expected_mtval, (
         f"Expected mtval {hex(expected_mtval)}, got {hex(fault_mtval)}"
     )
 
-    fault_vstart = (await fixture.read_word('fault_vstart')).view(np.uint32)[0]
+    fault_vstart = await fixture.read_word('fault_vstart')
     assert fault_vstart == expected_vstart, (
         f"Expected vstart={expected_vstart}, got {fault_vstart}"
     )
@@ -3530,7 +3530,7 @@ async def lsu_fault_scalar_to_scalar_rs_flush(dut):
 @cocotb.test()
 async def load_store8_test(dut):
     """Testbench to test RVV load."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation(
@@ -3561,7 +3561,7 @@ async def load_store8_test(dut):
 @cocotb.test()
 async def load_unit_all_vtypes_test(dut):
     """Testbench to test RVV Unit/segmented loads, with all vtypes."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     functions = [
         ("test_vle8", np.uint8, 1),
@@ -3647,7 +3647,7 @@ async def load_unit_all_vtypes_test(dut):
 @cocotb.test()
 async def store_unit_all_vtypes_test(dut):
     """Testbench to test RVV Unit/segmented stores, with all vtypes."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     functions = [
         ("test_vse8", np.uint8, 1),
@@ -3740,7 +3740,7 @@ async def store_unit_all_vtypes_test(dut):
 @cocotb.test()
 async def load_strided_all_vtypes_test(dut):
     """Testbench to test RVV strided/segmented loads, with all vtypes."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     functions = [
         ("test_vlse8", np.uint8, 1),
@@ -3835,7 +3835,7 @@ async def load_strided_all_vtypes_test(dut):
 @cocotb.test()
 async def store_strided_all_vtypes_test(dut):
     """Testbench to test RVV strided/segmented store, with all vtypes."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     functions = [
         ("test_vsse8", np.uint8, 1),
@@ -3926,7 +3926,7 @@ async def store_strided_all_vtypes_test(dut):
 @cocotb.test()
 async def load_store_whole_register_test(dut):
     """Testbench to test RVV strided/segmented store, with all vtypes."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     functions = [
         # Name, store, n_registers
@@ -3944,7 +3944,7 @@ async def load_store_whole_register_test(dut):
         r.Rlocation(
             'coralnpu_hw/tests/cocotb/rvv/load_store/load_store_whole_register.elf'
         ),
-        ['vl', 'vtype', 'stride', 'load_data', 'store_data', 'impl'] +
+        ['vl', 'vtype', 'load_data', 'store_data', 'impl'] +
         list(f[0] for f in functions),
     )
 
@@ -3987,7 +3987,7 @@ async def load_store_whole_register_test(dut):
 @cocotb.test()
 async def whole_reg_repro(dut):
     """Testbench to run whole_reg_repro."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation(
@@ -4000,7 +4000,7 @@ async def whole_reg_repro(dut):
 
 async def load_store_stride_masked_param(dut, cases):
     """Testbench for parameterized load store stride mask usage accessible from intrinsics."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation(
@@ -4194,7 +4194,7 @@ async def load_store_stride_masked_param_test(dut):
 @cocotb.test()
 async def load_store_stride_masked_test(dut):
     """Testbench for constant load store stride mask usage accessible from intrinsics."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation(

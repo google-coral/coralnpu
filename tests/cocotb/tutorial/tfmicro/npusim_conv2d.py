@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_v2_sim_utils import CoralNPUV2Simulator
+from coralnpu_test_utils.sim_backends.mpact_npusim_test_fixture import MpactNpuSimTestFixture
 import numpy as np
 
 
@@ -33,10 +34,11 @@ class MpactConv2DTest:
         self.elf_file = r.Rlocation(
             'coralnpu_hw/tests/cocotb/tutorial/tfmicro/conv2d_test.elf'
         )
+        self.fixture = None
 
-    def load_and_populate_input(self):
-        self.npu_sim = CoralNPUV2Simulator(highmem_ld=True)
-        self.entry_point, self.symbol_map = self.npu_sim.get_elf_entry_and_symbol(
+    async def load_and_populate_input(self):
+        self.fixture = await MpactNpuSimTestFixture.Create(highmem=True)
+        await self.fixture.load_elf_and_lookup_symbols(
             self.elf_file, [
                 'impl',
                 'run_ref',
@@ -53,7 +55,6 @@ class MpactConv2DTest:
                 'params',
             ]
         )
-        self.npu_sim.load_program(self.elf_file)
         rng = np.random.default_rng()
         filter_data = rng.integers(
             -128, 128, self.f_shape, dtype=np.int8
@@ -65,87 +66,68 @@ class MpactConv2DTest:
             -128, 128, self.in_shape, dtype=np.int8
         ).flatten()
 
-        self.npu_sim.write_word(
-            self.symbol_map['stride'], np.uint32(self.stride)
-        )
-        self.npu_sim.write_memory(
-            self.symbol_map['filter_shape'], self.f_shape
-        )
-        self.npu_sim.write_memory(self.symbol_map['filter_data'], filter_data)
+        await self.fixture.write_word('stride', int(self.stride))
+        await self.fixture.write('filter_shape', self.f_shape)
+        await self.fixture.write('filter_data', filter_data)
 
-        self.npu_sim.write_memory(
-            self.symbol_map['bias_shape'], self.bias_shape
-        )
-        self.npu_sim.write_memory(self.symbol_map['bias_data'], bias_data)
-        self.npu_sim.write_memory(
-            self.symbol_map['input_shape'], self.in_shape
-        )
-        self.npu_sim.write_memory(self.symbol_map['input_data'], input_data)
+        await self.fixture.write('bias_shape', self.bias_shape)
+        await self.fixture.write('bias_data', bias_data)
+        await self.fixture.write('input_shape', self.in_shape)
+        await self.fixture.write('input_data', input_data)
 
         # Verify input_data integrity
-        read_back_input = self.npu_sim.read_memory(
-            self.symbol_map['input_data'], len(input_data)
+        read_back_input = (
+            await self.fixture.read('input_data', len(input_data))
         ).view(np.int8)
         if not (read_back_input == input_data).all():
             print("Input data mismatch during load!")
             raise AssertionError("Input data corrupted during write_memory")
-        self.npu_sim.write_memory(
-            self.symbol_map['output_shape'], self.out_shape
-        )
+        await self.fixture.write('output_shape', self.out_shape)
 
-    def run(self, fun_ptr):
-        self.npu_sim.write_register('pc', self.entry_point)
-        self.npu_sim.write_ptr(
-            self.symbol_map['impl'], self.symbol_map[fun_ptr]
+    async def run(self, fun_ptr):
+        await self.fixture.write_ptr('impl', fun_ptr)
+        await self.fixture.write(
+            'output_data', np.zeros([self.out_size], dtype=np.int8)
         )
-        self.npu_sim.write_memory(
-            self.symbol_map['output_data'],
-            np.zeros([self.out_size], dtype=np.int8)
-        )
-        self.npu_sim.run()
-        self.npu_sim.wait()
-        cycles = self.npu_sim.get_cycle_count()
-        outputs = self.npu_sim.read_memory(
-            self.symbol_map['output_data'], self.out_size
-        ).view(np.int8)
+        cycles = await self.fixture.run_to_halt()
+        outputs = (await self.fixture.read('output_data',
+                                           self.out_size)).view(np.int8)
         return cycles, outputs
 
-    def test(self):
-        opt_cycles, opt_outputs = self.run(fun_ptr="run_opt")
-        ref_cycles, ref_outputs = self.run(fun_ptr="run_ref")
+    async def test(self):
+        opt_cycles, opt_outputs = await self.run(fun_ptr="run_opt")
+        ref_cycles, ref_outputs = await self.run(fun_ptr="run_ref")
         print(f"ref_cycles {ref_cycles} opt_cycles {opt_cycles}")
         assert (opt_outputs == ref_outputs).all()
 
 
-def run_tests():
+async def run_tests():
 
     print("test_conv2d_16x1")
     t = MpactConv2DTest(in_d=16, out_d=1, stride=1, out_h=4, out_w=4)
-    t.load_and_populate_input()
-    t.test()
+    await t.load_and_populate_input()
+    await t.test()
 
     print("test_conv2d_16x16")
     t = MpactConv2DTest(in_d=16, out_d=16, stride=1, out_h=4, out_w=4)
-    t.load_and_populate_input()
-    t.test()
+    await t.load_and_populate_input()
+    await t.test()
 
     print("test_conv2d_16x16_s2_h8w8")
     t = MpactConv2DTest(in_d=16, out_d=16, stride=2, out_h=8, out_w=8)
-    t.load_and_populate_input()
-    t.test()
+    await t.load_and_populate_input()
+    await t.test()
 
     print("test_conv2d_48x5")
-    # Using 500k as target based on earlier cocotb attempt failing at 0
     t = MpactConv2DTest(in_d=48, out_d=5, stride=1, out_h=8, out_w=8)
-    t.load_and_populate_input()
-    t.test()
+    await t.load_and_populate_input()
+    await t.test()
 
     print("test_conv2d_21x16")
-    # Using 500k as target based on earlier cocotb attempt failing at 0
     t = MpactConv2DTest(in_d=21, out_d=16, stride=1, out_h=2, out_w=2)
-    t.load_and_populate_input()
-    t.test()
+    await t.load_and_populate_input()
+    await t.test()
 
 
 if __name__ == "__main__":
-    run_tests()
+    asyncio.run(run_tests())

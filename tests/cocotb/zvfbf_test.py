@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import cocotb
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 import struct
 
@@ -29,7 +29,7 @@ def bits_to_fp32(i):
 @cocotb.test()
 async def zvfbf_test(dut):
     """Test that runs Zvfbfmin and Zvfbfwma instructions."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'zvfbf_test.elf'
 

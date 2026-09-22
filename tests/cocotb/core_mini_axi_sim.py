@@ -20,7 +20,7 @@ import tqdm
 import random
 
 from coralnpu_test_utils.core_mini_axi_interface import AxiBurst, AxiResp, CoreMiniAxiInterface
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 from cocotb.triggers import ClockCycles
 
@@ -472,7 +472,7 @@ async def core_mini_axi_float_hazard_test(dut):
 
 @cocotb.test()
 async def unreachable_prefetch_fault(dut):
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     cases = [
         ('mpause', 0),
@@ -498,8 +498,7 @@ async def unreachable_prefetch_fault(dut):
         await fixture.write_ptr('impl', c)
         await fixture.run_to_halt()
         iaf_count = (await fixture.read_word('iaf_count')).view(np.int32)[0]
-        other_count = (await
-                       fixture.read_word('other_count')).view(np.uint32)[0]
+        other_count = await fixture.read_word('other_count')
         assert iaf_count == 0
         assert other_count == expected_exceptions
 
@@ -508,8 +507,7 @@ async def unreachable_prefetch_fault(dut):
         await fixture.core_mini_axi.execute_from(fixture.entry_point)
         await fixture.core_mini_axi.wait_for_wfi()
         iaf_count = (await fixture.read_word('iaf_count')).view(np.int32)[0]
-        other_count = (await
-                       fixture.read_word('other_count')).view(np.uint32)[0]
+        other_count = await fixture.read_word('other_count')
         assert iaf_count == 0
         assert other_count == 0
 
@@ -517,7 +515,7 @@ async def unreachable_prefetch_fault(dut):
 @cocotb.test()
 async def core_mini_axi_frm_test(dut):
     """Tests the FRM CSR with valid and invalid values."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -591,7 +589,7 @@ async def core_mini_axi_backdoor_load_test(dut):
 @cocotb.test()
 async def core_mini_axi_minstret_test(dut):
     """Runs minstret_test.elf and verifies the value of minstret_val."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/minstret_test.elf")
 
@@ -614,7 +612,7 @@ async def core_mini_axi_minstret_test(dut):
 @cocotb.test()
 async def core_mini_axi_fcsr_frm_hazard_test(dut):
     """Tests the FCSR write to FRM RAW hazard for scalar float."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -637,7 +635,7 @@ async def rvv_frm_hazard_test(dut):
         dut._log.info("Skipping rvv_frm_hazard_test on non-RVV core")
         return
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -668,7 +666,7 @@ async def rvv_frm_hazard_test(dut):
 @cocotb.test()
 async def fencei_test(dut):
     """Tests the FENCE.I instruction by modifying code in external memory."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -752,7 +750,7 @@ def check_misa_value(misa_val: int, is_rvv: bool, has_float: bool = True):
 @cocotb.test()
 async def core_mini_axi_misa_test(dut):
     """Validates MISA CSR contents and WARL read/write behavior on CoreMiniAxi."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/misa_test.elf")
 
@@ -814,7 +812,7 @@ async def rvv_misa_test(dut):
         dut._log.info("Skipping rvv_misa_test on non-RVV core")
         return
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/misa_test.elf")
 

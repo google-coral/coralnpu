@@ -20,17 +20,25 @@ UVM batch simulation environment with 3-way co-simulation (RTL, MPACT, Spike).
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import os
 import re
 import struct
 import subprocess
 import tempfile
-from bazel_tools.tools.python.runfiles import runfiles
 
 import numpy as np
-from elftools.elf.elffile import ELFFile
+
+from coralnpu_test_utils.sim_backends.common_utils import (
+    BytesResult,
+    WordResult,
+    get_runfiles,
+    infer_read_size_bytes,
+    parse_elf_symbols,
+    reconstruct_read_data,
+    resolve_runfile_path,
+    resolve_symbol_address,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,38 +46,8 @@ logger = logging.getLogger(__name__)
 class UvmTestFixture:
     """Orchestrates UVM batch simulation via a subprocess."""
 
-    _runfiles = None
-
-    @classmethod
-    def get_runfiles(cls):
-        if cls._runfiles is None:
-            try:
-                cls._runfiles = runfiles.Create()
-            except Exception:  # noqa: BLE001
-                cls._runfiles = None
-        return cls._runfiles
-
-    @classmethod
-    def resolve_path(cls, relative_path: str | os.PathLike) -> str:
-        """Resolves a filesystem or Bazel runfile path."""
-        if not relative_path:
-            return ""
-        path_str = os.fspath(relative_path)
-        if os.path.isabs(path_str) and os.path.exists(path_str):
-            return path_str
-
-        r = cls.get_runfiles()
-        if r:
-            for candidate in (
-                    path_str if path_str.startswith("coralnpu_hw/") else
-                    f"coralnpu_hw/{path_str}",
-                    path_str,
-            ):
-                resolved = r.Rlocation(candidate)
-                if resolved and os.path.exists(resolved):
-                    return resolved
-
-        return path_str
+    get_runfiles = staticmethod(get_runfiles)
+    resolve_path = staticmethod(resolve_runfile_path)
 
     def __init__(
         self,
@@ -83,6 +61,7 @@ class UvmTestFixture:
 
         self.elf_path: str | None = None
         self.symbols: dict[str, int] = {}
+        self.symbol_sizes: dict[str, int] = {}
         self.entry_point: int = 0
         self.tohost_addr: int = 0
         self.staged_memory: dict[int, bytes] = {}
@@ -102,10 +81,19 @@ class UvmTestFixture:
         """Factory method to instantiate the fixture."""
         return cls(simulator, enable_spike_cosim, sim_binary_path)
 
+    def has_symbol(self, symbol: str) -> bool:
+        return symbol in self.symbols
+
+    def resolve_address(self, symbol: str | int, offset: int = 0) -> int:
+        return resolve_symbol_address(symbol, self.symbols, offset=offset)
+
+    _resolve_address = resolve_address
+
     async def load_elf_and_lookup_symbols(
         self,
         elf_path: str | os.PathLike,
         symbols: list[str] | None = None,
+        optional: bool = False,
         optional_symbols: list[str] | None = None,
     ) -> dict[str, int]:
         """Parses the ELF binary, resets state, and resolves symbol addresses."""
@@ -118,47 +106,54 @@ class UvmTestFixture:
         self.elf_path = resolved
         self.tohost_addr = 0
         self.symbols.clear()
+        self.symbol_sizes.clear()
         self.staged_memory.clear()
         self.dumped_memory.clear()
         self.cycle_count = None
         self.test_passed = False
 
-        with open(self.elf_path, "rb") as f:
-            elf = ELFFile(f)
-            self.entry_point = elf.header["e_entry"]
-            symtab = elf.get_section_by_name(".symtab")
-            all_symbols = ({
-                s.name: s["st_value"]
-                for s in symtab.iter_symbols()
-            } if symtab else {})
+        self.entry_point, self.symbols, self.symbol_sizes = parse_elf_symbols(
+            self.elf_path,
+            symbols=symbols,
+            optional_symbols=optional_symbols,
+            strict=not optional,
+            require_symtab=False,
+        )
 
-        if "tohost" in all_symbols:
-            self.tohost_addr = all_symbols["tohost"]
-            self.symbols["tohost"] = self.tohost_addr
+        if "tohost" in self.symbols:
+            self.tohost_addr = self.symbols["tohost"]
         else:
             logger.warning(
                 "tohost symbol not found. Required for UVM status tracking."
             )
 
-        for name in symbols or []:
-            if name not in all_symbols:
-                raise ValueError(f"Required symbol '{name}' not found in ELF.")
-            self.symbols[name] = all_symbols[name]
-
-        for name in optional_symbols or []:
-            if name in all_symbols:
-                self.symbols[name] = all_symbols[name]
-
         return self.symbols
 
-    def _resolve_address(self, symbol: str | int, offset: int = 0) -> int:
-        if isinstance(symbol, str):
-            if symbol not in self.symbols:
-                raise ValueError(
-                    f"Symbol '{symbol}' not resolved. Pass it to load_elf_and_lookup_symbols."
-                )
-            return self.symbols[symbol] + offset
-        return symbol + offset
+    def _stage_bytes(self, addr: int, byte_data: bytes) -> None:
+        """Stages bytes into staged_memory, coalescing strictly overlapping byte ranges."""
+        if not byte_data:
+            return
+        new_start = addr
+        new_end = addr + len(byte_data)
+        overlapping = [
+            (base, data)
+            for base, data in self.staged_memory.items()
+            if max(base, new_start) < min(base + len(data), new_end)
+        ]
+        if not overlapping:
+            self.staged_memory[addr] = byte_data
+            return
+
+        merged_start = min([new_start] + [b for b, _ in overlapping])
+        merged_end = max([new_end] + [b + len(d) for b, d in overlapping])
+        buf = bytearray(merged_end - merged_start)
+        for base, data in overlapping:
+            del self.staged_memory[base]
+            off = base - merged_start
+            buf[off:off + len(data)] = data
+        new_off = new_start - merged_start
+        buf[new_off:new_off + len(byte_data)] = byte_data
+        self.staged_memory[merged_start] = bytes(buf)
 
     async def write(
         self,
@@ -167,9 +162,11 @@ class UvmTestFixture:
         offset: int = 0,
     ):
         """Stages data (scalar integer, NumPy array, or bytes) in host memory to be patched into the ELF before simulation."""
-        addr = self._resolve_address(symbol, offset=offset)
+        addr = self.resolve_address(symbol, offset=offset)
 
-        if isinstance(data, (int, np.integer)) and not isinstance(data, bool):
+        if isinstance(data, np.integer):
+            byte_data = np.ascontiguousarray(data).tobytes()
+        elif isinstance(data, int) and not isinstance(data, bool):
             byte_data = struct.pack("<I", int(data) & 0xFFFFFFFF)
         elif isinstance(data, np.ndarray):
             byte_data = data.tobytes()
@@ -178,21 +175,26 @@ class UvmTestFixture:
         else:
             raise TypeError(f"Unsupported data type for write: {type(data)}")
 
-        self.staged_memory[addr] = byte_data
+        self._stage_bytes(addr, byte_data)
 
     async def write_word(
-        self, symbol: str | int, data: int | np.integer, offset: int = 0
+        self,
+        symbol: str | int,
+        data: int | np.integer,
+        offset: int = 0,
+        signed: bool = False,
     ):
         """Stages a single 32-bit scalar word."""
-        addr = self._resolve_address(symbol, offset=offset)
-        self.staged_memory[addr] = struct.pack("<I", int(data) & 0xFFFFFFFF)
+        del signed
+        addr = self.resolve_address(symbol, offset=offset)
+        self._stage_bytes(addr, struct.pack("<I", int(data) & 0xFFFFFFFF))
 
     async def write_ptr(
         self, addr_symbol: str, data_symbol: str, offset: int = 0
     ):
         """Stages the resolved address of data_symbol into addr_symbol."""
         await self.write_word(
-            addr_symbol, self._resolve_address(data_symbol, offset)
+            addr_symbol, self.resolve_address(data_symbol, offset)
         )
 
     def _read_bytes_from_dump(self, addr: int, size: int) -> bytes:
@@ -214,29 +216,24 @@ class UvmTestFixture:
         dtype: np.dtype | None = None,
         shape: tuple | None = None,
         size_bytes: int | None = None,
-    ) -> bytes | np.ndarray:
+    ) -> BytesResult | np.ndarray:
         """Reads memory post-simulation from the SRAM memory dump."""
-        actual_size = size if size is not None else size_bytes
-        addr = self._resolve_address(symbol, offset=offset)
-
-        if shape is not None and dtype is not None:
-            dtype = np.dtype(dtype)
-            total_bytes = int(np.prod(shape)) * dtype.itemsize
-            raw_bytes = self._read_bytes_from_dump(addr, total_bytes)
-            return np.frombuffer(raw_bytes, dtype=dtype).reshape(shape)
-
-        if actual_size is not None:
-            return self._read_bytes_from_dump(addr, actual_size)
-
-        raise ValueError(
-            "Either size or both shape and dtype must be specified for read."
+        addr = self.resolve_address(symbol, offset=offset)
+        actual_size = infer_read_size_bytes(
+            symbol, self.symbol_sizes, size, size_bytes, dtype, shape
         )
+        raw_bytes = self._read_bytes_from_dump(addr, actual_size)
+        if dtype is not None:
+            return reconstruct_read_data(raw_bytes, dtype=dtype, shape=shape)
+        return BytesResult(raw_bytes)
 
-    async def read_word(self, symbol: str | int, offset: int = 0) -> int:
+    async def read_word(
+        self, symbol: str | int, offset: int = 0
+    ) -> WordResult:
         """Reads a single 32-bit scalar word from dumped memory."""
-        addr = self._resolve_address(symbol, offset=offset)
+        addr = self.resolve_address(symbol, offset=offset)
         raw_bytes = self._read_bytes_from_dump(addr, 4)
-        return struct.unpack("<I", raw_bytes)[0]
+        return WordResult(struct.unpack("<I", raw_bytes)[0])
 
     def _create_patch_file(self) -> str | None:
         """Serializes staged memory into a binary patch file (uint64_t addr, uint32_t len, bytes)."""
@@ -267,7 +264,9 @@ class UvmTestFixture:
                 if len(data) < size:
                     logger.warning(
                         "Truncated memory dump block at 0x%x (expected %d bytes, got %d)",
-                        base, size, len(data)
+                        base,
+                        size,
+                        len(data),
                     )
                     break
                 self.dumped_memory.append((base, data))
@@ -277,7 +276,11 @@ class UvmTestFixture:
             return self.resolve_path(self.sim_binary_path)
         return self.resolve_path(f"tests/uvm/uvm_sim_{self.simulator}")
 
-    async def run_to_halt(self, timeout_sec: float = 60.0) -> bool:
+    async def run_to_halt(
+        self,
+        timeout_sec: float = 5.0,
+        timeout_cycles: int | None = None
+    ) -> bool:
         """Launches simulator, applies patch, dumps memory on halt, and verifies results."""
         if not self.elf_path:
             raise RuntimeError(
@@ -321,8 +324,33 @@ class UvmTestFixture:
                     process.communicate(), timeout=timeout_sec
                 )
             except asyncio.TimeoutError as err:
+                partial_log = ""
+                if process is not None:
+                    if process.returncode is None:
+                        try:
+                            process.kill()
+                        except ProcessLookupError:
+                            pass
+                        await process.wait()
+                    if process.stdout is not None:
+                        try:
+                            raw_partial = await process.stdout.read()
+                            if isinstance(raw_partial, (bytes, bytearray)):
+                                partial_log = raw_partial.decode(
+                                    "utf-8", errors="replace"
+                                )
+                        except Exception:  # noqa: BLE001
+                            pass
+                reason = (
+                    f"UVM Simulation timed out after {timeout_sec}s "
+                    f"(elf={self.elf_path}, sim={cmd[0]})"
+                )
                 raise RuntimeError(
-                    f"UVM Simulation timed out after {timeout_sec}s"
+                    self._dump_sim_log(
+                        partial_log
+                        or f"Process timed out running: {' '.join(cmd)}\n",
+                        reason=reason,
+                    )
                 ) from err
 
             stdout_str = stdout.decode("utf-8", errors="replace")
@@ -419,13 +447,40 @@ class UvmTestFixture:
                 )
             )
 
-        # 4. Extract simulated cycle count
+        # 4. Extract simulated cycle count (explicit banner or UVM sim timestamp converted by 10ns ClkPeriod)
         cycle_match = re.search(
             r"(?:cycle count|cycles)\s*[:=]\s*(\d+)", log_output, re.IGNORECASE
         )
         if cycle_match:
             self.cycle_count = int(cycle_match.group(1))
+        else:
+            uvm_time_matches = re.findall(
+                r"@\s*(\d+)(?:\.\d+)?\s*(fs|ps|ns|us|ms|s)?\s*:", log_output
+            )
+            if uvm_time_matches:
+                raw_val_str, unit = uvm_time_matches[-1]
+                raw_val = int(raw_val_str)
+                if raw_val > 0:
+                    unit = (unit or "").lower()
+                    if unit == "fs":
+                        cycles = raw_val // 10_000_000
+                    elif unit == "ps" or (not unit and raw_val >= 10_000):
+                        cycles = raw_val // 10_000
+                    elif unit == "ns":
+                        cycles = raw_val // 10
+                    else:
+                        cycles = raw_val
+                    self.cycle_count = max(1, cycles)
 
     def get_cycle_count(self) -> int | None:
         """Returns the simulated cycle count if available."""
+        for sym in ("cycle_count", "csr_cycle_count"):
+            if sym in self.symbols and self.dumped_memory:
+                try:
+                    raw = self._read_bytes_from_dump(self.symbols[sym], 4)
+                    val = struct.unpack("<I", raw)[0]
+                    if val > 0:
+                        return val
+                except KeyError:
+                    pass
         return self.cycle_count

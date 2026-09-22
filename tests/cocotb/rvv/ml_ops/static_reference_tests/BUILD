@@ -75,7 +75,7 @@ cocotb_test_suite(
             "static_reference_tests.py",
         ],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "//sw/utils:metrics",
             "@bazel_tools//tools/python/runfiles",
         ],
@@ -112,7 +112,7 @@ cocotb_test_suite(
             "static_reference_tests.py",
         ],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "//sw/utils:metrics",
             "@bazel_tools//tools/python/runfiles",
         ],

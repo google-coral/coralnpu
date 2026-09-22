@@ -22,7 +22,7 @@ py_binary(
         ":run_full_mobilenet_v1_binary",
     ],
     deps = [
-        "//sw/coralnpu_sim:coralnpu_v2_sim_utils_lib",
+        "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
         requirement("numpy"),
     ],

@@ -194,7 +194,7 @@ CORE_MINI_AXI_SIM_COMMON_TEST_KWARGS = {
     "test_module": ["core_mini_axi_sim.py"],
     "deps": [
         "//coralnpu_test_utils:core_mini_axi_sim_interface",
-        "//coralnpu_test_utils:sim_test_fixture",
+        "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
         requirement("tqdm"),
         "@bazel_tools//tools/python/runfiles",
     ],
@@ -480,7 +480,7 @@ cocotb_test_suite(
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
             "//coralnpu_test_utils:dispatch_verifier",
             "//coralnpu_test_utils:rvv_type_util",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             requirement("tqdm"),
             "@bazel_tools//tools/python/runfiles",
         ],
@@ -537,7 +537,7 @@ cocotb_test_suite(
         "test_module": ["rvv_highmem_sim.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             requirement("tqdm"),
             "@bazel_tools//tools/python/runfiles",
         ],
@@ -572,7 +572,7 @@ cocotb_test_suite(
         "test_module": ["rvv_itcm512kb_dtcm512kb_sim.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             requirement("tqdm"),
             "@bazel_tools//tools/python/runfiles",
         ],
@@ -806,7 +806,7 @@ cocotb_test_suite(
         "test_module": ["rvv_load_store_test.py"],
         "deps": [
             "//coralnpu_test_utils:rvv_type_util",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             requirement("tqdm"),
         ],
@@ -837,7 +837,7 @@ cocotb_test_suite(
         "test_module": ["rvv_load_store_test.py"],
         "deps": [
             "//coralnpu_test_utils:rvv_type_util",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             requirement("tqdm"),
         ],
@@ -870,7 +870,7 @@ cocotb_test_suite(
         "seed": "42",
         "test_module": ["rvv_arithmetic_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
             requirement("tqdm"),
         ],
@@ -947,7 +947,7 @@ cocotb_test_suite(
         "seed": "42",
         "test_module": ["rvv_ml_ops_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "//sw/utils:metrics",
             requirement("ml_dtypes"),
             "@bazel_tools//tools/python/runfiles",
@@ -978,7 +978,7 @@ cocotb_test_suite(
         "seed": "42",
         "test_module": ["isa_cycle_bench_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
@@ -1005,7 +1005,7 @@ cocotb_test_suite(
         "seed": "42",
         "test_module": ["nop_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
@@ -1039,7 +1039,7 @@ cocotb_test_suite(
         "seed": "42",
         "test_module": ["zvfbf_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
@@ -1078,7 +1078,7 @@ cocotb_test_suite(
         "seed": "42",
         "test_module": ["rvv_fflags_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
@@ -1107,7 +1107,7 @@ cocotb_test_suite(
         "seed": "42",
         "test_module": ["rvv_bf16_ops_cocotb_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             requirement("ml_dtypes"),
             "@bazel_tools//tools/python/runfiles",
         ],
@@ -1155,7 +1155,7 @@ cocotb_test_suite(
         "seed": "42",
         "test_module": ["zfbfmin_test.py"],
         "deps": [
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
@@ -1192,7 +1192,7 @@ cocotb_test_suite(
         "test_module": ["rvv_highmem_sim.py"],
         "deps": [
             "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:sim_test_fixture",
+            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             requirement("tqdm"),
             "@bazel_tools//tools/python/runfiles",
         ],

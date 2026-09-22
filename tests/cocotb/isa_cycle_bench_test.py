@@ -7,7 +7,7 @@ import json
 import cocotb
 from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 
 REPS = 32
 
@@ -72,7 +72,7 @@ def _compute_output_path(filename):
 @cocotb.test()
 async def isa_cycle_bench_test(dut):
     """Benchmarks each instruction in BENCHMARKS on RTL and reports its cycle cost."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/isa_cycle_bench.elf")
 

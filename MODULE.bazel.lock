@@ -220,7 +220,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "POgoHoY02EUtg+vVoxp2YOL0czkFQ/938k7KtBOKypU=",
+        "bzlTransitiveDigest": "lGZ1seyx/snNjKqAu3aONBch4b3zWUZNNYa8oWPH6/8=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -288,7 +288,8 @@
               "strip_prefix": "RVVI-5786f0d39b84f3fd15ef75b792bdea4281941afe",
               "build_file": "@@//third_party/RVVI:BUILD.bazel",
               "patches": [
-                "@@//third_party/RVVI:0001-Rename-name-queue-to-avoid-conflict.patch"
+                "@@//third_party/RVVI:0001-Rename-name-queue-to-avoid-conflict.patch",
+                "@@//third_party/RVVI:0002-Add-rvviTrace-matrix-tile-interface.patch"
               ],
               "patch_args": [
                 "-p1"

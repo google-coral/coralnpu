@@ -5,7 +5,7 @@ import numpy as np
 import tqdm
 from coralnpu_test_utils.core_mini_axi_interface import CoreMiniAxiInterface
 from coralnpu_test_utils.rvv_type_util import construct_vtype, DTYPE_TO_SEW, SEWS, SEW_TO_LMULS_AND_VLMAXS, LMUL_TO_EMUL
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 from cocotb.triggers import RisingEdge
 
@@ -209,24 +209,15 @@ async def core_mini_vstart_store(dut):
 @cocotb.test()
 async def core_mini_vcsr_test(dut):
     """Testbench to test vcsr is set correctly."""
-    # Test bench setup
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/rvv/vcsr_test.elf")
     if not elf_path:
         raise ValueError("elf_path must consist a valid path")
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-        vma_addr = core_mini_axi.lookup_symbol(f, "vma")
-        vta_addr = core_mini_axi.lookup_symbol(f, "vta")
-        sew_addr = core_mini_axi.lookup_symbol(f, "sew")
-        lmul_addr = core_mini_axi.lookup_symbol(f, "lmul")
-        vl_addr = core_mini_axi.lookup_symbol(f, "vl")
-        vtype_addr = core_mini_axi.lookup_symbol(f, "vtype")
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path, ["vma", "vta", "sew", "lmul", "vl", "vtype"]
+    )
 
     combined_loops = itertools.product(range(2), range(2), SEWS, LMULS)
     total_loops = 2 * 2 * len(SEWS) * len(LMULS)
@@ -238,19 +229,16 @@ async def core_mini_vcsr_test(dut):
                 'sew': bin(sew),
                 'lmul': bin(lmul)
             })
-            await core_mini_axi.write_word(vma_addr, ma)
-            await core_mini_axi.write_word(vta_addr, ta)
-            await core_mini_axi.write_word(sew_addr, sew)
-            await core_mini_axi.write_word(lmul_addr, lmul)
+            await fixture.write_word("vma", ma)
+            await fixture.write_word("vta", ta)
+            await fixture.write_word("sew", sew)
+            await fixture.write_word("lmul", lmul)
             # TODO(derekjchow): Pick random VL
-            await core_mini_axi.write_word(vl_addr, 1)
+            await fixture.write_word("vl", 1)
 
-            await core_mini_axi.execute_from(entry_point)
-            await core_mini_axi.wait_for_halted()
+            await fixture.run_to_halt()
 
-            vtype_result = (await core_mini_axi.read_word(vtype_addr)).view(
-                np.uint32
-            )[0]
+            vtype_result = await fixture.read_word("vtype")
 
             # Check if vtype is legal
             expected_illegal = _illegal_vtype(sew, lmul)
@@ -275,25 +263,16 @@ async def core_mini_vcsr_test(dut):
 
 
 async def test_vstart_not_zero_failure(dut, binary):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     elf_path = r.Rlocation(binary)
     if not elf_path:
         raise ValueError("elf_path must consist a valid path")
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-        vma_addr = core_mini_axi.lookup_symbol(f, "vma")
-        vta_addr = core_mini_axi.lookup_symbol(f, "vta")
-        sew_addr = core_mini_axi.lookup_symbol(f, "sew")
-        lmul_addr = core_mini_axi.lookup_symbol(f, "lmul")
-        vl_addr = core_mini_axi.lookup_symbol(f, "vl")
-        vstart_addr = core_mini_axi.lookup_symbol(f, "vstart")
-        faulted_addr = core_mini_axi.lookup_symbol(f, "faulted")
-        mcause_addr = core_mini_axi.lookup_symbol(f, "mcause")
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        ["vma", "vta", "sew", "lmul", "vl", "vstart", "faulted", "mcause"],
+    )
 
     for ma in range(2):
         for ta in range(2):
@@ -302,23 +281,18 @@ async def test_vstart_not_zero_failure(dut, binary):
                     vl = 4  # TODO(derekjchow): Pick random VL
                     vstart = 1  # Non-zero to trigger failure
 
-                    await core_mini_axi.write_word(vma_addr, ma)
-                    await core_mini_axi.write_word(vta_addr, ta)
-                    await core_mini_axi.write_word(sew_addr, sew)
-                    await core_mini_axi.write_word(lmul_addr, lmul)
-                    await core_mini_axi.write_word(vl_addr, vl)
-                    await core_mini_axi.write_word(vstart_addr, vstart)
+                    await fixture.write_word("vma", ma)
+                    await fixture.write_word("vta", ta)
+                    await fixture.write_word("sew", sew)
+                    await fixture.write_word("lmul", lmul)
+                    await fixture.write_word("vl", vl)
+                    await fixture.write_word("vstart", vstart)
 
-                    await core_mini_axi.execute_from(entry_point)
-                    await core_mini_axi.wait_for_halted()
+                    await fixture.run_to_halt()
 
-                    faulted_result = (
-                        await core_mini_axi.read_word(faulted_addr)
-                    ).view(np.uint32)[0]
+                    faulted_result = await fixture.read_word("faulted")
                     assert (faulted_result == 1)
-                    mcause_result = (
-                        await core_mini_axi.read_word(mcause_addr)
-                    ).view(np.uint32)[0]
+                    mcause_result = await fixture.read_word("mcause")
                     assert (mcause_result == 0x2)
 
 
@@ -350,7 +324,7 @@ async def core_mini_vcpop_exception_test(dut):
 async def core_mini_vcpop_test(dut):
     """Test vcpop usage accessible from intrinsics."""
     # mask is not accessible from here.
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     cases = [
         {
@@ -488,34 +462,25 @@ async def core_mini_vmsif_test(dut):
 
 @cocotb.test()
 async def core_mini_vill_test(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/rvv/vill_test.elf")
     if not elf_path:
         raise ValueError("elf_path must consist a valid path")
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-        faulted_addr = core_mini_axi.lookup_symbol(f, "faulted")
-        mcause_addr = core_mini_axi.lookup_symbol(f, "mcause")
+    await fixture.load_elf_and_lookup_symbols(elf_path, ["faulted", "mcause"])
 
-    await core_mini_axi.execute_from(entry_point)
-    await core_mini_axi.wait_for_halted()
+    await fixture.run_to_halt()
 
-    faulted_result = (await
-                      core_mini_axi.read_word(faulted_addr)).view(np.uint32)[0]
+    faulted_result = await fixture.read_word("faulted")
     assert (faulted_result == 1)
-    mcause_result = (await
-                     core_mini_axi.read_word(mcause_addr)).view(np.uint32)[0]
+    mcause_result = await fixture.read_word("mcause")
     assert (mcause_result == 0x2)
 
 
 @cocotb.test()
 async def core_mini_vill_whole_reg_test(dut):
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation("coralnpu_hw/tests/cocotb/rvv/vill_whole_reg_test.elf"),
@@ -527,30 +492,22 @@ async def core_mini_vill_whole_reg_test(dut):
 
     await fixture.run_to_halt()
 
-    faulted = (await fixture.read_word("faulted")).view(np.uint32)[0]
+    faulted = await fixture.read_word("faulted")
     assert faulted == 0, f"Unexpected fault occurred (faulted={faulted})"
-    test_passed = (await fixture.read_word("test_passed")).view(np.uint32)[0]
+    test_passed = await fixture.read_word("test_passed")
     assert test_passed == 1, f"Test did not pass (test_passed={test_passed})"
 
 
 @cocotb.test()
 async def core_mini_vl_test(dut):
     """Testbench to test vsetvl instruciton saturate vl correctly."""
-    # Test bench setup
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/rvv/vcsr_test.elf")
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-        sew_addr = core_mini_axi.lookup_symbol(f, "sew")
-        lmul_addr = core_mini_axi.lookup_symbol(f, "lmul")
-        vl_addr = core_mini_axi.lookup_symbol(f, "vl")
-        vtype_addr = core_mini_axi.lookup_symbol(f, "vtype")
-        result_vl_addr = core_mini_axi.lookup_symbol(f, "result_vl")
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path, ["sew", "lmul", "vl", "vtype", "result_vl"]
+    )
 
     cases = [
         (0b000, 0b110, 4),  # SEW8, mf4, vlmax=4
@@ -570,35 +527,26 @@ async def core_mini_vl_test(dut):
         (0b010, 0b011, 32),  # SEW32, m8, vlmax=32
     ]
     for sew, lmul, vlmax in tqdm.tqdm(cases):
-        await core_mini_axi.write_word(sew_addr, sew)
-        await core_mini_axi.write_word(lmul_addr, lmul)
+        await fixture.write_word("sew", sew)
+        await fixture.write_word("lmul", lmul)
 
         # Test saturation above vlmax
         vl_to_set = vlmax + 1
-        await core_mini_axi.write_word(vl_addr, vl_to_set)
-        await core_mini_axi.execute_from(entry_point)
-        await core_mini_axi.wait_for_halted()
-        vl_result = (await
-                     core_mini_axi.read_word(result_vl_addr)).view(np.uint32
-                                                                   )[0]
+        await fixture.write_word("vl", vl_to_set)
+        await fixture.run_to_halt()
+        vl_result = await fixture.read_word("result_vl")
         assert (vl_result == vlmax)
 
         # Test vlmax
-        await core_mini_axi.write_word(vl_addr, vlmax)
-        await core_mini_axi.execute_from(entry_point)
-        await core_mini_axi.wait_for_halted()
-        vl_result = (await
-                     core_mini_axi.read_word(result_vl_addr)).view(np.uint32
-                                                                   )[0]
+        await fixture.write_word("vl", vlmax)
+        await fixture.run_to_halt()
+        vl_result = await fixture.read_word("result_vl")
         assert (vl_result == vlmax)
 
         # Test below vlmax
-        await core_mini_axi.write_word(vl_addr, vlmax - 1)
-        await core_mini_axi.execute_from(entry_point)
-        await core_mini_axi.wait_for_halted()
-        vl_result = (await
-                     core_mini_axi.read_word(result_vl_addr)).view(np.uint32
-                                                                   )[0]
+        await fixture.write_word("vl", vlmax - 1)
+        await fixture.run_to_halt()
+        vl_result = await fixture.read_word("result_vl")
         assert (vl_result == (vlmax - 1))
 
 
@@ -701,7 +649,7 @@ async def vsetvl_test(dut):
         },
     ]
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vsetvl_test.elf'),
@@ -745,7 +693,7 @@ async def vsetvl_test(dut):
 async def vslide_test(dut, cases, expfunc):
     """Test slide[1]{up,down} usage accessible from intrinsics."""
     # mask is not accessible from here.
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vslide.elf'),
@@ -1289,7 +1237,7 @@ async def vslide1down_test(dut):
 @cocotb.test()
 async def vslide_boundary_test(dut):
     """Test vslide boundary, dynamic LMUL reduction, and masked operations."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vslide_boundary_test.elf'),
@@ -1504,7 +1452,7 @@ async def vslide_boundary_test(dut):
 
 async def vgather1_test(dut, cases):
     """Test gather usage accessible from intrinsics."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vgather.elf'),
@@ -1608,7 +1556,7 @@ async def vgather_test(dut):
 @cocotb.test()
 async def vstart_test(dut):
     """Test vstart usage."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/vstart_test.elf'), [

@@ -17,7 +17,7 @@
 # power measurement.
 
 import cocotb
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 
 
@@ -27,7 +27,7 @@ async def nop_stress_test(dut):
 
     Used for baseline vector power analysis.
     """
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'nop_test.elf'
 

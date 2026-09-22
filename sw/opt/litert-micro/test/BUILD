@@ -47,7 +47,7 @@ py_test(
     data = [":max_pool_test"],
     main = "max_pool_test.py",
     deps = [
-        "//sw/coralnpu_sim:coralnpu_v2_sim_utils_lib",
+        "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
         requirement("numpy"),
     ],
@@ -59,7 +59,7 @@ py_test(
     data = [":conv_test"],
     main = "conv_test.py",
     deps = [
-        "//sw/coralnpu_sim:coralnpu_v2_sim_utils_lib",
+        "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
         requirement("numpy"),
     ],

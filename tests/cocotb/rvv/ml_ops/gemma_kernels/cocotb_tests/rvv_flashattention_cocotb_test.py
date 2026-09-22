@@ -18,7 +18,7 @@ import cocotb
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_matmul_metrics
 
 
@@ -159,7 +159,7 @@ async def run_flashattention_test(
 
     await fixture.run_to_halt(timeout_cycles=40000000)
 
-    cycle_count = (await fixture.read_word('cycle_count')).view(np.uint32)[0]
+    cycle_count = await fixture.read_word('cycle_count')
 
     total_macs = 2 * q_heads * q_seq_len * kv_seq_len * dim
     log_matmul_metrics(
@@ -187,7 +187,7 @@ async def core_mini_rvv_flashattention_prefill_test(dut):
     r = runfiles.Create()
 
     # Highmem configuration maps CSRs dynamically via highmem flag
-    fixture = await Fixture.Create(
+    fixture = await VerilatorTestFixture.Create(
         dut,
         highmem=True,
         ext_mem_base_addr=0x80000000,
@@ -258,7 +258,7 @@ async def core_mini_rvv_flashattention_decode_test(dut):
     r = runfiles.Create()
 
     # Highmem configuration maps CSRs dynamically via highmem flag
-    fixture = await Fixture.Create(
+    fixture = await VerilatorTestFixture.Create(
         dut,
         highmem=True,
         ext_mem_base_addr=0x80000000,
@@ -380,7 +380,7 @@ async def core_mini_rvv_bf16_flashattention_test(dut):
     import ml_dtypes
 
     r = runfiles.Create()
-    fixture = await Fixture.Create(
+    fixture = await VerilatorTestFixture.Create(
         dut,
         highmem=True,
         ext_mem_base_addr=0x80000000,

@@ -18,7 +18,7 @@ import ml_dtypes
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 
 # 512KB memory map shifts CSRs to 0x200000
 CSR_BASE = 0x200000
@@ -94,7 +94,7 @@ async def run(fixture, x, kernel_id=0, alias=0, scratch_len=None, repeat=1):
 
 async def _setup(dut):
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut, csr_base_addr=CSR_BASE)
+    fixture = await VerilatorTestFixture.Create(dut, csr_base_addr=CSR_BASE)
     elf_path = r.Rlocation(ELF)
     if not elf_path or not os.path.exists(elf_path):
         raise FileNotFoundError(f"Could not find ELF at {elf_path}")

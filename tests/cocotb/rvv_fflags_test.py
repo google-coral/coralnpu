@@ -13,14 +13,14 @@
 # limitations under the License.
 
 import cocotb
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 
 
 @cocotb.test()
 async def rvv_fflags_test(dut):
     """Test that RVV floating point operations correctly update fflags."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_fflags_test.elf'
 

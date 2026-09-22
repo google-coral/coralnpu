@@ -20,7 +20,7 @@ import numpy as np
 import os
 
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 
 import ctypes
 import math
@@ -119,7 +119,7 @@ def reference_fredosum(x, y):
 
 async def _setup_fixture(dut):
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     rng = np.random.default_rng(seed=42)
     return fixture, r, rng
 
@@ -266,7 +266,7 @@ async def arithmetic_m1_vanilla_ops_test(
     )
 
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     test_elf_filter = os.environ.get("TEST_ELF")
     if test_elf_filter:
         m1_vanilla_op_elfs = [
@@ -443,7 +443,7 @@ async def reduction_m1_vanilla_ops_test(
     pattern_extract = re.compile("rvv_(.*)_(.*)_m1.elf")
 
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     with tqdm.tqdm(m1_vanilla_op_elfs) as t:
         for elf_name in tqdm.tqdm(m1_vanilla_op_elfs):
             t.set_postfix({"binary": os.path.basename(elf_name)})
@@ -541,7 +541,7 @@ async def reduction_m1_failure_test(
     pattern_extract = re.compile("rvv_(.*)_(.*)_m1.elf")
 
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
 
     with tqdm.tqdm(m1_failure_op_elfs) as t:
         for elf_name in t:
@@ -625,7 +625,7 @@ async def _widen_math_ops_test_impl(
     pattern_extract = re.compile("rvv_widen_(.*)_(.*)_(.*).elf")
 
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     with tqdm.tqdm(widen_op_elfs) as t:
         for elf_name in tqdm.tqdm(widen_op_elfs):
             t.set_postfix({"binary": os.path.basename(elf_name)})
@@ -698,7 +698,7 @@ async def test_narrowing_math_op(
     - an optional saturation (signed or unsigned accordingly)
       if saturation is selected, the shift result is rounded (see vxrm)
     """
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.Rlocation('coralnpu_hw/tests/cocotb/rvv/arithmetics/' + elf_name),
@@ -1062,7 +1062,7 @@ async def vnclip_vxsat_test(dut):
     2. Executing vnclip with MAX_INT32 >> 0, which saturates to MAX_INT16
     3. Reading vxsat via csrr and verifying it equals 1
     """
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     await fixture.load_elf_and_lookup_symbols(
         r.
@@ -1078,7 +1078,7 @@ async def vnclip_vxsat_test(dut):
     await fixture.run_to_halt()
 
     # Read the vxsat value that was stored to memory
-    vxsat_val = (await fixture.read_word("vxsat_result")).view(np.uint32)[0]
+    vxsat_val = await fixture.read_word("vxsat_result")
 
     # vxsat should be 1 after saturation occurred
     assert vxsat_val == 1, (
@@ -1090,7 +1090,7 @@ async def vnclip_vxsat_test(dut):
 @cocotb.test()
 async def ternary_op_vx(dut):
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     test_binaries = [
         ("vmacc_vx_test.elf", SAME_TYPE_TEST_CASES, lambda x, y, z: x + y * z),
         (
@@ -1217,7 +1217,7 @@ async def ternary_op_vx(dut):
 @cocotb.test()
 async def comparison_op_vx(dut):
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     test_binaries = [
         ("vmseq_vx_test.elf", SAME_TYPE_TEST_CASES, np.equal),
         ("vmsne_vx_test.elf", SAME_TYPE_TEST_CASES, np.not_equal),
@@ -1279,7 +1279,7 @@ async def comparison_op_vx(dut):
 @cocotb.test()
 async def comparison_op_vv(dut):
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     test_binaries = [
         ("vmseq_vv_test.elf", SAME_TYPE_TEST_CASES, np.equal),
         ("vmsne_vv_test.elf", SAME_TYPE_TEST_CASES, np.not_equal),
@@ -1336,7 +1336,7 @@ async def comparison_op_vv(dut):
 @cocotb.test()
 async def carry_op_vx(dut):
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     test_binaries = [
         ("vadc_vxm_test.elf", SAME_TYPE_TEST_CASES, reference_adc),
         ("vsbc_vxm_test.elf", SAME_TYPE_TEST_CASES, reference_sbc),
@@ -1396,7 +1396,7 @@ async def carry_op_vx(dut):
 @cocotb.test()
 async def merge_op_vv(dut):
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     test_binary = "vmerge_vv_test.elf"
     test_binary_path = r.Rlocation(
         f"coralnpu_hw/tests/cocotb/rvv/arithmetics/{test_binary}"
@@ -1453,7 +1453,7 @@ async def _widen_wide_math_ops_test_impl(
     Each test performs a widen wide math op loading vs2 (wide) and vs1 (narrow) or xs2 (narrow)
     """
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     for math_op in math_ops:
         for in_dtype_str, out_dtype_str in dtypes:
             elf_name = f"vw{math_op}_wv_test.elf"
@@ -1535,7 +1535,7 @@ async def widen_wide_math_ops_test(dut):
 async def extension_op_test(dut):
     """Test vsext and vzext instructions."""
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     test_binaries = [
         ("vsext_vf2_test.elf", 2, True),
         ("vsext_vf4_test.elf", 4, True),
@@ -1606,7 +1606,7 @@ async def extension_op_test(dut):
 async def immediate_op_test(dut):
     """Test instructions with immediate operands (.vi)."""
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
 
     test_binaries = [
         ("vadd_vi_test.elf", np.add),
@@ -1640,7 +1640,9 @@ async def immediate_op_test(dut):
                 continue
 
             await fixture.load_elf_and_lookup_symbols(
-                elf_path, ["vl", "vs1", "vd", "impl", fn_name]
+                elf_path,
+                ["vl", "vs1", "vd", "impl", fn_name],
+                optional_symbols=[fn_name],
             )
             if fixture.symbols.get(fn_name) is None:
                 continue
@@ -1973,7 +1975,7 @@ FLOAT_CROSS_CONVERT_TEST_CASES = [
 @cocotb.test()
 async def binary_op_vx(dut):
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     test_binaries = [
         ("vadd_vx_test.elf", SAME_TYPE_TEST_CASES, np.add),
         ("vsadd_vx_test.elf", SAME_TYPE_TEST_CASES, reference_sadd),

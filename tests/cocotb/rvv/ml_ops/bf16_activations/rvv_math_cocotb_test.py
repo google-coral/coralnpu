@@ -18,7 +18,7 @@ import ml_dtypes
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 
 CSR_BASE = 0x200000
 ELF = "coralnpu_hw/tests/cocotb/rvv/ml_ops/bf16_activations/rvv_math_test.elf"
@@ -91,7 +91,7 @@ def make_narrow_inputs(rng, n):
 async def rvv_math_test(dut):
     log = dut._log
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut, csr_base_addr=CSR_BASE)
+    fixture = await VerilatorTestFixture.Create(dut, csr_base_addr=CSR_BASE)
     elf = r.Rlocation(ELF)
     if not elf or not os.path.exists(elf):
         raise FileNotFoundError(f"ELF not found at {elf}")

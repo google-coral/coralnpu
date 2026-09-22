@@ -20,14 +20,14 @@ import tqdm
 import random
 
 from coralnpu_test_utils.core_mini_axi_interface import AxiBurst, AxiResp, CoreMiniAxiInterface
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 
 
 @cocotb.test()
 async def core_mini_axi_run_wfi_in_all_slots_highmem(dut):
     """Tests the WFI instruction in each of the 4 issue slots with custom memory."""
-    fixture = await Fixture.Create(dut, highmem=True)
+    fixture = await VerilatorTestFixture.Create(dut, highmem=True)
     core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
@@ -56,7 +56,7 @@ async def core_mini_rvv_matmul_test(dut):
     RHS_COLS = 4
     INNER = 64
 
-    fixture = await Fixture.Create(dut, highmem=True)
+    fixture = await VerilatorTestFixture.Create(dut, highmem=True)
     r = runfiles.Create()
     elf_files = ['rvv_matmul_highmem.elf', 'rvv_matmul_assembly_highmem.elf']
     for elf_file in elf_files:

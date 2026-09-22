@@ -31,14 +31,14 @@ import cocotb
 import ml_dtypes
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_matmul_metrics
 
 
 @cocotb.test()
 async def core_mini_rvv_matmul_c_test(dut):
     """Test integer matmul with RVV C intrinsics."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_matmul.elf'
 
@@ -76,9 +76,7 @@ async def core_mini_rvv_matmul_c_test(dut):
         await fixture.write('lhs_input', lhs_data.flatten())
         await fixture.write('rhs_input', rhs_data.transpose().flatten())
         await fixture.run_to_halt(timeout_cycles=1000000)
-        csr_cycle_count = (await fixture.read_word('csr_cycle_count')).view(
-            np.uint32
-        )[0]
+        csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
             dut, f"core_mini_rvv_matmul_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
             csr_cycle_count, LHS_ROWS, RHS_COLS, INNER
@@ -94,7 +92,7 @@ async def core_mini_rvv_matmul_c_test(dut):
 async def core_mini_rvv_matmul_asm_test(dut):
     """Test integer matmul with RVV assembly."""
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_matmul_assembly.elf'
 
@@ -132,9 +130,7 @@ async def core_mini_rvv_matmul_asm_test(dut):
         await fixture.write('lhs_input', lhs_data.flatten())
         await fixture.write('rhs_input', rhs_data.transpose().flatten())
         await fixture.run_to_halt(timeout_cycles=1000000)
-        csr_cycle_count = (await fixture.read_word('csr_cycle_count')).view(
-            np.uint32
-        )[0]
+        csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
             dut,
             f"core_mini_rvv_matmul_asm_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
@@ -151,7 +147,7 @@ async def core_mini_rvv_matmul_asm_test(dut):
 async def core_mini_rvv_float_matmul_c_test(dut):
     """Test FP32 matmul with RVV C intrinsics."""
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_float_matmul.elf'
 
@@ -183,9 +179,7 @@ async def core_mini_rvv_float_matmul_c_test(dut):
         await fixture.write('lhs_input', lhs_data.flatten())
         await fixture.write('rhs_input', rhs_data.transpose().flatten())
         await fixture.run_to_halt(timeout_cycles=1000000)
-        csr_cycle_count = (await fixture.read_word('csr_cycle_count')).view(
-            np.uint32
-        )[0]
+        csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
             dut,
             f"core_mini_rvv_float_matmul_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
@@ -207,7 +201,7 @@ async def core_mini_rvv_float_matmul_c_test(dut):
 async def core_mini_rvv_bf16_matmul_c_test(dut):
     """Test BFloat16 matmul with RVV C intrinsics (Zvfbfwma)."""
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_bf16_matmul.elf'
 
@@ -249,9 +243,7 @@ async def core_mini_rvv_bf16_matmul_c_test(dut):
         await fixture.write('rhs_input', rhs_bf16_u16.transpose().flatten())
         await fixture.run_to_halt(timeout_cycles=1000000)
 
-        csr_cycle_count = (await fixture.read_word('csr_cycle_count')).view(
-            np.uint32
-        )[0]
+        csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
             dut,
             f"core_mini_rvv_bf16_matmul_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
@@ -274,7 +266,7 @@ async def core_mini_rvv_bf16_matmul_c_test(dut):
 async def core_mini_rvv_float_matmul_asm_test(dut):
     """Test FP32 matmul with RVV assembly."""
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_float_matmul_assembly.elf'
 
@@ -306,9 +298,7 @@ async def core_mini_rvv_float_matmul_asm_test(dut):
         await fixture.write('lhs_input', lhs_data.flatten())
         await fixture.write('rhs_input', rhs_data.transpose().flatten())
         await fixture.run_to_halt(timeout_cycles=1000000)
-        csr_cycle_count = (await fixture.read_word('csr_cycle_count')).view(
-            np.uint32
-        )[0]
+        csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
             dut,
             f"core_mini_rvv_float_matmul_asm_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
@@ -330,7 +320,7 @@ async def core_mini_rvv_float_matmul_asm_test(dut):
 async def core_mini_rvv_float_matmul_optimized_c_test(dut):
     """Test FP32 matmul with optimized RVV C intrinsics."""
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_float_matmul_optimized.elf'
 
@@ -362,9 +352,7 @@ async def core_mini_rvv_float_matmul_optimized_c_test(dut):
         await fixture.write('lhs_input', lhs_data.flatten())
         await fixture.write('rhs_input', rhs_data.transpose().flatten())
         await fixture.run_to_halt(timeout_cycles=1000000)
-        csr_cycle_count = (await fixture.read_word('csr_cycle_count')).view(
-            np.uint32
-        )[0]
+        csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
             dut,
             f"core_mini_rvv_float_matmul_optimized_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",

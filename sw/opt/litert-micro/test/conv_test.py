@@ -1,18 +1,14 @@
 # Copyright 2026 Google LLC
+import asyncio
 import os
 import sys
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_v2_sim_utils import CoralNPUV2Simulator
+from coralnpu_test_utils.sim_backends.mpact_npusim_test_fixture import MpactNpuSimTestFixture
 
 
-def run_test_case(
-    npu_sim,
-    elf_file,
-    input_shape,
-    filter_shape,
-    stride,
-    padding_type="VALID"
+async def run_test_case(
+    elf_file, input_shape, filter_shape, stride, padding_type="VALID"
 ):
     # Symbols to resolve
     symbols = [
@@ -40,17 +36,12 @@ def run_test_case(
         "heartbeat",
     ]
 
-    entry_point, symbol_map = npu_sim.get_elf_entry_and_symbol(
-        elf_file, symbols
-    )
-
-    # Initialize simulator
-    npu_sim.load_program(elf_file, entry_point)
+    fixture = await MpactNpuSimTestFixture.Create(highmem=True)
+    await fixture.load_elf_and_lookup_symbols(elf_file, symbols)
 
     # Parameters
     filter_height = filter_shape[1]
     filter_width = filter_shape[2]
-    input_depth = input_shape[3]
     output_depth = filter_shape[0]
     stride_height, stride_width = stride
 
@@ -98,83 +89,61 @@ def run_test_case(
         -10, -1, size=(output_depth, ), dtype=np.int32
     )
 
-    # Helper to write data
-    def write_symbol_data(name, data):
-        addr = symbol_map.get(name)
-        if addr is None:
-            raise ValueError(f"Symbol {name} not found")
-        if isinstance(data, np.ndarray):
-            pass
-        elif isinstance(data, (bytes, bytearray)):
-            data = np.frombuffer(data, dtype=np.uint8)
-        elif isinstance(data, (int, float)):
-            data = int(data).to_bytes(4, byteorder="little", signed=True)
-            data = np.frombuffer(data, dtype=np.uint8)
-        else:
-            data = np.array(data, dtype=np.uint8)
-        npu_sim.write_memory(addr, data)
+    await fixture.write("input_dims", np.array(input_shape, dtype=np.int32))
+    await fixture.write("input_data", input_data)
+    await fixture.write("filter_dims", np.array(filter_shape, dtype=np.int32))
+    await fixture.write("filter_data", filter_data)
+    await fixture.write("bias_dims", np.array([output_depth], dtype=np.int32))
+    await fixture.write("bias_data", bias_data)
+    await fixture.write("output_dims", np.array(output_shape, dtype=np.int32))
 
-    def read_symbol_val(name, size=4):
-        addr = symbol_map.get(name)
-        val = npu_sim.read_memory(addr, size)
-        return int.from_bytes(val, "little")
-
-    write_symbol_data("input_dims", np.array(input_shape, dtype=np.int32))
-    write_symbol_data("input_data", input_data)
-    write_symbol_data("filter_dims", np.array(filter_shape, dtype=np.int32))
-    write_symbol_data("filter_data", filter_data)
-    write_symbol_data("bias_dims", np.array([output_depth], dtype=np.int32))
-    write_symbol_data("bias_data", bias_data)
-    write_symbol_data("output_dims", np.array(output_shape, dtype=np.int32))
-
-    write_symbol_data("params_stride_width", stride_width)
-    write_symbol_data("params_stride_height", stride_height)
-    write_symbol_data("params_padding_width", pad_w)
-    write_symbol_data("params_padding_height", pad_h)
-    write_symbol_data("params_input_offset", input_offset)
-    write_symbol_data("params_output_offset", output_offset)
-    write_symbol_data("params_activation_min", activation_min)
-    write_symbol_data("params_activation_max", activation_max)
-    write_symbol_data("per_channel_multiplier", per_channel_multiplier)
-    write_symbol_data("per_channel_shift", per_channel_shift)
+    await fixture.write_word("params_stride_width", stride_width, signed=True)
+    await fixture.write_word(
+        "params_stride_height", stride_height, signed=True
+    )
+    await fixture.write_word("params_padding_width", pad_w, signed=True)
+    await fixture.write_word("params_padding_height", pad_h, signed=True)
+    await fixture.write_word("params_input_offset", input_offset, signed=True)
+    await fixture.write_word(
+        "params_output_offset", output_offset, signed=True
+    )
+    await fixture.write_word(
+        "params_activation_min", activation_min, signed=True
+    )
+    await fixture.write_word(
+        "params_activation_max", activation_max, signed=True
+    )
+    await fixture.write("per_channel_multiplier", per_channel_multiplier)
+    await fixture.write("per_channel_shift", per_channel_shift)
 
     # Run Simulation
-    total_cycles = 0
-    step_size = 1_000_000
-    while True:
-        actual_steps = npu_sim.step(step_size)
-        total_cycles += actual_steps
-        if actual_steps < step_size:
-            break
-        if total_cycles > 500_000_000:  # Conv is slower than MaxPool
-            print("Timeout reached.")
-            break
+    await fixture.run_to_halt(timeout_cycles=500_000_000)
 
     # Read Results
-    ref_cycles = read_symbol_val("ref_cycles", 8)
+    ref_cycles = int.from_bytes((await fixture.read("ref_cycles",
+                                                    8)).tobytes(), "little")
     print(f"  Ref Cycles: {ref_cycles}")
 
-    ref_out = npu_sim.read_memory(
-        symbol_map.get("output_data_ref"), np.prod(output_shape)
+    out_size = int(np.prod(output_shape))
+    ref_out = await fixture.read(
+        "output_data_ref", dtype=np.int8, shape=(out_size, )
     )
-    ref_out = np.frombuffer(ref_out, dtype=np.int8)
 
-    opt_cycles = read_symbol_val("opt_cycles", 8)
+    opt_cycles = int.from_bytes((await fixture.read("opt_cycles",
+                                                    8)).tobytes(), "little")
     print(f"  Opt Cycles: {opt_cycles}")
 
     if opt_cycles > 0:
         print(f"  Speedup: {ref_cycles / opt_cycles:.2f}x")
 
-    opt_out = npu_sim.read_memory(
-        symbol_map.get("output_data"), np.prod(output_shape)
+    opt_out = await fixture.read(
+        "output_data", dtype=np.int8, shape=(out_size, )
     )
-    opt_out = np.frombuffer(opt_out, dtype=np.int8)
 
     # Verify
     mismatches = np.sum(opt_out != ref_out)
     if mismatches > 0:
         print(f"  FAILED: {mismatches} mismatches found!", flush=True)
-        # Find first mismatch for debugging
         idx = np.where(opt_out != ref_out)[0][0]
         print(
             f"  First mismatch at index {idx}: Opt {opt_out[idx]}, Ref {ref_out[idx]}"
@@ -184,8 +153,7 @@ def run_test_case(
         print("  SUCCESS: Outputs match.", flush=True)
 
 
-def run_conv_sim_test():
-    npu_sim = CoralNPUV2Simulator(highmem_ld=True)
+async def run_conv_sim_test():
     r = runfiles.Create()
     elf_file = r.Rlocation(
         "coralnpu_hw/sw/opt/litert-micro/test/conv_test.elf"
@@ -248,11 +216,8 @@ def run_conv_sim_test():
     ]
 
     for tc in test_cases:
-        npu_sim = CoralNPUV2Simulator(highmem_ld=True)
-        run_test_case(
-            npu_sim, elf_file, tc["input"], tc["filter"], tc["stride"]
-        )
+        await run_test_case(elf_file, tc["input"], tc["filter"], tc["stride"])
 
 
 if __name__ == "__main__":
-    run_conv_sim_test()
+    asyncio.run(run_conv_sim_test())

@@ -20,7 +20,7 @@ staging, and 3-way co-simulation (RTL vs. MPACT vs. Spike ISS).
 import unittest
 import numpy as np
 
-from coralnpu_test_utils.uvm_test_fixture import UvmTestFixture
+from coralnpu_test_utils.sim_backends.uvm_test_fixture import UvmTestFixture
 
 
 class TestUvmIntegration(unittest.IsolatedAsyncioTestCase):
@@ -134,7 +134,7 @@ class TestUvmIntegration(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-        lhs_rows, inner, rhs_cols = 16, 16, 16
+        lhs_rows, inner, rhs_cols = 8, 8, 8
         await fixture.write_word("lhs_rows", lhs_rows)
         await fixture.write_word("rhs_cols", rhs_cols)
         await fixture.write_word("inner", inner)
@@ -149,7 +149,7 @@ class TestUvmIntegration(unittest.IsolatedAsyncioTestCase):
         await fixture.write("lhs_input", lhs_input)
         await fixture.write("rhs_input", rhs_input.flatten(order="F"))
 
-        success = await fixture.run_to_halt(timeout_sec=10.0)
+        success = await fixture.run_to_halt(timeout_sec=5.0)
         self.assertTrue(success, "UVM Float Matmul test failed")
 
         result = await fixture.read(

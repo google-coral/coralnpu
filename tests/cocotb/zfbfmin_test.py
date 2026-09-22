@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import cocotb
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 import numpy as np
 import random
@@ -150,7 +150,7 @@ def fmv_roundtrip_expected_with_flags(in_32):
 @cocotb.test()
 async def zfbfmin_test(dut):
     """Test that runs Zfbfmin conversion and move instructions with various inputs."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'zfbfmin_test.elf'
 

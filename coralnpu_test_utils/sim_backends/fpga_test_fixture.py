@@ -17,18 +17,28 @@
 from __future__ import annotations
 
 import os
+from typing import Optional, Tuple, Union
 
 import numpy as np
-from bazel_tools.tools.python.runfiles import runfiles
-from elftools.elf.elffile import ELFFile
 
 from coralnpu_test_utils.ftdi_spi_master import FtdiSpiMaster
+from coralnpu_test_utils.sim_backends.common_utils import (
+    BytesResult,
+    WordResult,
+    get_runfiles,
+    infer_read_size_bytes,
+    parse_elf_symbols,
+    reconstruct_read_data,
+    resolve_runfile_path,
+    resolve_symbol_address,
+)
 
 
 class FpgaTestFixture:
-    """Unified Test Fixture for CoralNPU FPGA Hardware (mirrors sim_test_fixture.Fixture)."""
+    """Unified Test Fixture for CoralNPU FPGA Hardware (mirrors verilator_test_fixture.VerilatorTestFixture)."""
 
-    _runfiles = None
+    get_runfiles = staticmethod(get_runfiles)
+    resolve_path = staticmethod(resolve_runfile_path)
 
     def __init__(
         self,
@@ -41,8 +51,10 @@ class FpgaTestFixture:
         self.usb_serial = usb_serial
         self.highmem = highmem
         self.ftdi_port = ftdi_port
-        self.csr_base_addr = csr_base_addr if csr_base_addr is not None else (
-            0x200000 if highmem else 0x30000
+        self.auto_recovery = auto_recovery
+        self.csr_base_addr = (
+            csr_base_addr if csr_base_addr is not None else
+            (0x200000 if highmem else 0x30000)
         )
         self.spi_master = FtdiSpiMaster(
             usb_serial=usb_serial,
@@ -54,53 +66,6 @@ class FpgaTestFixture:
         self.symbol_sizes: dict[str, int] = {}
 
     @classmethod
-    def get_runfiles(cls):
-        if cls._runfiles is None:
-            try:
-                cls._runfiles = runfiles.Create()
-            except Exception:  # noqa: BLE001
-                cls._runfiles = None
-        return cls._runfiles
-
-    @classmethod
-    def resolve_path(cls, path: str | os.PathLike) -> str:
-        """Resolves a file or runfile path, supporting 64-bit alternative binaries when TEST_XLEN=64."""
-        if not path:
-            return path  # type: ignore[return-value]
-        path_str = os.fspath(path)
-        xlen = os.environ.get("TEST_XLEN", "32")
-
-        r = cls.get_runfiles()
-
-        def _try_resolve(p: str) -> str | None:
-            if os.path.exists(p):
-                return p
-            if r:
-                loc = r.Rlocation(p)
-                if loc and os.path.exists(loc):
-                    return loc
-            return None
-
-        if xlen == "64":
-            for ext in (".elf", ".bin", ".vmem"):
-                if path_str.endswith(ext
-                                     ) and not path_str.endswith(f"_64{ext}"):
-                    path_64 = path_str[:-len(ext)] + f"_64{ext}"
-                    resolved_64 = _try_resolve(path_64)
-                    if resolved_64:
-                        return resolved_64
-
-        resolved = _try_resolve(path_str)
-        if resolved:
-            return resolved
-
-        if r:
-            loc = r.Rlocation(path_str)
-            if loc:
-                return loc
-        return path_str
-
-    @classmethod
     def create(
         cls,
         usb_serial: str,
@@ -110,16 +75,33 @@ class FpgaTestFixture:
         """Factory method to instantiate the fixture."""
         return cls(usb_serial=usb_serial, highmem=highmem, **kwargs)
 
+    Create = create
+
+    def close(self) -> None:
+        if hasattr(self.spi_master, "close"):
+            self.spi_master.close()
+
+    def __enter__(self) -> "FpgaTestFixture":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+    async def __aenter__(self) -> "FpgaTestFixture":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+    def has_symbol(self, symbol: str) -> bool:
+        return symbol in self.symbols
+
     def resolve_address(
         self, addr_or_symbol: Union[int, str], offset: int = 0
     ) -> int:
         """Resolves an integer address or symbol name to an address."""
-        if isinstance(addr_or_symbol, int):
-            return addr_or_symbol + offset
-        if str(addr_or_symbol) in self.symbols:
-            return self.symbols[str(addr_or_symbol)] + offset
-        raise ValueError(
-            f"Symbol '{addr_or_symbol}' not found in symbol table: {list(self.symbols.keys())}"
+        return resolve_symbol_address(
+            addr_or_symbol, self.symbols, offset=offset
         )
 
     def check_memory_accessible(
@@ -157,34 +139,13 @@ class FpgaTestFixture:
         if not os.path.exists(resolved_elf):
             raise FileNotFoundError(f"Could not find ELF file: {elf_file}")
 
-        self.symbols.clear()
-        self.symbol_sizes.clear()
-
-        with open(resolved_elf, "rb") as f:
-            elf = ELFFile(f)
-            self.entry_point = elf.header["e_entry"]
-            symtab = elf.get_section_by_name(".symtab")
-            if not symtab:
-                raise ValueError(f"No symbol table found in {elf_file}")
-
-            all_syms = {
-                s.name: (s["st_value"], s["st_size"])
-                for s in symtab.iter_symbols()
-            }
-
-            for s in (symbols or []):
-                if s in all_syms:
-                    self.symbols[s], self.symbol_sizes[s] = all_syms[s]
-                elif not optional:
-                    raise ValueError(
-                        f"Required symbol '{s}' not found in {elf_file}"
-                    )
-
-            for s in list(optional_symbols or []
-                          ) + ["cycle_count", "csr_cycle_count",
-                               "cycle_count_lo", "cycle_count_hi"]:
-                if s in all_syms:
-                    self.symbols[s], self.symbol_sizes[s] = all_syms[s]
+        self.entry_point, self.symbols, self.symbol_sizes = parse_elf_symbols(
+            resolved_elf,
+            symbols=symbols,
+            optional_symbols=optional_symbols,
+            strict=not optional,
+            require_symtab=True,
+        )
 
         self.spi_master.load_elf(resolved_elf, start_core=False, verify=verify)
 
@@ -211,15 +172,11 @@ class FpgaTestFixture:
         base_sec: float = BASE_TRANSFER_TIMEOUT_SEC,
         safety_factor: float = TRANSFER_SAFETY_MARGIN,
     ) -> float:
-        """Calculates transfer timeout based on size, direction, and measured SPI throughput.
-
-        Assumptions:
-          - Write throughput: ~2.0 MB/s over FTDI SPI master.
-          - Read throughput: ~500 kB/s over FTDI SPI master.
-          - Base overhead: base_sec (default 10.0s) for USB/sub-process setup.
-          - Safety factor: safety_factor (default 2.0x) margin for bus contention.
-        """
-        rate = cls.SPI_READ_BYTES_PER_SEC if is_read else cls.SPI_WRITE_BYTES_PER_SEC
+        """Calculates transfer timeout based on size, direction, and measured SPI throughput."""
+        rate = (
+            cls.SPI_READ_BYTES_PER_SEC
+            if is_read else cls.SPI_WRITE_BYTES_PER_SEC
+        )
         return base_sec + (size_bytes / rate) * safety_factor
 
     @classmethod
@@ -235,32 +192,44 @@ class FpgaTestFixture:
     def write(
         self,
         addr_or_symbol: Union[int, str],
-        data: Union[bytes, bytearray, np.ndarray, int],
+        data: Union[bytes, bytearray, np.ndarray, int, np.integer],
         offset: int = 0,
         timeout: Optional[float] = None,
     ):
         """Writes data (scalar integer, NumPy array, or bytes) to memory or a resolved symbol."""
         addr = self.resolve_address(addr_or_symbol, offset=offset)
 
-        if isinstance(data, int):
-            self.spi_master.write_word(addr, data)
+        if isinstance(data, (int, np.integer)) and not isinstance(data, bool):
+            self.spi_master.write_word(addr, int(data) & 0xFFFFFFFF)
         elif isinstance(data, np.ndarray):
             data_bytes = data.tobytes()
-            to = timeout if timeout is not None else self.calculate_write_timeout(
-                len(data_bytes)
+            to = (
+                timeout if timeout is not None else
+                self.calculate_write_timeout(len(data_bytes))
             )
             self.spi_master.load_data(data_bytes, addr, timeout=to)
         elif isinstance(data, (bytes, bytearray)):
-            to = timeout if timeout is not None else self.calculate_write_timeout(
-                len(data)
+            to = (
+                timeout if timeout is not None else
+                self.calculate_write_timeout(len(data))
             )
             self.spi_master.load_data(bytes(data), addr, timeout=to)
         else:
             raise TypeError(f"Unsupported data type for write: {type(data)}")
 
-    def write_word(self, addr_or_symbol: Union[int, str], value: int):
+    def write_word(
+        self,
+        addr_or_symbol: Union[int, str],
+        value: Union[int, np.integer],
+        offset: int = 0,
+        signed: bool = False,
+    ):
         """Writes a single 32-bit word to memory."""
-        self.spi_master.write_word(self.resolve_address(addr_or_symbol), value)
+        del signed
+        self.spi_master.write_word(
+            self.resolve_address(addr_or_symbol, offset=offset),
+            int(value) & 0xFFFFFFFF,
+        )
 
     def write_ptr(self, addr_symbol: str, data_symbol: str, offset: int = 0):
         """Writes the pointer address of data_symbol into addr_symbol."""
@@ -276,32 +245,45 @@ class FpgaTestFixture:
         dtype: Optional[np.dtype] = None,
         shape: Optional[Tuple[int, ...]] = None,
         timeout: Optional[float] = None,
+        size: Optional[int] = None,
     ) -> Union[bytes, np.ndarray]:
         """Reads data from memory or a resolved symbol with automatic dtype/shape reconstruction."""
         addr = self.resolve_address(addr_or_symbol, offset=offset)
-        if size_bytes is None:
-            if dtype is not None and shape is not None:
-                size_bytes = int(np.prod(shape) * np.dtype(dtype).itemsize)
-            elif isinstance(addr_or_symbol,
-                            str) and addr_or_symbol in self.symbol_sizes:
-                size_bytes = self.symbol_sizes[addr_or_symbol]
-            else:
-                size_bytes = 4
+        try:
+            nbytes = infer_read_size_bytes(
+                addr_or_symbol,
+                self.symbol_sizes,
+                size=size,
+                size_bytes=size_bytes,
+                dtype=dtype,
+                shape=shape,
+            )
+        except ValueError:
+            nbytes = 4
 
-        to = timeout if timeout is not None else self.calculate_read_timeout(
-            size_bytes
+        to = (
+            timeout
+            if timeout is not None else self.calculate_read_timeout(nbytes)
         )
-        raw_bytes = self.spi_master.read_data(addr, size_bytes, timeout=to)
+        raw_bytes = self.spi_master.read_data(addr, nbytes, timeout=to)
         if dtype is not None:
-            arr = np.frombuffer(raw_bytes, dtype=dtype)
-            return arr.reshape(shape) if shape is not None else arr
-        return raw_bytes
+            return reconstruct_read_data(raw_bytes, dtype=dtype, shape=shape)
+        return BytesResult(raw_bytes)
 
-    def read_word(self, addr_or_symbol: Union[int, str]) -> int:
+    def read_word(
+        self, addr_or_symbol: Union[int, str], offset: int = 0
+    ) -> WordResult:
         """Reads a single 32-bit word from memory."""
-        return self.spi_master.read_word(self.resolve_address(addr_or_symbol))
+        val = self.spi_master.read_word(
+            self.resolve_address(addr_or_symbol, offset=offset)
+        )
+        return WordResult(val)
 
-    def run_to_halt(self, timeout_sec: float = 60.0) -> bool:
+    def run_to_halt(
+        self,
+        timeout_sec: float = 60.0,
+        timeout_cycles: Optional[int] = None
+    ) -> bool:
         """Starts core execution from entry point and polls for halt status."""
         if self.entry_point is None:
             raise ValueError(
@@ -316,29 +298,25 @@ class FpgaTestFixture:
         self.spi_master.soft_reset()
 
     def reset_hardware(self):
-        """Performs a non-destructive soft reset of the CoralNPU core.
-
-        Note: Destructive hard reset (toggling PROG_B) is intentionally omitted from
-        this test fixture interface because it unloads the FPGA bitstream and requires
-        external bitstream reloading machinery.
-        """
+        """Performs a non-destructive soft reset of the CoralNPU core."""
         self.soft_reset()
 
     def get_cycle_count(self) -> Optional[int]:
         """Reads hardware execution cycle count from resolved cycle counter symbols."""
         for sym in ["cycle_count", "csr_cycle_count"]:
             if sym in self.symbols:
-                return self.read_word(sym)
+                return int(self.read_word(sym))
         if "cycle_count_hi" in self.symbols and "cycle_count_lo" in self.symbols:
-            return (self.read_word("cycle_count_hi") <<
-                    32) | self.read_word("cycle_count_lo")
+            return (int(self.read_word("cycle_count_hi")) << 32) | int(
+                self.read_word("cycle_count_lo")
+            )
         return None
 
     def get_core_frequency_mhz(self) -> int:
         """Retrieves core clock frequency in MHz from FPGA hardware Clock Table register (0x40001000)."""
         try:
             if self.read_word(0x40001000) == 0x434C4B54:  # "CLKT"
-                freq = self.read_word(0x40001004)
+                freq = int(self.read_word(0x40001004))
                 if 1 <= freq <= 500:
                     return freq
         except Exception:

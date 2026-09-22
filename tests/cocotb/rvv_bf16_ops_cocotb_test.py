@@ -15,13 +15,13 @@
 import cocotb
 import ml_dtypes
 import numpy as np
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 
 
 async def run_bfloat16_ops_test_case(dut, op_name, lmul, num_elements=64):
     """Executes a high-coverage BFloat16 operation test case on Verilator simulator."""
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_name = f"rvv_bf16_{op_name}_{lmul}.elf"
     elf_path = r.Rlocation(

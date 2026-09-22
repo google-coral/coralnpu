@@ -115,7 +115,7 @@ def rvv_core_mini_axi_netlist_test_suite(
         "test_module": ["@coralnpu_hw//tests/cocotb:core_mini_axi_sim.py"],
         "deps": [
             "@coralnpu_hw//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "@coralnpu_hw//coralnpu_test_utils:sim_test_fixture",
+            "@coralnpu_hw//coralnpu_test_utils/sim_backends:verilator_test_fixture",
             requirement("tqdm"),
             "@bazel_tools//tools/python/runfiles",
         ],

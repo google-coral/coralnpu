@@ -14,7 +14,7 @@
 
 import cocotb
 import numpy as np
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 from sw.utils.metrics import log_matmul_metrics
 
@@ -26,7 +26,7 @@ async def float_matmul_16x48x16_test(dut):
     RHS_COLS = 16
     INNER = 48
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     elf_path = r.Rlocation(
@@ -55,8 +55,7 @@ async def float_matmul_16x48x16_test(dut):
     np.testing.assert_allclose(expected, actual, rtol=1e-4, atol=1e-4)
 
     # Log metrics for power/perf analysis
-    csr_cycle_count = (await
-                       fixture.read_word('csr_cycle_count')).view(np.uint32)[0]
+    csr_cycle_count = await fixture.read_word('csr_cycle_count')
     log_matmul_metrics(
         dut, "float_matmul_16x48x16", csr_cycle_count, LHS_ROWS, RHS_COLS,
         INNER
@@ -70,7 +69,7 @@ async def int_matmul_16x48x16_test(dut):
     RHS_COLS = 16
     INNER = 48
 
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     elf_path = r.Rlocation(
@@ -99,8 +98,7 @@ async def int_matmul_16x48x16_test(dut):
     assert ((expected == actual).all())
 
     # Log metrics for power/perf analysis
-    csr_cycle_count = (await
-                       fixture.read_word('csr_cycle_count')).view(np.uint32)[0]
+    csr_cycle_count = await fixture.read_word('csr_cycle_count')
     log_matmul_metrics(
         dut, "int_matmul_16x48x16", csr_cycle_count, LHS_ROWS, RHS_COLS, INNER
     )

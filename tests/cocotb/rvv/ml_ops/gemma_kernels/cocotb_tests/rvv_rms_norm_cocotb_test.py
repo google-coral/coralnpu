@@ -18,7 +18,7 @@ import cocotb
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_vector_metrics
 
 
@@ -32,7 +32,7 @@ def golden_rms_norm(x, w, eps=1e-6):
 async def core_mini_rvv_rms_norm_test(dut):
     """FP32 RMSNorm Test."""
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut, highmem=True)
+    fixture = await VerilatorTestFixture.Create(dut, highmem=True)
 
     elf_name = "rvv_rms_norm.elf"
     elf_path = r.Rlocation(
@@ -114,7 +114,7 @@ async def core_mini_rvv_bf16_rms_norm_test(dut):
     import ml_dtypes
 
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut, highmem=True)
+    fixture = await VerilatorTestFixture.Create(dut, highmem=True)
 
     elf_name = "rvv_bf16_rms_norm.elf"
     elf_path = r.Rlocation(

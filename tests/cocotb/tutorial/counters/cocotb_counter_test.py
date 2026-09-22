@@ -16,13 +16,13 @@ import cocotb
 import numpy as np
 import os
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 
 
 @cocotb.test()
 async def inst_cycle_counter_test(dut):
     r = runfiles.Create()
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/tutorial/counters/inst_cycle_counter_example.elf"
     )

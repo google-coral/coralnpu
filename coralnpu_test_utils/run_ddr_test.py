@@ -22,7 +22,7 @@ import time
 from typing import Dict, List, Tuple
 import numpy as np
 
-from coralnpu_test_utils.fpga_test_fixture import FpgaTestFixture
+from coralnpu_test_utils.sim_backends.fpga_test_fixture import FpgaTestFixture
 
 logger = logging.getLogger(__name__)
 

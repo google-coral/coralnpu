@@ -17,7 +17,7 @@
 import argparse
 import ml_dtypes
 import numpy as np
-from coralnpu_test_utils.fpga_test_fixture import FpgaTestFixture
+from coralnpu_test_utils.sim_backends.fpga_test_fixture import FpgaTestFixture
 from sw.utils.metrics import log_matmul_metrics
 
 # Standard Gemma Transformer matrix shapes (M, K, N, Description)

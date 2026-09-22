@@ -15,7 +15,7 @@
 import cocotb
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_test_fixture import Fixture
+from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 
 
 class FullyConnectedTester:
@@ -40,7 +40,7 @@ class FullyConnectedTester:
         self.fixture = None
 
     async def setup(self, dut):
-        self.fixture = await Fixture.Create(dut, highmem=True)
+        self.fixture = await VerilatorTestFixture.Create(dut, highmem=True)
         await self.fixture.load_elf_and_lookup_symbols(
             self.elf_file,
             [
