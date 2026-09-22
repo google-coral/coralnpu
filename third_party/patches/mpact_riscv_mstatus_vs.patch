@@ -610,8 +610,7 @@ index 0339b59..bc684ba 100644
    void set_vector_mask_agnostic(bool value) { vector_mask_agnostic_ = value; }
  
    RiscVState* state_ = nullptr;
--  uint32_t vtype_;
-+  uint32_t vtype_ = 0;
+   uint32_t vtype_ = 0x80000000;
    bool vector_exception_ = false;
    int vector_register_byte_length_ = 0;
 +  int max_elen_ = 64;

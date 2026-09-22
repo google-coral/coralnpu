@@ -220,7 +220,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "CUTULshlGIc6IVRWHTy5DeMhqJr2KOK2aBp/i58TS1I=",
+        "bzlTransitiveDigest": "POgoHoY02EUtg+vVoxp2YOL0czkFQ/938k7KtBOKypU=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -248,7 +248,8 @@
                 "@@//third_party/cvfpu:0006-Fix-syn-tool-compatibility-issues.patch",
                 "@@//third_party/cvfpu:0007-Fix-nan-boxing-divsqrt.patch",
                 "@@//third_party/cvfpu:0008-Fix-num-lanes-multifmt-slice.patch",
-                "@@//third_party/cvfpu:0009-Rebalance-fpnew-fma-pipeline-stages.patch"
+                "@@//third_party/cvfpu:0009-Rebalance-fpnew-fma-pipeline-stages.patch",
+                "@@//third_party/cvfpu:0010-Move-LZA-leading-zero-counter-to-norm-stage.patch"
               ],
               "patch_args": [
                 "-p1"
