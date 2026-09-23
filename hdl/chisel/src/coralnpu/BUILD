@@ -243,6 +243,19 @@ chisel_test(
 )
 
 chisel_test(
+    name = "coralnpu_decode_tests",
+    size = "medium",
+    srcs = [
+        "scalar/DecodeTest.scala",
+    ],
+    deps = [
+        ":coralnpu_base",
+        ":coralnpu_scalar",
+        "//hdl/chisel/src/common:testing",
+    ],
+)
+
+chisel_test(
     name = "coralnpu_alu_tests",
     size = "large",
     srcs = [
@@ -924,4 +937,24 @@ chisel_cc_library(
     verilog_deps = [
         "//hdl/verilog:sram_1rw_256x256",
     ],
+)
+
+chisel_binary(
+    name = "decode_table_dump",
+    srcs = [
+        "scalar/DecodeTableDump.scala",
+    ],
+    main_class = "coralnpu.DecodeTableDump",
+    deps = [
+        ":coralnpu_base",
+        ":coralnpu_float",
+        ":coralnpu_scalar",
+    ],
+)
+
+genrule(
+    name = "alphabet_core_mini_axi",
+    outs = ["alphabet_core_mini_axi.json"],
+    cmd = "$(location :decode_table_dump) --config=core_mini_axi --output=$@",
+    tools = [":decode_table_dump"],
 )
