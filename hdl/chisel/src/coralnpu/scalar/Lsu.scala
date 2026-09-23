@@ -710,7 +710,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
       windowSize = windowSizeNormal + 1
     )
 
-    // returns: (tx, started, moveLead)
+    // returns: (tx, started, moveLeadOH)
     def maybeStart(): (ValidIO[BusReq], UInt, UInt) = {
       def canBundleFn(w: Vec[LsuCell]): UInt = {
         VecInit(w.map { x =>
@@ -738,7 +738,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         )
       }
 
-      // Returns: (reqValid, wData, wMask, started, moveLead)
+      // Returns: (reqValid, wData, wMask, started, moveLeadOH)
       def maybeStartNormal(window: Vec[LsuCell]): (Bool, UInt, UInt, UInt, UInt) = {
         val reqValid           = reqValidFn(window)
         val cellCanStartWindow = cellCanStartWindowFn(window.length)
@@ -749,13 +749,9 @@ class LsuSuperSlot(p: Parameters) extends Module {
         }
         val wData = VecInit
           .tabulate(p.lsuDataBytes) { j =>
-            // Priority mux, slow
-            MuxCase(
-              WireInit(UInt(8.W), DontCare),
-              (0 until window.length).map { i =>
-                bundle(i)(j) -> window(i).data
-              }
-            )
+            val sel   = VecInit((0 until window.length).map { i => bundle(i)(j) }).asUInt
+            val selOH = PriorityEncoderOH(sel)
+            Mux1H(selOH, window.map(_.data))
           }
           .asUInt
         val wMask   = bundle.reduce(_ | _)
@@ -768,23 +764,18 @@ class LsuSuperSlot(p: Parameters) extends Module {
             (!write || (cells(i).mask & wMask) =/= 0.U)
           }
           .asUInt
-        // Priority mux, slow
-        val moveLead = MuxCase(
-          window.length.U(ctrWidth.W),
-          (0 until window.length).map { i =>
-            (
-              window(i).state === LsuCellState.W_DATA || (
-                window(i).state === LsuCellState.W_START &&
-                  (window(i).rowAddr =/= rowAddr || !reqValid)
-              )
-            ) -> i.U(ctrWidth.W)
-          }
-        )
+        val stopConds = VecInit((0 until window.length).map { i =>
+          window(i).state === LsuCellState.W_DATA || (
+            window(i).state === LsuCellState.W_START &&
+              (window(i).rowAddr =/= rowAddr || !reqValid)
+          )
+        })
+        val stopOH = PriorityEncoderOH(Cat(1.B, stopConds.asUInt))
 
-        (reqValid, wData, wMask, started, moveLead)
+        (reqValid, wData, wMask, started, stopOH)
       }
 
-      // Returns: (reqValid, wData, wMask, started, moveLead)
+      // Returns: (reqValid, wData, wMask, started, moveLeadOH)
       def maybeStartStrict(window: Vec[LsuCell]): (Bool, UInt, UInt, UInt, UInt) = {
         val reqValid           = reqValidFn(window)
         val cellCanStartWindow = cellCanStartWindowFn(window.length)
@@ -823,29 +814,34 @@ class LsuSuperSlot(p: Parameters) extends Module {
             cellActive((i.U - leadIndex)(windowIndexWidthStrict - 1, 0))
           }
           .asUInt
-        // Priority mux, slow
-        val moveLead = MuxCase(
-          windowSizeStrict.U(ctrWidth.W),
-          (0 until windowSizeStrict).map { i =>
-            (
-              window(i).state === LsuCellState.W_DATA || (
-                window(i).state === LsuCellState.W_START &&
-                  (!cellActive(i) || !reqValid)
-              )
-            ) -> i.U(ctrWidth.W)
-          }
-        )
+        val stopConds = VecInit((0 until windowSizeStrict).map { i =>
+          window(i).state === LsuCellState.W_DATA || (
+            window(i).state === LsuCellState.W_START &&
+              (!cellActive(i) || !reqValid)
+          )
+        })
+        val stopOH = PriorityEncoderOH(Cat(1.B, stopConds.asUInt))
 
-        (reqValid, wData, wMask, started, moveLead)
+        (reqValid, wData, wMask, started, stopOH)
       }
 
       val windowNormal = VecInit(leadWindow.take(windowSizeNormal))
       val windowStrict = VecInit(leadWindow.take(windowSizeStrict))
 
-      val (reqValidNormal, wDataNormal, wMaskNormal, startedNormal, moveLeadNormal) =
-        maybeStartNormal(windowNormal)
-      val (reqValidStrict, wDataStrict, wMaskStrict, startedStrict, moveLeadStrict) =
-        maybeStartStrict(windowStrict)
+      val (
+        reqValidNormal,
+        wDataNormal,
+        wMaskNormal,
+        startedNormal,
+        moveLeadOHNormal
+      ) = maybeStartNormal(windowNormal)
+      val (
+        reqValidStrict,
+        wDataStrict,
+        wMaskStrict,
+        startedStrict,
+        moveLeadOHStrict
+      ) = maybeStartStrict(windowStrict)
 
       val isFirstTx = cells(0).state === LsuCellState.W_START
 
@@ -865,10 +861,10 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.bits.wmask -> Mux(strictMode, wMaskStrict, wMaskNormal)
       )
       tx.bits.cellIndex.foreach(_ := leadIndex)
-      val started  = Mux(strictMode, startedStrict, startedNormal)
-      val moveLead = Mux(strictMode, moveLeadStrict, moveLeadNormal)
+      val started    = Mux(strictMode, startedStrict, startedNormal)
+      val moveLeadOH = Mux(strictMode, moveLeadOHStrict.pad(windowSizeNormal + 1), moveLeadOHNormal)
 
-      (tx, Mux(tx.valid, started, 0.U), moveLead)
+      (tx, Mux(tx.valid, started, 0.U), moveLeadOH)
     }
 
     def maybeWriteback(): (WritebackReq, UInt) = {
@@ -979,7 +975,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     def act(
       initCellsData: Vec[ValidIO[UInt]],
       starts: UInt,
-      moveLead: UInt,
+      moveLeadOH: UInt,
       resp: Bool,
       fault: Bool,
       respRowAddr: UInt,
@@ -1236,13 +1232,14 @@ class LsuSuperSlot(p: Parameters) extends Module {
         candidate
       }
 
-      val ret = MakeWireBundle[State](
+      val moveLead = OHToUInt(moveLeadOH).pad(ctrWidth)
+      val ret      = MakeWireBundle[State](
         new State(),
         _           -> this,
         _.faulted   -> (faulted || fault),
         _.cells     -> cellsNext,
         _.leadIndex -> (leadIndex + moveLead),
-        _.rowAddr   -> nextRowAddrCandidates(moveLead(windowIndexWidthNormal, 0)),
+        _.rowAddr   -> Mux1H(moveLeadOH, nextRowAddrCandidates),
         _.isDone    -> allCellsDone
       )
       ret.vector.foreach { x =>
@@ -1738,10 +1735,10 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val state    = RegInit(State())
   val newFault = io.busResp.valid && io.busResp.bits.fault
 
-  val (tx, starts, moveLead) = state.maybeStart()
-  val acceptNewTx            = RegNext(io.busReq.ready || !io.busReq.valid, true.B)
-  val txPending              = RegInit(MakeInvalid(new BusReq))
-  val txOutgoing             = Mux(txPending.valid, txPending, tx)
+  val (tx, starts, moveLeadOH) = state.maybeStart()
+  val acceptNewTx              = RegNext(io.busReq.ready || !io.busReq.valid, true.B)
+  val txPending                = RegInit(MakeInvalid(new BusReq))
+  val txOutgoing               = Mux(txPending.valid, txPending, tx)
   txPending := Mux(
     io.busReq.ready || state.faulted || newFault,
     MakeInvalid(txPending.bits),
@@ -1802,14 +1799,15 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val canMoveLead = !state.isDone && (
     !io.busReq.valid || io.busReq.ready
   )
-  val initCellsData = VecInit.tabulate(nCells) { i =>
+  val effectiveMoveLeadOH = Mux(canMoveLead, moveLeadOH, 1.U((windowSizeNormal + 1).W))
+  val initCellsData       = VecInit.tabulate(nCells) { i =>
     if (i < 4) MakeValid(io.uop.fire, stateFromUop.cells(i).data)
     else MakeInvalid(UInt(8.W))
   }
   val stateFromAction = state.act(
     initCellsData = initCellsData,
     starts = Mux(io.busReq.ready || state.faulted || newFault, starts, 0.U),
-    moveLead = Mux(canMoveLead, moveLead, 0.U),
+    moveLeadOH = effectiveMoveLeadOH,
     resp = io.busResp.valid || faultRespValid,
     fault = newFault, // state will latch the fault
     respRowAddr = busRespRowAddr,
