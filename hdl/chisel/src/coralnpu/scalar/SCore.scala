@@ -45,9 +45,6 @@ class SCore(p: Parameters) extends Module {
 
     val rvvcore = Option.when(p.enableRvv)(Flipped(new RvvCoreIO(p)))
 
-    val iflush = new IFlushIO(p)
-    val dflush = new DFlushIO(p)
-
     val debug = Option.when(p.shouldExposeDebugPorts)(new DebugIO(p))
   })
 
@@ -121,17 +118,10 @@ class SCore(p: Parameters) extends Module {
 
   // ---------------------------------------------------------------------------
   // Flush logic
-  io.dflush.valid := lsu.io.flush.valid && !lsu.io.flush.fencei
-  io.dflush.all   := lsu.io.flush.all
-  io.dflush.clean := lsu.io.flush.clean
-
-  io.iflush.valid        := lsu.io.flush.valid && lsu.io.flush.fencei
-  io.iflush.pcNext       := lsu.io.flush.pcNext
-  fetch.io.iflush.valid  := lsu.io.flush.valid && lsu.io.flush.fencei
+  fetch.io.iflush.valid  := lsu.io.flush.valid
   fetch.io.iflush.pcNext := lsu.io.flush.pcNext
 
-  lsu.io.flush.ready := lsu.io.flush.valid &&
-    Mux(lsu.io.flush.fencei, fetch.io.iflush.ready, io.dflush.ready)
+  lsu.io.flush.ready := lsu.io.flush.valid && fetch.io.iflush.ready
 
   // ---------------------------------------------------------------------------
   // Fetch

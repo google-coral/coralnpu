@@ -19,11 +19,6 @@ import chisel3.util._
 import common._
 import coralnpu.rvv._
 
-class DFlushFenceiIO(p: Parameters) extends DFlushIO(p) {
-  val fencei = Output(Bool())
-  val pcNext = Output(UInt(p.programCounterBits.W))
-}
-
 class Lsu(p: Parameters) extends Module {
   val io = IO(new Bundle {
     // Decode cycle.
@@ -38,7 +33,7 @@ class Lsu(p: Parameters) extends Module {
     // Cached interface.
     val ibus  = new IBusIO(p)
     val dbus  = new DBusIO(p)
-    val flush = new DFlushFenceiIO(p)
+    val flush = new IFlushIO(p)
     val fault = Valid(new LsuFaultInfo(p))
 
     // DBus that will eventually reach an external bus.
@@ -69,22 +64,20 @@ object Lsu {
 }
 
 object LsuOp extends ChiselEnum {
-  val LB       = Value
-  val LH       = Value
-  val LW       = Value
-  val LBU      = Value
-  val LHU      = Value
-  val SB       = Value
-  val SH       = Value
-  val SW       = Value
-  val LD       = Value
-  val SD       = Value
-  val LWU      = Value
-  val FENCEI   = Value
-  val FLUSHAT  = Value
-  val FLUSHALL = Value
-  val FLOAT    = Value
-  val FLOAT_H  = Value
+  val LB      = Value
+  val LH      = Value
+  val LW      = Value
+  val LBU     = Value
+  val LHU     = Value
+  val SB      = Value
+  val SH      = Value
+  val SW      = Value
+  val LD      = Value
+  val SD      = Value
+  val LWU     = Value
+  val FENCEI  = Value
+  val FLOAT   = Value
+  val FLOAT_H = Value
 
   // Vector instructions.
   val VLOAD_UNIT      = Value
@@ -128,10 +121,6 @@ object LsuOp extends ChiselEnum {
 
   def isNonindexedVector(op: LsuOp.Type): Bool = {
     op.isOneOf(LsuOp.VLOAD_UNIT, LsuOp.VLOAD_STRIDED, LsuOp.VSTORE_UNIT, LsuOp.VSTORE_STRIDED)
-  }
-
-  def isFlush(op: LsuOp.Type): Bool = {
-    op.isOneOf(LsuOp.FENCEI, LsuOp.FLUSHAT, LsuOp.FLUSHALL)
   }
 
 }
@@ -443,16 +432,12 @@ object LsuUOp {
 }
 
 class FlushCmd extends Bundle {
-  val all    = Bool()
-  val fencei = Bool()
   val pcNext = UInt(32.W)
 }
 
 object FlushCmd {
   def apply(cmd: LsuCmd): FlushCmd = {
     val result = Wire(new FlushCmd)
-    result.all    := cmd.op.isOneOf(LsuOp.FENCEI, LsuOp.FLUSHALL)
-    result.fencei := (cmd.op === LsuOp.FENCEI)
     result.pcNext := cmd.pc + 4.U
     result
   }
@@ -2070,9 +2055,6 @@ class LsuV3(p: Parameters) extends Lsu(p) {
   io.storeComplete := MakeValid(slot.io.storeComplete, slot.io.pc)
 
   io.flush.valid  := flushCmd.valid
-  io.flush.all    := false.B
-  io.flush.clean  := false.B
-  io.flush.fencei := flushCmd.bits.fencei
   io.flush.pcNext := flushCmd.bits.pcNext
 
 }

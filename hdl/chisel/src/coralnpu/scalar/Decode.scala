@@ -146,9 +146,7 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   val wfi    = Bool()
 
   // Fences.
-  val fencei   = Bool()
-  val flushat  = Bool()
-  val flushall = Bool()
+  val fencei = Bool()
 
   val rvv = Option.when(p.enableRvv)(Valid(new RvvCompressedInstruction(p)))
 
@@ -181,7 +179,7 @@ class DecodedInstruction(p: Parameters) extends Bundle {
     float.map(f => f.valid && f.bits.opcode === FloatOpcode.STOREFP).getOrElse(false.B)
   }
   def isLsu(): Bool = {
-    isScalarLoad() || isScalarStore() || flushat || flushall ||
+    isScalarLoad() || isScalarStore() ||
     isFloatLoad() || isFloatStore() || (if (p.enableRvv) {
                                           rvv.get.valid && rvv.get.bits.isLoadStore()
                                         } else {
@@ -190,7 +188,7 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   }
   def isMul(): Bool   = { mul || mulh || mulhsu || mulhu || mulw }
   def isDvu(): Bool   = { div || divu || rem || remu || divw || divuw || remw || remuw }
-  def isFency(): Bool = { fencei || ebreak || wfi || mpause || flushat || flushall }
+  def isFency(): Bool = { fencei || ebreak || wfi || mpause }
 
   // Instructions that should dispatch out of slot 0, with no other instructions
   // dispatched on the same cycle.
@@ -753,21 +751,19 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     val lsu = SafeMuxUpTo1H(
       MakeValid(false.B, LsuOp.LB),
       Seq(
-        d.lb       -> MakeValid(true.B, LsuOp.LB),
-        d.lh       -> MakeValid(true.B, LsuOp.LH),
-        d.lw       -> MakeValid(true.B, LsuOp.LW),
-        d.lbu      -> MakeValid(true.B, LsuOp.LBU),
-        d.lhu      -> MakeValid(true.B, LsuOp.LHU),
-        d.lwu      -> MakeValid(true.B, LsuOp.LWU),
-        d.ld       -> MakeValid(true.B, LsuOp.LD),
-        d.sb       -> MakeValid(true.B, LsuOp.SB),
-        d.sh       -> MakeValid(true.B, LsuOp.SH),
-        d.sw       -> MakeValid(true.B, LsuOp.SW),
-        d.sd       -> MakeValid(true.B, LsuOp.SD),
-        d.wfi      -> MakeValid(true.B, LsuOp.FENCEI),
-        d.fencei   -> MakeValid(true.B, LsuOp.FENCEI),
-        d.flushat  -> MakeValid(true.B, LsuOp.FLUSHAT),
-        d.flushall -> MakeValid(true.B, LsuOp.FLUSHALL)
+        d.lb     -> MakeValid(true.B, LsuOp.LB),
+        d.lh     -> MakeValid(true.B, LsuOp.LH),
+        d.lw     -> MakeValid(true.B, LsuOp.LW),
+        d.lbu    -> MakeValid(true.B, LsuOp.LBU),
+        d.lhu    -> MakeValid(true.B, LsuOp.LHU),
+        d.lwu    -> MakeValid(true.B, LsuOp.LWU),
+        d.ld     -> MakeValid(true.B, LsuOp.LD),
+        d.sb     -> MakeValid(true.B, LsuOp.SB),
+        d.sh     -> MakeValid(true.B, LsuOp.SH),
+        d.sw     -> MakeValid(true.B, LsuOp.SW),
+        d.sd     -> MakeValid(true.B, LsuOp.SD),
+        d.wfi    -> MakeValid(true.B, LsuOp.FENCEI),
+        d.fencei -> MakeValid(true.B, LsuOp.FENCEI)
       ) ++ Option
         .when(p.enableFloat) {
           Seq(
@@ -1023,7 +1019,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
     // SB,SH,SW   0100011
     val storeSelect = d.inst(6, 3) === 4.U && d.inst(1, 0) === 3.U
-    io.busRead(i).immen := !d.flushat
+    io.busRead(i).immen := true.B
     io.busRead(i).immed := Mux(
       d.rvv.map(_.valid).getOrElse(false.B),
       0.U,
@@ -1190,9 +1186,7 @@ object DecodeInstruction {
     d.wfi    := op === BitPat("b000100000101_00000_000_00000_11100_11")
 
     // Fences.
-    d.fencei   := op === BitPat("b0000_0000_0000_00000_001_00000_0001111")
-    d.flushat  := op === BitPat("b0010?_??_00000_?????_000_00000_11101_11") && op(19, 15) =/= 0.U
-    d.flushall := op === BitPat("b0010?_??_00000_00000_000_00000_11101_11")
+    d.fencei := op === BitPat("b0000_0000_0000_00000_001_00000_0001111")
 
     if (p.enableFloat) {
       val float      = FloatInstruction.decode(p, op, addr)
@@ -1221,10 +1215,8 @@ object DecodeInstruction {
       d.mret   := false.B
       d.wfi    := false.B
 
-      d.fence    := false.B
-      d.fencei   := false.B
-      d.flushat  := false.B
-      d.flushall := false.B
+      d.fence  := false.B
+      d.fencei := false.B
 
       if (p.enableFloat) {
         d.float.get := MakeInvalid(new FloatInstruction(p))
@@ -1333,8 +1325,6 @@ object DecodeInstruction {
       d.mpause,
       d.mret,
       d.fencei,
-      d.flushat,
-      d.flushall,
       d.rvv.map(_.valid).getOrElse(false.B),
       d.float.map(_.valid).getOrElse(false.B)
     )

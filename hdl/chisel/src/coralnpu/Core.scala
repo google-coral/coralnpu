@@ -52,9 +52,6 @@ class Core(p: Parameters, moduleName: String) extends Module with RequireAsyncRe
     // Bus between core and and external memories or peripherals.
     val ebus = new EBusIO(p)
 
-    val iflush = new IFlushIO(p)
-    val dflush = new DFlushIO(p)
-
     val debug = Option.when(p.shouldExposeDebugPorts)(new DebugIO(p))
   })
 
@@ -78,8 +75,6 @@ class Core(p: Parameters, moduleName: String) extends Module with RequireAsyncRe
 
   score.io.dm <> io.dm
 
-  io.iflush <> score.io.iflush
-  io.dflush <> score.io.dflush
   require(
     io.debug.isDefined == score.io.debug.isDefined,
     "Debug port presence mismatch between Core and SCore"

@@ -180,6 +180,8 @@ class IFlushIO(p: Parameters) extends Bundle {
   val valid  = Output(Bool())
   val pcNext = Output(UInt(p.programCounterBits.W))
   val ready  = Input(Bool())
+
+  def fire: Bool = valid && ready
 }
 
 class DFlushIO(p: Parameters) extends Bundle {

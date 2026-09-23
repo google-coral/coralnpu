@@ -127,9 +127,6 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
       "Debug port presence mismatch between CoreAxi and Core"
     )
     io.debug.zip(core.io.debug).foreach { case (ioDebug, coreDebug) => ioDebug <> coreDebug }
-    // Tie-offs (no cache to flush)
-    core.io.dflush.ready := true.B
-    core.io.iflush.ready := true.B
 
     core.io.dm.debug_req  := dm.io.haltreq(0)
     core.io.dm.resume_req := dm.io.resumereq(0)

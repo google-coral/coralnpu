@@ -85,13 +85,6 @@ static void Core_run(const char *name, const char *bin, const int cycles, const 
   sc_signal<bool> io_ebus_dbus_write;
   sc_signal<bool> io_ebus_fault_valid;
   sc_signal<bool> io_ebus_fault_bits_write;
-  sc_signal<bool> io_iflush_valid;
-  sc_signal<sc_bv<KP_programCounterBits>> io_iflush_pcNext;
-  sc_signal<bool> io_iflush_ready;
-  sc_signal<bool> io_dflush_valid;
-  sc_signal<bool> io_dflush_ready;
-  sc_signal<bool> io_dflush_all;
-  sc_signal<bool> io_dflush_clean;
   sc_signal<sc_bv<KP_xlen>> io_csr_in_value_0;
   sc_signal<sc_bv<KP_xlen>> io_csr_in_value_1;
   sc_signal<sc_bv<KP_xlen>> io_csr_in_value_2;
@@ -188,9 +181,6 @@ static void Core_run(const char *name, const char *bin, const int cycles, const 
 #undef IO_DEBUG
 #endif
 
-  io_iflush_ready = 1;
-  io_dflush_ready = 1;
-
   tb.io_halted(io_halted);
   tb.io_fault(io_fault);
   tb.io_ebus_dbus_valid(io_ebus_dbus_valid);
@@ -222,13 +212,6 @@ static void Core_run(const char *name, const char *bin, const int cycles, const 
   core.io_ebus_fault_bits_write(io_ebus_fault_bits_write);
   core.io_ebus_fault_bits_addr(io_ebus_fault_bits_addr);
   core.io_ebus_fault_bits_epc(io_ebus_fault_bits_epc);
-  core.io_iflush_valid(io_iflush_valid);
-  core.io_iflush_pcNext(io_iflush_pcNext);
-  core.io_iflush_ready(io_iflush_ready);
-  core.io_dflush_valid(io_dflush_valid);
-  core.io_dflush_ready(io_dflush_ready);
-  core.io_dflush_all(io_dflush_all);
-  core.io_dflush_clean(io_dflush_clean);
   core.io_csr_in_value_0(io_csr_in_value_0);
   core.io_csr_in_value_1(io_csr_in_value_1);
   core.io_csr_in_value_2(io_csr_in_value_2);
