@@ -7,6 +7,7 @@ common --incompatible_autoload_externally=+@rules_cc,+@rules_shell,+@rules_pytho
 # legacy permissive behavior. Restore it for now; clean up per-glob in a
 # follow-up.
 common --noincompatible_disallow_empty_glob
+common --incompatible_default_to_explicit_init_py
 
 build --action_env=BAZEL_CXXOPTS="-std=c++17"
 build --action_env=CC="clang"
