@@ -1,143 +1,197 @@
-# Load Store Unit
+# Load Store Unit (LSUv3)
 
-![image](../images/lsu.svg)
+![LSUv3 Architecture](../images/lsu.svg)
 
-The Load Store Unit handles memory operations issued by the core. Functionally,
-it's purpose is to translate memory instructions into transactions on the
-appropriate subsystem.
+The Load Store Unit (LSU) executes memory operations for scalar, floating-point, vector (RVV), and matrix/tile (VME) instructions. It translates decoded operations into memory transactions across tightly-coupled memories (TCM) and external system busses while managing coalescing, ordering, fault reporting, and register writeback.
 
-## Slots
+```mermaid
+flowchart TD
+    subgraph Decode & Dispatch
+        REQ["io.req[0..L-1] (LsuCmd)"] --> ALIGN["Aligner"]
+        ALIGN --> RS["Reservation Station (rs)<br/>CircularBufferMulti"]
+    end
 
-The CoralNPU LSU uses a concept called _slots_ to handle memory transactions. A
-slot is a data structure which manages the state of a single dispatched LSU
-operation and determines what memory transaction should be performed. At its
-core, there exists a table in each slot which tracks which part of the memory
-operation has been completed.
+    subgraph Execution: LsuSuperSlot
+        RS -->|io.uop| SS["LsuSuperSlot (State Machine)"]
+        CELLS["LsuCell Array<br/>nCells: 8 × VLENB (or 4 bytes)"] <--> SS
+        RVV_IN["rvv2lsu / vme2lsu<br/>(Indices, Store Data, Masks)"] --> SS
+        SS --> WIN["Sliding Window Bundler<br/>(Normal vs. Strict Mode)"]
+    end
 
-For example, below is the slot table for a word-store into address 0xDEADBEEF:
+    subgraph Bus Interface & Coalescing
+        WIN --> ARB["Bus Arbiter & Address Decoder"]
+        ARB -->|Reads Only| IBUS["IBus (ITCM)"]
+        ARB -->|16B Rows| DBUS["DBus (DTCM)"]
+        ARB -->|Variable Size| EBUS["EBus (External / Peripheral)"]
+    end
 
-| Index | Active |   Address  | Data |
-| ----- | ------ | ---------- | ---- |
-|   0   |    1   | 0xDEADBEEF | 0x01 |
-|   1   |    1   | 0xDEADBEF0 | 0x23 |
-|   2   |    1   | 0xDEADBEF1 | 0x45 |
-|   3   |    1   | 0xDEADBEF2 | 0x67 |
-|   4   |    0   | 0xDEADBEF3 | 0x00 |
-...
-|   n   |    0   | 0xDEADBEF3 | 0x00 |
+    subgraph Response & Writeback
+        IBUS & DBUS & EBUS -->|Bus Responses & Snooping| SS
+        SS -->|Scalar Int| RD["io.rd (Scalar Regfile)"]
+        SS -->|Scalar Float| RDFLT["io.rd_flt (Float Regfile)"]
+        SS -->|Vector Streaming| RVV_OUT["io.lsu2rvv / io.lsu2vme"]
+        SS -->|Drained / Completed| STORE_DONE["io.storeComplete"]
+    end
+```
 
-Memory transactions over TCM or AXI busses will read/write data in the slot
-table and flip the active bits to 0 as they are made.
+## Pipeline Overview
 
-The typical lifetime of a slot is as follows:
+The LSU operates as a decoupled, in-order execution pipeline:
 
-1) **Idle**: An idle slot will dequeue a LsuOperation from the command queue.
-Scalar operations will move directly into **Transfer Memory** while vector
-operations will go to the **Vector Update** state.
-2) **Vector Update**: For vector operations masks, addresses (for indexed ops)
-and data (for store ops) need to be received from the RvvCore. This stage is
-bypassed for scalar operations.
-3) **Transfer Memory**: While there are still active entries in the slot table,
-the active entry with the lowest "index" will be selected for a memory
-transaction. A scatter/gather unit will then select all other active entries
-(although not necessarily contiguous) that will be bundled with the transaction.
-The appropriate memory bus (ibus, dbus, ebus) will then be selected and a memory
-transaction will be conducted. When there are no active entries, the slot moves
-into the next state (**Writeback**).
-4) **Writeback**: Once all memory transactions are completed, the result must
-be written back to register files. Additionally, vector stores are
-"acknowledged" back to the RvvCore. Scalar and floating point scores bypass this
-stage. Once writeback is completed, the slot moves back into the
-**Vector Update** state for LMUL > 1, or the **Idle** state.
+1. **Ingestion & Pointer-Chasing (`LsuUOp`)**: Decodes up to `p.instructionLanes` commands (`LsuCmd`) per cycle, fetching base addresses and store data from the scalar/floating-point register file bus ports (`io.busPort`, `io.busPort_flt`).
+2. **Reservation Station (`rs`)**: Dispatched micro-operations are packed by an `Aligner` and stored in a multi-lane circular buffer (`CircularBufferMulti`) to buffer commands ahead of execution.
+3. **Execution Engine (`LsuSuperSlot`)**: Dequeues a single `LsuUOp` at a time and instantiates an array of byte-level tracking cells (`LsuCell`) sized to the maximum architectural vector register group ($8 \times \text{VLENB}$, or 4 bytes for scalar configurations).
+4. **Windowed Bus Bundling**: Scans active cells using a sliding window (`windowSizeNormal` or `windowSizeStrict`), bundling matching row addresses into coalesced 16-byte (`p.lsuDataBytes`) memory transactions.
+5. **Writeback & Streaming**: Routes read responses back into cells (with single-cycle response snooping across identical rows) and streams completed elements to scalar writeback ports or the vector core (`io.lsu2rvv`).
 
-CoralNPU currently uses one "slot" in the LSU. In the future, multiple slots maybe
-added to allow multiple operations to partake in the same transaction.
+## Ingestion & Reservation Station (`rs`)
 
-## Interfaces
+### Multi-Lane Ingestion & Alignment
 
-### LSU Command Interface
+The core dispatch unit presents up to `p.instructionLanes` decoupled memory commands (`io.req`) per cycle.
 
-The LSU has a command interface coming from the dispatch unit and register file.
+- **Capacity Check**: A prefix-sum scan (`validSums`) checks against `rs.io.nSpace` to determine how many commands can be accepted. Remaining lanes are backpressured (`req(i).ready = false`).
+- **Operand Fetch**: Base register address generation and store data bypassing occur in parallel using `RegfileBusPortIO`.
+- **`LsuUOp` Generation**: Computes initial memory bounds (`startCell`, `endCell`, `unreachableCell`), stride multipliers (`bytesPerSegment`), and vector addressing modes from `io.rvvState` (`vtype`, `vl`, `vstart`).
+- **Alignment**: The `Aligner` packs sparse valid dispatches into dense circular buffer inputs.
 
-| Signal Name   | Type          | Description                                                   |
-| ------------- | ------------- | ------------------------------------------------------------- |
-| req.valid     | Bool          | If the LSU command is valid.                                  |
-| req.op        |               | The LSU operation to execute.                                 |
-| req.addr      | UInt(5)       | The RegFile address to write the result to for loads.         |
-| req.pc        | UInt(32)      | The PC of the LSU instruction. Use for fault reporting.       |
-| req.elemWidth | UInt(32)      | Used in the RVV only. The EEW for strided loads.              |
-| req.ready     | Bool (output) | If the command is accepted. Used in a ready-valid hand-shake. |
+### Circular Buffer (`CircularBufferMulti`)
 
-### Bus Interfaces
+The reservation station buffers up to `max(4, p.instructionLanes)` micro-operations.
 
-| Signal Name | Type              | Description                                                       |
-| ----------- | ----------------- | ----------------------------------------------------------------- |
-| ibus.valid  | Bool              | If the ibus transaction is valid.                                 |
-| ibus.addr   | UInt(32)          | The address of the ibus transaction.                              |
-| ibus.rdata  | UInt(128) (input) | The data read from the ibus. Arrives one cycle after hand-shake.  |
-| ibus.ready  | Bool (input)      | If the transaction is accepted. Used in a ready-valid hand-shake. |
+- It exposes current queue occupancy via `io.queueCapacity`.
+- Flushed synchronously when `io.pipelineFlush` asserts or on an unrecoverable memory fault.
 
-| Signal Name | Type              | Description                                                       |
-| ----------- | ----------------- | ----------------------------------------------------------------- |
-| dbus.valid  | Bool              | If the dbus transaction is valid.                                 |
-| dbus.addr   | UInt(32)          | The address of the dbus transaction.                              |
-| dbus.size   | UInt(5)           | The size of this transaction in bytes.                            |
-| dbus.pc     | UInt(32)          | The PC of the LSU instruction. Use for fault reporting.           |
-| dbus.rdata  | UInt(128) (input) | The data read from the dbus. Arrives one cycle after hand-shake.  |
-| dbus.wdata  | UInt(128)         | The data to write from the dbus.                                  |
-| dbus.wmask  | UInt(16)          | A byte write mask for this transaction.                           |
-| dbus.ready  | Bool (input)      | If the transaction is accepted. Used in a ready-valid hand-shake. |
+## `LsuSuperSlot` & `LsuCell` Array
 
-| Signal Name      | Type              | Description                                                       |
-| ---------------- | ----------------- | ----------------------------------------------------------------- |
-| ebus.valid       | Bool              | If the ebus transaction is valid.                                 |
-| ebus.addr        | UInt(32)          | The address of the ebus transaction.                              |
-| ebus.size        | UInt(5)           | The size of this transaction in bytes.                            |
-| ebus.pc          | UInt(32)          | The PC of the LSU instruction. Use for fault reporting.           |
-| ebus.rdata       | UInt(128) (input) | The data read from the ebus. Arrives one cycle after hand-shake.  |
-| ebus.wdata       | UInt(128)         | The data to write from the ebus.                                  |
-| ebus.wmask       | UInt(16)          | A byte write mask for this transaction.                           |
-| ebus.ready       | Bool (input)      | If the transaction is accepted. Used in a ready-valid hand-shake. |
-| ebus.fault.valid | Bool (input)      | Raised if a fault occurs on the external bus.                     |
-| ebus.fault.write | Bool (input)      | If the fault occured on a write operation.                        |
-| ebus.fault.addr  | Bool (input)      | The address of the memory transaction when the fault occurred.    |
-| ebus.fault.epc   | Bool (input)      | The PC of the instruction that triggered the fault.               |
-| ebus.internal    | Bool              | Not used.                                                         |
+`LsuSuperSlot` coordinates all memory bus transactions, RVV handshakes, and register writebacks for the actively executing instruction.
 
-### Writeback Interfaces
+### The `LsuCell` Array
 
-| Signal Name | Type     | Description                                              |
-| ----------- | -------- | -------------------------------------------------------- |
-| rd.valid    | Bool     | If the writeback to the scalar regfile is valid.         |
-| rd.addr     | UInt(5)  | The address of the scalar register file to writeback to. |
-| rd.data     | UInt(32) | The data to write to the scalar register file.           |
+Execution is partitioned across `nCells` byte cells ($8 \times \text{VLENB}$ with RVV enabled, or 4 for scalar-only):
 
-| Signal Name     | Type     | Description                                                      |
-| --------------- | -------- | ---------------------------------------------------------------- |
-| rd_flt.valid    | Bool     | If the writeback to the floating point regfile is valid.         |
-| rd_flt.addr     | UInt(5)  | The address of the floating point register file to writeback to. |
-| rd_flt.data     | UInt(32) | The data to write to the floating point register file.           |
+```text
+Cell Index:  [ 0 | 1 | 2 | 3 | 4 | 5 | ... | nCells - 1 ]
+             |<- Active Elements ->|<- Tail / Inactive ->|<- Unreachable ->|
+             [startCell, endCell)     [endCell, unreach)     [unreach, nCells)
+```
 
-### RVV Interfaces
+Each `LsuCell` stores:
 
-For the RVVCore, the LSU contains the following interfaces:
+- `state`: Current lifecycle state (`LsuCellState`).
+- `data`: 8-bit data payload.
+- `rowAddr`: Memory row address (`addr >> dbusOffsetBits`).
+- `mask`: One-hot byte position within the 16-byte bus row.
 
-| Signal Name            | Type              | Description                                                       |
-| ---------------------- | ----------------- | ----------------------------------------------------------------- |
-| rvv2lsu.valid          | Bool              | If the rvv2lsu transaction is valid.                              |
-| rvv2lsu.idx.valid      | Bool              | If there is valid index data from the vector register file.       |
-| rvv2lsu.idx.addr       | UInt(5)           | The address of the indices from the vector register file.         |
-| rvv2lsu.idx.data       | UInt(128)         | The indices from the vector register file index.                  |
-| rvv2lsu.vregfile.valid | UInt(128)         | If there is valid data from the vector register file.             |
-| rvv2lsu.vregfile.addr  | UInt(5)           | The address of the data from the vector register file.            |
-| rvv2lsu.vregfile.data  | UInt(128)         | The vector data to write back for this operation.                 |
-| rvv2lsu.mask           | UInt(16)          | A byte activity mask for this transaction.                        |
-| rvv2lsu.ready          | Bool (input)      | If the transaction is accepted. Used in a ready-valid hand-shake. |
+### Cell Lifecycle (`LsuCellState`)
 
-| Signal Name    | Type              | Description                                                       |
-| -------------- | ----------------- | ----------------------------------------------------------------- |
-| lsu2rvv.valid  | Bool              | If the lsu2rvv transaction is valid.                              |
-| lsu2rvv.addr   | UInt(5)           | The destination vector register file index.                       |
-| lsu2rvv.data   | UInt(128)         | The vector data to write back for load operations.                |
-| lsu2rvv.last   | Bool              | If this transaction is a store or not.                            |
-| lsu2rvv.ready  | Bool (input)      | If the transaction is accepted. Used in a ready-valid hand-shake. |
+- **`DONE`**: Cell is idle, inactive, out-of-bounds, or has finished writeback.
+- **`W_DATA`**: Waiting for vector element index (`rvv2lsu.idx`), store data (`rvv2lsu.vregfile`), or mask bit (`rvv2lsu.mask`). Inactive elements (`mask == 0`) transition directly to `W_WB`.
+- **`W_START`**: Address and store data are valid; ready to participate in a bus transaction.
+- **`W_RESP`**: Bus request issued; awaiting bus response data.
+- **`W_WB`**: Data returned from memory (or skipped); awaiting scalar writeback or vector writeback stream acknowledgment.
+
+### Address Generation Paths
+
+1. **Continuous (Scalar & Unit-Stride Vector)**: Base row address and byte offsets are pre-computed using a consecutive row lookup table (`rowTable`), allowing immediate parallel initialization of all cell row addresses.
+2. **Strided (RVV)**: Uses a 16-entry lookup table (`makeStridedOffsets`) for supported element/segment multipliers ($1, 2, \dots, 32$) scaled by stride ($rs2$).
+3. **Indexed (RVV)**: Base address is updated dynamically per element as index vectors arrive over `rvv2lsu.idx`.
+
+## Bus Transaction Bundling & Memory Modes
+
+CoralNPU bus transactions are aligned to 16-byte rows (`p.lsuDataBytes`). `LsuSuperSlot` maintains a sliding window of cells starting at `leadIndex`:
+
+### Normal Mode (Coalesced & Snooped)
+
+- Examines up to `windowSizeNormal` (16) cells ahead of `leadIndex`.
+- Coalesces all cells targeting the same `rowAddr` into a single bus transaction with an aggregated byte mask (`wmask`) and write data (`wdata`).
+- Services all standard memory operations not requiring strict element serialization:
+  - Scalar integer and floating-point loads/stores.
+  - Unit-stride vector loads/stores (including masked and whole-register variants).
+  - Unordered indexed vector operations (`VLOAD_UINDEXED`, `VSTORE_UINDEXED`).
+  - Non-zero strided vector operations (`VLOAD_STRIDED`, `VSTORE_STRIDED`).
+  - Unconstrained zero-stride vector operations where `rs2 == x0`. Per the RISC-V Vector specification, strided instructions encoding `rs2 == x0` permit combining multiple elements into fewer memory accesses.
+  - Matrix/tile operations (`VTLOAD`, `VTSTORE` under VME).
+- **Response Snooping**: On read responses, all cells in the slot matching `respRowAddr` in states `W_START` or `W_RESP` capture data in parallel, drastically reducing bus bandwidth for duplicate or clustered accesses.
+
+### Strict Mode (Spec-Ordered Execution)
+
+- Engaged exclusively for operations requiring strict element-ordered execution:
+  - Ordered indexed vector operations (`VLOAD_OINDEXED`, `VSTORE_OINDEXED`).
+  - Constrained zero-stride vector operations where a non-zero register holds zero (`rs2 != x0` and `Reg[rs2] == 0`). While `rs2 == x0` permits coalescing in Normal Mode, the RVV specification mandates that non-`x0` registers with value zero must preserve element order without combining accesses.
+- Enforces strict serial memory ordering within the active window (`windowSizeStrict`) as required by the RISC-V Vector specification, ensuring earlier vector elements perform their bus transactions before later elements in the same row rather than being coalesced.
+
+### Scalar Cross-Row Accesses
+
+Scalar memory accesses execute through Normal Mode. If a scalar load or store crosses a 16-byte row boundary, it is split into at most two naturally aligned power-of-two bus transfers (`tx1Size` and `tx2Size`) precomputed during instruction initialization (`computeScalarTxPlan`):
+
+- `tx1`: Naturally aligned transfer for residual bytes in row 1 ending at the row boundary (or the entire access if within a single row).
+- `tx2`: Naturally aligned transfer for remaining bytes in row 2 starting at offset 0.
+
+## Subsystem Busses
+
+The LSU routes memory transactions to three distinct destinations based on physical address mapping:
+
+| Subsystem | Port | Access Type | Description |
+| :--- | :--- | :--- | :--- |
+| **Instruction TCM** | `io.ibus` | Read-only | Instruction TCM accesses. Writes to ITCM are trapped as faults (`ibusFault`). |
+| **Data TCM** | `io.dbus` | Read / Write | Point-to-point 16-byte fixed-size interface to DTCM. Zero wait-state pipelined responses. |
+| **External Memory** | `io.ebus` | Read / Write | External memory / peripheral transactions (AXI/TileLink). Supports sub-row transaction sizes and external bus fault reporting (`ebus.fault`). |
+
+## Pipeline Synchronization & Fault Handling
+
+### `FENCE` & Total Store Order
+
+CoralNPU guarantees total memory order across all execution lanes in hardware. Standard `FENCE` instructions are recognized as NOPs at dispatch and retire immediately without stalling the pipeline.
+
+### `FENCE.I` (Instruction Cache / Fetch Sync)
+
+- Recognized on lane 0 (`LsuOp.FENCEI`).
+- Allocates `FlushCmd` with `pcNext = pc + 4`.
+- Awaits complete drainage of all in-flight store transactions in `LsuSuperSlot`.
+- Directly pulses `io.flush` (`IFlushIO`) to instruction fetch (`fetch.io.iflush`), redirecting fetch to `pcNext`.
+
+### Fault Reporting
+
+Memory faults (DTCM access violation, ITCM write violation, or external bus slave errors) trigger precise architectural traps:
+
+- Further transaction dispatch is frozen.
+- `rs` is flushed (`rs.io.flush`).
+- For vector operations, `faultingVstart` calculates the exact failing element index:
+  $$\text{vstart} = \frac{\text{faultingCell}}{\text{NF} + 1} \gg \log_2(\text{elementBytes})$$
+- Latches precise fault info on `io.fault` (`valid`, `epc`, `addr`, `write`, `vstart`).
+
+## Interface Reference
+
+### Core & Dispatch Interfaces
+
+| Signal | Direction | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `io.req[L]` | Input | `Vec(L, Decoupled(LsuCmd))` | Incoming instruction commands across $L$ dispatch lanes. |
+| `io.busPort` | Input | `RegfileBusPortIO` | Integer register file read port for base addresses and store data. |
+| `io.busPort_flt` | Input | `RegfileBusPortIO` | Floating-point register file read port for store data (optional). |
+| `io.queueCapacity`| Output | `UInt(3.W)` | Available capacity in the circular reservation station. |
+| `io.pipelineFlush`| Input | `Bool` | Global pipeline flush signal from branch/trap unit. |
+| `io.active` | Output | `Bool` | High if LSU has queued or executing instructions. |
+| `io.storeComplete`| Output | `Valid(UInt(32.W))` | Pulses with PC when a store instruction fully commits. |
+
+### Memory Bus Interfaces
+
+| Port | Signals | Description |
+| :--- | :--- | :--- |
+| `io.ibus` | `valid`, `ready`, `addr`, `rdata` | Read-only access to ITCM memory. |
+| `io.dbus` | `valid`, `ready`, `write`, `addr`, `adrx`, `size`, `pc`, `wdata`, `wmask`, `rdata` | Point-to-point interface to DTCM (16-byte transfers). |
+| `io.ebus` | `dbus` (same as above), `fault`, `internal` | Interface to external bus bridge / peripherals with fault detection. |
+| `io.flush` | `valid`, `ready`, `pcNext` | Flush handshake (`IFlushIO`) wired to `fetch.io.iflush`. |
+| `io.fault` | `valid`, `bits` (`LsuFaultInfo`) | Precise trap info: faulting PC, address, write flag, and vector `vstart`. |
+
+### Writeback & Extension Interfaces
+
+| Port | Direction | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `io.rd` | Output | `Valid(RegfileWriteDataIO)` | Integer scalar register file writeback. |
+| `io.rd_flt` | Output | `Valid(FloatRegfileWriteDataIO)` | Floating-point scalar register file writeback. |
+| `io.rvv2lsu[2]` | Input | `Vec(2, Decoupled(Rvv2Lsu))` | Vector core streams: vector store data, index vectors, and masks. |
+| `io.lsu2rvv[2]` | Output | `Vec(2, Decoupled(Lsu2Rvv))` | Vector writeback data stream and store completion acknowledgments. |
+| `io.rvvState` | Input | `Valid(RvvConfigState)` | Dynamic RVV architectural state (`sew`, `lmul`, `vl`, `vstart`). |
+| `io.vme2lsu` / `io.lsu2vme` | I/O | `Decoupled` | Streaming interface for matrix/tile operations (VME). |
