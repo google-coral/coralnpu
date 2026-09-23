@@ -23,6 +23,7 @@ ran (relaxation, pseudo-op expansion, compressed encodings, etc.).
 
 import argparse
 import json
+import os
 import struct
 import sys
 from typing import Dict, List, Optional, Sequence
@@ -339,8 +340,16 @@ def main() -> None:
         action="store_true",
         help="Whether traps are enabled in the checked programs",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print per-ELF post-link pass messages to stdout",
+    )
     parser.add_argument("elfs", nargs="+", help="Linked ISG ELF files")
     args = parser.parse_args()
+    verbose = args.verbose or os.environ.get("ISG_VERBOSE", "").strip().lower(
+    ) in ("1", "true")
 
     patterns = load_alphabet_patterns(args.alphabet)
     failures = 0
@@ -351,9 +360,11 @@ def main() -> None:
             validate_payload_words(
                 words, patterns, args.traps_enabled, base_reg=base_reg
             )
-            print(
-                f"Post-link check PASSED for {elf_path} ({len(words)} words)"
-            )
+            if verbose:
+                print(
+                    f"Post-link check PASSED for {elf_path} "
+                    f"({len(words)} words)"
+                )
         except PostLinkViolationError as e:
             print(
                 f"Post-link check FAILED for {elf_path}: {e}", file=sys.stderr

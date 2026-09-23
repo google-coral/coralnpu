@@ -12,11 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load(":isg_rules.bzl", "isg_batch")
 
 package(default_visibility = ["//visibility:public"])
+
+bool_flag(
+    name = "isg_verbose",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "isg_verbose_enabled",
+    flag_values = {":isg_verbose": "true"},
+)
+
+genrule(
+    name = "isg_verbose_config_gen",
+    outs = ["isg_verbose_config.py"],
+    cmd = select({
+        ":isg_verbose_enabled": "echo 'ISG_VERBOSE_DEFAULT = True' > $@",
+        "//conditions:default": "echo 'ISG_VERBOSE_DEFAULT = False' > $@",
+    }),
+)
+
+py_library(
+    name = "isg_verbose_config",
+    srcs = [":isg_verbose_config.py"],
+    imports = ["../.."],
+)
 
 py_library(
     name = "isg_lib",
@@ -114,6 +141,37 @@ py_test(
     ],
 )
 
+py_test(
+    name = "shaping_test",
+    srcs = ["gen/shaping_test.py"],
+    imports = ["../.."],
+    main = "gen/shaping_test.py",
+    deps = [
+        ":isg_lib",
+    ],
+)
+
+py_test(
+    name = "traps_test",
+    srcs = ["gen/traps_test.py"],
+    imports = ["../.."],
+    main = "gen/traps_test.py",
+    deps = [
+        ":isg_lib",
+    ],
+)
+
+isg_batch(
+    name = "isg_fresh_regression",
+    align_mode = "mixed",
+    alphabet = "//hdl/chisel/src/coralnpu:alphabet_core_mini_axi",
+    batch_size = 16,
+    length = 64,
+    seed = "20260921_fresh",
+    shaping = "distributed",
+    trap_rate = 0.05,
+)
+
 isg_batch(
     name = "isg_regression",
     alphabet = "//hdl/chisel/src/coralnpu:alphabet_core_mini_axi",
@@ -131,4 +189,40 @@ isg_batch(
     length = 64,
     seed = "20260924_trap",
     trap_rate = 0.1,
+)
+
+isg_batch(
+    name = "isg_wb_contention",
+    alphabet = "//hdl/chisel/src/coralnpu:alphabet_core_mini_axi",
+    batch_size = 8,
+    length = 64,
+    seed = "20260922_wb",
+    shaping = "writeback_contention",
+)
+
+isg_batch(
+    name = "isg_lsu_stlf",
+    alphabet = "//hdl/chisel/src/coralnpu:alphabet_core_mini_axi",
+    batch_size = 8,
+    length = 64,
+    seed = "20260922_stlf",
+    shaping = "lsu_stlf",
+)
+
+isg_batch(
+    name = "isg_rob_saturation",
+    alphabet = "//hdl/chisel/src/coralnpu:alphabet_core_mini_axi",
+    batch_size = 8,
+    length = 64,
+    seed = "20260922_rob",
+    shaping = "rob_saturation",
+)
+
+isg_batch(
+    name = "isg_fetch_reorder",
+    alphabet = "//hdl/chisel/src/coralnpu:alphabet_core_mini_axi",
+    batch_size = 8,
+    length = 64,
+    seed = "20260922_fetch",
+    shaping = "fetch_reorder",
 )

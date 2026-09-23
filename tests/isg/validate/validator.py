@@ -18,6 +18,7 @@ postlink.py.
 """
 
 import argparse
+import os
 import re
 import sys
 from typing import List, Optional, Tuple
@@ -29,6 +30,7 @@ from tests.isg.gen.constraints import (
     FLOAT_LOAD_OPS,
     FLOAT_RM_OPS,
     FLOAT_STORE_OPS,
+    FORBIDDEN_OPS,
     ILLEGAL_STIMULUS_WORDS,
     LOAD_OPS,
     ROUNDING_MODES,
@@ -375,6 +377,14 @@ def _check_opcode_invariants(
         return
 
 
+def _check_forbidden_ops(idx: int, line: str, op: str) -> None:
+    """Verifies that forbidden opcodes never appear in payload."""
+    if op in FORBIDDEN_OPS:
+        raise InvariantViolationError(
+            f"Line {idx}: Forbidden opcode in payload: {line}"
+        )
+
+
 def _check_line(
     idx: int,
     line: str,
@@ -395,6 +405,7 @@ def _check_line(
     """
     op = tokens[OP_IDX]
 
+    _check_forbidden_ops(idx, line, op)
     _check_dest_base_reg(idx, line, op, tokens, base_reg)
     _check_opcode_invariants(idx, line, op, tokens, prev_auipc_reg, base_reg)
     _check_csr_line(idx, line, op, tokens, traps_enabled)
@@ -417,14 +428,23 @@ def main() -> None:
         action="store_true",
         help="Whether traps are enabled in test",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print validation pass messages to stdout",
+    )
     args = parser.parse_args()
+    verbose = args.verbose or os.environ.get("ISG_VERBOSE", "").strip().lower(
+    ) in ("1", "true")
 
     with open(args.assembly, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     try:
         validate_assembly_lines(lines, traps_enabled=args.traps_enabled)
-        print(f"Validation PASSED for {args.assembly}")
+        if verbose:
+            print(f"Validation PASSED for {args.assembly}")
     except InvariantViolationError as e:
         print(f"Validation FAILED: {e}", file=sys.stderr)
         sys.exit(1)

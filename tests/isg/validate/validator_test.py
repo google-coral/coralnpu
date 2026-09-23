@@ -93,6 +93,32 @@ class ValidatorTest(unittest.TestCase):
         valid_lines = self._wrap_payload(["csrci 0x301, 0", "csrsi 0x301, 0"])
         validate_assembly_lines(valid_lines)
 
+    def test_forbidden_opcode_rejected(self):
+        for forbidden in ["mret", "wfi", "ebreak", "mpause"]:
+            invalid_lines = self._wrap_payload([forbidden])
+            with self.assertRaises(InvariantViolationError):
+                validate_assembly_lines(invalid_lines)
+
+    def test_trap_instructions_allowed_when_traps_enabled(self):
+        lines = self._wrap_payload([
+            "addi x1, x2, 10",
+            "ecall",
+            ".word 0x0000007b",
+            "addi x3, x4, 20",
+        ])
+        validate_assembly_lines(lines, traps_enabled=True)
+
+    def test_trap_instructions_rejected_when_traps_disabled(self):
+        lines = self._wrap_payload(["ecall"])
+        with self.assertRaises(InvariantViolationError):
+            validate_assembly_lines(lines, traps_enabled=False)
+
+    def test_mscratch_pseudo_write_rejected_when_traps_enabled(self):
+        # mscratch (0x340) cannot be written in payload when traps are enabled
+        lines = self._wrap_payload(["csrw 0x340, x1"])
+        with self.assertRaises(InvariantViolationError):
+            validate_assembly_lines(lines, traps_enabled=True)
+
     def test_valid_float_stream(self):
         valid_lines = self._wrap_payload([
             "flw f0, 64(x31)",
@@ -263,6 +289,42 @@ class ValidatorTest(unittest.TestCase):
                 with self.assertRaisesRegex(InvariantViolationError, "Line 0"):
                     validate_assembly_lines(self._wrap_payload([insn]))
 
+    def test_new_shaping_modes_validate(self):
+        from tests.isg.gen.program import generate_isg_assembly
+        alphabet = [
+            "add", "sub", "mul", "div", "lw", "sw", "flw", "fsw", "fadd.s",
+            "fdiv.s", "fmv.x.w", "fmv.w.x", "fcvt.w.s", "beq", "bne", "jal",
+            "jalr", "csrrw"
+        ]
+        alphabet_csrs = [0x300, 0x340, 0x341, 0x342, 0x343, 0x344]
+        for mode in ["writeback_contention", "lsu_stlf", "rob_saturation",
+                     "fetch_reorder"]:
+            lines = generate_isg_assembly(
+                alphabet_ops=alphabet,
+                alphabet_csrs=alphabet_csrs,
+                shaping=mode,
+                length=64,
+                seed="20260922_validator_test",
+            )
+            validate_assembly_lines(lines, traps_enabled=False)
+
+    def test_csr_pseudo_ops_permissions(self):
+        # csrw is an overwrite (allowed on fflags, but not on non-writable CSRs)
+        validate_assembly_lines(self._wrap_payload(["csrw fflags, x1"]))
+        # csrc and csrs are set/clear forms (forbidden on fflags/fcsr)
+        with self.assertRaises(InvariantViolationError):
+            validate_assembly_lines(self._wrap_payload(["csrc fflags, x1"]))
+        with self.assertRaises(InvariantViolationError):
+            validate_assembly_lines(self._wrap_payload(["csrs fflags, x1"]))
+        # mscratch write allowed only when traps are disabled
+        validate_assembly_lines(
+            self._wrap_payload(["csrw mscratch, x1"]), traps_enabled=False
+        )
+        with self.assertRaises(InvariantViolationError):
+            validate_assembly_lines(
+                self._wrap_payload(["csrw mscratch, x1"]), traps_enabled=True
+            )
+
     def test_custom_base_reg_validated_and_x31_allowed(self):
         lines = [
             ".set isg_base_reg, 10",
@@ -291,6 +353,43 @@ class ValidatorTest(unittest.TestCase):
         ]
         with self.assertRaises(InvariantViolationError):
             validate_assembly_lines(bad_mem)
+
+    def test_cli_quiet_by_default_and_verbose_flag(self):
+        import io
+        import os
+        import sys
+        import tempfile
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+        from tests.isg.validate import validator
+
+        asm_lines = self._wrap_payload(["addi x1, x2, 100"])
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".S", delete=False,
+                                         encoding="utf-8") as tmp:
+            tmp.write("\n".join(asm_lines) + "\n")
+            tmp_path = tmp.name
+
+        try:
+            quiet_buf = io.StringIO()
+            with patch.dict(os.environ, {"ISG_VERBOSE": ""}, clear=False), \
+                 patch.object(sys, "argv", ["validator", "--assembly", tmp_path]), \
+                 redirect_stdout(quiet_buf):
+                validator.main()
+            self.assertEqual(quiet_buf.getvalue(), "")
+
+            verbose_buf = io.StringIO()
+            with patch.dict(os.environ, {"ISG_VERBOSE": ""}, clear=False), \
+                 patch.object(
+                     sys,
+                     "argv",
+                     ["validator", "--assembly", tmp_path, "--verbose"],
+                 ), \
+                 redirect_stdout(verbose_buf):
+                validator.main()
+            self.assertIn("Validation PASSED for", verbose_buf.getvalue())
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
 
 if __name__ == "__main__":

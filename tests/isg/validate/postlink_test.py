@@ -15,6 +15,7 @@
 
 import unittest
 
+from tests.isg.gen.traps import ILLEGAL_WORDS
 from tests.isg.validate.postlink import PostLinkViolationError, validate_payload_words
 
 # Subset of alphabet_core_mini_axi.json (mask/match pairs from the Chisel tables).
@@ -124,11 +125,14 @@ class PostLinkTest(unittest.TestCase):
         self.assert_ok([0x0000007B, 0x0000007B], traps_enabled=True)
 
     def test_trap_mode_accepts_only_generator_stimulus(self):
+        for word in ILLEGAL_WORDS:
+            with self.subTest(word=f"0x{word:08x}"):
+                self.assert_bad([word])
+                self.assert_ok([word], traps_enabled=True)
         for word in [
-                0x00000000,  # all-zero (also an illegal 16-bit parcel)
-                0xFFFFFFFF,
                 0x0000000B,  # custom-0, not the generator's stimulus
                 0x00010001,  # two c.nop parcels
+                0xFFFFFFFF,  # >=80-bit length encoding, not a 32-bit stimulus
         ]:
             with self.subTest(word=f"0x{word:08x}"):
                 self.assert_bad([word], traps_enabled=True)
@@ -233,6 +237,37 @@ class PostLinkTest(unittest.TestCase):
             validate_payload_words([addi(10, 2, 1)], PATTERNS, base_reg=10)
         with self.assertRaises(PostLinkViolationError):
             validate_payload_words([lw(5, 31, 64)], PATTERNS, base_reg=10)
+
+    def test_cli_quiet_by_default_and_verbose_flag(self):
+        import io
+        import os
+        import sys
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+        from tests.isg.validate import postlink
+
+        with patch.object(postlink, "load_alphabet_patterns", return_value=PATTERNS), \
+             patch.object(postlink, "read_payload_words", return_value=[addi(1, 2, 100)]), \
+             patch.object(postlink, "read_base_reg", return_value=31), \
+             patch.dict(os.environ, {"ISG_VERBOSE": ""}, clear=False):
+            quiet_buf = io.StringIO()
+            with patch.object(sys, "argv",
+                              ["postlink", "--alphabet=a.json", "prog.elf"
+                               ]), redirect_stdout(quiet_buf):
+                postlink.main()
+            self.assertEqual(quiet_buf.getvalue(), "")
+
+            verbose_buf = io.StringIO()
+            with patch.object(
+                    sys,
+                    "argv",
+                ["postlink", "--alphabet=a.json", "--verbose", "prog.elf"],
+            ), redirect_stdout(verbose_buf):
+                postlink.main()
+            self.assertIn(
+                "Post-link check PASSED for prog.elf (1 words)",
+                verbose_buf.getvalue(),
+            )
 
 
 if __name__ == "__main__":

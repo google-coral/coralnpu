@@ -31,7 +31,9 @@ TRAP_LOG_MAX_ENTRIES = (
 ) // TRAP_LOG_ENTRY_SIZE
 
 
-def generate_epilogue(traps_enabled: bool = False) -> List[str]:
+def generate_epilogue(
+    traps_enabled: bool = False, expected_trap_count: int = 0
+) -> List[str]:
     """Generates test completion, trap handler (if enabled), and data sections."""
     lines: List[str] = [
         "    # === ISG RANDOMIZED PAYLOAD END ===",
@@ -39,6 +41,33 @@ def generate_epilogue(traps_enabled: bool = False) -> List[str]:
         "isg_payload_end:",
         "",
         "    # Test completion: write PASS (1) to tohost and mpause",
+    ]
+
+    if traps_enabled:
+        lines.extend([
+            "    # Check that trap count matches expected_trap_count",
+            ".option push",
+            ".option norelax",
+            "    la   x5, isg_trap_save",
+            ".option pop",
+            "    lw   x6, 8(x5)",
+            f"    li   x7, {expected_trap_count}",
+            "    beq  x6, x7, 1f",
+            "    # Mismatch: write HTIF failure exit code 1 ((1 << 1) | 1 = 3) to tohost",
+            "    li   x1, 3",
+            ".option push",
+            ".option norelax",
+            "    la   x2, tohost",
+            ".option pop",
+            "    sw   x1, 0(x2)",
+            "    .word 0x08000073 # mpause",
+            "2:",
+            "    j    2b",
+            "",
+            "1:",
+        ])
+
+    lines.extend([
         "    li   x1, 1",
         ".option push",
         ".option norelax",
@@ -46,10 +75,10 @@ def generate_epilogue(traps_enabled: bool = False) -> List[str]:
         ".option pop",
         "    sw   x1, 0(x2)",
         "    .word 0x08000073 # mpause",
-        "1:",
-        "    j    1b",
+        "3:",
+        "    j    3b",
         "",
-    ]
+    ])
 
     if traps_enabled:
         lines.extend([

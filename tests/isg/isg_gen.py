@@ -14,12 +14,15 @@
 """Command-line runner for Constrained-Random Instruction Stream Generation (ISG)."""
 
 import argparse
+import os
 
+from tests.isg.gen.dealt import load_alphabet
 from tests.isg.gen.program import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_PROGRAM_LENGTH,
-    generate_program,
+    generate_isg_assembly,
 )
+from tests.isg.gen.shaping import SHAPING_MODES
 
 
 def main() -> None:
@@ -61,6 +64,12 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--shaping",
+        choices=SHAPING_MODES,
+        default="uniform",
+        help="Dispatch-pressure shaping mode",
+    )
+    parser.add_argument(
         "--trap-rate",
         type=float,
         default=0.0,
@@ -68,29 +77,44 @@ def main() -> None:
     )
     parser.add_argument(
         "--align-mode",
-        choices=["natural", "unaligned", "straddle"],
-        default="natural",
+        choices=["natural", "unaligned", "straddle", "mixed"],
+        default=None,
         help="Memory offset alignment mode",
     )
     parser.add_argument(
         "--output", required=True, help="Output .S assembly file path"
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print per-program generation status to stdout",
+    )
 
     args = parser.parse_args()
+    verbose = args.verbose or os.environ.get("ISG_VERBOSE", "").strip().lower(
+    ) in ("1", "true")
 
-    full_assembly = generate_program(
-        alphabet_path=args.alphabet,
-        seed=args.seed,
+    alphabet_ops, alphabet_csrs = load_alphabet(args.alphabet)
+
+    full_assembly = generate_isg_assembly(
+        alphabet_ops=alphabet_ops,
+        alphabet_csrs=alphabet_csrs,
         batch_index=args.batch_index,
         batch_size=args.batch_size,
         length=args.length,
+        shaping=args.shaping,
         trap_rate=args.trap_rate,
         align_mode=args.align_mode,
+        seed=args.seed,
     )
 
     with open(args.output, "w", encoding="utf-8") as f:
         for line in full_assembly:
             f.write(f"{line}\n")
+
+    if verbose:
+        print(f"Generated {args.output} ({len(full_assembly)} lines)")
 
 
 if __name__ == "__main__":

@@ -15,9 +15,16 @@
 
 import json
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from tests.isg.gen.constraints import FORBIDDEN_OPS, TRAP_STIMULUS_OPS
+from tests.isg.gen.shaping import (
+    LOAD_OPS,
+    STORE_OPS,
+    generate_shaped_sequence,
+    resolve_shaping_mode,
+)
+from tests.isg.gen.traps import TRAP_OPS
 
 # Opcodes excluded from standard random payload. ecall is only injected as a
 # controlled trap.
@@ -66,22 +73,83 @@ def plan_instruction_stream(
     batch_size: int,
     length: int,
     trap_rate: float,
-    rng: random.Random,
-) -> List[str]:
-    """Plans opcode sequence for a test program guaranteeing dealt coverage."""
+    shaping: str = "uniform",
+    rng: Optional[random.Random] = None,
+) -> List[Tuple[str, str]]:
+    """Plans (opcode, slot_mode) sequence for a test program guaranteeing dealt coverage."""
+    if rng is None:
+        rng = random.Random(0)
+
+    traps_enabled = (trap_rate > 0.0) or (shaping == "trap_storm")
+    effective_shaping = resolve_shaping_mode(
+        shaping=shaping,
+        batch_index=batch_index,
+        traps_enabled=traps_enabled,
+    )
+
     dealt = get_dealt_cover(alphabet, batch_index, batch_size)
+    rng.shuffle(dealt)
 
-    raw_ops: List[str] = list(dealt)
-    while len(raw_ops) < length:
-        raw_ops.append(rng.choice(alphabet))
-    rng.shuffle(raw_ops)
+    stream: List[Tuple[str, str]] = []
+    stlf_stores = set(STORE_OPS)
+    stlf_loads = set(LOAD_OPS)
 
-    stream: List[str] = []
-    for op in raw_ops:
-        if trap_rate > 0.0 and rng.random() < trap_rate:
-            # Inject a controlled trap immediately before op (op still follows)
-            trap_op = rng.choice(["undef", "ecall"])
-            stream.append(trap_op)
-        stream.append(op)
+    # Fill the remaining length with shaped instructions
+    remaining_needed = max(0, length - len(dealt))
+    if remaining_needed > 0:
+        shaped = generate_shaped_sequence(
+            mode=effective_shaping,
+            count=remaining_needed,
+            available_alphabet=alphabet,
+            traps_enabled=traps_enabled,
+            rng=rng,
+        )
+        if effective_shaping == "uniform":
+            stream.extend((op, "uniform") for op in dealt)
+            stream.extend(shaped)
+            rng.shuffle(stream)
+        else:
+            # Insert dealt opcodes at random positions within the shaped stream
+            # so they execute against live, non-zero register values without
+            # scrambling contiguous hazard bursts or splitting paired STLF
+            # [store, load] sequences.
+            stream = list(shaped)
+            for op in dealt:
+                valid_positions = [
+                    pos for pos in range(len(stream) + 1) if not (
+                        0 < pos < len(stream) and stream[pos -
+                                                         1][1] == "lsu_stlf"
+                        and stream[pos][1] == "lsu_stlf" and stream[pos - 1][0]
+                        in stlf_stores and stream[pos][0] in stlf_loads
+                    )
+                ]
+                pos = (
+                    rng.choice(valid_positions)
+                    if valid_positions else rng.randint(0, len(stream))
+                )
+                slot_mode = (
+                    stream[pos][1] if pos < len(stream) else
+                    (stream[-1][1] if stream else effective_shaping)
+                )
+                stream.insert(pos, (op, slot_mode))
+    else:
+        fallback_mode = (
+            "uniform" if effective_shaping == "mixed" else effective_shaping
+        )
+        stream.extend((op, fallback_mode) for op in dealt)
 
+    # Interleave or inject traps if trap_rate > 0 and shaping is not already trap_storm
+    if trap_rate > 0.0 and effective_shaping != "trap_storm":
+        final_stream: List[Tuple[str, str]] = []
+        for op, slot_mode in stream:
+            is_stlf_load = slot_mode == "lsu_stlf" and op in stlf_loads
+            if (slot_mode != "trap_storm" and not is_stlf_load
+                    and rng.random() < trap_rate):
+                trap_op = rng.choice(TRAP_OPS)
+                final_stream.append((trap_op, slot_mode))
+            final_stream.append((op, slot_mode))
+        stream = final_stream
+
+    # RetirementBuffer.scala decouples decode faults from preceding control-flow
+    # instructions, so traps require no artificial post-branch ROB padding.
     return stream

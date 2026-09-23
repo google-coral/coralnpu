@@ -26,8 +26,9 @@ def isg_program(
         batch_index = 0,
         batch_size = 32,
         length = 64,
+        shaping = "uniform",
         trap_rate = 0.0,
-        align_mode = "natural",
+        align_mode = None,
         binary_macro = coralnpu_v2_binary,
         tags = [],
         **kwargs):
@@ -40,15 +41,17 @@ def isg_program(
         batch_index: Index of this program within the batch.
         batch_size: Total number of programs in the batch.
         length: Number of payload instructions in the program.
+        shaping: Dispatch-pressure shaping mode.
         trap_rate: Probability of generating trap stimulus instructions.
-        align_mode: Alignment mode for memory accesses ("natural" or "straddle").
+        align_mode: Optional alignment mode for memory accesses ("natural", "unaligned", "straddle", or "mixed").
         binary_macro: Starlark macro used to compile assembly into an ELF.
         tags: List of Bazel tags to propagate.
         **kwargs: Additional keyword arguments passed to binary_macro.
     """
     asm_file = name + ".S"
 
-    trap_arg = "--traps-enabled" if trap_rate > 0.0 else ""
+    trap_arg = "--traps-enabled" if (trap_rate > 0.0 or shaping == "trap_storm") else ""
+    align_arg = "--align-mode={}".format(align_mode) if align_mode != None else ""
 
     gen_tags = list(tags)
     if seed == None or seed == "random" or seed == "":
@@ -58,31 +61,40 @@ def isg_program(
     else:
         seed_arg = "--seed='{}'".format(seed)
 
-    native.genrule(
-        name = name + "_gen_asm",
-        srcs = [alphabet],
-        outs = [asm_file],
-        cmd = """
+    def _gen_cmd(verbose_flag):
+        return """
 $(location //tests/isg:isg_gen) \
   --alphabet=$(location {alphabet}) \
   {seed_arg} \
   --batch-index={batch_index} \
   --batch-size={batch_size} \
   --length={length} \
+  --shaping={shaping} \
   --trap-rate={trap_rate} \
-  --align-mode={align_mode} \
-  --output=$@ && \
-$(location //tests/isg:validator) --assembly=$@ {trap_flag}
+  {align_arg} \
+  --output=$@ {verbose_flag} && \
+$(location //tests/isg:validator) --assembly=$@ {trap_flag} {verbose_flag}
 """.format(
             alphabet = alphabet,
             seed_arg = seed_arg,
             batch_index = str(batch_index),
             batch_size = str(batch_size),
             length = str(length),
+            shaping = shaping,
             trap_rate = str(trap_rate),
-            align_mode = align_mode,
+            align_arg = align_arg,
             trap_flag = trap_arg,
-        ),
+            verbose_flag = verbose_flag,
+        )
+
+    native.genrule(
+        name = name + "_gen_asm",
+        srcs = [alphabet],
+        outs = [asm_file],
+        cmd = select({
+            "//tests/isg:isg_verbose_enabled": _gen_cmd("--verbose"),
+            "//conditions:default": _gen_cmd(""),
+        }),
         tools = [
             "//tests/isg:isg_gen",
             "//tests/isg:validator",
@@ -103,8 +115,9 @@ def isg_batch(
         seed = None,
         batch_size = 32,
         length = 64,
+        shaping = "uniform",
         trap_rate = 0.0,
-        align_mode = "natural",
+        align_mode = None,
         binary_macro = coralnpu_v2_binary,
         tags = [],
         **kwargs):
@@ -116,8 +129,9 @@ def isg_batch(
         seed: Base seed for the pseudo-random generator across the batch.
         batch_size: Number of programs to generate in the batch (up to 1000).
         length: Number of payload instructions per program.
+        shaping: Dispatch-pressure shaping mode.
         trap_rate: Probability of generating trap stimulus instructions.
-        align_mode: Alignment mode for memory accesses ("natural" or "straddle").
+        align_mode: Optional alignment mode for memory accesses ("natural", "unaligned", "straddle", or "mixed").
         binary_macro: Starlark macro used to compile assembly into an ELF.
         tags: List of Bazel tags to propagate.
         **kwargs: Additional keyword arguments passed to binary_macro.
@@ -142,6 +156,7 @@ def isg_batch(
             batch_index = i,
             batch_size = batch_size,
             length = length,
+            shaping = shaping,
             trap_rate = trap_rate,
             align_mode = align_mode,
             binary_macro = binary_macro,
@@ -157,17 +172,21 @@ def isg_batch(
         tags = batch_tags,
     )
 
-    trap_args = ["--traps-enabled"] if trap_rate > 0.0 else []
+    trap_args = ["--traps-enabled"] if (trap_rate > 0.0 or shaping == "trap_storm") else []
 
     # Re-check invariants on the linked ELFs (decode against the hardware
     # alphabet and verify encoded fields).
     postlink_src = Label("//tests/isg:validate/postlink.py")
+    verbose_args = select({
+        "//tests/isg:isg_verbose_enabled": ["--verbose"],
+        "//conditions:default": [],
+    })
     py_test(
         name = name + "_postlink_test",
         srcs = [postlink_src],
         main = postlink_src,
         args = ["--alphabet=$(rootpath {})".format(alphabet)] + trap_args +
-               ["$(rootpath {})".format(e) for e in elf_targets],
+               ["$(rootpath {})".format(e) for e in elf_targets] + verbose_args,
         data = [alphabet] + elf_targets,
         deps = [
             Label("//tests/isg:isg_lib"),
@@ -196,18 +215,27 @@ def isg_batch(
         tags = batch_tags,
     )
 
+    # Keep uvm_batch = False: batching still happens across all backends
+    # because isg_coralflow_test.py registers a single @coralflow_test
+    # (isg_batch_test) that calls fixture.run_batch(elf_paths) directly,
+    # executing all ELFs in one simulator invocation (+REGRESSION_LIST on UVM,
+    # in-process soft resets on Verilator/VCS). Setting uvm_batch = True would
+    # inject CORALFLOW_UVM_BATCH=1, causing coralflow_main() to discard
+    # isg_batch_test and bypass ISG_ELF_FILTER and ISG_VERBOSE.
     coralflow_test(
         name = name,
         size = "medium",
         srcs = ["isg_coralflow_test.py"],
         data = elf_targets,
         hdl_toplevel = "CoreMiniAxi",
+        uvm_batch = False,
         targets = [
             "verilator",
             "vcs",
             "uvm",
         ],
         deps = [
+            Label("//tests/isg:isg_verbose_config"),
             "@bazel_tools//tools/python/runfiles",
         ],
         tags = batch_tags,
