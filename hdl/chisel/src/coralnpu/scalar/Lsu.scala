@@ -46,9 +46,6 @@ class Lsu(p: Parameters) extends Module {
     // peripheral, likely on TileLink or AXI.
     val ebus = new EBusIO(p)
 
-    // Vector switch.
-    val vldst = Output(Bool())
-
     val rvv2lsu = Option.when(p.enableRvv)(Vec(2, Flipped(Decoupled(new Rvv2Lsu(p)))))
     val lsu2rvv = Option.when(p.enableRvv)(Vec(2, Decoupled(new Lsu2Rvv(p))))
 
@@ -86,7 +83,6 @@ object LsuOp extends ChiselEnum {
   val FENCEI   = Value
   val FLUSHAT  = Value
   val FLUSHALL = Value
-  val VLDST    = Value
   val FLOAT    = Value
   val FLOAT_H  = Value
 
@@ -2079,5 +2075,4 @@ class LsuV3(p: Parameters) extends Lsu(p) {
   io.flush.fencei := flushCmd.bits.fencei
   io.flush.pcNext := flushCmd.bits.pcNext
 
-  io.vldst := false.B
 }
