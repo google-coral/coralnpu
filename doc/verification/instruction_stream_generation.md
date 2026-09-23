@@ -256,17 +256,39 @@ The generator structures instruction streams to target CoralNPU structural bottl
 
 ---
 
+## Mathematical Coverage Closure
+
+The generator provides mathematical coverage guarantees for the instruction alphabet and dispatch-shaping profiles (`tests/isg/validate/coverage.py`):
+
+* **Algebraic Partition:** With alphabet size $M$ and batch size $B$, program capacity is $P \ge \lceil M / B \rceil$.
+* **Balanced Bucket Assignment:** The generator distributes dealt instructions across programs with round-robin bucket assignment:
+  $$k_i = \begin{cases} \lceil M / B \rceil & \text{if } i < (M \bmod B) \\ \lfloor M / B \rfloor & \text{otherwise} \end{cases}$$
+  This distribution covers every opcode across batch tranches and avoids capacity skew.
+* **Complete Opcode and Shape Closure:** The batch validator checks coverage:
+  $$\bigcup_{i=0}^{B-1} \text{Opcodes}(P_i) = \text{Alphabet}, \quad \bigcup_{i=0}^{B-1} \text{Shape}(P_i) = \text{ShapingProfiles}$$
+  Any coverage shortfall terminates execution before simulation.
+
+---
+
 ## Build System & Verification Flow
 
-### Baseline Bazel Generation Flow
+### Hybrid Bazel Generation Flow
 
 The generator integrates into Bazel to provide test streams while maintaining build hermeticity and test caching:
 
-1. **`isg_program` Macro:** Runs the Python generator in a Bazel action to produce the `.S` assembly file. It then runs the source validator (`validator.py`) on the assembly text. The build fails on any validation error. The macro accepts configuration parameters such as payload length, shaping profile, trap rate, and random seed.
+1. **`isg_program` Macro:** Runs the Python generator in a Bazel action (`isg_asm_gen` rule) to produce the `.S` assembly file. It then runs the source validator (`validator.py`) on the assembly text. The build fails on any validation error. The macro accepts parameters for payload length, shaping profile, trap rate, and RNG seed.
 2. **`coralnpu_v2_binary` Macro:** Compiles `.S` files into bare-metal ELF binaries with the hermetic RISC-V toolchain. It links against the default memory layout (`toolchain/coralnpu_tcm.ld.tpl`).
 3. **Post-Link Check (`<batch>_postlink_test`):** Reads linked instruction words between `isg_payload_start` and `isg_payload_end`. It decodes each word against the hardware alphabet and rechecks memory, branch, jump, CSR, and rounding-mode invariants. This verifies that assembler or linker passes (such as pseudo-op expansion, relaxation, or compression) did not violate invariants. With traps enabled, the checker accepts only approved stimulus words (`ILLEGAL_STIMULUS_WORDS`: `0x0000007b`, `0x00000000`, `0x0000002b`, as defined in `traps.ILLEGAL_WORDS`).
-4. **Payload/ELF Consistency (`<batch>_payload_elf_test`):** For each program in the batch, this test verifies that the linked payload contains one 32-bit word per source line. It also verifies that each word decodes to the mnemonic written in the source.
-5. **`isg_batch` Macro & Regression Targets:** Instantiates `isg_program` for every program. It registers a `coralflow_test` suite (`<batch>_verilator`, `<batch>_vcs`, and `<batch>_uvm`).
+4. **Payload/ELF Consistency (`<batch>_payload_elf_test`):** For each batch program, this test verifies that the linked payload contains one word per source line. It also verifies that each word decodes to the source mnemonic.
+5. **Execution Tiers:**
+  * **Tier A (Fixed Regression Tranche):** Uses a pinned seed (`seed = "20260921"`) to generate 32 programs. This tranche is deterministic, fully cached, and executes during every regression pass.
+  * **Tier B (Fresh CI Tranche):** Seed driven by Bazel build setting `--//tests/isg:isg_seed`. In CI, passing `--//tests/isg:isg_seed=run-${GITHUB_RUN_ID}` invalidates previous outputs and generates 50 new test binaries. Locally, the default seed preserves incremental caching.
+6. **Batched Execution (`isg_batch` Macro):** Instantiates `isg_program` per binary and registers `<batch>_verilator`, `<batch>_vcs`, and `<batch>_uvm` (`uvm_batch = False`, because `isg_coralflow_test.py` invokes `fixture.run_batch` directly). Each backend runs all batch ELFs in one simulator process, amortizing startup overhead and license checkouts.
+7. **Subset Filtering & Per-Program Triage:** Pass `--test_filter=<prog_1>,<prog_2>` to `<batch>_uvm` to replay selected ELFs inside one simulation. `isg_batch` also registers `manual`-tagged `<batch>_<k>_<backend>` targets that compile and run a single binary:
+
+   ```bash
+   bazel test --//tests/isg:isg_seed=run-12345 //tests/isg:isg_ci_50_017_uvm
+   ```
 
 ### 3-Way Lock-Step Co-Simulation Oracle
 
@@ -278,6 +300,64 @@ Tests execute in the UVM co-simulation environment (`tests/uvm/`):
   * **Spike (`riscv-isa-sim`):** Reference simulator connected via DPI-C.
 * **Lock-Step Checking:** `coralnpu_cosim_checker_pkg.sv` compares destination registers (GPR, FPR, VPR) and CSR state at every instruction retirement boundary.
 * **Dirty Register Masking:** Dynamic taint tracking identifies registers that read variable-latency cycle counters (`mcycle`, `minstret`). It masks these registers to prevent false mismatch reports.
+
+---
+
+## CI Automation & Continuous Stress Testing
+
+The ISG suite provides automated test runners for stress testing and regression verification:
+
+### CI Tranche Runner (`run_ci_tranche.py`)
+
+The CI tranche runner (`//tests/isg:ci_runner`) executes dynamic test tranches in continuous integration:
+
+* Generates 50 pseudo-random binaries across all 13 shaping modes, mixed memory alignment, and architectural traps.
+* Verifies 100% opcode and shape coverage closure before starting simulation.
+* Runs 3-way lock-step co-simulation across CoralNPU RTL, MPACT-Sim, and Spike.
+* Extracts failing program names from UVM logs and prints pinned-seed reproduction commands.
+
+### Continuous Hammer Stress Runner (`run_hammer.py`)
+
+The hammer stress runner (`//tests/isg:hammer_runner`) executes soak tests across fresh random seeds:
+
+* Cycles fresh tranches with configurable duration (`--duration-minutes <M>` or `--continuous`) and tranche limits (`--max-tranches <N>`).
+* Supports custom batch targets (`--target`), batch sizes (`--batch-size`), and fail-fast control (`--stop-on-fail` or `--no-stop-on-fail`).
+* Extracts failing binaries from batch logs, prints single-target and filtered-batch reproduction commands, and writes optional JSON reports (`--output-json`).
+
+---
+
+## Triage & Debugging Workflow
+
+Follow these steps to isolate and debug a failing ISG tranche:
+
+1. **Identify the Failing Binary:** `coralnpu_regression_test` wraps each program in `--- STARTING TEST: isg_ci_50_XXX.elf ---` markers. On failure, `UvmTestFixture` writes `uvm_sim_error_*.log` to `TEST_UNDECLARED_OUTPUTS_DIR` (`test.outputs/outputs.zip`), and the runners print the failing target.
+2. **Reproduce the Failure:** Re-run the single program target (compiles one ELF) or filter the batch target:
+
+   ```bash
+   bazel test --//tests/isg:isg_seed=<failing_seed> \
+              //tests/isg:isg_ci_50_017_uvm
+
+   bazel test --//tests/isg:isg_seed=<failing_seed> \
+              --test_filter=isg_ci_50_017 \
+              //tests/isg:isg_ci_50_uvm
+   ```
+
+3. **Inspect Artifacts:** Normal test runs suppress per-program generation, validation, and simulation output. Pass `--//tests/isg:isg_verbose=true`, `--test_env=ISG_VERBOSE=1`, or `--test_env=CORALFLOW_VERBOSE=1` for verbose traces, and inspect `test.outputs/outputs.zip`.
+4. **Run VCS or Capture Waveforms:** Select VCS UVM (`--define uvm_simulator=vcs`), capture waveforms (`CORALFLOW_TRACE`), or run batched VCS Cocotb (`--config=vcs`):
+
+   ```bash
+   bazel test --define uvm_simulator=vcs \
+              --action_env=PATH --host_action_env=PATH \
+              --test_env=CORALFLOW_TRACE=/tmp/isg_017.fsdb \
+              --//tests/isg:isg_seed=<failing_seed> \
+              //tests/isg:isg_ci_50_017_uvm
+
+   bazel test --config=vcs \
+              --//tests/isg:isg_seed=<failing_seed> \
+              //tests/isg:isg_ci_50_vcs
+   ```
+
+5. **Promote to Regression:** Add the failing seed to `tests/isg/BUILD` to keep it in the permanent regression suite.
 
 ---
 

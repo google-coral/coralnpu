@@ -17,7 +17,11 @@ import json
 import random
 from typing import List, Optional, Tuple
 
-from tests.isg.gen.constraints import FORBIDDEN_OPS, TRAP_STIMULUS_OPS
+from tests.isg.gen.constraints import (
+    FORBIDDEN_OPS,
+    TRAP_STIMULUS_OPS,
+    UNSUPPORTED_FLOAT_OPS,
+)
 from tests.isg.gen.shaping import (
     LOAD_OPS,
     STORE_OPS,
@@ -28,7 +32,7 @@ from tests.isg.gen.traps import TRAP_OPS
 
 # Opcodes excluded from standard random payload. ecall is only injected as a
 # controlled trap.
-DEFAULT_EXCLUDED_OPS = FORBIDDEN_OPS | TRAP_STIMULUS_OPS
+DEFAULT_EXCLUDED_OPS = FORBIDDEN_OPS | TRAP_STIMULUS_OPS | UNSUPPORTED_FLOAT_OPS
 
 # The decoder's csrrw/csrrs/csrrc BitPats wildcard funct3[2], so each entry
 # also covers its immediate form (csrrwi/csrrsi/csrrci). Split them into

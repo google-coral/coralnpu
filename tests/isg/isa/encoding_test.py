@@ -28,12 +28,14 @@ _EXPECTED = {}
 for _ops, _dest in [
     (c.LOAD_OPS | c.ALU_IMM_OPS | c.SHIFT_IMM_OPS | c.UNARY_OPS | c.ALU_REG_OPS
      | c.CSR_REG_OPS | c.FLOAT_CMP_OPS | c.FLOAT_CVT_TO_INT_OPS
-     | c.FLOAT_MISC_TO_INT_OPS | {"lui", "auipc", "jal", "jalr"}, enc.GPR),
+     | c.FLOAT_MISC_TO_INT_OPS | {"fmv.x.h", "lui", "auipc", "jal", "jalr"},
+     enc.GPR),
     (c.FLOAT_LOAD_OPS | c.FLOAT_R4_OPS | c.FLOAT_R2_RM_OPS | c.FLOAT_R1_RM_OPS
      | c.FLOAT_SGNJ_OPS | c.FLOAT_MINMAX_OPS | c.FLOAT_CVT_FROM_INT_OPS
-     | c.FLOAT_MV_FROM_INT_OPS, enc.FPR),
+     | c.FLOAT_MV_FROM_INT_OPS
+     | {"flh", "fcvt.s.bf16", "fcvt.bf16.s", "fmv.h.x"}, enc.FPR),
     (c.STORE_OPS | c.FLOAT_STORE_OPS | c.BRANCH_OPS
-     | {"fence", "fencei", "fencetso", "ecall", "ebreak", "mret", "wfi",
+     | {"fsh", "fence", "fencei", "fencetso", "ecall", "ebreak", "mret", "wfi",
         "mpause"}, None),
 ]:
     for _op in _ops:

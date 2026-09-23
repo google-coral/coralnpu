@@ -12,12 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load(":isg_rules.bzl", "isg_batch")
+load(":isg_rules.bzl", "isg_batch", "isg_ci_tranche")
 
 package(default_visibility = ["//visibility:public"])
+
+string_flag(
+    name = "isg_seed",
+    build_setting_default = "default",
+    visibility = ["//visibility:public"],
+)
 
 bool_flag(
     name = "isg_verbose",
@@ -161,6 +167,82 @@ py_test(
     ],
 )
 
+py_binary(
+    name = "coverage_analyzer",
+    srcs = ["validate/coverage.py"],
+    data = ["//hdl/chisel/src/coralnpu:alphabet_core_mini_axi"],
+    env = {"ALPHABET_JSON": "$(rlocationpath //hdl/chisel/src/coralnpu:alphabet_core_mini_axi)"},
+    imports = ["../.."],
+    main = "validate/coverage.py",
+    deps = [
+        ":isg_lib",
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+py_test(
+    name = "coverage_test",
+    srcs = ["validate/coverage_test.py"],
+    data = ["//hdl/chisel/src/coralnpu:alphabet_core_mini_axi"],
+    env = {"ALPHABET_JSON": "$(rlocationpath //hdl/chisel/src/coralnpu:alphabet_core_mini_axi)"},
+    imports = ["../.."],
+    main = "validate/coverage_test.py",
+    deps = [
+        ":isg_lib",
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+py_binary(
+    name = "ci_runner",
+    srcs = ["run_ci_tranche.py"],
+    data = ["//hdl/chisel/src/coralnpu:alphabet_core_mini_axi"],
+    env = {"ALPHABET_JSON": "$(rlocationpath //hdl/chisel/src/coralnpu:alphabet_core_mini_axi)"},
+    imports = ["../.."],
+    main = "run_ci_tranche.py",
+    deps = [
+        ":isg_lib",
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+py_binary(
+    name = "hammer_runner",
+    srcs = ["run_hammer.py"],
+    data = ["//hdl/chisel/src/coralnpu:alphabet_core_mini_axi"],
+    env = {"ALPHABET_JSON": "$(rlocationpath //hdl/chisel/src/coralnpu:alphabet_core_mini_axi)"},
+    imports = ["../.."],
+    main = "run_hammer.py",
+    deps = [
+        ":isg_lib",
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+py_test(
+    name = "runners_test",
+    srcs = [
+        "isg_coralflow_test.py",
+        "run_ci_tranche.py",
+        "run_hammer.py",
+        "runners_test.py",
+    ],
+    data = ["//hdl/chisel/src/coralnpu:alphabet_core_mini_axi"],
+    env = {"ALPHABET_JSON": "$(rlocationpath //hdl/chisel/src/coralnpu:alphabet_core_mini_axi)"},
+    imports = ["../.."],
+    main = "runners_test.py",
+    deps = [
+        ":isg_lib",
+        "//coralnpu_test_utils/coralflow",
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+isg_ci_tranche(
+    name = "isg_ci_50",
+    batch_size = 50,
+)
+
 isg_batch(
     name = "isg_fresh_regression",
     align_mode = "mixed",
@@ -178,6 +260,7 @@ isg_batch(
     batch_size = 32,
     length = 64,
     seed = "20260921",
+    shaping = "distributed",
 )
 
 # Exercises the trap handler (illegal-instruction and ecall stimuli) under

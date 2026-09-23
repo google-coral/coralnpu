@@ -15,6 +15,7 @@
 
 import logging
 import os
+import re
 import sys
 
 from bazel_tools.tools.python.runfiles import runfiles
@@ -52,6 +53,33 @@ def _is_verbose(
     return bool(getattr(isg_verbose_config, "ISG_VERBOSE_DEFAULT", False))
 
 
+def _apply_elf_filter(elf_paths: list[str], raw_filter: str) -> list[str]:
+    """Filters discovered batch ELFs by comma-separated stems or basenames."""
+    requested = [tok.strip() for tok in raw_filter.split(",") if tok.strip()]
+    if not requested:
+        return elf_paths
+
+    selected: list[str] = []
+    for req in requested:
+        req_stem = req.removesuffix(".elf")
+        matches = [
+            path for path in elf_paths
+            if os.path.splitext(os.path.basename(path))[0] == req_stem
+        ]
+        if not matches:
+            available = [
+                os.path.splitext(os.path.basename(p))[0] for p in elf_paths
+            ]
+            raise ValueError(
+                f"No ISG ELF matches ISG_ELF_FILTER entry '{req}'. "
+                f"Available: {available}"
+            )
+        for path in matches:
+            if path not in selected:
+                selected.append(path)
+    return selected
+
+
 def _discover_batch_elfs() -> list[str]:
     """Locates the linked ELF binaries for the active ISG batch."""
     r = runfiles.Create()
@@ -67,21 +95,27 @@ def _discover_batch_elfs() -> list[str]:
         if name.endswith(".elf")
     )
 
+    matched_elfs = all_elfs
     test_target = os.environ.get("TEST_TARGET", "")
     if ":" in test_target:
         target_name = test_target.rsplit(":", 1)[-1]
         for suffix in _BACKEND_SUFFIXES:
             if target_name.endswith(suffix):
-                batch_prefix = target_name[:-len(suffix)] + "_"
+                stem = target_name[:-len(suffix)]
+                pattern = re.compile(rf"{re.escape(stem)}(?:_\d+)?\.elf")
                 matching = [
                     path for path in all_elfs
-                    if os.path.basename(path).startswith(batch_prefix)
+                    if pattern.fullmatch(os.path.basename(path))
                 ]
                 if matching:
-                    return matching
+                    matched_elfs = matching
                 break
 
-    return all_elfs
+    elf_filter = os.environ.get("ISG_ELF_FILTER", "").strip()
+    if elf_filter:
+        matched_elfs = _apply_elf_filter(matched_elfs, elf_filter)
+
+    return matched_elfs
 
 
 @coralflow_test

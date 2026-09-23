@@ -14,11 +14,113 @@
 
 """Bazel rules and macros for CoralNPU Constrained-Random ISG."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@coralnpu_host_cpus//:defs.bzl", "VERILATOR_THREADS")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//rules:coralflow_test.bzl", "coralflow_test")
 load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+
+def _isg_asm_gen_impl(ctx):
+    out = ctx.outputs.out
+    alphabet = ctx.file.alphabet
+
+    # Resolve effective seed:
+    # 1. Command-line build setting flag --//tests/isg:isg_seed=<val> (if != "default")
+    # 2. Command-line make variable --define isg_seed=<val> (if set and != "default")
+    # 3. Target rule attribute ctx.attr.seed
+    seed = ctx.attr.seed
+    if ctx.attr._seed_flag:
+        flag_val = ctx.attr._seed_flag[BuildSettingInfo].value
+        if flag_val and flag_val != "default":
+            seed = flag_val
+        elif "isg_seed" in ctx.var and ctx.var["isg_seed"] != "default":
+            seed = ctx.var["isg_seed"]
+    trap_arg = "--traps-enabled" if ctx.attr.traps_enabled else ""
+    verbose = False
+    if ctx.attr._verbose_flag:
+        verbose = bool(ctx.attr._verbose_flag[BuildSettingInfo].value)
+    if not verbose and ctx.var.get("isg_verbose", "").lower() in ("1", "true"):
+        verbose = True
+    verbose_arg = "--verbose" if verbose else ""
+
+    if seed == "" or seed == "random":
+        seed_arg = "--seed=random"
+    else:
+        quoted_seed = "'" + seed.replace("'", "'\\''") + "'"
+        seed_arg = "--seed=" + quoted_seed
+
+    align_arg = "--align-mode={}".format(ctx.attr.align_mode) if ctx.attr.align_mode else ""
+
+    cmd = """
+"{isg_gen}" \
+  --alphabet="{alphabet}" \
+  {seed_arg} \
+  --batch-index={batch_index} \
+  --batch-size={batch_size} \
+  --length={length} \
+  --shaping={shaping} \
+  --trap-rate={trap_rate} \
+  {align_arg} \
+  --output="{output}" {verbose_flag} && \
+"{validator}" --assembly="{output}" {trap_flag} {verbose_flag}
+""".format(
+        isg_gen = ctx.executable._isg_gen.path,
+        alphabet = alphabet.path,
+        seed_arg = seed_arg,
+        batch_index = ctx.attr.batch_index,
+        batch_size = ctx.attr.batch_size,
+        length = ctx.attr.length,
+        shaping = ctx.attr.shaping,
+        trap_rate = ctx.attr.trap_rate,
+        align_arg = align_arg,
+        output = out.path,
+        validator = ctx.executable._validator.path,
+        trap_flag = trap_arg,
+        verbose_flag = verbose_arg,
+    )
+
+    ctx.actions.run_shell(
+        inputs = [alphabet],
+        outputs = [out],
+        command = cmd,
+        tools = [ctx.executable._isg_gen, ctx.executable._validator],
+        progress_message = "Generating and validating ISG assembly %s (seed=%s, idx=%d)" % (out.short_path, seed if seed else "random", ctx.attr.batch_index),
+        mnemonic = "IsgAsmGen",
+    )
+
+    return [DefaultInfo(files = depset([out]))]
+
+isg_asm_gen = rule(
+    implementation = _isg_asm_gen_impl,
+    attrs = {
+        "alphabet": attr.label(mandatory = True, allow_single_file = True),
+        "seed": attr.string(default = ""),
+        "batch_index": attr.int(default = 0),
+        "batch_size": attr.int(default = 32),
+        "length": attr.int(default = 64),
+        "shaping": attr.string(default = "uniform"),
+        "trap_rate": attr.string(default = "0.0"),
+        "align_mode": attr.string(default = ""),
+        "traps_enabled": attr.bool(default = False),
+        "out": attr.output(mandatory = True),
+        "_seed_flag": attr.label(default = Label("//tests/isg:isg_seed")),
+        "_verbose_flag": attr.label(default = Label("//tests/isg:isg_verbose")),
+        "_isg_gen": attr.label(
+            default = Label("//tests/isg:isg_gen"),
+            executable = True,
+            cfg = "exec",
+        ),
+        "_validator": attr.label(
+            default = Label("//tests/isg:validator"),
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
+
+def _traps_enabled(trap_rate, shaping):
+    return trap_rate > 0.0 or shaping == "trap_storm"
 
 def isg_program(
         name,
@@ -51,55 +153,26 @@ def isg_program(
     """
     asm_file = name + ".S"
 
-    trap_arg = "--traps-enabled" if (trap_rate > 0.0 or shaping == "trap_storm") else ""
-    align_arg = "--align-mode={}".format(align_mode) if align_mode != None else ""
-
     gen_tags = list(tags)
     if seed == None or seed == "random" or seed == "":
-        seed_arg = "--seed=random"
+        actual_seed = "random"
         if "no-cache" not in gen_tags:
             gen_tags.append("no-cache")
     else:
-        seed_arg = "--seed='{}'".format(seed)
+        actual_seed = seed
 
-    def _gen_cmd(verbose_flag):
-        return """
-$(location //tests/isg:isg_gen) \
-  --alphabet=$(location {alphabet}) \
-  {seed_arg} \
-  --batch-index={batch_index} \
-  --batch-size={batch_size} \
-  --length={length} \
-  --shaping={shaping} \
-  --trap-rate={trap_rate} \
-  {align_arg} \
-  --output=$@ {verbose_flag} && \
-$(location //tests/isg:validator) --assembly=$@ {trap_flag} {verbose_flag}
-""".format(
-            alphabet = alphabet,
-            seed_arg = seed_arg,
-            batch_index = str(batch_index),
-            batch_size = str(batch_size),
-            length = str(length),
-            shaping = shaping,
-            trap_rate = str(trap_rate),
-            align_arg = align_arg,
-            trap_flag = trap_arg,
-            verbose_flag = verbose_flag,
-        )
-
-    native.genrule(
+    isg_asm_gen(
         name = name + "_gen_asm",
-        srcs = [alphabet],
-        outs = [asm_file],
-        cmd = select({
-            "//tests/isg:isg_verbose_enabled": _gen_cmd("--verbose"),
-            "//conditions:default": _gen_cmd(""),
-        }),
-        tools = [
-            "//tests/isg:isg_gen",
-            "//tests/isg:validator",
-        ],
+        alphabet = alphabet,
+        seed = actual_seed,
+        batch_index = batch_index,
+        batch_size = batch_size,
+        length = length,
+        shaping = shaping,
+        trap_rate = str(trap_rate),
+        align_mode = align_mode if align_mode != None else "",
+        traps_enabled = _traps_enabled(trap_rate, shaping),
+        out = asm_file,
         tags = gen_tags,
     )
 
@@ -122,7 +195,7 @@ def isg_batch(
         binary_macro = coralnpu_v2_binary,
         tags = [],
         **kwargs):
-    """Generates a batch of ISG programs and registers a CoralFlow test suite.
+    """Generates a batch of ISG programs and registers batch and individual CoralFlow test suites.
 
     Args:
         name: Base name of the generated test batch.
@@ -167,13 +240,34 @@ def isg_batch(
         elf_targets.append(":{}.elf".format(prog_name))
         asm_targets.append(":{}.S".format(prog_name))
 
+        # Register individual test target for single-program debugging and reproduction.
+        # Tagged "manual" so wildcard sweeps (bazel test //...) only run the batch runner.
+        coralflow_test(
+            name = prog_name,
+            size = "medium",
+            srcs = ["isg_coralflow_test.py"],
+            data = [":{}.elf".format(prog_name)],
+            hdl_toplevel = "CoreMiniAxi",
+            uvm_batch = False,
+            targets = [
+                "verilator",
+                "vcs",
+                "uvm",
+            ],
+            deps = [
+                Label("//tests/isg:isg_verbose_config"),
+                "@bazel_tools//tools/python/runfiles",
+            ],
+            tags = batch_tags + ["manual", "isg-single-test"],
+        )
+
     native.filegroup(
         name = name + "_elfs",
         srcs = elf_targets,
         tags = batch_tags,
     )
 
-    trap_args = ["--traps-enabled"] if (trap_rate > 0.0 or shaping == "trap_storm") else []
+    trap_args = ["--traps-enabled"] if _traps_enabled(trap_rate, shaping) else []
 
     # Re-check invariants on the linked ELFs (decode against the hardware
     # alphabet and verify encoded fields).
@@ -244,4 +338,31 @@ def isg_batch(
             "@bazel_tools//tools/python/runfiles",
         ],
         tags = sim_tags,
+    )
+
+def isg_ci_tranche(
+        name = "isg_ci_50",
+        alphabet = "//hdl/chisel/src/coralnpu:alphabet_core_mini_axi",
+        batch_size = 50,
+        length = 64,
+        shaping = "distributed",
+        trap_rate = 0.05,
+        align_mode = "mixed",
+        seed = "ci_tranche",
+        binary_macro = coralnpu_v2_binary,
+        tags = [],
+        **kwargs):
+    """Instantiates a CI tranche of ISG programs (default 50 binaries) with mixed shaping & alignment."""
+    isg_batch(
+        name = name,
+        alphabet = alphabet,
+        batch_size = batch_size,
+        length = length,
+        shaping = shaping,
+        trap_rate = trap_rate,
+        align_mode = align_mode,
+        seed = seed,
+        binary_macro = binary_macro,
+        tags = tags,
+        **kwargs
     )
