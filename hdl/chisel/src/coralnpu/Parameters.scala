@@ -154,10 +154,9 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   }
 
   // Scalar Core Load Store Unit bus.
-  def lsuAddrBits         = programCounterBits // do not change
-  var lsuDataBits         = 256
-  def lsuDataBytes: Int   = { lsuDataBits / 8 }
-  val lsuDelayPipelineLen = 1
+  def lsuAddrBits       = programCounterBits // do not change
+  var lsuDataBits       = 256
+  def lsuDataBytes: Int = { lsuDataBits / 8 }
   // When increasing bus width, this can be limited to improve timing.
   val lsuStrictWindowBytes = lsuDataBytes
   def dbusSize             = log2Ceil(lsuDataBytes + 1)
