@@ -242,6 +242,14 @@ class DecodedInstruction(p: Parameters) extends Bundle {
     rvv.map(_.valid).getOrElse(false.B)
   }
 
+  def writesTile(): Bool = {
+    if (p.enableVme) {
+      rvv.map(r => r.valid && r.bits.writesTile()).getOrElse(false.B)
+    } else {
+      false.B
+    }
+  }
+
   def readsRs1(): Bool = {
     isCondBr() || isAluReg() || isAluImm() || isAlu1Bit() || isAlu2Bit() ||
     isCsr() || isMul() || isDvu() || jalr || floatReadsScalarRs1() ||
@@ -302,6 +310,8 @@ class Dispatch(p: Parameters) extends Module {
     val rvvRdMark  =
       Option.when(p.enableRvv)(Vec(p.instructionLanes, Flipped(new RegfileWriteAddrIO(p))))
     val isVector = Option.when(p.enableRvv)(Output(Vec(p.instructionLanes, Bool())))
+    val isTile   =
+      Option.when(p.enableVme)(Output(Vec(p.instructionLanes, Bool())))
     val frs1Read =
       Option.when(p.enableFloat)(Vec(p.instructionLanes, Flipped(new RegfileReadAddrIO(p))))
 
@@ -1011,6 +1021,9 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       io.rvvRdMark.get(i).valid := rvvRdMark_valid
       io.rvvRdMark.get(i).addr  := d.rvv.get.bits.bits(4, 0) // vd
       io.isVector.get(i)        := d.isVector()
+      if (p.enableVme) {
+        io.isTile.get(i) := d.writesTile()
+      }
     }
 
     // Register file bus address port.

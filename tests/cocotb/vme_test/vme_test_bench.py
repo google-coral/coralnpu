@@ -1188,3 +1188,22 @@ async def vme_mset_retire_test(dut):
     )
     assert not fixture.fault(), "Core faulted unexpectedly"
     assert trap_count_val == 0, f"Expected 0 traps, got {trap_count_val} (last_mcause={last_mcause_val})"
+
+
+@cocotb.test()
+async def vme_mset_vtmmu_sequence_test(dut):
+    """Verify execution of mset configuration, vtzero, and vtmmu sequence.
+
+    Tests sequence: msetmtype (SEW16, altfmt=1), msettn, msettm, msettk, vtzero,
+    vector operand moves, and vtmmu matrix multiplies to verify decoding,
+    mtype CSR retirement, tile zeroing, and tile matrix accumulation.
+    """
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_mset_vtmmu_sequence_test.elf"
+    )
+    fixture = await Fixture.Create(dut)
+    await fixture.load_elf_and_lookup_symbols(elf_path, [])
+    await fixture.run_to_halt()
+
+    assert not fixture.fault(), "Core faulted unexpectedly"

@@ -2704,13 +2704,17 @@ module rvv_backend_decode_unit_ari
                       eew_mt      = EEW8;
                       eew_max     = EEW8;
                     end
-                  `ifdef ZVTI16I32MM_ON
+                    // default: ZVTI8I32MM_ON
                     {SEW8, 2'd3}: begin
                       eew_mt      = EEW32;
                       eew_max     = EEW32;
                     end
-                  `endif
-                  `ifdef ZVTBF16FMM_ON
+                  `ifdef ZVTI16I32MM_ON
+                    {SEW16, 2'd2}: begin
+                      eew_mt      = EEW32;
+                      eew_max     = EEW32;
+                    end
+                  `elsif ZVTBF16FMM_ON
                     {SEW16, 2'd2}: begin
                       eew_mt      = EEW32;
                       eew_max     = EEW32;

@@ -87,6 +87,7 @@ module RvvCore #(parameter N = 4,
   // Config state
   output config_state_valid,
   output RVVConfigState config_state,
+  output logic [31:0] next_config_mtype_o,
 
   // Idle
   output logic rvv_idle,
@@ -153,7 +154,8 @@ module RvvCore #(parameter N = 4,
       .trap_valid_o(trap_valid_o),
       .trap_data_o(trap_data_o),
       .config_state_valid(config_state_valid),
-      .config_state(config_state)
+      .config_state(config_state),
+      .next_config_mtype_o(next_config_mtype_o)
   );
 
   // Backpressure from backend fifo

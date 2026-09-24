@@ -201,10 +201,10 @@ class TileWrite(p: Parameters) extends Bundle {
 class TileWriteDataIO(p: Parameters) extends Bundle {
   val rob_tag  = UInt(log2Ceil(p.retirementBufferSize).W)
   val is_store = Bool()
-  val mask     = UInt(4.W)
-  val idx      = Vec(4, UInt(4.W))
-  val data     = Vec(4, Vec((p.vmeTe * p.vmeTe) / 16, UInt(128.W)))
-  val pc       = Option.when(p.enableVerification)(UInt(32.W))
+  val mask     = Option.when(p.enableVerification)(UInt(4.W))
+  val idx      = Option.when(p.enableVerification)(Vec(4, UInt(4.W)))
+  val data = Option.when(p.enableVerification)(Vec(4, Vec((p.vmeTe * p.vmeTe) / 16, UInt(128.W))))
+  val pc   = Option.when(p.enableVerification)(UInt(32.W))
 }
 
 class RetirementBufferDebugIO(p: Parameters) extends Bundle {

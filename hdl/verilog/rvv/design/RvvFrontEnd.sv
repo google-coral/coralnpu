@@ -66,7 +66,8 @@ module RvvFrontEnd#(parameter N = 4,
 
   // Config state
   output config_state_valid,
-  output RVVConfigState config_state
+  output RVVConfigState config_state,
+  output logic [31:0] next_config_mtype_o
 );
   localparam COUNTBITS = $clog2(N + 1);
   typedef logic [COUNTBITS-1:0] count_t;
@@ -625,6 +626,12 @@ module RvvFrontEnd#(parameter N = 4,
           {{(`XLEN-(`VL_WIDTH)){1'b0}}, inst_config_state[i+1].vl};
     end
   end
+
+`ifdef ZVT_ON
+  assign next_config_mtype_o = {8'd0, inst_config_state[N].tm, 2'd0, inst_config_state[N].tk, 3'd0, inst_config_state[N].mtwiden};
+`else
+  assign next_config_mtype_o = 32'd0;
+`endif
 
   // Align outputs
   Aligner#(.T(RVVCmd), .N(N)) cmd_aligner(

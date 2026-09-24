@@ -97,7 +97,8 @@ class RvvCoreIO(p: Parameters) extends Bundle {
   val lsu2vme = Option.when(p.enableVme)(Flipped(Decoupled(new Lsu2Vme(p))))
 
   // Config state.
-  val configState = Output(Valid(new RvvConfigState(p)))
+  val configState     = Output(Valid(new RvvConfigState(p)))
+  val nextConfigMtype = Option.when(p.enableVme)(Output(UInt(32.W)))
 
   // Async scalar regfile writes.
   val async_rd  = Decoupled(new RegfileWriteDataIO(p))
@@ -118,7 +119,7 @@ class RvvCoreIO(p: Parameters) extends Bundle {
   val rd_rob2rt_o = Vec(p.rvvRetireLanes, new Rob2Rt(p))
 
   // VME matrix tile retirement
-  val vmeRt = Option.when(p.enableVme && p.enableVerification)(Valid(new TileWriteDataIO(p)))
+  val vmeRt = Option.when(p.enableVme)(Valid(new TileWriteDataIO(p)))
 }
 
 class Rob2Rt(p: Parameters) extends Bundle {

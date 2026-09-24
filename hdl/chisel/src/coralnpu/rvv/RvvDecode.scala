@@ -316,17 +316,7 @@ object RvvCompressedInstruction {
     temp_inst.rob_tag := 0.U
     val illegal_float = temp_inst.isIllegalFloat(p)
 
-    val isOpVeValid = if (p.enableVme) {
-      val funct6  = inst(31, 26)
-      val funct3  = inst(14, 12)
-      val vm      = inst(25)
-      val isFp    = funct3 === "b001".U
-      val isInt   = funct3 === "b000".U
-      val fpValid = if (p.enableFloat) true.B else false.B
-      (funct6 === "b111100".U) && vm && (isInt || (isFp && fpValid))
-    } else {
-      false.B
-    }
+    val isOpVeValid = RvvCompressedInstruction.isOpVeValid(inst, p)
 
     val new_opcode = MuxLookup(old_opcode, MakeInvalid(RvvCompressedOpcode()))(
       Seq(
@@ -346,6 +336,21 @@ object RvvCompressedInstruction {
       _.bits.bits    -> bits,
       _.bits.rob_tag -> 0.U
     )
+  }
+
+  def isOpVeValid(inst: UInt, p: Parameters): Bool = {
+    if (p.enableVme) {
+      val opcode  = inst(6, 0)
+      val funct6  = inst(31, 26)
+      val funct3  = inst(14, 12)
+      val vm      = inst(25)
+      val isFp    = funct3 === "b001".U
+      val isInt   = funct3 === "b000".U
+      val fpValid = if (p.enableFloat) true.B else false.B
+      (opcode === "b1110111".U) && (funct6 === "b111100".U) && vm && (isInt || (isFp && fpValid))
+    } else {
+      false.B
+    }
   }
 
   def isMsetWritesMtype(inst: UInt): Bool = {

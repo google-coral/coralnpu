@@ -44,8 +44,9 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
   val trapPending   = Output(Bool())
   val trapRetired   = Output(Bool())
   val isVector      = Option.when(p.enableRvv)(Input(Vec(p.instructionLanes, Bool())))
+  val isTile        = Option.when(p.enableVme)(Input(Vec(p.instructionLanes, Bool())))
   val clearVstart   = Option.when(p.enableRvv)(Output(Bool()))
-  val writeDataTile = Option.when(p.enableVme && p.enableVerification)(
+  val writeDataTile = Option.when(p.enableVme)(
     Input(Valid(new TileWriteDataIO(p)))
   )
   val mtype = Option.when(p.enableVme)(Input(UInt(p.xlen.W)))
@@ -79,6 +80,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     val linkOk   = Bool()
     val isEcall  = Bool()
     val isMpause = Bool()
+    val isTile   = Bool()
   }
 
   val storeComplete = Pipe(io.storeComplete)
@@ -139,6 +141,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     resetsVstart: Bool,
     isJump: Bool,
     isBranch: Bool,
+    isTile: Bool,
     linkOk: Bool,
     isFault: Bool
   ): Instruction = {
@@ -199,6 +202,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     instr.linkOk        := linkOk
     instr.isEcall       := (finst.inst === 0x73.U)
     instr.isMpause      := (finst.inst === 0x08000073.U)
+    instr.isTile        := isTile
     instr
   }
 
@@ -209,7 +213,8 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     vectorAddr: Option[RegfileWriteAddrIO],
     resetsVstart: Bool,
     isJump: Bool,
-    isBranch: Bool
+    isBranch: Bool,
+    isTile: Bool
   ): Instruction = {
     // A faulting instruction still needs properties like isControlFlow and idx
     // to correctly handle side effects (like JAL return addresses) and debug reporting.
@@ -221,6 +226,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       resetsVstart,
       isJump,
       isBranch,
+      isTile,
       linkOk = true.B,
       isFault = true.B
     )
@@ -277,12 +283,22 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         .addr === io.inst(i - 1).bits.addr + 4.U)
     }
 
-    val fAddr = io.writeAddrFloat.filter(_ => i == 0)
-    val vAddr = io.writeAddrVector.map(_(i))
-    val isVec = io.isVector.map(_(i)).getOrElse(false.B)
+    val fAddr  = io.writeAddrFloat.filter(_ => i == 0)
+    val vAddr  = io.writeAddrVector.map(_(i))
+    val isVec  = io.isVector.map(_(i)).getOrElse(false.B)
+    val isTile = io.isTile.map(_(i)).getOrElse(false.B)
     Mux(
       isNoFireFault,
-      fault(io.inst(i).bits, io.writeAddrScalar(i), fAddr, vAddr, isVec, io.jump(i), io.branch(i)),
+      fault(
+        io.inst(i).bits,
+        io.writeAddrScalar(i),
+        fAddr,
+        vAddr,
+        isVec,
+        io.jump(i),
+        io.branch(i),
+        isTile
+      ),
       dispatch(
         io.inst(i).bits,
         io.writeAddrScalar(i),
@@ -291,6 +307,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         isVec,
         io.jump(i),
         io.branch(i),
+        isTile,
         linkOk,
         isDecodeFault
       )
@@ -388,7 +405,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   for (i <- 0 until bufferSize) {
     val bufferEntry = instBuffer.io.dataOut(i)
     // Check if this entry is an operation that doesn't require a register write, but is not a store.
-    val nonWritingInstr = bufferEntry.idx === noWriteRegIdx
+    val nonWritingInstr = (bufferEntry.idx === noWriteRegIdx) && !bufferEntry.isTile
     val storeInstr      = bufferEntry.idx === storeRegIdx
 
     // Check which incoming (scalar,float) write port matches this entry's needed address.
@@ -492,16 +509,16 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       val tileTagMatch  =
         tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === pIdx)
       for (k <- 0 until 4) {
-        val hit = tileTagMatch && tilePort.bits.mask(k)
+        val hit = tileTagMatch && tilePort.bits.mask.get(k)
         nextTileEntry(k).valid    := Mux(hit, true.B, tileWriteAccumulator.get(pIdx)(k).valid)
         nextTileEntry(k).bits.idx := Mux(
           hit,
-          tilePort.bits.idx(k),
+          tilePort.bits.idx.get(k),
           tileWriteAccumulator.get(pIdx)(k).bits.idx
         )
         nextTileEntry(k).bits.data := Mux(
           hit,
-          tilePort.bits.data(k),
+          tilePort.bits.data.get(k),
           tileWriteAccumulator.get(pIdx)(k).bits.data
         )
       }
@@ -511,12 +528,26 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         .get(pIdx) := Mux(validBufferEntry, nextTileEntry, tileWriteAccumulator.get(pIdx))
     }
 
+    val tileReady = if (!mini && p.enableVme) {
+      val tilePort     = io.writeDataTile.get
+      val tileTagMatch =
+        tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === pIdx)
+      val tileAcc = if (p.enableVerification) {
+        tileWriteAccumulator.get(pIdx).map(_.valid).reduce(_ || _)
+      } else {
+        false.B
+      }
+      tileTagMatch || tileAcc
+    } else {
+      true.B
+    }
+
     // If the entry is active and its data dependency is met (or it has no dependency)...
     // Special care here for vector, as multiple instructions are allowed to be dispatched for the same destination register.
     // This differs from how the scalar/float scoreboards restrict dispatch.
     val dataReady = (scalarWriteIdxMap.reduce(_ | _) || floatWriteIdxMap.reduce(
       _ | _
-    ) || vectorReady || nonWritingInstr || (storeInstr && storeComplete.valid && storeComplete.bits === bufferEntry.addr))
+    ) || vectorReady || nonWritingInstr || (bufferEntry.isTile && tileReady) || (storeInstr && storeComplete.valid && storeComplete.bits === bufferEntry.addr))
     val isControlFlow = bufferEntry.isControlFlow
     val isBranch      = bufferEntry.isBranch
     // For the last entry in the buffer, we can't see the next instruction yet (it hasn't been enqueued or wrapped visibly).
