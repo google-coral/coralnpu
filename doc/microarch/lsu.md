@@ -52,7 +52,7 @@ The core dispatch unit presents up to `p.instructionLanes` decoupled memory comm
 
 - **Capacity Check**: A prefix-sum scan (`validSums`) checks against `rs.io.nSpace` to determine how many commands can be accepted. Remaining lanes are backpressured (`req(i).ready = false`).
 - **Operand Fetch**: Base register address generation and store data bypassing occur in parallel using `RegfileBusPortIO`.
-- **`LsuUOp` Generation**: Computes initial memory bounds (`startCell`, `endCell`, `unreachableCell`), stride multipliers (`bytesPerSegment`), and vector addressing modes from `io.rvvState` (`vtype`, `vl`, `vstart`).
+- **`LsuUOp` Generation**: Computes initial byte-level memory bounds (prestart `startCell = vstart × NF × EEW`, active elements `[startCell, endCell)` with `endCell = vl × NF × EEW`, and unreachable tail bounds `[endCell, unreachableCell)` with `unreachableCell = LMUL × NF × VLENB`), stride multipliers (`bytesPerSegment`), and vector addressing modes from `io.rvvState` (`vtype`, `vl`, `vstart`).
 - **Alignment**: The `Aligner` packs sparse valid dispatches into dense circular buffer inputs.
 
 ### Circular Buffer (`CircularBufferMulti`)
@@ -71,9 +71,9 @@ The reservation station buffers up to `max(4, p.instructionLanes)` micro-operati
 Execution is partitioned across `nCells` byte cells ($8 \times \text{VLENB}$ with RVV enabled, or 4 for scalar-only):
 
 ```text
-Cell Index:  [ 0 | 1 | 2 | 3 | 4 | 5 | ... | nCells - 1 ]
-             |<- Active Elements ->|<- Tail / Inactive ->|<- Unreachable ->|
-             [startCell, endCell)     [endCell, unreach)     [unreach, nCells)
+Cell Index:  [ 0 ... startCell )  |  [ startCell ... endCell )  |  [ endCell ... unreach )  |  [ unreach ... nCells )
+             |< Prestart (Inactive) >|<    Active Elements     >|<     Tail (Inactive)    >|<  Unallocated (DONE)  >|
+             [0, startCell)           [startCell, endCell)       [endCell, unreach)          [unreach, nCells)
 ```
 
 Each `LsuCell` stores:
@@ -85,11 +85,11 @@ Each `LsuCell` stores:
 
 ### Cell Lifecycle (`LsuCellState`)
 
-- **`DONE`**: Cell is idle, inactive, out-of-bounds, or has finished writeback.
-- **`W_DATA`**: Waiting for vector element index (`rvv2lsu.idx`), store data (`rvv2lsu.vregfile`), or mask bit (`rvv2lsu.mask`). Inactive elements (`mask == 0`) transition directly to `W_WB`.
+- **`DONE`**: Cell is idle, unallocated (`[unreachableCell, nCells)`), or has finished writeback.
+- **`W_DATA`**: Waiting for vector element index (`rvv2lsu.idx`), store data (`rvv2lsu.vregfile`), or mask bit (`rvv2lsu.mask`). Masked-off elements (`mask == 0`) transition directly to `W_WB`.
 - **`W_START`**: Address and store data are valid; ready to participate in a bus transaction.
 - **`W_RESP`**: Bus request issued; awaiting bus response data.
-- **`W_WB`**: Data returned from memory (or skipped); awaiting scalar writeback or vector writeback stream acknowledgment.
+- **`W_WB`**: Data returned from memory (or skipped); awaiting scalar writeback or vector writeback stream acknowledgment. Inactive elements (both prestart elements `[0, startCell)` and tail elements `[endCell, unreachableCell)`) initialize directly to `W_WB` (or `DONE` for tile stores), skipping memory transactions.
 
 ### Address Generation Paths
 

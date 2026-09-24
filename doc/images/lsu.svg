@@ -108,17 +108,18 @@
 
   <!-- UOp Generator -->
   <rect x="270" y="260" width="180" height="135" rx="6" fill="#f0f9ff" stroke="#7dd3fc" stroke-width="1.5" filter="url(#card-shadow)"/>
-  <text x="280" y="282" fill="#0369a1" font-size="12" font-weight="700">LsuUOp Decode</text>
-  <text x="280" y="300" fill="#0284c7" font-size="10" font-weight="600">Base Addr &amp; Bounds Calc</text>
-  <text x="280" y="318" fill="#64748b" font-size="9.5">• Pointer-chase bypass</text>
-  <text x="280" y="334" fill="#64748b" font-size="9.5">• startCell = vstart * NF</text>
-  <text x="280" y="350" fill="#64748b" font-size="9.5">• endCell = vl * NF</text>
-  <text x="280" y="366" fill="#64748b" font-size="9.5">• unreachableCell = LMUL * NF</text>
-  <text x="280" y="382" fill="#64748b" font-size="9.5">• bytesPerSegment multiplier</text>
+  <text x="280" y="278" fill="#0369a1" font-size="11.5" font-weight="700">LsuUOp Decode</text>
+  <text x="280" y="293" fill="#0284c7" font-size="9.5" font-weight="600">Base Addr &amp; Bounds Calc</text>
+  <text x="280" y="308" fill="#64748b" font-size="8.5">• startCell = vstart × NF × EEW</text>
+  <text x="280" y="322" fill="#64748b" font-size="8.5">• endCell = vl × NF × EEW</text>
+  <text x="280" y="336" fill="#64748b" font-size="8.5">• unreach = LMUL × NF × VLENB</text>
+  <text x="280" y="350" fill="#64748b" font-size="8.5">• nCells = 8 × VLENB (or 4B)</text>
+  <text x="280" y="364" fill="#64748b" font-size="8.5">• bytesPerSegment = NF × EEW</text>
+  <text x="280" y="378" fill="#64748b" font-size="8.5">• Pointer-chase base bypass</text>
 
   <!-- Reservation Station rs -->
   <rect x="270" y="410" width="180" height="150" rx="6" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1.5" filter="url(#card-shadow)"/>
-  <text x="280" y="432" fill="#3730a3" font-size="12" font-weight="700">Reservation Station (rs)</text>
+  <text x="280" y="432" fill="#3730a3" font-size="11" font-weight="700">Reservation Station (rs)</text>
   <text x="280" y="450" fill="#4f46e5" font-size="10" font-weight="600">CircularBufferMulti[LsuUOp]</text>
   <text x="280" y="468" fill="#64748b" font-size="9.5">Width: p.instructionLanes</text>
   <text x="280" y="484" fill="#64748b" font-size="9.5">Depth: max(4, lanes)</text>
@@ -129,11 +130,11 @@
 
   <!-- FlushCmd Register -->
   <rect x="270" y="575" width="180" height="95" rx="6" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5" filter="url(#card-shadow)"/>
-  <text x="280" y="597" fill="#9a3412" font-size="12" font-weight="700">Flush State (FENCE.I)</text>
+  <text x="280" y="597" fill="#9a3412" font-size="11.5" font-weight="700">Flush State (FENCE.I)</text>
   <text x="280" y="615" fill="#c2410c" font-size="10" font-weight="600">flushCmd Register</text>
-  <text x="280" y="633" fill="#64748b" font-size="9.5">• Allocates on FENCE.I (lane 0)</text>
-  <text x="280" y="649" fill="#64748b" font-size="9.5">• Drains memory writes</text>
-  <text x="280" y="663" fill="#64748b" font-size="9.5">• Asserts io.flush (pcNext=pc+4)</text>
+  <text x="280" y="633" fill="#64748b" font-size="8.5">• Allocates on FENCE.I (lane 0)</text>
+  <text x="280" y="649" fill="#64748b" font-size="8.5">• Drains memory writes</text>
+  <text x="280" y="663" fill="#64748b" font-size="8.5">• Asserts io.flush (pcNext=pc+4)</text>
 
   <!-- ========================================================================================= -->
   <!-- COLUMN 3: LSU SUPER SLOT EXECUTION ENGINE (X: 490 .. 980) -->
@@ -142,39 +143,49 @@
   <path d="M 490 105 L 980 105 L 980 140 L 490 140 Z" fill="#f8fafc" rx="10"/>
   <rect x="490" y="130" width="490" height="10" fill="#f8fafc"/>
   <text x="505" y="129" fill="#0f172a" font-size="14" font-weight="700">LsuSuperSlot Execution Engine</text>
-  <rect x="830" y="113" width="135" height="22" rx="4" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
-  <text x="897" y="128" fill="#475569" font-size="10" font-weight="600" text-anchor="middle">Total Store Order (TSO)</text>
+  <rect x="815" y="113" width="150" height="22" rx="4" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="890" y="128" fill="#475569" font-size="9.5" font-weight="600" text-anchor="middle">Total Store Order (TSO)</text>
 
   <!-- Sub-block 1: LsuCell Array Structure -->
   <rect x="505" y="150" width="460" height="195" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="520" y="172" fill="#1e293b" font-size="13" font-weight="700">LsuCell Array (nCells = 8 × VLENB / 4 Bytes)</text>
-  <text x="520" y="190" fill="#64748b" font-size="10">Each cell tracks 1 byte: state (DONE, W_DATA, W_START, W_RESP, W_WB), data (8b), rowAddr, mask (16B 1-hot)</text>
+  <text x="520" y="169" fill="#1e293b" font-size="12" font-weight="700">LsuCell Tracking Array (nCells = 8 × VLENB [RVV] | 4 [Scalar])</text>
+  <text x="520" y="184" fill="#64748b" font-size="9">1 byte per tracking cell · state, data (8b), rowAddr, row 1-hot byte mask</text>
 
   <!-- Visual Cell Array Box -->
-  <g transform="translate(520, 202)">
+  <g transform="translate(520, 196)">
+    <!-- Prestart Cells -->
+    <rect x="0" y="0" width="94" height="48" rx="4" fill="#fef9c3" stroke="#fde047" stroke-width="1"/>
+    <text x="47" y="15" fill="#854d0e" font-size="9.5" font-weight="700" text-anchor="middle">Prestart</text>
+    <text x="47" y="28" fill="#a16207" font-size="8" text-anchor="middle">[0, startCell)</text>
+    <text x="47" y="41" fill="#b45309" font-size="8" font-weight="600" text-anchor="middle">Inactive (W_WB)</text>
+
     <!-- Active Cells -->
-    <rect x="0" y="0" width="180" height="42" rx="4" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-    <text x="90" y="18" fill="#166534" font-size="10" font-weight="700" text-anchor="middle">Active Elements</text>
-    <text x="90" y="32" fill="#15803d" font-size="9" text-anchor="middle">[startCell, endCell) → W_DATA / W_START</text>
+    <rect x="98" y="0" width="140" height="48" rx="4" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+    <text x="168" y="15" fill="#166534" font-size="9.5" font-weight="700" text-anchor="middle">Active Elements</text>
+    <text x="168" y="28" fill="#15803d" font-size="8" text-anchor="middle">[startCell, endCell)</text>
+    <text x="168" y="41" fill="#15803d" font-size="8" font-weight="600" text-anchor="middle">W_DATA / START</text>
 
     <!-- Tail Cells -->
-    <rect x="185" y="0" width="135" height="42" rx="4" fill="#fef9c3" stroke="#fde047" stroke-width="1"/>
-    <text x="252" y="18" fill="#854d0e" font-size="10" font-weight="700" text-anchor="middle">Tail / Inactive</text>
-    <text x="252" y="32" fill="#a16207" font-size="9" text-anchor="middle">[endCell, unreach) → W_WB</text>
+    <rect x="242" y="0" width="94" height="48" rx="4" fill="#fef9c3" stroke="#fde047" stroke-width="1"/>
+    <text x="289" y="15" fill="#854d0e" font-size="9.5" font-weight="700" text-anchor="middle">Tail</text>
+    <text x="289" y="28" fill="#a16207" font-size="8" text-anchor="middle">[endCell, unreach)</text>
+    <text x="289" y="41" fill="#b45309" font-size="8" font-weight="600" text-anchor="middle">Inactive (W_WB)</text>
 
     <!-- Unreachable Cells -->
-    <rect x="325" y="0" width="105" height="42" rx="4" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
-    <text x="377" y="18" fill="#475569" font-size="10" font-weight="700" text-anchor="middle">Unallocated</text>
-    <text x="377" y="32" fill="#64748b" font-size="9" text-anchor="middle">[unreach, nCells) → DONE</text>
+    <rect x="340" y="0" width="90" height="48" rx="4" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
+    <text x="385" y="15" fill="#475569" font-size="9.5" font-weight="700" text-anchor="middle">Unallocated</text>
+    <text x="385" y="28" fill="#64748b" font-size="8" text-anchor="middle">[unreach, nCells)</text>
+    <text x="385" y="41" fill="#64748b" font-size="8" font-weight="600" text-anchor="middle">Disabled (DONE)</text>
   </g>
 
   <!-- Cell State Transitions -->
-  <g transform="translate(520, 258)">
-    <rect x="0" y="0" width="430" height="75" rx="5" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
-    <text x="15" y="20" fill="#334155" font-size="10" font-weight="700">Cell State Machine Transitions:</text>
-    <text x="15" y="38" fill="#64748b" font-size="9.5"><tspan fill="#0284c7" font-weight="600">W_DATA</tspan> ──(index/data payload arrive)──► <tspan fill="#16a34a" font-weight="600">W_START</tspan> ──(bus tx fires)──► <tspan fill="#ca8a04" font-weight="600">W_RESP</tspan></text>
-    <text x="15" y="54" fill="#64748b" font-size="9.5"><tspan fill="#ca8a04" font-weight="600">W_RESP</tspan> ──(bus resp or row snoop)──► <tspan fill="#9333ea" font-weight="600">W_WB</tspan> ──(scalar/vector writeback)──► <tspan fill="#475569" font-weight="600">DONE</tspan></text>
-    <text x="15" y="68" fill="#e11d48" font-size="9">• Masked-off elements (mask=0) bypass directly from W_DATA to W_WB</text>
+  <g transform="translate(520, 252)">
+    <rect x="0" y="0" width="430" height="80" rx="5" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="12" y="16" fill="#334155" font-size="10" font-weight="700">Cell State Machine Transitions:</text>
+    <text x="12" y="31" fill="#64748b" font-size="8.5"><tspan fill="#0284c7" font-weight="600">W_DATA</tspan> ──(index/data)──► <tspan fill="#16a34a" font-weight="600">W_START</tspan> ──(bus tx fires)──► <tspan fill="#ca8a04" font-weight="600">W_RESP</tspan></text>
+    <text x="12" y="45" fill="#64748b" font-size="8.5"><tspan fill="#ca8a04" font-weight="600">W_RESP</tspan> ──(resp/snoop)──► <tspan fill="#9333ea" font-weight="600">W_WB</tspan> ──(stream/scalar wb)──► <tspan fill="#475569" font-weight="600">DONE</tspan></text>
+    <text x="12" y="60" fill="#b45309" font-size="8">• Prestart [0, start) &amp; Tail [end, unreach) are inactive: init directly to <tspan font-weight="600">W_WB</tspan></text>
+    <text x="12" y="72" fill="#e11d48" font-size="8">• Masked-off elements (mask=0) bypass directly from W_DATA to W_WB</text>
   </g>
 
   <!-- Sub-block 2: Address Calculation Engine -->
@@ -189,7 +200,7 @@
     <rect x="146" y="0" width="138" height="60" rx="4" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
     <text x="215" y="18" fill="#0f172a" font-size="10" font-weight="700" text-anchor="middle">Strided LUT</text>
     <text x="215" y="33" fill="#64748b" font-size="9" text-anchor="middle">16-entry Multiplier</text>
-    <text x="215" y="47" fill="#64748b" font-size="8.5" text-anchor="middle">makeStridedOffsets(size, rs2)</text>
+    <text x="215" y="47" fill="#64748b" font-size="7.5" text-anchor="middle">makeStridedOffsets(size, rs2)</text>
 
     <rect x="292" y="0" width="138" height="60" rx="4" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
     <text x="361" y="18" fill="#0f172a" font-size="10" font-weight="700" text-anchor="middle">Indexed Dynamic</text>
@@ -237,7 +248,7 @@
     <text x="232" y="18" fill="#334155" font-size="10" font-weight="700">Vector Loop &amp; Fault Vstart</text>
     <text x="232" y="34" fill="#64748b" font-size="9">• Counters: segment, emul, subvector</text>
     <text x="232" y="50" fill="#64748b" font-size="9">• ff_tail_index for fault-only-first</text>
-    <text x="232" y="66" fill="#dc2626" font-size="8.5">vstart = (faultCell / (NF+1)) &gt;&gt; log2(size)</text>
+    <text x="232" y="66" fill="#dc2626" font-size="7.5">vstart = (faultCell / (NF+1)) &gt;&gt; log2(EEW)</text>
   </g>
 
   <!-- Ready / Active status -->
@@ -257,7 +268,7 @@
   <!-- Address Decoder / Arbiter -->
   <rect x="1025" y="155" width="365" height="50" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1.5" filter="url(#card-shadow)"/>
   <text x="1035" y="176" fill="#166534" font-size="11" font-weight="700">Physical Address Mapping &amp; Arbiter</text>
-  <text x="1035" y="193" fill="#64748b" font-size="9.5">Decodes rowAddr: ITCM (IMEM), DTCM (DMEM), or External (Peripheral/AXI)</text>
+  <text x="1035" y="193" fill="#64748b" font-size="9">Decodes rowAddr: ITCM (IMEM), DTCM (DMEM), or External (AXI)</text>
 
   <!-- IBus (ITCM) -->
   <rect x="1025" y="215" width="365" height="65" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#card-shadow)"/>
@@ -296,7 +307,7 @@
   <rect x="1025" y="610" width="365" height="70" rx="6" fill="#ffffff" stroke="#fecdd3" stroke-width="1.5" filter="url(#card-shadow)"/>
   <text x="1035" y="630" fill="#1e293b" font-size="11" font-weight="700">io.lsu2rvv / io.lsu2vme (Vector Writeback)</text>
   <text x="1035" y="647" fill="#e11d48" font-size="10" font-weight="600">Decoupled streams back to RVV / VME</text>
-  <text x="1035" y="663" fill="#64748b" font-size="9.5">• 128-bit vector data writeback · last indicator</text>
+  <text x="1035" y="663" fill="#64748b" font-size="9.5">• VLEN-bit vector data writeback · last indicator</text>
   <text x="1035" y="675" fill="#64748b" font-size="9.5">• Vector store completion acknowledgment</text>
 
   <!-- Fetch Flush -->
@@ -337,11 +348,11 @@
 
   <!-- SuperSlot to Col 4 (Bus Request) -->
   <path d="M 965 540 L 1025 180" stroke="#059669" stroke-width="2.5" fill="none" marker-end="url(#arrow-emerald)"/>
-  <text x="990" y="340" fill="#059669" font-size="11" font-weight="700">busReq</text>
+  <text x="995" y="401" fill="#059669" font-size="9" font-weight="700" text-anchor="middle" transform="rotate(-80.5 995 401)">busReq</text>
 
   <!-- Response Snooping Loop (Col 4 back to Col 3) -->
   <path d="M 1025 330 L 980 330 L 980 230 L 965 230" stroke="#d97706" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arrow-amber)"/>
-  <text x="955" y="315" fill="#d97706" font-size="9.5" font-weight="700">busResp &amp; Row Snoop</text>
+  <text x="993" y="280" fill="#d97706" font-size="8.5" font-weight="700" text-anchor="middle" transform="rotate(-90 993 280)">busResp &amp; Snoop</text>
 
   <!-- SuperSlot to Writeback Outputs -->
   <!-- Integer Writeback -->
