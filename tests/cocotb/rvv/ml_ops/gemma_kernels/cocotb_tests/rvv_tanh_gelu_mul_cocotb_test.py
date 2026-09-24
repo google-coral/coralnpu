@@ -62,7 +62,6 @@ async def core_mini_rvv_tanh_gelu_mul_test(dut):
         (1, 2048),
         (2, 2048),
     ]
-
     rng = np.random.default_rng(seed=42)
 
     for token_count, hidden_size in test_shapes:
@@ -136,6 +135,8 @@ async def core_mini_rvv_bf16_tanh_gelu_mul_test(dut):
         (1, 2048),
         (2, 2048),
     ]
+    if os.environ.get("GEMMA_PROFILE_ONLY"):
+        test_shapes = [(1, 2048)]
 
     rng = np.random.default_rng(seed=42)
 
@@ -178,9 +179,10 @@ async def core_mini_rvv_bf16_tanh_gelu_mul_test(dut):
                                          output_bytes)).view(dtype=np.uint16)
         actual_fp32 = actual_u16.view(ml_dtypes.bfloat16).astype(np.float32)
 
-        np.testing.assert_allclose(
-            actual_fp32, expected_fp32, rtol=3e-2, atol=8e-2
-        )
+        if not os.environ.get("GEMMA_PROFILE_ONLY"):
+            np.testing.assert_allclose(
+                actual_fp32, expected_fp32, rtol=3e-2, atol=8e-2
+            )
 
         log_vector_metrics(
             dut, f"BF16 TanhGELU x Up Mul Shape: {seq_len}x{hidden_size}",

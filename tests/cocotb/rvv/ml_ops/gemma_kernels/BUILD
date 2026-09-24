@@ -92,6 +92,72 @@ template_rule(
             "dtcm_size_kbytes": 1024,
             "enable_vmem": False,
         },
+        "rvv_bf16_matmul_pair_load": {
+            "srcs": [
+                "rvv_bf16_matmul_runner.cc",
+                "rvv_bf16_matmul.cc",
+            ],
+            "deps": ["//sw/utils:utils"],
+            "defines": ["RVV_BF16_GEMV_PAIR_LOADS"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
+        "rvv_bf16_matmul_seg2": {
+            "srcs": [
+                "rvv_bf16_matmul_runner.cc",
+                "rvv_bf16_matmul.cc",
+            ],
+            "deps": ["//sw/utils:utils"],
+            "defines": ["RVV_BF16_GEMV_SEG2_LOADS"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
+        "rvv_bf16_matmul_block_seg2": {
+            "srcs": [
+                "rvv_bf16_matmul_runner.cc",
+                "rvv_bf16_matmul.cc",
+            ],
+            "deps": ["//sw/utils:utils"],
+            "defines": ["RVV_BF16_GEMV_BLOCK_SEG2_LOADS"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
+        "rvv_bf16_matmul_a_cache": {
+            "srcs": [
+                "rvv_bf16_matmul_runner.cc",
+                "rvv_bf16_matmul.cc",
+            ],
+            "deps": ["//sw/utils:utils"],
+            "defines": ["RVV_BF16_GEMV_A_CACHE"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
+        "rvv_bf16_matmul_block_seg2_a_cache": {
+            "srcs": [
+                "rvv_bf16_matmul_runner.cc",
+                "rvv_bf16_matmul.cc",
+            ],
+            "deps": ["//sw/utils:utils"],
+            "defines": ["RVV_BF16_GEMV_BLOCK_SEG2_A_CACHE"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
+        "rvv_bf16_matmul_seg2_a_cache": {
+            "srcs": [
+                "rvv_bf16_matmul_runner.cc",
+                "rvv_bf16_matmul.cc",
+            ],
+            "deps": ["//sw/utils:utils"],
+            "defines": ["RVV_BF16_GEMV_SEG2_A_CACHE"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
         "rvv_int8_matmul": {
             "srcs": [
                 "rvv_int8_matmul_runner.cc",
@@ -349,6 +415,12 @@ cocotb_test_suite(
         "data": [
             ":rvv_matmul.elf",
             ":rvv_bf16_matmul.elf",
+            ":rvv_bf16_matmul_pair_load.elf",
+            ":rvv_bf16_matmul_seg2.elf",
+            ":rvv_bf16_matmul_block_seg2.elf",
+            ":rvv_bf16_matmul_a_cache.elf",
+            ":rvv_bf16_matmul_block_seg2_a_cache.elf",
+            ":rvv_bf16_matmul_seg2_a_cache.elf",
             ":weights_files",
         ],
         "size": "enormous",
@@ -357,6 +429,12 @@ cocotb_test_suite(
     vcs_data = [
         ":rvv_matmul.elf",
         ":rvv_bf16_matmul.elf",
+        ":rvv_bf16_matmul_pair_load.elf",
+        ":rvv_bf16_matmul_seg2.elf",
+        ":rvv_bf16_matmul_block_seg2.elf",
+        ":rvv_bf16_matmul_a_cache.elf",
+        ":rvv_bf16_matmul_block_seg2_a_cache.elf",
+        ":rvv_bf16_matmul_seg2_a_cache.elf",
         "//tests/cocotb:xprop.cfg",
         "@coralnpu_hw//hdl/verilog:dpi_files",
     ],
