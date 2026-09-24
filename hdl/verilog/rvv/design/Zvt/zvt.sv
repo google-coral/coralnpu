@@ -636,13 +636,13 @@ module zvt (
   for(genvar i=0;i<4;i++) begin
     for(genvar j=0;j<`NUM_SUBTILE;j++) begin
       `rvv_forbid(vmeRtVld && vmeRt.mtIdxVld[i] && ($isunknown(vmeRt.mtData[i][j])))
-      else $error("The retiring Mt[%d][%d] is undriven.\n", i, j);
+      else $error("Pc(%0d) retiring Mt[%0d][%0d] is undriven.\n", vmeRt.inst_pc, i, j);
     end
   end
   `endif
 `endif // RVVI_ON
 
   // busy
-  assign zvtBusy = peBusy || !vmelsuAempty || !vmelsuresAempty;
+  assign zvtBusy = peBusy || !vmelsuAempty || !vmelsuresAempty || !rtCmdAempty;
 
 endmodule

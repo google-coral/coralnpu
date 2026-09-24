@@ -25,22 +25,24 @@ module zvt_pe_adder_int_lane#(
   wire [`WORD_WIDTH-1:0] sum = iso_operands[0] + src2 + carry_in; // let it overflow
 
   typedef struct packed {
-    logic en;
     logic [`WORD_WIDTH-1:0] result;
   } mid_reg_t;
+  logic    [0:NUM_MID_REGS] mid_valid;
   mid_reg_t[0:NUM_MID_REGS] mid_pipe;
 
-  assign mid_pipe[0].en = up_valid;
+  assign mid_valid[0]       = up_valid;
   assign mid_pipe[0].result = sum;
 
   // Generate the register stages
   for (genvar i = 0; i < NUM_MID_REGS; i++) begin: gen_mid_pipeline
-    edff #(.T(mid_reg_t)) mid_reg(.q(mid_pipe[i+1]), .d(mid_pipe[i]), .e(reg_enable[i] & mid_pipe[i].en),
+    edff #(.T(logic)) mid_valid_reg(.q(mid_valid[i+1]), .d(mid_valid[i]), .e(reg_enable[i]),
+      .clk(clk), .rst_n(rst_n));
+    edff #(.T(mid_reg_t)) mid_reg(.q(mid_pipe[i+1]), .d(mid_pipe[i]), .e(reg_enable[i] & mid_valid[i]),
       .clk(clk), .rst_n(rst_n));
   end
 
   assign result = mid_pipe[NUM_MID_REGS].result;
   assign status = '0;
-  assign down_valid = mid_pipe[NUM_MID_REGS].en;
+  assign down_valid = mid_valid[NUM_MID_REGS];
 
 endmodule

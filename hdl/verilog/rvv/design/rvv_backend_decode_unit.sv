@@ -80,8 +80,20 @@ module rvv_backend_decode_unit
   end
 
   `ifdef ASSERT_ON
-    `rvv_forbid(inst_valid && !lcmd_valid)
+    initial begin
+      if($test$plusargs("ERROR_RSV_INST")) begin
+        $assertoff(0, ReserveInstCheck_Info);
+        $asserton(0, ReserveInstCheck_Error);
+      end else begin
+        $asserton(0, ReserveInstCheck_Info);
+        $assertoff(0, ReserveInstCheck_Error);
+      end
+    end
+    ReserveInstCheck_Info: `rvv_forbid(inst_valid && !lcmd_valid)
     else $info("PC(0x%h) is a reserved/nop instruction. RvvBackend.Decoder retired it directly.\n",$sampled(inst.inst_pc));
+
+    ReserveInstCheck_Error: `rvv_forbid(inst_valid && !lcmd_valid)
+    else $error("PC(0x%h) is a reserved/nop instruction. RvvBackend.Decoder retired it directly.\n",$sampled(inst.inst_pc));
   `endif
 
 endmodule

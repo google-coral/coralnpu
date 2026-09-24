@@ -74,7 +74,7 @@ module zvt_pe_mulbulk_int_lane#(
       // 3. select enable bits from src_fmt
       //   for int8, only pp[i][i] is needed
       //   for int16 pp[i*2 +: 2][i*2 +: 2] are needed
-      assign pp_enable[i][j] = up_valid && (
+      assign pp_enable[i][j] = (
         (INT_FMT_CONFIG[0] && (src_fmt == fpnew_pkg::INT8 )) ? (i == j) :
         (INT_FMT_CONFIG[1] && (src_fmt == fpnew_pkg::INT16)) ? ((i>>1) == (j>>1)):
                                                                  1'b0);
@@ -85,17 +85,21 @@ module zvt_pe_mulbulk_int_lane#(
   // Mid pipeline
   // ----------
 
+  logic [0:NUM_MID_REGS] valid_pipe;
   logic [0:NUM_MID_REGS][1:0] pp_signed_pipe;
   fpnew_pkg::int_format_e [0:NUM_MID_REGS] src_fmt_pipe;
   logic [0:NUM_MID_REGS][WIDTH/8-1:0][WIDTH/8-1:0][15:0] pp_pipe;
   logic [0:NUM_MID_REGS][WIDTH/8-1:0][WIDTH/8-1:0] pp_enable_pipe;
   // Input stage
+  assign valid_pipe[0] = up_valid;
   assign pp_pipe[0] = pp;
   assign pp_signed_pipe[0] = operand_signed;
   assign src_fmt_pipe[0] = src_fmt;
   assign pp_enable_pipe[0] = pp_enable;
   // Pipeline
   generate for (i = 0; i < NUM_MID_REGS; i++) begin: gen_pip
+    edff#(.T(logic))                           valid_reg    (.q(valid_pipe[i+1]), .d(valid_pipe[i]),
+      .e(reg_enable[i]), .clk(clk), .rst_n(rst_n));
     edff#(.T(logic [1:0]))                     sign_reg     (.q(pp_signed_pipe[i+1]), .d(pp_signed_pipe[i]),
       .e(reg_enable[i]), .clk(clk), .rst_n(rst_n));
     edff#(.T(fpnew_pkg::int_format_e))         fmt_reg      (.q(src_fmt_pipe[i+1]),   .d(src_fmt_pipe[i]),
@@ -146,6 +150,6 @@ module zvt_pe_mulbulk_int_lane#(
     | ((INT_FMT_CONFIG[1] && (src_fmt_q == fpnew_pkg::INT16)) ? int16_result : '0)
   ;
   assign status = '{default: '0};
-  assign down_valid = |pp_enable_pipe[NUM_MID_REGS];
+  assign down_valid = valid_pipe[NUM_MID_REGS];
 
 endmodule

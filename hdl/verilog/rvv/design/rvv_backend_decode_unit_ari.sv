@@ -417,12 +417,20 @@ module rvv_backend_decode_unit_ari
               LMUL1: begin
                 case(csr_sew)
                   SEW8: begin
-                    emul_vd     = EMUL1;
-                    emul_vs2    = EMUL1;
-                    emul_vs1    = EMUL2;
-                    emul_max    = EMUL2;
                     case(reduced_lmul)
-                      LMUL1: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                      LMUL1: begin
+                        emul_vd       = EMUL1;
+                        emul_vs2      = EMUL1;
+                        emul_vs1      = EMUL2;
+                        emul_max      = EMUL2;
+                        uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                      end
+                      default: begin
+                        emul_vd       = EMUL1;
+                        emul_vs2      = EMUL1;
+                        emul_vs1      = EMUL1;
+                        emul_max      = EMUL1;
+                      end
                     endcase
                   end
                   SEW16,
@@ -444,6 +452,12 @@ module rvv_backend_decode_unit_ari
                     case(reduced_lmul)
                       LMUL1: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
                       LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                      default: begin
+                        emul_vd     = EMUL1;
+                        emul_vs2    = EMUL1;
+                        emul_vs1    = EMUL1;
+                        emul_max    = EMUL1;
+                      end
                     endcase
                   end
                   SEW16: begin
@@ -462,6 +476,12 @@ module rvv_backend_decode_unit_ari
                     emul_max    = EMUL2;
                     case(reduced_lmul)
                       LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                      default: begin
+                        emul_vd     = EMUL1;
+                        emul_vs2    = EMUL1;
+                        emul_vs1    = EMUL1;
+                        emul_max    = EMUL1;
+                      end
                     endcase
                   end
                 endcase
@@ -477,6 +497,12 @@ module rvv_backend_decode_unit_ari
                       LMUL1: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
                       LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
                       LMUL4: uop_index_max = (`UOP_INDEX_WIDTH)'('d7);
+                      default: begin
+                        emul_vd     = EMUL1;
+                        emul_vs2    = EMUL1;
+                        emul_vs1    = EMUL1;
+                        emul_max    = EMUL1;
+                      end
                     endcase
                   end
                   SEW16: begin
@@ -497,17 +523,17 @@ module rvv_backend_decode_unit_ari
                     case(reduced_lmul)
                       LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
                       LMUL4: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                      default: begin
+                        emul_vd     = EMUL1;
+                        emul_vs2    = EMUL1;
+                        emul_vs1    = EMUL1;
+                        emul_max    = EMUL1;
+                      end
                     endcase
                   end
                 endcase
               end
               LMUL8: begin
-                case(reduced_lmul)
-                  LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-                  LMUL4: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-                  LMUL8: uop_index_max = (`UOP_INDEX_WIDTH)'('d7);
-                endcase
-
                 case(csr_sew)
                   SEW16: begin
                     emul_vd     = EMUL8;
@@ -520,6 +546,18 @@ module rvv_backend_decode_unit_ari
                     emul_vs2    = EMUL8;
                     emul_vs1    = EMUL4;
                     emul_max    = EMUL8;
+                  end
+                endcase
+
+                case(reduced_lmul)
+                  LMUL2: uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+                  LMUL4: uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+                  LMUL8: uop_index_max = (`UOP_INDEX_WIDTH)'('d7);
+                  default: begin
+                    emul_vd     = EMUL1;
+                    emul_vs2    = EMUL1;
+                    emul_vs1    = EMUL1;
+                    emul_max    = EMUL1;
                   end
                 endcase
               end
@@ -1553,10 +1591,10 @@ module rvv_backend_decode_unit_ari
               endcase
             end
             else if(vs2_opcode==VTZERO) begin
-              case(1'b1)
-                ((csr_sew==SEW8 )&&(csr_lmul==LMUL1)),
-                ((csr_sew==SEW16)&&(csr_lmul==LMUL2)),
-                ((csr_sew==SEW32)&&(csr_lmul==LMUL4)): begin
+              case(csr_sew)
+                SEW8, 
+                SEW16,
+                SEW32: begin
                   emul_max      = EMUL1;
                 end
               endcase
@@ -2027,7 +2065,7 @@ module rvv_backend_decode_unit_ari
             case(1'b1)
             `ifdef ZVTBF16FMM_ON
               ((csr_sew==SEW16)&&(csr_lmul==LMUL2)),
-            `endif
+            `endif 
               // default: ZVTFMM_ON
               ((csr_sew==SEW32)&&(csr_lmul==LMUL4)): begin
                 uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
@@ -2704,22 +2742,13 @@ module rvv_backend_decode_unit_ari
                       eew_mt      = EEW8;
                       eew_max     = EEW8;
                     end
-                    // default: ZVTI8I32MM_ON
-                    {SEW8, 2'd3}: begin
-                      eew_mt      = EEW32;
-                      eew_max     = EEW32;
+                    {SEW8,  2'd2},
+                    {SEW16, 2'd1}: begin
+                      eew_mt      = EEW16;
+                      eew_max     = EEW16;
                     end
-                  `ifdef ZVTI16I32MM_ON
-                    {SEW16, 2'd2}: begin
-                      eew_mt      = EEW32;
-                      eew_max     = EEW32;
-                    end
-                  `elsif ZVTBF16FMM_ON
-                    {SEW16, 2'd2}: begin
-                      eew_mt      = EEW32;
-                      eew_max     = EEW32;
-                    end
-                  `endif
+                    {SEW8,  2'd3},
+                    {SEW16, 2'd2},
                     {SEW32, 2'd1}: begin
                       eew_mt      = EEW32;
                       eew_max     = EEW32;
@@ -3022,7 +3051,7 @@ module rvv_backend_decode_unit_ari
                     eew_vs1     = EEW16;
                     eew_max     = EEW32;
                   end
-                `endif
+                `endif 
                   // default: ZVTFMM_ON
                   {SEW32, 2'd1, 1'b0}: begin
                     eew_mt      = EEW32;
@@ -3759,7 +3788,7 @@ module rvv_backend_decode_unit_ari
   // check common requirements for all instructions
   assign check_common = (!csr_vill || is_vmv_nr)&check_vd_align&check_sew&check_lmul&(check_vs2_align&check_vs1_align
                       `ifdef ZVT_ON
-                        || isVmeAlu
+                        || isVmeAlu&check_vme_vs1_align&check_vme_vs2_align
                       `endif
                         )
                       `ifdef ZVE32F_ON

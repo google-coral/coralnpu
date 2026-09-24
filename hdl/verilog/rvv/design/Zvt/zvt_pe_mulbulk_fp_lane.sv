@@ -243,7 +243,6 @@ module zvt_pe_mulbulk_fp_lane#(
 
   // Control signals shared across all formats, one register per pipe stage.
   typedef struct packed {
-    logic                       en;
     fpnew_pkg::fp_format_e      src_fmt;
     logic                       special_nan, special_inf, special_inf_sign, special_invalid;
     fpnew_pkg::fp_format_e      dst_fmt;
@@ -258,11 +257,12 @@ module zvt_pe_mulbulk_fp_lane#(
     logic         [VEC_LEN-1:0] fmt_product_en;
   } fp_mid_data_reg_t;
 
+  logic [0:NUM_MID_REGS]                              mid_valid;
   fp_mid_ctrl_reg_t [0:NUM_MID_REGS]                  mid_ctrl_pipe;
   fp_mid_data_reg_t [0:NUM_MID_REGS][NUM_FORMATS-1:0] mid_data_pipe;
 
   // Input stage
-  assign mid_ctrl_pipe[0].en               = up_valid;
+  assign mid_valid[0]                      = up_valid;
   assign mid_ctrl_pipe[0].src_fmt          = src_fmt;
   assign mid_ctrl_pipe[0].special_nan      = special_nan;
   assign mid_ctrl_pipe[0].special_inf      = special_inf;
@@ -281,10 +281,15 @@ module zvt_pe_mulbulk_fp_lane#(
 
   // Generate the register stages
   for (i = 0; i < NUM_MID_REGS; i++) begin: gen_mid_pipeline
+    edff #(.T(logic)) valid_reg (
+      .q(mid_valid[i+1]),
+      .d(mid_valid[i]),
+      .e(reg_enable[i]),
+      .clk(clk), .rst_n(rst_n));
     edff #(.T(fp_mid_ctrl_reg_t)) ctrl_reg (
       .q(mid_ctrl_pipe[i+1]),
       .d(mid_ctrl_pipe[i]),
-      .e(reg_enable[i] & mid_ctrl_pipe[i].en),
+      .e(reg_enable[i] & mid_valid[i]),
       .clk(clk), .rst_n(rst_n));
     for (j = 0; j < NUM_FORMATS; j++) begin: gen_mid_data_reg
       if (FP_FMT_CONFIG[j]) begin: enabled
@@ -292,7 +297,7 @@ module zvt_pe_mulbulk_fp_lane#(
           .q(mid_data_pipe[i+1][j]),
           .d(mid_data_pipe[i][j]),
           // Only clock the format that is actually in flight this cycle.
-          .e(reg_enable[i] & mid_ctrl_pipe[i].en & (int'(mid_ctrl_pipe[i].src_fmt) == j)),
+          .e(reg_enable[i] & mid_valid[i] & (int'(mid_ctrl_pipe[i].src_fmt) == j)),
           .clk(clk), .rst_n(rst_n));
       end else begin: disabled
         assign mid_data_pipe[i+1][j] = '0;
@@ -300,7 +305,7 @@ module zvt_pe_mulbulk_fp_lane#(
     end
   end
   // Output stage
-  assign                      down_valid         = mid_ctrl_pipe[NUM_MID_REGS].en;
+  assign                      down_valid         = mid_valid[NUM_MID_REGS];
   wire fpnew_pkg::fp_format_e src_fmt_q          = mid_ctrl_pipe[NUM_MID_REGS].src_fmt;
   wire fpnew_pkg::fp_format_e dst_fmt_q          = mid_ctrl_pipe[NUM_MID_REGS].dst_fmt;
   

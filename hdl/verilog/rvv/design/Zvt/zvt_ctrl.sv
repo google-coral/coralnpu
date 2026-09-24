@@ -102,8 +102,8 @@ module zvt_ctrl (
   logic                 isVme2Lsu, isLsu2Vme, isMv2Rvv, isMv2Vme, isZero; 
   logic [`ZVT_LMUL-1:0] isPe;
 
-  assign isVme2Lsu = uopVld[0] && uop[0].is_lsu &&  uop[0].is_store && vmelsuRdy && (!uop[0].first_uop_valid || rtCmdRdy);
-  assign isLsu2Vme = uopVld[0] && uop[0].is_lsu && !uop[0].is_store && vmelsuresVld && (!uop[0].first_uop_valid || rtCmdRdy);
+  assign isVme2Lsu = !peBusy && uopVld[0] && uop[0].is_lsu &&  uop[0].is_store && vmelsuRdy && (!uop[0].first_uop_valid || rtCmdRdy);
+  assign isLsu2Vme = !peBusy && uopVld[0] && uop[0].is_lsu && !uop[0].is_store && vmelsuresVld && (!uop[0].first_uop_valid || rtCmdRdy);
 
   always_comb begin
     isPe = 'b0;

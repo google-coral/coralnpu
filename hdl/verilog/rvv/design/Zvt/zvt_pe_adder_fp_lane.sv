@@ -61,7 +61,7 @@ module zvt_pe_adder_fp_lane#(
     .result_round_bit  (sum_round_bit  ),
     .result_sticky_bit (sum_sticky_bit ),
     .result_sticky_msb (sum_sticky_msb ),
-            
+
     // special cases for sum
     .special_nan     (special_nan     ),
     .special_inf     (special_inf     ),
@@ -84,7 +84,6 @@ module zvt_pe_adder_fp_lane#(
   // Mid pipeline
   // ----------
   typedef struct packed {
-    logic                  en;
     logic                  sign;
     logic [8:0]            exponent;
     logic [22:0]           mantissa;
@@ -93,9 +92,10 @@ module zvt_pe_adder_fp_lane#(
     logic                  align_overflow;
     fpnew_pkg::roundmode_e rnd_mode;
   } mid_reg_t;
+  logic     [0:NUM_MID_REGS] mid_valid;
   mid_reg_t [0:NUM_MID_REGS] mid_pipe;
 
-  assign mid_pipe[0].en               = up_valid;
+  assign mid_valid[0]                 = up_valid;
   assign mid_pipe[0].sign             = sum_sign;
   assign mid_pipe[0].exponent         = sum_exponent;
   assign mid_pipe[0].mantissa         = sum_significand[22:0];
@@ -111,13 +111,15 @@ module zvt_pe_adder_fp_lane#(
 
   // Generate the register stages
   for (genvar i = 0; i < NUM_MID_REGS; i++) begin: gen_mid_pipeline
-    edff #(.T(mid_reg_t)) mid_reg(.q(mid_pipe[i+1]), .d(mid_pipe[i]), .e(reg_enable[i] & mid_pipe[i].en),
+    edff #(.T(logic)) mid_valid_reg(.q(mid_valid[i+1]), .d(mid_valid[i]), .e(reg_enable[i]),
+      .clk(clk), .rst_n(rst_n));
+    edff #(.T(mid_reg_t)) mid_reg(.q(mid_pipe[i+1]), .d(mid_pipe[i]), .e(reg_enable[i] & mid_valid[i]),
       .clk(clk), .rst_n(rst_n));
   end
 
   // Output stage
   wire fpnew_pkg::roundmode_e rnd_mode_q = mid_pipe[NUM_MID_REGS].rnd_mode;
-  assign down_valid                      = mid_pipe[NUM_MID_REGS].en; 
+  assign down_valid                      = mid_valid[NUM_MID_REGS]; 
   // ----------
   // rounding
   // ----------
