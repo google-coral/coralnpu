@@ -116,6 +116,9 @@ template_rule(
         "rvv_vstart_pipeline_test": {
             "srcs": ["rvv_vstart_pipeline_test.S"],
         },
+        "rvv_vstart_dual_dispatch_lsu_test": {
+            "srcs": ["rvv_vstart_dual_dispatch_lsu_test.cc"],
+        },
         "vwredsumu_test": {
             "srcs": ["vwredsumu_test.cc"],
         },
@@ -134,6 +137,7 @@ filegroup(
         "rvv_vill_loop_trap_test.elf",
         "rvv_vl0_v0_corruption_test.elf",
         "rvv_vleff_test.elf",
+        "rvv_vstart_dual_dispatch_lsu_test.elf",
         "rvv_vstart_pipeline_test.elf",
         "rvv_vstart_rob_test.elf",
         "rvv_vstart_trap_flush_test.elf",

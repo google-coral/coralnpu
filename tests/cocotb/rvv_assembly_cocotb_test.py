@@ -2486,3 +2486,49 @@ async def core_mini_rvv_vstart_pipeline_test(dut):
     assert np.array_equal(
         output_dual_1, expected_dual_1
     ), f"Dual-dispatch inst 1 mismatch (slot 1 inherited vstart=2): got {output_dual_1}, expected {expected_dual_1}"
+
+
+@cocotb.test()
+async def core_mini_rvv_vstart_dual_dispatch_lsu_test(dut):
+    """Testing vstart dual dispatch"""
+    fixture = await VerilatorTestFixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation(
+            "coralnpu_hw/tests/cocotb/rvv/rvv_vstart_dual_dispatch_lsu_test.elf"
+        ), [
+            "out_a",
+            "out_b",
+            "out_c",
+            "out_ctrl",
+        ]
+    )
+
+    await fixture.run_to_halt()
+
+    out_a = (await fixture.read("out_a", 8)).view(np.uint16)
+    out_b = (await fixture.read("out_b", 8)).view(np.uint16)
+    out_c = (await fixture.read("out_c", 8)).view(np.uint16)
+    out_ctrl = (await fixture.read("out_ctrl", 8)).view(np.uint16)
+
+    dut._log.info(f"out_a:    {[hex(x) for x in out_a]}")
+    dut._log.info(f"out_b:    {[hex(x) for x in out_b]}")
+    dut._log.info(f"out_c:    {[hex(x) for x in out_c]}")
+    dut._log.info(f"out_ctrl: {[hex(x) for x in out_ctrl]}")
+
+    expected = np.array([0x00A4, 0x0088, 0x1234, 0x5678], dtype=np.uint16)
+    for name, got in (("A (vxor|scalar|vle16)", out_a),
+                      ("B (vxor|vle16)", out_b), ("C (nop|nop|vxor|vle16)",
+                                                  out_c)):
+        assert np.array_equal(got, expected), (
+            f"case {name}: vle16.v co-dispatched behind a vector op"
+            f" used a stale non-zero vstart: got {[hex(x) for x in got]},"
+            f" expected {[hex(x) for x in expected]}"
+        )
+
+    expected_ctrl = np.array([0x7FC0, 0x7FC0, 0x1234, 0x5678], dtype=np.uint16)
+    assert np.array_equal(out_ctrl, expected_ctrl), (
+        "vle16.v co-dispatched behind a scalar op must still honour vstart=2:"
+        f" got {[hex(x) for x in out_ctrl]},"
+        f" expected {[hex(x) for x in expected_ctrl]}"
+    )

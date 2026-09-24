@@ -136,6 +136,8 @@ class LsuCmd(p: Parameters) extends Bundle {
   // Whether or not a vector L/S instruction is masked. Unused in other ops.
   val vm = Option.when(p.enableRvv) { Bool() }
 
+  val vstartCleared = Option.when(p.enableRvv) { Bool() }
+
   def umop = bit24To20 // when unit-stride
   def rs2  = bit24To20 // when const-stride
 
@@ -249,7 +251,7 @@ object LsuUOp {
       val sew       = rvvState.get.bits.sew // From vtype
       val lmul_eff  = rvvState.get.bits.lmul
       val lmul_orig = rvvState.get.bits.lmul_orig
-      val vstart    = rvvState.get.bits.vstart
+      val vstart    = Mux(cmd.vstartCleared.get, 0.U, rvvState.get.bits.vstart)
       val vl_raw    = rvvState.get.bits.vl
 
       val tileEew = Option

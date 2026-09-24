@@ -296,6 +296,7 @@ RVV_ASSEMBLY_TESTCASES = [
     "core_mini_rvv_vl0_v0_corruption_test",
     "core_mini_rvv_lsu_indexed_short_vl_test",
     "core_mini_rvv_vstart_pipeline_test",
+    "core_mini_rvv_vstart_dual_dispatch_lsu_test",
 ]
 # END_TESTCASES_FOR_rvv_assembly_cocotb_test
 

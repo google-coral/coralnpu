@@ -536,6 +536,11 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   } else {
     Seq.fill(p.instructionLanes)(true.B)
   }
+
+  val rvvVstartCleared = Option.when(p.enableRvv) {
+    decodedInsts.map(_.rvv.get.valid).scan(false.B)(_ || _)
+  }
+
   // ---------------------------------------------------------------------------
   // Rvv Vill
   // Only check vill at scalar dispatch for LSU instructions (vector loads/stores)
@@ -907,10 +912,11 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     io.lsu(i).bits.op    := lsu.bits
     io.lsu(i).bits.pc    := io.inst(i).bits.addr
     if (p.enableRvv) {
-      io.lsu(i).bits.elemWidth.get := io.inst(i).bits.inst(14, 12)
-      io.lsu(i).bits.nfields.get   := io.inst(i).bits.inst(31, 29)
-      io.lsu(i).bits.bit24To20.get := io.inst(i).bits.inst(24, 20)
-      io.lsu(i).bits.vm.get        := io.inst(i).bits.inst(25)
+      io.lsu(i).bits.elemWidth.get     := io.inst(i).bits.inst(14, 12)
+      io.lsu(i).bits.nfields.get       := io.inst(i).bits.inst(31, 29)
+      io.lsu(i).bits.bit24To20.get     := io.inst(i).bits.inst(24, 20)
+      io.lsu(i).bits.vm.get            := io.inst(i).bits.inst(25)
+      io.lsu(i).bits.vstartCleared.get := rvvVstartCleared.get(i)
     }
 
     // -------------------------------------------------------------------------
