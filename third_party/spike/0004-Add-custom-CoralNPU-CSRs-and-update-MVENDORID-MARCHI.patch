@@ -1,17 +1,17 @@
-From 5afdf5536517c60a886b259426063bdb88ecf5c8 Mon Sep 17 00:00:00 2001
+From b46cfbbcb10c6026fcc8c7420d78015e49a90858 Mon Sep 17 00:00:00 2001
 From: Alex Van Damme <atv@google.com>
-Date: Fri, 16 Jan 2026 17:50:34 +0000
-Subject: [PATCH 4/4] Add custom CoralNPU CSRs and update MVENDORID/MARCHID
+Date: Thu, 24 Sep 2026 19:38:30 +0000
+Subject: [PATCH 4/8] Add custom CoralNPU CSRs and update MVENDORID/MARCHID
 
 ---
  riscv/csr_init.cc | 14 ++++++++++++--
  1 file changed, 12 insertions(+), 2 deletions(-)
 
 diff --git a/riscv/csr_init.cc b/riscv/csr_init.cc
-index 5dcbb641..60a71477 100644
+index ba10d89..4bf30af 100644
 --- a/riscv/csr_init.cc
 +++ b/riscv/csr_init.cc
-@@ -324,9 +324,9 @@ void state_t::csr_init(processor_t* const proc, reg_t max_isa)
+@@ -352,9 +352,9 @@ void state_t::csr_init(processor_t* const proc, reg_t max_isa)
  
    add_ext_csr(EXT_ZKR, CSR_SEED, std::make_shared<seed_csr_t>(proc, CSR_SEED));
  
@@ -23,7 +23,7 @@ index 5dcbb641..60a71477 100644
    add_csr(CSR_MHARTID, std::make_shared<const_csr_t>(proc, CSR_MHARTID, proc->get_id()));
    add_csr(CSR_MCONFIGPTR, std::make_shared<const_csr_t>(proc, CSR_MCONFIGPTR, 0));
  
-@@ -337,6 +337,16 @@ void state_t::csr_init(processor_t* const proc, reg_t max_isa)
+@@ -365,6 +365,16 @@ void state_t::csr_init(processor_t* const proc, reg_t max_isa)
    add_csr(0xFCC, std::make_shared<basic_csr_t>(proc, 0xFCC, 0)); // KSCM2
    add_csr(0xFD0, std::make_shared<basic_csr_t>(proc, 0xFD0, 0)); // KSCM3
    add_csr(0xFD4, std::make_shared<basic_csr_t>(proc, 0xFD4, 0)); // KSCM4
@@ -37,9 +37,9 @@ index 5dcbb641..60a71477 100644
 +  add_csr(0x7C7, std::make_shared<basic_csr_t>(proc, 0x7C7, 0)); // MCONTEXT7
 +  add_csr(0x7E0, std::make_shared<basic_csr_t>(proc, 0x7E0, 0)); // MPC
 +  add_csr(0x7E1, std::make_shared<basic_csr_t>(proc, 0x7E1, 0)); // MSP
- 
-   const reg_t senvcfg_mask = (proc->extension_enabled(EXT_ZICBOM) ? SENVCFG_CBCFE | SENVCFG_CBIE : 0) |
+   const reg_t senvcfg_mask = (fiom_writable ? SENVCFG_FIOM : 0) |
+                             (proc->extension_enabled(EXT_ZICBOM) ? SENVCFG_CBCFE | SENVCFG_CBIE : 0) |
                              (proc->extension_enabled(EXT_ZICBOZ) ? SENVCFG_CBZE : 0) |
 -- 
-2.43.7
+2.56.0.rc1.315.gc6ed9934b7-goog
 

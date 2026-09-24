@@ -25,9 +25,11 @@ configure_make(
     args = ["-j{}".format(MAKE_JOBS)],
     configure_options = [
         "--enable-commitlog",
-        "--with-isa=rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zfbfmin_zvfbfa",
-        "CXX=clang++",
+        "--with-isa=rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zicclsm_zfbfmin_zvfbfa",
     ],
+    env = {
+        "CXXFLAGS": "-std=c++20",
+    },
     lib_source = ":all_srcs",
     out_binaries = ["spike"],
     out_static_libs = [

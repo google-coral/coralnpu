@@ -169,7 +169,6 @@ struct SpikeSimulator::Impl {
     priv_str             = options.priv;
     cfg.isa              = isa_str.c_str();
     cfg.priv             = priv_str.c_str();
-    cfg.misaligned       = options.misaligned;
     cfg.hartids          = {0};
     cfg.explicit_hartids = true;
     cfg.pmpregions       = 16;
@@ -201,7 +200,8 @@ struct SpikeSimulator::Impl {
     debug_module_config_t dm_config;
 
     sim = std::make_unique<sim_t>(&cfg,
-                                  /*halted=*/false, mems, plugin_devices, htif_args, dm_config,
+                                  /*halted=*/false, mems, plugin_devices,
+                                  /*dtb_discovery=*/false, htif_args, dm_config,
                                   /*log_path=*/nullptr,
                                   /*dtb_enabled=*/false,
                                   /*dtb_file=*/nullptr,

@@ -1,14 +1,14 @@
-From 3222b85fcbe05e497de49a81ff792eedd6df821e Mon Sep 17 00:00:00 2001
+From 14b22f98adbd2126feaa9d1db157e9693c4098fd Mon Sep 17 00:00:00 2001
 From: Alex Van Damme <atv@google.com>
-Date: Fri, 16 Jan 2026 02:31:24 +0000
-Subject: [PATCH 3/4] Dump GPRs on EBREAK
+Date: Thu, 24 Sep 2026 19:38:24 +0000
+Subject: [PATCH 3/8] Dump GPRs on EBREAK
 
 ---
  riscv/insns/ebreak.h | 4 ++++
  1 file changed, 4 insertions(+)
 
 diff --git a/riscv/insns/ebreak.h b/riscv/insns/ebreak.h
-index b12e8015..12b096e0 100644
+index b12e801..12b096e 100644
 --- a/riscv/insns/ebreak.h
 +++ b/riscv/insns/ebreak.h
 @@ -7,5 +7,9 @@ if (!STATE.debug_mode && (
@@ -22,5 +22,5 @@ index b12e8015..12b096e0 100644
  	exit(0);
  }
 -- 
-2.43.7
+2.56.0.rc1.315.gc6ed9934b7-goog
 

@@ -220,7 +220,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "z3By4z/XbiiH68KWFICuNyrjwgdFfUbjaKcP350P/G0=",
+        "bzlTransitiveDigest": "URDgWuC9cEPMErFgNCm9gVFmZ/JT8/UE+RttKvhpKG0=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -751,21 +751,23 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "build_file": "@@//third_party:spike.BUILD",
-              "sha256": "850f3c736f98536e306b7cf070b07996fb557014e2150353ec0118efac14674d",
-              "strip_prefix": "riscv-isa-sim-fd72ee2d3e0d1703451c446d467387ff0576e492",
+              "sha256": "064f4c1f22005899fa5106b822bfdc7034ffc9babc2f5821771589047f028a66",
+              "strip_prefix": "riscv-isa-sim-93a10ae685ac85bd3d8a62054f8f180a4f76fc82",
               "patches": [
                 "@@//third_party/spike:0001-Add-mpause.patch",
                 "@@//third_party/spike:0002-Coral-Deviations.patch",
                 "@@//third_party/spike:0003-Dump-GPRs-on-EBREAK.patch",
                 "@@//third_party/spike:0004-Add-custom-CoralNPU-CSRs-and-update-MVENDORID-MARCHI.patch",
                 "@@//third_party/spike:0005-Force-logging-in-vcompress.patch",
-                "@@//third_party/spike:0006-Hardwire-misa-as-read-only-WARL.patch"
+                "@@//third_party/spike:0006-Hardwire-misa-as-read-only-WARL.patch",
+                "@@//third_party/spike:0007-Rename-yield-macro-avoid-boost-std-conflict.patch",
+                "@@//third_party/spike:0008-Link-libstdc-explicitly-in-LIBS.patch"
               ],
               "patch_args": [
                 "-p1"
               ],
               "urls": [
-                "https://github.com/riscv-software-src/riscv-isa-sim/archive/fd72ee2d3e0d1703451c446d467387ff0576e492.tar.gz"
+                "https://github.com/riscv-software-src/riscv-isa-sim/archive/93a10ae685ac85bd3d8a62054f8f180a4f76fc82.tar.gz"
               ]
             }
           },

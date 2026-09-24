@@ -31,7 +31,7 @@ struct SpikeMemoryRegion {
 
 struct SpikeSimulatorOptions {
   std::string isa =
-      "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zfbfmin_zvfbfmin_zvfbfwma_zvfbfa_xdummy";
+      "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zicclsm_zfbfmin_zvfbfmin_zvfbfwma_zvfbfa_xdummy";
   std::string priv = "m";
   bool misaligned  = true;
   std::vector<SpikeMemoryRegion> memory_regions;

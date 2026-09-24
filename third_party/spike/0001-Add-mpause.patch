@@ -1,56 +1,22 @@
-From d2cccada593e5405f7bca831aca36cbaa960520a Mon Sep 17 00:00:00 2001
+From 41bd7ad16adcd17c742e9b1d00a371d9311c47c4 Mon Sep 17 00:00:00 2001
 From: Alex Van Damme <atv@google.com>
-Date: Fri, 16 Jan 2026 02:29:56 +0000
-Subject: [PATCH 1/4] Add mpause
+Date: Thu, 24 Sep 2026 19:38:11 +0000
+Subject: [PATCH 1/8] Add mpause
 
 ---
- riscv/debug_rom_defines.h | 16 ++++++++--------
- riscv/decode.h            |  3 +++
- riscv/encoding.h          |  4 ++++
- riscv/insns/mpause.h      |  7 +++++++
- riscv/platform.h          |  6 +++---
- riscv/riscv.mk.in         |  1 +
- 6 files changed, 26 insertions(+), 11 deletions(-)
+ riscv/decode.h       | 3 +++
+ riscv/encoding.h     | 3 +++
+ riscv/insns/mpause.h | 7 +++++++
+ riscv/platform.h     | 6 +++---
+ riscv/riscv.mk.in    | 1 +
+ 5 files changed, 17 insertions(+), 3 deletions(-)
  create mode 100644 riscv/insns/mpause.h
 
-diff --git a/riscv/debug_rom_defines.h b/riscv/debug_rom_defines.h
-index 616cf590..d00c2d99 100644
---- a/riscv/debug_rom_defines.h
-+++ b/riscv/debug_rom_defines.h
-@@ -4,20 +4,20 @@
- #define DEBUG_ROM_DEFINES_H
- 
- // These are implementation-specific addresses in the Debug Module
--#define DEBUG_ROM_HALTED    0x100
--#define DEBUG_ROM_GOING     0x104
--#define DEBUG_ROM_RESUMING  0x108
--#define DEBUG_ROM_EXCEPTION 0x10C
-+#define DEBUG_ROM_HALTED    0x40000100
-+#define DEBUG_ROM_GOING     0x40000104
-+#define DEBUG_ROM_RESUMING  0x40000108
-+#define DEBUG_ROM_EXCEPTION 0x4000010C
- 
- // Region of memory where each hart has 1
- // byte to read.
--#define DEBUG_ROM_FLAGS 0x400
-+#define DEBUG_ROM_WHERETO 0x40000300
-+#define DEBUG_ROM_FLAGS 0x40000400
- #define DEBUG_ROM_FLAG_GO     0
- #define DEBUG_ROM_FLAG_RESUME 1
- 
- // These needs to match the link.ld         
--#define DEBUG_ROM_WHERETO 0x300
--#define DEBUG_ROM_ENTRY   0x800
--#define DEBUG_ROM_TVEC    0x808
-+#define DEBUG_ROM_ENTRY   0x40000800
-+#define DEBUG_ROM_TVEC    0x40000808
- 
- #endif
 diff --git a/riscv/decode.h b/riscv/decode.h
-index 0c13528c..98698e8b 100644
+index 46cae4e..ed50499 100644
 --- a/riscv/decode.h
 +++ b/riscv/decode.h
-@@ -35,6 +35,9 @@ const int NCSR = 4096;
+@@ -36,6 +36,9 @@ const int NCSR = 4096;
  #define VCSR_VXRM_SHIFT 1
  #define VCSR_VXRM  (0x3 << VCSR_VXRM_SHIFT)
  
@@ -61,31 +27,29 @@ index 0c13528c..98698e8b 100644
  #define VCSR_VXSAT  (0x1 << VCSR_VXSAT_SHIFT)
  
 diff --git a/riscv/encoding.h b/riscv/encoding.h
-index 776a2aed..913592bb 100644
+index 433bfe7..b350e7c 100644
 --- a/riscv/encoding.h
 +++ b/riscv/encoding.h
-@@ -2503,7 +2503,10 @@
- #define MASK_VZEXT_VF4 0xfc0ff07f
- #define MATCH_VZEXT_VF8 0x48012057
- #define MASK_VZEXT_VF8 0xfc0ff07f
+@@ -3825,6 +3825,8 @@
+ #define MASK_WADDAU 0xfe0070ff
+ #define MATCH_WADDU 0x1200209b
+ #define MASK_WADDU 0xfe0070ff
 +#define MATCH_MPAUSE 0x8000073
 +#define MASK_MPAUSE 0xffffffff
  #define MATCH_WFI 0x10500073
-+
  #define MASK_WFI 0xffffffff
- #define MATCH_WRS_NTO 0xd00073
- #define MASK_WRS_NTO 0xffffffff
-@@ -4085,6 +4088,7 @@ DECLARE_INSN(vxor_vx, MATCH_VXOR_VX, MASK_VXOR_VX)
- DECLARE_INSN(vzext_vf2, MATCH_VZEXT_VF2, MASK_VZEXT_VF2)
- DECLARE_INSN(vzext_vf4, MATCH_VZEXT_VF4, MASK_VZEXT_VF4)
- DECLARE_INSN(vzext_vf8, MATCH_VZEXT_VF8, MASK_VZEXT_VF8)
+ #define MATCH_WMACC 0x2a00209b
+@@ -6112,6 +6114,7 @@ DECLARE_INSN(wadd, MATCH_WADD, MASK_WADD)
+ DECLARE_INSN(wadda, MATCH_WADDA, MASK_WADDA)
+ DECLARE_INSN(waddau, MATCH_WADDAU, MASK_WADDAU)
+ DECLARE_INSN(waddu, MATCH_WADDU, MASK_WADDU)
 +DECLARE_INSN(mpause, MATCH_MPAUSE, MASK_MPAUSE)
  DECLARE_INSN(wfi, MATCH_WFI, MASK_WFI)
- DECLARE_INSN(wrs_nto, MATCH_WRS_NTO, MASK_WRS_NTO)
- DECLARE_INSN(wrs_sto, MATCH_WRS_STO, MASK_WRS_STO)
+ DECLARE_INSN(wmacc, MATCH_WMACC, MASK_WMACC)
+ DECLARE_INSN(wmaccsu, MATCH_WMACCSU, MASK_WMACCSU)
 diff --git a/riscv/insns/mpause.h b/riscv/insns/mpause.h
 new file mode 100644
-index 00000000..3b6a8b9e
+index 0000000..3b6a8b9
 --- /dev/null
 +++ b/riscv/insns/mpause.h
 @@ -0,0 +1,7 @@
@@ -97,7 +61,7 @@ index 00000000..3b6a8b9e
 +}
 +exit(0);
 diff --git a/riscv/platform.h b/riscv/platform.h
-index 5b794da2..bf753276 100644
+index 4d14c1c..96d2738 100644
 --- a/riscv/platform.h
 +++ b/riscv/platform.h
 @@ -3,7 +3,7 @@
@@ -109,7 +73,7 @@ index 5b794da2..bf753276 100644
  #define DEFAULT_ISA        "rv64imafdc_zicntr_zihpm"
  #define DEFAULT_PRIV       "MSU"
  #define CLINT_BASE         0x02000000
-@@ -18,8 +18,8 @@
+@@ -27,8 +27,8 @@
  #define NS16550_REG_IO_WIDTH 1
  #define NS16550_INTERRUPT_ID 1
  #define EXT_IO_BASE        0x40000000
@@ -121,10 +85,10 @@ index 5b794da2..bf753276 100644
  
  #endif
 diff --git a/riscv/riscv.mk.in b/riscv/riscv.mk.in
-index 8df8739f..e1f6fb54 100644
+index df29533..b6c95b6 100644
 --- a/riscv/riscv.mk.in
 +++ b/riscv/riscv.mk.in
-@@ -137,6 +137,7 @@ riscv_insn_ext_i = \
+@@ -142,6 +142,7 @@ riscv_insn_ext_i = \
  	xori \
  	fence \
  	fence_i \
@@ -133,5 +97,5 @@ index 8df8739f..e1f6fb54 100644
  riscv_insn_ext_a = \
  	amoadd_d \
 -- 
-2.43.7
+2.56.0.rc1.315.gc6ed9934b7-goog
 

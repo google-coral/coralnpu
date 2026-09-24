@@ -1,18 +1,18 @@
-From 37c993499a2f6b87dadaf9032c87857f0fd68a7e Mon Sep 17 00:00:00 2001
+From 6d10cc0d6d8514414a4a83e65f3233e8e6c958e0 Mon Sep 17 00:00:00 2001
 From: Alex Van Damme <atv@google.com>
-Date: Fri, 16 Jan 2026 02:31:10 +0000
-Subject: [PATCH 2/4] Coral Deviations
+Date: Thu, 24 Sep 2026 19:38:18 +0000
+Subject: [PATCH 2/8] Coral Deviations
 
 ---
- riscv/csr_init.cc    | 9 +++++++++
+ riscv/csr_init.cc    | 8 ++++++++
  riscv/insns/ebreak.h | 3 ++-
- 2 files changed, 11 insertions(+), 1 deletion(-)
+ 2 files changed, 10 insertions(+), 1 deletion(-)
 
 diff --git a/riscv/csr_init.cc b/riscv/csr_init.cc
-index 4a05a9c7..5dcbb641 100644
+index 58658ad..ba10d89 100644
 --- a/riscv/csr_init.cc
 +++ b/riscv/csr_init.cc
-@@ -329,6 +329,15 @@ void state_t::csr_init(processor_t* const proc, reg_t max_isa)
+@@ -357,6 +357,14 @@ void state_t::csr_init(processor_t* const proc, reg_t max_isa)
    add_csr(CSR_MVENDORID, std::make_shared<const_csr_t>(proc, CSR_MVENDORID, 0));
    add_csr(CSR_MHARTID, std::make_shared<const_csr_t>(proc, CSR_MHARTID, proc->get_id()));
    add_csr(CSR_MCONFIGPTR, std::make_shared<const_csr_t>(proc, CSR_MCONFIGPTR, 0));
@@ -24,12 +24,11 @@ index 4a05a9c7..5dcbb641 100644
 +  add_csr(0xFCC, std::make_shared<basic_csr_t>(proc, 0xFCC, 0)); // KSCM2
 +  add_csr(0xFD0, std::make_shared<basic_csr_t>(proc, 0xFD0, 0)); // KSCM3
 +  add_csr(0xFD4, std::make_shared<basic_csr_t>(proc, 0xFD4, 0)); // KSCM4
-+
-   const reg_t senvcfg_mask = (proc->extension_enabled(EXT_ZICBOM) ? SENVCFG_CBCFE | SENVCFG_CBIE : 0) |
+   const reg_t senvcfg_mask = (fiom_writable ? SENVCFG_FIOM : 0) |
+                             (proc->extension_enabled(EXT_ZICBOM) ? SENVCFG_CBCFE | SENVCFG_CBIE : 0) |
                              (proc->extension_enabled(EXT_ZICBOZ) ? SENVCFG_CBZE : 0) |
-                             (proc->extension_enabled(EXT_SVUKTE) ? SENVCFG_UKTE : 0) |
 diff --git a/riscv/insns/ebreak.h b/riscv/insns/ebreak.h
-index 0cd2f190..b12e8015 100644
+index 0cd2f19..b12e801 100644
 --- a/riscv/insns/ebreak.h
 +++ b/riscv/insns/ebreak.h
 @@ -6,5 +6,6 @@ if (!STATE.debug_mode && (
@@ -41,5 +40,5 @@ index 0cd2f190..b12e8015 100644
 +	exit(0);
  }
 -- 
-2.43.7
+2.56.0.rc1.315.gc6ed9934b7-goog
 

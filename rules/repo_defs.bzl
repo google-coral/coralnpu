@@ -508,8 +508,8 @@ filegroup(
         http_archive,
         name = "riscv_isa_sim",
         build_file = "@coralnpu_hw//third_party:spike.BUILD",
-        sha256 = "850f3c736f98536e306b7cf070b07996fb557014e2150353ec0118efac14674d",
-        strip_prefix = "riscv-isa-sim-fd72ee2d3e0d1703451c446d467387ff0576e492",
+        sha256 = "064f4c1f22005899fa5106b822bfdc7034ffc9babc2f5821771589047f028a66",
+        strip_prefix = "riscv-isa-sim-93a10ae685ac85bd3d8a62054f8f180a4f76fc82",
         patches = [
             "@coralnpu_hw//third_party/spike:0001-Add-mpause.patch",
             "@coralnpu_hw//third_party/spike:0002-Coral-Deviations.patch",
@@ -517,9 +517,11 @@ filegroup(
             "@coralnpu_hw//third_party/spike:0004-Add-custom-CoralNPU-CSRs-and-update-MVENDORID-MARCHI.patch",
             "@coralnpu_hw//third_party/spike:0005-Force-logging-in-vcompress.patch",
             "@coralnpu_hw//third_party/spike:0006-Hardwire-misa-as-read-only-WARL.patch",
+            "@coralnpu_hw//third_party/spike:0007-Rename-yield-macro-avoid-boost-std-conflict.patch",
+            "@coralnpu_hw//third_party/spike:0008-Link-libstdc-explicitly-in-LIBS.patch",
         ],
         patch_args = ["-p1"],
         urls = [
-            "https://github.com/riscv-software-src/riscv-isa-sim/archive/fd72ee2d3e0d1703451c446d467387ff0576e492.tar.gz",
+            "https://github.com/riscv-software-src/riscv-isa-sim/archive/93a10ae685ac85bd3d8a62054f8f180a4f76fc82.tar.gz",
         ],
     )

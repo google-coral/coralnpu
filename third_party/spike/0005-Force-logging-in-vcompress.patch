@@ -1,14 +1,14 @@
-From a4c9f635db7fb32e1775f1ab33c69e9e29fd5c22 Mon Sep 17 00:00:00 2001
+From 627ef1127e125cd901b3ca02c00d0224f26d4773 Mon Sep 17 00:00:00 2001
 From: Alex Van Damme <atv@google.com>
-Date: Tue, 27 Jan 2026 21:33:07 +0000
-Subject: [PATCH 5/5] Force logging in vcompress
+Date: Thu, 24 Sep 2026 19:38:35 +0000
+Subject: [PATCH 5/8] Force logging in vcompress
 
 ---
  riscv/insns/vcompress_vm.h | 8 ++++++++
  1 file changed, 8 insertions(+)
 
 diff --git a/riscv/insns/vcompress_vm.h b/riscv/insns/vcompress_vm.h
-index 6624d8b4..c04a0c5e 100644
+index 8754eb0..653ffbc 100644
 --- a/riscv/insns/vcompress_vm.h
 +++ b/riscv/insns/vcompress_vm.h
 @@ -6,6 +6,14 @@ require_align(insn.rs2(), P.VU.vflmul);
@@ -27,5 +27,5 @@ index 6624d8b4..c04a0c5e 100644
  
  VI_GENERAL_LOOP_BASE
 -- 
-2.43.7
+2.56.0.rc1.315.gc6ed9934b7-goog
 

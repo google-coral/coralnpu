@@ -1,17 +1,17 @@
-From 8626c45cdd312c68776520dee14efdefb76d3cbe Mon Sep 17 00:00:00 2001
+From af1211696b8255c3cede0c13cf3342fbad27ec5d Mon Sep 17 00:00:00 2001
 From: Alex Van Damme <atv@google.com>
-Date: Tue, 1 Sep 2026 22:21:08 +0000
-Subject: [PATCH] Hardwire MISA as read-only WARL
+Date: Thu, 24 Sep 2026 19:38:35 +0000
+Subject: [PATCH 6/8] Hardwire misa as read only WARL
 
 ---
  riscv/csrs.cc | 13 +------------
  1 file changed, 1 insertion(+), 12 deletions(-)
 
 diff --git a/riscv/csrs.cc b/riscv/csrs.cc
-index 06e89d4d..71d56b74 100644
+index 6858467..89cb6e4 100644
 --- a/riscv/csrs.cc
 +++ b/riscv/csrs.cc
-@@ -703,18 +703,7 @@ bool sstatus_csr_t::enabled(const reg_t which) {
+@@ -866,18 +866,7 @@ bool sstatus_csr_t::enabled(const reg_t which) {
  misa_csr_t::misa_csr_t(processor_t* const proc, const reg_t addr, const reg_t max_isa):
    basic_csr_t(proc, addr, max_isa),
    max_isa(max_isa),
@@ -32,6 +32,5 @@ index 06e89d4d..71d56b74 100644
  
  reg_t misa_csr_t::dependency(const reg_t val, const char feature, const char depends_on) const noexcept {
 -- 
-2.55.0.966.g6673acef38-goog
-
+2.56.0.rc1.315.gc6ed9934b7-goog
 
