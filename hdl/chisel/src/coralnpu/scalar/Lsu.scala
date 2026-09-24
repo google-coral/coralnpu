@@ -770,15 +770,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val rowAddr   = UInt(p.dbusRowAddrBits.W)
     val isDone    = Bool()
 
-    def leadWindow: Vec[LsuCell] = VectorWindow.mux4(
-      cells,
-      filler = LsuCell(p),
-      index = leadIndex,
-      windowSize = windowSizeNormal + 1
-    )
-
     // returns: (tx, started, moveLeadOH)
-    def maybeStart(): (ValidIO[BusReq], UInt, UInt) = {
+    def maybeStart(leadWindow: Vec[LsuCell]): (ValidIO[BusReq], UInt, UInt) = {
       def canBundleFn(w: Vec[LsuCell]): UInt = {
         VecInit(w.map { x =>
           x.state === LsuCellState.W_START &&
@@ -1049,6 +1042,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
       respData: Vec[UInt],
       respMask: UInt,
       writebacks: UInt,
+      leadWindow: Vec[LsuCell],
       vectorData: Option[ValidIO[Rvv2Lsu]],
       vmeData: Option[ValidIO[Vme2Lsu]]
     ): State = {
@@ -1780,7 +1774,14 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val state    = RegInit(State())
   val newFault = io.busResp.valid && io.busResp.bits.fault
 
-  val (tx, starts, moveLeadOH) = state.maybeStart()
+  val leadWindow = VectorWindow.mux4(
+    state.cells,
+    filler = LsuCell(p),
+    index = state.leadIndex,
+    windowSize = windowSizeNormal + 1
+  )
+
+  val (tx, starts, moveLeadOH) = state.maybeStart(leadWindow)
   val acceptNewTx              = RegNext(io.busReq.ready || !io.busReq.valid, true.B)
   val txPending                = RegInit(MakeInvalid(new BusReq))
   val txOutgoing               = Mux(txPending.valid, txPending, tx)
@@ -1868,6 +1869,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
       writebacks,
       0.U
     ),
+    leadWindow = leadWindow,
     vectorData = io.vectorData.map { x =>
       MakeValid(x.valid, x.bits)
     },
