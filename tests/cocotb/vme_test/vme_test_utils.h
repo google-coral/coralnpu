@@ -132,4 +132,16 @@ static constexpr uint32_t kZvtVtmvVTWord = ZvtWord(0x10, 31, 10, 6, 4, kZvtOpcod
 // vtmv.t.v a0, v4: funct6=010111, vs2=v4, rs1=a0(x10), funct3=110, rd=x0.
 static constexpr uint32_t kZvtVtmvTVWord = ZvtWord(0x17, 4, 10, 6, 0, kZvtOpcodeOpV);
 
+// Tile discard (vtdiscard): opcode OP-V (0x57), funct6=010000, vs2=11100, rs1=x0, funct3=110,
+// rd=x0.
+static constexpr uint32_t kZvtVtdiscardWord = ZvtWord(0x10, 28, 0, 6, 0, kZvtOpcodeOpV);
+
+// mstatus MS field values (bits [30:29])
+static constexpr uint32_t kMstatusMsOff     = 0u << 29;
+static constexpr uint32_t kMstatusMsInitial = 1u << 29;
+static constexpr uint32_t kMstatusMsClean   = 2u << 29;
+static constexpr uint32_t kMstatusMsDirty   = 3u << 29;
+static constexpr uint32_t kMstatusMsMask    = 3u << 29;
+static constexpr uint32_t kMstatusSdMask    = 1u << 31;
+
 #endif  // TESTS_COCOTB_VME_TEST_VME_TEST_UTILS_H_

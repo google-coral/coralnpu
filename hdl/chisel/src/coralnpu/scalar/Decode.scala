@@ -242,9 +242,33 @@ class DecodedInstruction(p: Parameters) extends Bundle {
     rvv.map(_.valid).getOrElse(false.B)
   }
 
+  def readsTile(): Bool = {
+    if (p.enableVme) {
+      rvv.map(r => r.valid && r.bits.readsTile()).getOrElse(false.B)
+    } else {
+      false.B
+    }
+  }
+
   def writesTile(): Bool = {
     if (p.enableVme) {
       rvv.map(r => r.valid && r.bits.writesTile()).getOrElse(false.B)
+    } else {
+      false.B
+    }
+  }
+
+  def accessesTile(): Bool = {
+    if (p.enableVme) {
+      rvv.map(r => r.valid && r.bits.accessesTile()).getOrElse(false.B)
+    } else {
+      false.B
+    }
+  }
+
+  def isVtdiscard(): Bool = {
+    if (p.enableVme) {
+      rvv.map(r => r.valid && r.bits.isVtdiscard()).getOrElse(false.B)
     } else {
       false.B
     }
@@ -340,6 +364,9 @@ class Dispatch(p: Parameters) extends Module {
     val rvvState         = Option.when(p.enableRvv)(Input(Valid(new RvvConfigState(p))))
     val rvvIdle          = Option.when(p.enableRvv)(Input(Bool()))
     val rvvQueueCapacity = Option.when(p.enableRvv)(Input(UInt(4.W)))
+    val mstatusMs        = Option.when(p.enableVme)(Input(UInt(2.W)))
+    val vmeDiscard       = Option.when(p.enableVme)(Output(Bool()))
+    val vmeDirty         = Option.when(p.enableVme)(Output(Bool()))
 
     // Float interface
     val float  = Option.when(p.enableFloat)(Decoupled(new FloatInstruction(p)))
@@ -530,6 +557,30 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   }
 
   // ---------------------------------------------------------------------------
+  // VME mstatus.MS / vtdiscard interlocks
+  // When mstatus.MS == Off (0), tile instructions and vtdiscard must fault as illegal instruction.
+  // When vill == 1, vtdiscard must fault as illegal instruction.
+  val vmeMsOffInterlock = if (p.enableVme) {
+    (0 until p.instructionLanes).map(i => {
+      val isTileOrDiscard = decodedInsts(i).accessesTile()
+      val msOff           = io.mstatusMs.get === 0.U
+      !(isTileOrDiscard && msOff)
+    })
+  } else {
+    Seq.fill(p.instructionLanes)(true.B)
+  }
+
+  val vmeDiscardVillInterlock = if (p.enableVme) {
+    (0 until p.instructionLanes).map(i => {
+      val isDiscard = decodedInsts(i).isVtdiscard()
+      val vill = configInvalid(i) || io.rvvState.map(s => s.valid && s.bits.vill).getOrElse(false.B)
+      !(isDiscard && vill)
+    })
+  } else {
+    Seq.fill(p.instructionLanes)(true.B)
+  }
+
+  // ---------------------------------------------------------------------------
   // Rvv Interlock
   val rvvInterlock = if (p.enableRvv) {
     val isRvv      = decodedInsts.map(x => x.rvv.get.valid)
@@ -595,6 +646,8 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       rvvConfigInterlock(i) &&    // Rvv interlock rules
       rvvVstartInterlock(i) &&    // Don't dispatch illegal vstart != 0
       rvvVillInterlock(i) &&      // Don't dispatch illegal vill != 0 on non-WR load/store
+      vmeMsOffInterlock(i) && // Don't dispatch tile instructions or vtdiscard if mstatus.MS == Off
+      vmeDiscardVillInterlock(i) && // Don't dispatch vtdiscard if vill == 1
       // rvvLsuInterlock(i) &&  // Dispatch only one Rvv LsuOp
       lsuInterlock(i) &&                     // Ensure lsu instructions can be dispatched into queue
       rvvInterlock(i) &&                     // Ensure rvv instructions can be dispatched into queue
@@ -953,12 +1006,23 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
                                val villIsSet   = io.rvvState.get.valid && io.rvvState.get.bits.vill
                                val invalidVill = isNonWrLdSt && villIsSet
 
-                               io.inst(0).valid && (invalidVstart || invalidVill) &&
+                               // Return fault if mstatus.MS == Off (0) for tile instructions or vtdiscard.
+                               val isTileOrDiscard = decodedInsts(0).accessesTile()
+                               val invalidMs       = if (p.enableVme) {
+                                 isTileOrDiscard && (io.mstatusMs.get === 0.U)
+                               } else { false.B }
+
+                               // Return fault if vill is set for vtdiscard.
+                               val invalidVillVtdiscard = decodedInsts(0).isVtdiscard() && villIsSet
+
+                               io.inst(0)
+                                 .valid && (invalidVstart || invalidVill || invalidMs || invalidVillVtdiscard) &&
                                (0.U < io.retirement_buffer_nSpace) &&
                                !io.retirement_buffer_trap_pending
                              } else {
                                false.B
                              })
+
     }
   }
 
@@ -1038,6 +1102,15 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       0.U,
       Cat(d.imm12(p.xlen - 1, 5), Mux(storeSelect, d.immst(4, 0), d.imm12(4, 0)))
     )
+  }
+
+  if (p.enableVme) {
+    io.vmeDiscard.get := (0 until p.instructionLanes)
+      .map(i => io.inst(i).fire && decodedInsts(i).isVtdiscard())
+      .reduce(_ || _)
+    io.vmeDirty.get := (0 until p.instructionLanes)
+      .map(i => io.inst(i).fire && decodedInsts(i).writesTile())
+      .reduce(_ || _)
   }
 }
 

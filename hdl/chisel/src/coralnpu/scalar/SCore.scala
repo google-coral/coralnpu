@@ -99,7 +99,11 @@ class SCore(p: Parameters) extends Module {
       rob_io.writeDataTile.get := io.rvvcore.get.vmeRt.get
       rob_io.mtype.get         := io.rvvcore.get.nextConfigMtype
         .getOrElse(io.rvvcore.get.configState.bits.mtype.get)
+      dispatch.io.mstatusMs.get := csr.io.mstatus_ms.get
+      csr.io.vme_discard.get    := dispatch.io.vmeDiscard.get
+      csr.io.vme_dirty.get      := dispatch.io.vmeDirty.get
     }
+
   }
   rob_io.fault         := fault_manager.io.out
   rob_io.storeComplete := lsu.io.storeComplete

@@ -231,6 +231,9 @@ class Csr(p: Parameters) extends Module {
     val rvv         = Option.when(p.enableRvv) { new CsrRvvIO(p) }
     val float_dirty = Option.when(p.enableFloat)(Input(Bool()))
     val rvv_dirty   = Option.when(p.enableRvv)(Input(Bool()))
+    val vme_discard = Option.when(p.enableVme)(Input(Bool()))
+    val vme_dirty   = Option.when(p.enableVme)(Input(Bool()))
+    val mstatus_ms  = Option.when(p.enableVme)(Output(UInt(2.W)))
 
     val counters = Input(new CsrCounters(p))
 
@@ -347,10 +350,15 @@ class Csr(p: Parameters) extends Module {
 
   val fs = Option.when(p.enableFloat)(RegInit(1.U(2.W)))
   val vs = Option.when(p.enableRvv)(RegInit(1.U(2.W)))
+  val ms = Option.when(p.enableVme)(RegInit(1.U(2.W)))
 
-  val fs_val     = fs.getOrElse(0.U(2.W))
-  val vs_val     = vs.getOrElse(0.U(2.W))
-  val mstatus_sd = (fs_val === 3.U) || (vs_val === 3.U)
+  val fs_val = fs.getOrElse(0.U(2.W))
+  val vs_val = vs.getOrElse(0.U(2.W))
+  val ms_val = ms.getOrElse(0.U(2.W))
+  if (p.enableVme) {
+    io.mstatus_ms.get := ms_val
+  }
+  val mstatus_sd = (fs_val === 3.U) || (vs_val === 3.U) || (ms_val === 3.U)
 
   // Decode the Index.
   val (csr_address, csr_address_valid) = CsrAddress.safe(req.bits.index)
@@ -460,10 +468,12 @@ class Csr(p: Parameters) extends Module {
     mpie: Bool,
     fs_val: UInt,
     vs_val: UInt,
+    ms_val: UInt,
     sd_val: Bool
   ): UInt = Cat(
     sd_val,
-    0.U((p.xlen - 16).W),
+    ms_val,
+    0.U((p.xlen - 18).W),
     fs_val,
     3.U(2.W),
     vs_val,
@@ -473,6 +483,7 @@ class Csr(p: Parameters) extends Module {
     mie,
     0.U(3.W)
   )
+
   private def fflagsWord(f: UInt): UInt = Cat(0.U((p.xlen - 5).W), f(4, 0))
   private def frmWord(m: UInt): UInt    = Cat(0.U((p.xlen - 3).W), m(2, 0))
   private def fcsrWord(c: UInt): UInt   = Cat(0.U((p.xlen - 8).W), c(7, 0))
@@ -499,7 +510,7 @@ class Csr(p: Parameters) extends Module {
       fflagsEn    -> fflagsWord(fflags),
       frmEn       -> frmWord(frm),
       fcsrEn      -> fcsrWord(fcsr),
-      mstatusEn   -> mstatusWord(mstatus_mie, mstatus_mpie, fs_val, vs_val, mstatus_sd),
+      mstatusEn   -> mstatusWord(mstatus_mie, mstatus_mpie, fs_val, vs_val, ms_val, mstatus_sd),
       misaEn      -> misa,
       mieEn       -> mie,
       mipEn       -> mip,
@@ -605,6 +616,15 @@ class Csr(p: Parameters) extends Module {
     val mstatus_write_vs = is_csr_write && mstatusEn
     val w_vs             = legalizeFsVs(wdata(10, 9))
     vs.get := Mux(mstatus_write_vs, w_vs, vs.get) | Fill(2, rvv_dirty_event.get)
+  }
+
+  if (p.enableVme) {
+    val mstatus_write_ms = is_csr_write && mstatusEn
+    val w_ms             = wdata(30, 29)
+    val ms_post_write    = Mux(mstatus_write_ms, w_ms, ms.get)
+    val ms_post_discard  = Mux(io.vme_discard.get, 1.U(2.W), ms_post_write)
+    val ms_post_dirty    = ms_post_discard | Fill(2, io.vme_dirty.get)
+    ms.get := ms_post_dirty
   }
 
   val fflags_base = WireDefault(fflags)
@@ -848,12 +868,17 @@ class Csr(p: Parameters) extends Module {
     if (p.enableFloat) (legalizeFsVs(wdata(14, 13)) | Fill(2, float_dirty_event.get)) else 0.U(2.W)
   val next_vs =
     if (p.enableRvv) (legalizeFsVs(wdata(10, 9)) | Fill(2, rvv_dirty_event.get)) else 0.U(2.W)
-  val next_sd = (next_fs === 3.U) || (next_vs === 3.U)
+  val next_ms =
+    if (p.enableVme)
+      (Mux(io.vme_discard.get, 1.U(2.W), wdata(30, 29)) | Fill(2, io.vme_dirty.get))
+    else 0.U(2.W)
+  val next_sd = (next_fs === 3.U) || (next_vs === 3.U) || (next_ms === 3.U)
 
   val trace_data = MuxUpTo1H(
     wdata,
     Seq(
-      mstatusEn  -> mstatusWord(wdata(3), wdata(7), next_fs, next_vs, next_sd),
+      mstatusEn -> mstatusWord(wdata(3), wdata(7), next_fs, next_vs, next_ms, next_sd),
+
       mieEn      -> (wdata & "h888".U),
       mtvecEn    -> mtvec_w,
       mepcEn     -> mepcWord(localWdata(mepc)),

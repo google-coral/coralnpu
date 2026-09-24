@@ -243,22 +243,80 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     opcode === RvvCompressedOpcode.RVVALU && funct3() === "b001".U && funct6() === "b010000".U
   }
 
+  def isVtle(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      isVmeLdSt() && opcode === RvvCompressedOpcode.RVVLOAD
+    }
+  }
+
+  def isVtse(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      isVmeLdSt() && opcode === RvvCompressedOpcode.RVVSTORE
+    }
+  }
+
+  def isVtxmm(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      (opcode === RvvCompressedOpcode.RVVALU) && (funct6() === "b111100".U)
+    }
+  }
+
+  def isVtzero(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      (opcode === RvvCompressedOpcode.RVVALU) && (funct3() === "b110".U) &&
+      (funct6() === "b010000".U) && (bits(18) === 1.U) &&
+      (bits(17, 13) === "b11110".U) && (bits(12, 8) === 0.U)
+    }
+  }
+
+  def isVtmvVT(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      (opcode === RvvCompressedOpcode.RVVALU) && (funct3() === "b110".U) &&
+      (funct6() === "b010000".U) && (bits(18) === 1.U) &&
+      (bits(17, 13) === "b11111".U)
+    }
+  }
+
+  def isVtmvTV(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      (opcode === RvvCompressedOpcode.RVVALU) && (funct3() === "b110".U) &&
+      (funct6() === "b010111".U) && (bits(18) === 1.U) && (bits(4, 0) === 0.U)
+    }
+  }
+
+  def isVtdiscard(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      (opcode === RvvCompressedOpcode.RVVALU) &&
+      (funct6() === "b010000".U) && (bits(18) === 1.U) && (funct3() === "b110".U) &&
+      (bits(17, 13) === "b11100".U) && (bits(12, 8) === 0.U) && (bits(4, 0) === 0.U)
+    }
+  }
+
+  def readsTile(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      isVtse() || isVtmvVT() || isVtxmm()
+    }
+  }
+
   def writesTile(): Bool = {
     if (!p.enableVme) { false.B }
     else {
-      // VME tile loads write to tile memory:
-      (isVmeLdSt() && opcode === RvvCompressedOpcode.RVVLOAD) ||
-      // VME ALU instructions that write to tile memory rather than a vector register:
-      // - Matrix ops (VTXMMXTVV): funct6 === "b111100".U
-      // - vtzero: funct3 === "b110".U && funct6 === "b010000".U && bits(17, 13) === "b11110".U
-      // - vtmv.t.v: funct3 === "b110".U && funct6 === "b010111".U
-      ((opcode === RvvCompressedOpcode.RVVALU) && (
-        (funct6() === "b111100".U) ||
-          ((funct3() === "b110".U) && (
-            (funct6() === "b010111".U) ||
-              (funct6() === "b010000".U && bits(17, 13) === "b11110".U)
-          ))
-      ))
+      isVtle() || isVtxmm() || isVtzero() || isVtmvTV()
+    }
+  }
+
+  def accessesTile(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      readsTile() || writesTile() || isVtdiscard()
     }
   }
 
@@ -346,7 +404,7 @@ object RvvCompressedInstruction {
       val vm      = inst(25)
       val isFp    = funct3 === "b001".U
       val isInt   = funct3 === "b000".U
-      val fpValid = if (p.enableFloat) true.B else false.B
+      val fpValid = p.enableFloat.B
       (opcode === "b1110111".U) && (funct6 === "b111100".U) && vm && (isInt || (isFp && fpValid))
     } else {
       false.B

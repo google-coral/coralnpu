@@ -36,6 +36,7 @@ VME_TEST_TESTCASES = [
     "vme_vset_mtype_reset_test",
     "vme_mset_retire_test",
     "vme_mset_vtmmu_sequence_test",
+    "vme_mstatus_ms_test",
 ]
 
 cocotb_test_suite(
@@ -66,6 +67,7 @@ cocotb_test_suite(
             ":vme_transpose_test",
             ":vme_vset_mtype_reset_test_program",
             ":vme_mset_vtmmu_sequence_test",
+            ":vme_mstatus_ms_test",
         ],
         "size": "medium",
     },
@@ -79,6 +81,7 @@ cocotb_test_suite(
         ":vme_transpose_test",
         ":vme_vset_mtype_reset_test_program",
         ":vme_mset_vtmmu_sequence_test",
+        ":vme_mstatus_ms_test",
         "//tests/cocotb:coverage_exclude.cfg",
         "//hdl/verilog:dpi_files",
     ],
@@ -136,4 +139,9 @@ coralnpu_v2_binary(
     name = "vme_mset_vtmmu_sequence_test",
     srcs = ["vme_mset_vtmmu_sequence_test.cc"],
     hdrs = ["vme_test_utils.h"],
+)
+
+coralnpu_v2_binary(
+    name = "vme_mstatus_ms_test",
+    srcs = ["vme_mstatus_ms_test.cc"],
 )

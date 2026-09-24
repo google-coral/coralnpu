@@ -1207,3 +1207,115 @@ async def vme_mset_vtmmu_sequence_test(dut):
     await fixture.run_to_halt()
 
     assert not fixture.fault(), "Core faulted unexpectedly"
+
+
+@cocotb.test()
+async def vme_mstatus_ms_test(dut):
+    """Verify mstatus.MS state transitions, SD calculation, and MS==Off trap gating."""
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_mstatus_ms_test.elf"
+    )
+    fixture = await Fixture.Create(dut)
+
+    ms_off_trap_tests = [
+        "ms_off_vtle",
+        "ms_off_vtse",
+        "ms_off_vtzero",
+        "ms_off_vtmv_v_t",
+        "ms_off_vtmv_t_v",
+        "ms_off_vtmmu",
+        "ms_off_vtdiscard",
+        "vill1_vtdiscard",
+    ]
+
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        [
+            "test_fn", "trap_count", "last_mcause", "last_mtval",
+            "mstatus_val", "mstatus_ms_transitions", "ms_off_mset_allowed"
+        ] + ms_off_trap_tests,
+    )
+
+    # 1. Verify MS == Off illegal instruction trap behavior
+    for name in tqdm(ms_off_trap_tests, desc="mstatus.MS Off trap tests"):
+        await fixture.write_ptr("test_fn", name)
+        await fixture.run_to_halt()
+
+        trap_count_val = int.from_bytes(
+            (await fixture.read_word("trap_count")).tobytes(),
+            "little",
+        )
+        last_mcause_val = int.from_bytes(
+            (await fixture.read_word("last_mcause")).tobytes(),
+            "little",
+        )
+        assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
+        assert trap_count_val == 1, f"[{name}] Expected 1 trap, got {trap_count_val}"
+        assert last_mcause_val == 2, f"[{name}] Expected mcause=2 (illegal), got {last_mcause_val}"
+
+    # Also verify that non-tile instructions (mset*) do NOT trap when MS == Off
+    await fixture.write_ptr("test_fn", "ms_off_mset_allowed")
+    await fixture.run_to_halt()
+    trap_count_val = int.from_bytes(
+        (await fixture.read_word("trap_count")).tobytes(),
+        "little",
+    )
+    assert not fixture.fault(
+    ), "[ms_off_mset_allowed] Core faulted unexpectedly"
+    assert trap_count_val == 0, f"[ms_off_mset_allowed] Expected 0 traps, got {trap_count_val}"
+
+    # 2. Verify mstatus.MS state transitions
+    await fixture.write_ptr("test_fn", "mstatus_ms_transitions")
+    await fixture.run_to_halt()
+
+    trap_count_val = int.from_bytes(
+        (await fixture.read_word("trap_count")).tobytes(),
+        "little",
+    )
+    assert not fixture.fault(), "Core faulted unexpectedly"
+    assert trap_count_val == 0, f"Expected 0 traps, got {trap_count_val}"
+
+    # Read the 5 recorded mstatus values (5 * 4 = 20 bytes)
+    raw_bytes = (await fixture.read("mstatus_val", 20)).tobytes()
+    mstatus_words = [
+        int.from_bytes(raw_bytes[i * 4:(i + 1) * 4], "little")
+        for i in range(5)
+    ]
+
+    for idx, w in enumerate(mstatus_words):
+        cocotb.log.info(
+            f"mstatus_words[{idx}] = 0x{w:08x} (SD={w>>31}, MS={(w>>29)&3}, FS={(w>>13)&3}, VS={(w>>9)&3})"
+        )
+
+    # Step 0: Initial state: MS = 2'b01 (Initial), SD = 0
+    ms_step0 = (mstatus_words[0] >> 29) & 0x3
+    sd_step0 = (mstatus_words[0] >> 31) & 0x1
+    assert ms_step0 == 1, f"Step 0: Expected MS=1 (Initial), got {ms_step0}"
+    assert sd_step0 == 0, f"Step 0: Expected SD=0, got {sd_step0}"
+
+    # Step 1: After vtzero: MS = 2'b11 (Dirty), SD = 1
+    ms_step1 = (mstatus_words[1] >> 29) & 0x3
+    sd_step1 = (mstatus_words[1] >> 31) & 0x1
+    assert ms_step1 == 3, f"Step 1: Expected MS=3 (Dirty), got {ms_step1}"
+    assert sd_step1 == 1, f"Step 1: Expected SD=1, got {sd_step1}"
+
+    # Step 2: After write MS=Clean (2'b10): MS = 2'b10 (Clean), SD = 0
+    ms_step2 = (mstatus_words[2] >> 29) & 0x3
+    sd_step2 = (mstatus_words[2] >> 31) & 0x1
+    assert ms_step2 == 2, f"Step 2: Expected MS=2 (Clean), got {ms_step2}"
+    assert sd_step2 == 0, f"Step 2: Expected SD=0, got {sd_step2}"
+
+    # Step 3: After vtdiscard: MS = 2'b01 (Initial), SD = 0
+    ms_step3 = (mstatus_words[3] >> 29) & 0x3
+    sd_step3 = (mstatus_words[3] >> 31) & 0x1
+    assert ms_step3 == 1, f"Step 3: Expected MS=1 (Initial), got {ms_step3}"
+    assert sd_step3 == 0, f"Step 3: Expected SD=0, got {sd_step3}"
+
+    # Step 4: After write MS=Off (2'b00): MS = 2'b00 (Off), SD = 0
+    ms_step4 = (mstatus_words[4] >> 29) & 0x3
+    sd_step4 = (mstatus_words[4] >> 31) & 0x1
+    assert ms_step4 == 0, f"Step 4: Expected MS=0 (Off), got {ms_step4}"
+    assert sd_step4 == 0, f"Step 4: Expected SD=0, got {sd_step4}"
+
+    cocotb.log.info("✓ mstatus.MS transitions verified successfully")
