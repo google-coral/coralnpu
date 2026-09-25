@@ -784,21 +784,18 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
     // returns: (tx, started, moveLeadOH)
     def maybeStart(leadWindow: Vec[LsuCell]): (ValidIO[BusReq], UInt, UInt) = {
-      def canBundleFn(w: Vec[LsuCell]): UInt = {
-        VecInit(w.map { x =>
-          x.state === LsuCellState.W_START &&
-          x.rowAddr === rowAddr
-        }).asUInt
-      }
-      def cellCanStart: UInt = canBundleFn(cells) // TODO: if timing violation, retime this
-      def cellCanStartWindowFn(size: Int): UInt = {
-        VecInit
-          .tabulate(size) { i =>
-            val index = leadIndex + i.U
-            Mux(index < nCells.U(ctrWidth.W), cellCanStart(index), false.B)
-          }
-          .asUInt
-      }
+      val cellCanStart = VecInit(cells.map { x =>
+        x.state === LsuCellState.W_START &&
+        x.rowAddr === rowAddr
+      }) // TODO: if timing violation, retime this
+
+      val cellCanStartWindow = VectorWindow.mux4(
+        cellCanStart,
+        filler = false.B,
+        index = leadIndex,
+        windowSize = windowSizeNormal
+      )
+
       def reqValidFn(w: Vec[LsuCell]): Bool = {
         w(0).state === LsuCellState.W_START && (
           if (p.enableRvv) {
@@ -812,8 +809,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
       // Returns: (reqValid, wData, wMask, started, moveLeadOH)
       def maybeStartNormal(window: Vec[LsuCell]): (Bool, UInt, UInt, UInt, UInt) = {
-        val reqValid           = reqValidFn(window)
-        val cellCanStartWindow = cellCanStartWindowFn(window.length)
+        val reqValid = reqValidFn(window)
 
         // bundle(i)(j) is whether window(i) is affected by byte(j)
         val bundle = VecInit.tabulate(window.length) { i =>
@@ -849,8 +845,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
       // Returns: (reqValid, wData, wMask, started, moveLeadOH)
       def maybeStartStrict(window: Vec[LsuCell]): (Bool, UInt, UInt, UInt, UInt) = {
-        val reqValid           = reqValidFn(window)
-        val cellCanStartWindow = cellCanStartWindowFn(window.length)
+        val reqValid = reqValidFn(window)
 
         val cellActive = Wire(Vec(window.length, Bool()))
         cellActive(0) := true.B
