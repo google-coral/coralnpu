@@ -1202,7 +1202,7 @@ async def vme_mset_vtmmu_sequence_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_mset_vtmmu_sequence_test.elf"
     )
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(elf_path, [])
     await fixture.run_to_halt()
 
@@ -1216,7 +1216,7 @@ async def vme_mstatus_ms_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_mstatus_ms_test.elf"
     )
-    fixture = await Fixture.Create(dut)
+    fixture = await VerilatorTestFixture.Create(dut)
 
     ms_off_trap_tests = [
         "ms_off_vtle",
