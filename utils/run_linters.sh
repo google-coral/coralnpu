@@ -54,7 +54,7 @@ declare -A LINTER_DIFF_FIX_COMMANDS=(
 # Define file patterns for each linter
 declare -A LINTER_REGEX=(
     ["yapf"]='\.py$'
-    ["buildifier"]='(BUILD(\.bazel)?|\.bzl|WORKSPACE|MODULE\.bazel)$'
+    ["buildifier"]='(BUILD(\.bazel)?|\.bzl|MODULE\.bazel)$'
     ["verible-verilog-lint"]='\.s?v$'
     ["verible-verilog-format"]='\.s?v$'
     # ["clang-tidy"]='\.(c|cc|cpp|h|hpp)$'
@@ -166,7 +166,6 @@ detect_base_branch() {
 # --- Argument Parsing ---
 FIX_MODE=false
 ALL_MODE=false
-CHECK_PARITY=""
 CHECK_LOCKFILE=""
 TARGET_ARGS=()
 
@@ -180,14 +179,6 @@ while [[ $# -gt 0 ]]; do
             ALL_MODE=true
             shift
             ;;
-        --check-parity)
-            CHECK_PARITY=true
-            shift
-            ;;
-        --no-parity)
-            CHECK_PARITY=false
-            shift
-            ;;
         --check-lockfile)
             CHECK_LOCKFILE=true
             shift
@@ -197,7 +188,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            echo "Usage: $0 [--fix] [--all] [--check-parity] [--no-parity] [--check-lockfile] [--no-lockfile] [file/dir ...]"
+            echo "Usage: $0 [--fix] [--all] [--check-lockfile] [--no-lockfile] [file/dir ...]"
             echo ""
             echo "By default (when no targets or --all are specified), this script lints all local"
             echo "changes (staged and unstaged) relative to the base branch (${BASE_BRANCH:-auto-detected})."
@@ -205,8 +196,6 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --fix             Fix formatting and lint issues where supported"
             echo "  --all             Lint all tracked files across the repository"
-            echo "  --check-parity    Force running Bzlmod / WORKSPACE equivalence check"
-            echo "  --no-parity       Skip Bzlmod / WORKSPACE equivalence check"
             echo "  --check-lockfile  Force running MODULE.bazel.lock check"
             echo "  --no-lockfile     Skip MODULE.bazel.lock check"
             echo "  -h, --help        Show this help message and exit"
@@ -309,14 +298,17 @@ LINTER_FILES=("${LINT_TMP}"/*)
 shopt -u nullglob
 
 if [[ ${#LINTER_FILES[@]} -eq 0 ]]; then
-    if [[ "${CHECK_PARITY}" != "true" ]]; then
+    if [[ "${CHECK_LOCKFILE}" != "true" ]]; then
         echo "✅ No relevant files changed. Skipping linters."
         exit 0
     fi
 fi
 
 # Sort the files for consistent output
-mapfile -t LINTER_FILES_SORTED < <(printf '%s\n' "${LINTER_FILES[@]}" | sort)
+LINTER_FILES_SORTED=()
+if [[ ${#LINTER_FILES[@]} -gt 0 ]]; then
+    mapfile -t LINTER_FILES_SORTED < <(printf '%s\n' "${LINTER_FILES[@]}" | sort)
+fi
 
 for linter_file in "${LINTER_FILES_SORTED[@]}"; do
     linter=$(basename "${linter_file}")
@@ -357,26 +349,6 @@ for linter_file in "${LINTER_FILES_SORTED[@]}"; do
         fi
     fi
 done
-
-# --- Bzlmod / WORKSPACE Parity Check ---
-RUN_PARITY_CHECK=false
-if [[ "${CHECK_PARITY}" == "true" ]]; then
-    RUN_PARITY_CHECK=true
-elif [[ "${CHECK_PARITY}" != "false" ]]; then
-    if [[ "${CI:-}" == "true" ]] || [[ -f "${LINT_TMP}/buildifier" ]]; then
-        RUN_PARITY_CHECK=true
-    fi
-fi
-
-if [[ "${RUN_PARITY_CHECK}" == "true" ]]; then
-    if [[ -x "${REPO_ROOT}/utils/check_bzlmod_parity.sh" ]] && command -v bazel >/dev/null 2>&1; then
-        echo "🔍 Checking Bzlmod / WORKSPACE target equivalence..."
-        if ! "${REPO_ROOT}/utils/check_bzlmod_parity.sh"; then
-            echo "❌ Bzlmod parity check failed."
-            TOTAL_FAILED=$((TOTAL_FAILED + 1))
-        fi
-    fi
-fi
 
 # --- Bzlmod Lockfile Check ---
 RUN_LOCKFILE_CHECK=false

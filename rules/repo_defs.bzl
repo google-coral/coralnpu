@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Common repository definitions shared between WORKSPACE and Bzlmod extensions.
-
-This file serves as the Single Source of Truth for non-BCR external dependencies
-so that URLs, shas, and patches remain synchronized between legacy WORKSPACE and
-Bzlmod module extensions.
-"""
+"""Repository definitions for non-BCR external dependencies managed via Bzlmod."""
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")

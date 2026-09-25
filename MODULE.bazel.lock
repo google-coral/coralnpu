@@ -220,7 +220,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "URDgWuC9cEPMErFgNCm9gVFmZ/JT8/UE+RttKvhpKG0=",
+        "bzlTransitiveDigest": "SKyxpwhO857YBd6qwusIi2vCneHp2bgjFSP7wtqPSXI=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},

@@ -13,7 +13,7 @@ In the legacy Bazel `WORKSPACE` system, transitive dependencies of external repo
   designed to be used as submodules or via copybara) may have empty or missing
   `WORKSPACE` files in the context they are fetched.
 
-`@coralnpu_mpact` has a complex set of transitive dependencies (e.g., `@com_google_mpact-riscv`, `@rules_python`, etc.). To avoid polluting our main `WORKSPACE` (or `repos.bzl`) with these dependencies, we use Bazel's `workspace_file` attribute in `http_archive` (in `rules/repos.bzl`) to inject the custom `WORKSPACE` template found in this directory (`third_party/coralnpu_mpact/WORKSPACE`) into the fetched repository.
+`@coralnpu_mpact` has a complex set of transitive dependencies (e.g., `@com_google_mpact-riscv`, `@rules_python`, etc.). To avoid polluting our dependency declarations with these dependencies, we use Bazel's `workspace_file` attribute in `http_archive` (in `rules/repo_defs.bzl`) to inject the custom `WORKSPACE` template found in this directory (`third_party/coralnpu_mpact/WORKSPACE`) into the fetched repository.
 
 This allows `@coralnpu_mpact` to resolve and compile its own dependencies hermetically within its own external workspace context.
 
@@ -27,8 +27,7 @@ Bzlmod (Bazel's modular dependency system) natively solves the transitive depend
 
 ### Removal Steps
 
-1. Enable Bzlmod in the project (via `.bazelrc` or flags).
-2. Transition `@coralnpu_mpact` to be a Bazel module (adding `MODULE.bazel` to its repository).
-3. Update our `MODULE.bazel` to depend on `coralnpu_mpact`.
-4. Remove `third_party/coralnpu_mpact/` directory entirely, as the override will no longer be needed.
-5. Remove the `workspace_file` override pointing to this directory in `rules/repos.bzl`.
+1. Transition `@coralnpu_mpact` to be a Bazel module (adding `MODULE.bazel` to its repository).
+2. Update our `MODULE.bazel` to depend on `coralnpu_mpact`.
+3. Remove `third_party/coralnpu_mpact/` directory entirely, as the override will no longer be needed.
+4. Remove the `workspace_file` override pointing to this directory in `rules/repo_defs.bzl`.
