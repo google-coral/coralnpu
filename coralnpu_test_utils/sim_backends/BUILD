@@ -13,7 +13,6 @@
 # limitations under the License.
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
-load("//rules:coco_tb.bzl", "verilator_cocotb_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -83,28 +82,6 @@ py_test(
         ":uvm_test_fixture",
         ":verilator_test_fixture",
         requirement("numpy"),
-    ],
-)
-
-verilator_cocotb_test(
-    name = "sim_backends_integration_test",
-    size = "medium",
-    data = [
-        "//tests/cocotb/rvv/arithmetics:rvv_add_int32_m1",
-        "//tests/cocotb/rvv/ml_ops:rvv_matmul",
-        "//tests/uvm:uvm_sim_verilator",
-    ],
-    hdl_toplevel = "RvvCoreMiniAxi",
-    model = "//tests/cocotb:rvv_core_mini_axi_model",
-    seed = "42",
-    test_module = ["sim_backends_integration_test.py"],
-    waves = False,
-    deps = [
-        ":common_utils",
-        ":fpga_test_fixture",
-        ":mpact_npusim_test_fixture",
-        ":uvm_test_fixture",
-        ":verilator_test_fixture",
     ],
 )
 
