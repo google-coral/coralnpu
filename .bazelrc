@@ -1,3 +1,7 @@
+# Bazel 9 migration flags: autoload Starlarkified rules in the main repo
+common --incompatible_disable_autoloads_in_main_repo=false
+common --incompatible_autoload_externally=+@rules_cc,+@rules_shell,+@rules_python,+@com_google_protobuf
+
 # Bazel 8 default-flipped --incompatible_disallow_empty_glob. Several BUILD
 # files (notably third_party/* with mixed .v/.sv source trees) rely on the
 # legacy permissive behavior. Restore it for now; clean up per-glob in a
@@ -6,6 +10,7 @@ common --noincompatible_disallow_empty_glob
 
 build --action_env=BAZEL_CXXOPTS="-std=c++17"
 build --action_env=CC="clang"
+build --repo_env=CC="clang"
 build --cxxopt='-std=c++17'
 build --conlyopt='-std=gnu11'
 
@@ -85,17 +90,29 @@ run --host_action_env=XILINXD_LICENSE_FILE
 
 # Add config to enable VCS targets.
 build:vcs --build_tag_filters="vcs"
+build:vcs --action_env=PATH
+build:vcs --host_action_env=PATH
 test:vcs --build_tag_filters="vcs"
 test:vcs --test_tag_filters="vcs"
+test:vcs --action_env=PATH
+test:vcs --host_action_env=PATH
 run:vcs --build_tag_filters="vcs"
 run:vcs --test_tag_filters="vcs"
+run:vcs --action_env=PATH
+run:vcs --host_action_env=PATH
 
 # Add config to enable synthesis targets.
 build:synthesis --build_tag_filters="synthesis"
+build:synthesis --action_env=PATH
+build:synthesis --host_action_env=PATH
 test:synthesis --build_tag_filters="synthesis"
 test:synthesis --test_tag_filters="synthesis"
+test:synthesis --action_env=PATH
+test:synthesis --host_action_env=PATH
 run:synthesis --build_tag_filters="synthesis"
 run:synthesis --test_tag_filters="synthesis"
+run:synthesis --action_env=PATH
+run:synthesis --host_action_env=PATH
 
 # Add config to enable power targets.
 build:power --build_tag_filters="power"

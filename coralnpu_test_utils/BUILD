@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
     name = "TileLinkULInterface",

@@ -14,6 +14,7 @@
 
 load("@coralnpu_hw//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 

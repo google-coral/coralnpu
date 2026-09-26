@@ -48,8 +48,32 @@ if [[ -z "${GDB}" ]]; then
     exit 1
 fi
 
-LIBMPFR_PATH=$(ldconfig -p | grep 'libmpfr\.so' | grep -E 'x86-64|x86_64' | head -1 | awk '{print $4}')
-[[ -z "${LIBMPFR_PATH}" ]] && LIBMPFR_PATH=$(ldconfig -p | grep 'libmpfr\.so' | head -1 | awk '{print $4}')
+_find_libmpfr() {
+    local ldconfig_bin=""
+    for cand in ldconfig /sbin/ldconfig /usr/sbin/ldconfig; do
+        if command -v "$cand" >/dev/null 2>&1 || [[ -x "$cand" ]]; then
+            ldconfig_bin="$cand"
+            break
+        fi
+    done
+    if [[ -n "${ldconfig_bin}" ]]; then
+        local p
+        p=$("${ldconfig_bin}" -p 2>/dev/null | grep 'libmpfr\.so' | grep -E 'x86-64|x86_64' | head -1 | awk '{print $4}')
+        [[ -z "$p" ]] && p=$("${ldconfig_bin}" -p 2>/dev/null | grep 'libmpfr\.so' | head -1 | awk '{print $4}')
+        if [[ -n "$p" && -f "$p" ]]; then
+            echo "$p"
+            return
+        fi
+    fi
+    for cand in /usr/lib/x86_64-linux-gnu/libmpfr.so* /usr/lib64/libmpfr.so* /lib/x86_64-linux-gnu/libmpfr.so* /usr/lib/libmpfr.so*; do
+        if [[ -f "$cand" && ! -d "$cand" ]]; then
+            echo "$cand"
+            return
+        fi
+    done
+}
+
+LIBMPFR_PATH=$(_find_libmpfr)
 WORKDIR=$(mktemp -d)
 trap "rm -rf ${WORKDIR}" EXIT
 [[ -n "${LIBMPFR_PATH}" ]] && ln -sf "${LIBMPFR_PATH}" "${WORKDIR}/libmpfr.so.4"

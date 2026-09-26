@@ -39,6 +39,6 @@ configure_make(
         "libdisasm.a",
         "libfdt.a",
     ],
-    postfix_script = "cp lib*.a $$INSTALLDIR$$/lib/",
+    postfix_script = "cp lib*.a $$INSTALLDIR/lib/",
     visibility = ["//visibility:public"],
 )

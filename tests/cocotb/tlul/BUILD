@@ -14,6 +14,7 @@
 
 load("@coralnpu_hw//rules:coco_tb.bzl", "cocotb_test_suite", "verilator_cocotb_model")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
 load(
     "//tests/cocotb:build_defs.bzl",
     "VCS_BUILD_ARGS",

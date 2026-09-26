@@ -26,9 +26,9 @@ COMMON_ARGS = [
 ]
 
 POSTFIX_SCRIPT = """
-mkdir -p ${{INSTALLDIR}}/isa
-cp isa/rv32{subset}-v-* ${{INSTALLDIR}}/isa
-cp isa/rv32{subset}-p-* ${{INSTALLDIR}}/isa
+mkdir -p $$INSTALLDIR/isa
+cp isa/rv32{subset}-v-* $$INSTALLDIR/isa
+cp isa/rv32{subset}-p-* $$INSTALLDIR/isa
 """
 
 exports_files(glob(["**"]))

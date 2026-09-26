@@ -31,10 +31,12 @@ def _mpact_transition_impl(ctx):
         ctx.actions.symlink(output = out, target_file = f)
         outputs.append(out)
 
-    return [
-        dep[CcInfo],
+    providers = [
         DefaultInfo(files = depset(outputs), runfiles = dep[DefaultInfo].data_runfiles),
     ]
+    if CcInfo in dep:
+        providers.append(dep[CcInfo])
+    return providers
 
 mpact_binary = rule(
     implementation = _mpact_transition_impl,

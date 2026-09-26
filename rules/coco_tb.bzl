@@ -19,6 +19,7 @@ load("@coralnpu_hw//rules:sram_backdoor.bzl", "SRAM_BACKDOOR_TOPLEVELS")
 load("@coralnpu_hw//rules:verilog.bzl", "VerilogInfo", "collect_verilog_files")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_python//python:defs.bzl", "PyInfo", "py_binary", "py_library")
 
 # Number of CPUs reserved per Verilate action in Bazel's local scheduler.
@@ -491,7 +492,8 @@ def _collect_transitive_runfiles(ctx):
     return ctx.runfiles(files = ctx.files.data).merge_all(
         [dep.default_runfiles for dep in ctx.attr.deps] +
         [dep.default_runfiles for dep in ctx.attr.sim] +
-        [dep.default_runfiles for dep in ctx.attr.data],
+        [dep.default_runfiles for dep in ctx.attr.data] +
+        [ctx.attr.cocotb_wrapper[DefaultInfo].default_runfiles],
     )
 
 def _get_pythonpath_to_set(ctx):

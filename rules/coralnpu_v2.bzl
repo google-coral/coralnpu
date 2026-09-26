@@ -18,6 +18,7 @@ load("//rules:uvm_denylist.bzl", "DENYLIST", "TIMEOUT_MAP", "is_uvm_denylisted")
 """Rules to build CoralNPU SW objects"""
 
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("//rules:vcs.bzl", "vcs_batch_uvm_test")
 load("//rules:verilator.bzl", "verilator_batch_uvm_test")
 

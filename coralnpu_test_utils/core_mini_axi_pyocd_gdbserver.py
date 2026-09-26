@@ -570,30 +570,35 @@ class CoreMiniAxiGDBServer(object):
             telnet_port = s_telnet.getsockname()[1]
 
         def exec_gdb():
-            with tempfile.NamedTemporaryFile(mode='w+') as cmdfile:
-                r = runfiles.Create()
-                gdb_path = r.Rlocation("coralnpu_hw/toolchain/gdb")
-                cmds_pre = [
-                    'set architecture riscv:rv32',
-                    f'target remote :{gdb_port}',
-                ]
-                cmds_post = [
-                    'quit',
-                ]
-                cmds = cmds_pre + gdb_commands + cmds_post
-                for cmd in cmds:
-                    cmdfile.write(f'{cmd}\n')
-                cmdfile.flush()
-                args = [
-                    gdb_path,
-                    '-x',
-                    cmdfile.name,
-                    elf.name,
-                ]
-                ret = subprocess.call(
-                    args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                self.finish.put(ret == 0)
+            try:
+                with tempfile.NamedTemporaryFile(mode='w+') as cmdfile:
+                    r = runfiles.Create()
+                    gdb_path = r.Rlocation("coralnpu_hw/toolchain/gdb")
+                    cmds_pre = [
+                        'set architecture riscv:rv32',
+                        f'target remote :{gdb_port}',
+                    ]
+                    cmds_post = [
+                        'quit',
+                    ]
+                    cmds = cmds_pre + gdb_commands + cmds_post
+                    for cmd in cmds:
+                        cmdfile.write(f'{cmd}\n')
+                    cmdfile.flush()
+                    args = [
+                        gdb_path,
+                        '-x',
+                        cmdfile.name,
+                        elf.name,
+                    ]
+                    ret = subprocess.call(
+                        args,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    self.finish.put(ret == 0)
+            except Exception:
+                self.finish.put(False)
 
         def notify_cb():
             gdb_daemon = threading.Thread(target=exec_gdb, daemon=True)
@@ -622,6 +627,8 @@ class CoreMiniAxiGDBServer(object):
             try:
                 (t, e, kwargs) = gdbserver_queue.get(timeout=0.0001)
             except queue.Empty:
+                if not self.finish.empty():
+                    break
                 if gdb_server.is_alive():
                     halted = await self.core_mini_axi.dm_check_for_halted()
                     if not session.halted(

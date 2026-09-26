@@ -4,10 +4,12 @@ load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("//rules:mpact.bzl", "mpact_binary")
 load("//rules:utils.bzl", "filter_files_by_extension")
 load("//rules:vcs.bzl", "vcs_model")
 load("//rules:verilator.bzl", "verilator_model")
 load("//rules:verilog.bzl", "VerilogInfo", "verilog_library")
+load("//rules/cc_static_library:cc_static_libarary.bzl", "cc_static_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -76,15 +78,27 @@ filter_files_by_extension(
     extensions = ["cc"],
 )
 
-filter_files_by_extension(
-    name = "coralnpu_cosim_lib_static_archive",
-    src = "@coralnpu_mpact//sim/cosim:coralnpu_cosim_lib_static",
-    extensions = ["a"],
-)
-
 alias(
     name = "uvm_dpi",
     actual = "@uvm//:uvm_dpi",
+)
+
+mpact_binary(
+    name = "coralnpu_cosim_lib_clang",
+    dep = "@coralnpu_mpact//sim/cosim:coralnpu_cosim_lib",
+)
+
+cc_static_library(
+    name = "coralnpu_cosim_lib_static",
+    deps = [
+        ":coralnpu_cosim_lib_clang",
+    ],
+)
+
+filter_files_by_extension(
+    name = "coralnpu_cosim_lib_static_archive",
+    src = ":coralnpu_cosim_lib_static",
+    extensions = ["a"],
 )
 
 verilator_model(
@@ -110,11 +124,11 @@ verilator_model(
         ":source_files",
     ],
     deps = [
+        ":coralnpu_cosim_lib_clang",
         ":include_dirs_deps",
         ":uvm_dpi",
         "//hdl/verilog:sram_backdoor",
         "//sw/coralnpu_sim:spike_cosim_dpi",
-        "@coralnpu_mpact//sim/cosim:coralnpu_cosim_lib",
     ],
 )
 

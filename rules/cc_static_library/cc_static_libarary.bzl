@@ -53,19 +53,20 @@ def _cc_static_library_impl(ctx):
         "WORK_DIR=$(mktemp -d)",
         'trap "rm -rf \\"$WORK_DIR\\"" EXIT',
         "ROOT_DIR=$PWD",
+        'AR_EXEC="{}"'.format(cc_toolchain.ar_executable),
+        'if [[ "$AR_EXEC" != /* ]]; then AR_EXEC="$ROOT_DIR/$AR_EXEC"; fi',
         "INDEX=0",
     ]
     for lib in libs:
         script_lines.extend([
             'DIR="$WORK_DIR/lib_$INDEX"',
             'mkdir -p "$DIR"',
-            '(cd "$DIR" && {} x "$ROOT_DIR/{}")'.format(cc_toolchain.ar_executable, lib.path),
+            '(cd "$DIR" && "$AR_EXEC" x "$ROOT_DIR/{}")'.format(lib.path),
             "INDEX=$((INDEX + 1))",
         ])
     script_lines.extend([
         "rm -f {}".format(output_lib.path),
-        'find "$WORK_DIR" -name "*.o" | sort | xargs {} rcs {}'.format(
-            cc_toolchain.ar_executable,
+        'find "$WORK_DIR" -name "*.o" | sort | xargs "$AR_EXEC" rcs {}'.format(
             output_lib.path,
         ),
     ])
