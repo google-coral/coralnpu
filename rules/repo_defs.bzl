@@ -337,9 +337,12 @@ def define_fpga_repos():
     maybe(
         http_archive,
         name = "ispyocto",
-        urls = ["https://opensecura.googlesource.com/3p/ip/isp/+archive/d53dc0e0ce2605cea2e3b3fc5b97e9dd40f8d55a.tar.gz"],
+        urls = [
+            "https://storage.googleapis.com/shodan-public-artifacts/isp-d53dc0e0ce2605cea2e3b3fc5b97e9dd40f8d55a.tar.gz",
+            "https://opensecura.googlesource.com/3p/ip/isp/+archive/d53dc0e0ce2605cea2e3b3fc5b97e9dd40f8d55a.tar.gz",
+        ],
         build_file = "@coralnpu_hw//fpga/ip/ispyocto:ispyocto.BUILD",
-        sha256 = "",
+        sha256 = "3a8a976451f7eda0c42d027460ae0b65e485bb9068405b9186eaa991aa740972",
         patch_cmds = [
             "rm -f ispyocto/BUILD axi2sramcrs/BUILD ispyocto/rtl/ispyocto_filelist.txt",
         ],
