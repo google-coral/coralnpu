@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load(":patches.bzl", "MPACT_RISCV_PATCH_FILES")
-
 package(default_visibility = ["//visibility:public"])
 
-exports_files(MPACT_RISCV_PATCH_FILES + [
-    "mpact_sim_isa_includes.patch",
-    "patches.bzl",
-])
+exports_files(["cc_static_libarary.bzl"])

@@ -106,6 +106,21 @@ http_archive(
     urls = ["https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz"],
 )
 
+http_archive(
+    name = "linenoise",
+    build_file_content = """
+cc_library(
+    name = "linenoise",
+    srcs = ["linenoise.c"],
+    hdrs = ["linenoise.h"],
+    visibility = ["//visibility:public"],
+)
+""",
+    integrity = "sha256-l619QEHhHX+jlYGf13PBiS3qieUpI0I3ioNFaSzonCk=",
+    strip_prefix = "linenoise-2.0",
+    url = "https://github.com/antirez/linenoise/archive/refs/tags/2.0.tar.gz",
+)
+
 # MPACT-RiscV repo.
 # Note: Loads exception trap patches from @coralnpu_hw, requiring
 # --override_repository=coralnpu_hw=... when building standalone.
@@ -118,9 +133,40 @@ http_archive(
     repo_mapping = {
         "@abseil-cpp": "@com_google_absl",
     },
-    sha256 = "38faef26745f34a82de0daf3b65a207c8d2ecf825f37484a4a27132512583574",
-    strip_prefix = "mpact-riscv-cb68bd4a2cb80dea24d9760dc6397b5854ea41bd",
-    url = "https://github.com/google/mpact-riscv/archive/cb68bd4a2cb80dea24d9760dc6397b5854ea41bd.tar.gz",
+    sha256 = "06d89e9604ea7cc743e0c32d5ab3cf798e22905da19ebb819143b3b4d0df676a",
+    strip_prefix = "mpact-riscv-e4f1e9c1b243954ff8388fd39019248b2ae7341a",
+    url = "https://github.com/google/mpact-riscv/archive/e4f1e9c1b243954ff8388fd39019248b2ae7341a.tar.gz",
+)
+
+# MPACT-Sim repo
+http_archive(
+    name = "mpact-sim",
+    sha256 = "2dc7e2463556f2e29bb6c2429833d9f672774dde79d4ced7f553703018c9e91c",
+    strip_prefix = "mpact-sim-9c43949f80bef9978654473d9703ac29de30bc34",
+    url = "https://github.com/google/mpact-sim/archive/9c43949f80bef9978654473d9703ac29de30bc34.tar.gz",
+)
+
+http_archive(
+    name = "com_github_serge1_elfio",
+    build_file = "@mpact-sim//:external/BUILD.elfio",
+    sha256 = "caf49f3bf55a9c99c98ebea4b05c79281875783802e892729eea0415505f68c4",
+    strip_prefix = "elfio-3.12",
+    urls = ["https://github.com/serge1/ELFIO/releases/download/Release_3.12/elfio-3.12.tar.gz"],
+)
+
+http_file(
+    name = "org_antlr_tool",
+    sha256 = "bc13a9c57a8dd7d5196888211e5ede657cb64a3ce968608697e4f668251a8487",
+    url = "https://www.antlr.org/download/antlr-4.13.1-complete.jar",
+)
+
+http_archive(
+    name = "org_antlr4_cpp_runtime",
+    add_prefix = "antlr4-runtime",
+    build_file = "@mpact-sim//:external/BUILD.antlr4",
+    sha256 = "d350e09917a633b738c68e1d6dc7d7710e91f4d6543e154a78bb964cfd8eb4de",
+    strip_prefix = "runtime/src",
+    urls = ["https://www.antlr.org/download/antlr4-cpp-runtime-4.13.1-source.zip"],
 )
 
 # Download only the single svdpi.h file.
@@ -130,18 +176,6 @@ http_file(
     sha256 = "2528c8e529b66dd8e795c8a0fee326166cc51f7dee8fc6a0c6c930534fc780a6",
     urls = ["https://raw.githubusercontent.com/verilator/verilator/v5.028/include/vltstd/svdpi.h"],
 )
-
-load("@com_google_mpact-riscv//:repos.bzl", "mpact_riscv_repos")
-
-mpact_riscv_repos()
-
-load("@com_google_mpact-riscv//:dep_repos.bzl", "mpact_riscv_dep_repos")
-
-mpact_riscv_dep_repos()
-
-load("@com_google_mpact-riscv//:deps.bzl", "mpact_riscv_deps")
-
-mpact_riscv_deps()
 
 http_archive(
     name = "rules_python",

@@ -15,18 +15,11 @@
 """MPACT-RiscV patch declarations for com_google_mpact-riscv."""
 
 MPACT_RISCV_PATCH_FILES = [
-    "mpact_riscv_fma_underflow.patch",
     "mpact_riscv_mepc_mask.patch",
-    "mpact_riscv_rmm_f_instructions.patch",
-    "mpact_riscv_rmm_helpers.patch",
+    "mpact_riscv_mstatus_vs.patch",
     "mpact_riscv_vector_csr.patch",
-    "mpact_riscv_vector_memory.patch",
-    "mpact_riscv_vectored_trap.patch",
-    "mpact_riscv_vrgather.patch",
-    "mpact_riscv_vsetvl_preserve_vl.patch",
     "mpact_riscv_vstart_trap.patch",
     "mpact_riscv_widening_reduction.patch",
-    "mpact_riscv_mstatus_vs.patch",
 ]
 
 MPACT_RISCV_PATCHES = [

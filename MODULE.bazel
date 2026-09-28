@@ -94,6 +94,7 @@ coralnpu_deps_ext = use_extension("//rules:extensions.bzl", "coralnpu_deps_ext")
 use_repo(
     coralnpu_deps_ext,
     "RVVI",
+    "abseil-cpp",
     "accellera_systemc",
     "cc_static_library_external",
     "chipsalliance_diplomacy",
@@ -158,8 +159,10 @@ use_repo(
     "ispyocto",
     "kissfft",
     "libsystemctlm_soc",
+    "linenoise",
     "llvm_firtool",
     "lowrisc_opentitan_gh",
+    "mpact-sim",
     "net_zlib",
     "nonhermetic",
     "org_antlr4_cpp_runtime",

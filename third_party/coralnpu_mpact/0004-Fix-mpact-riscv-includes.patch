@@ -1,8 +1,7 @@
-diff --git a/sim/coralnpu_base.isa b/sim/coralnpu_base.isa
-index dc3ab6f..35603e0 100644
---- a/sim/coralnpu_base.isa
-+++ b/sim/coralnpu_base.isa
-@@ -7,7 +7,7 @@ disasm widths = {-18};
+diff -u -r a/sim/coralnpu_base.isa b/sim/coralnpu_base.isa
+--- a/sim/coralnpu_base.isa	2026-09-28 19:58:53.670387959 +0000
++++ b/sim/coralnpu_base.isa	2026-09-28 19:58:53.670573699 +0000
+@@ -7,7 +7,7 @@
  // Basic integer ALU instructions, part of the RiscV 32i subset.
  slot riscv32i {
    includes {
@@ -11,7 +10,7 @@ index dc3ab6f..35603e0 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -203,7 +203,7 @@ slot riscv32i {
+@@ -203,7 +203,7 @@
  // RiscV32 multiply/divide instructions.
  slot riscv32m {
    includes {
@@ -20,7 +19,7 @@ index dc3ab6f..35603e0 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -247,7 +247,7 @@ slot riscv32m {
+@@ -247,7 +247,7 @@
  // RiscV32 CSR manipulation instructions.
  slot zicsr {
    includes {
@@ -29,7 +28,7 @@ index dc3ab6f..35603e0 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -322,7 +322,7 @@ slot zicsr {
+@@ -322,7 +322,7 @@
  // Instruction fence.
  slot zfencei {
    includes {
@@ -38,7 +37,7 @@ index dc3ab6f..35603e0 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -336,7 +336,7 @@ slot zfencei {
+@@ -336,7 +336,7 @@
  // Privileged instructions.
  slot privileged {
    includes {
@@ -47,10 +46,30 @@ index dc3ab6f..35603e0 100644
      #include "sim/coralnpu_instructions.h"
    }
    default size = 4;
-diff --git a/sim/coralnpu_m3.isa b/sim/coralnpu_m3.isa
-index fd6cc28..12874e8 100644
---- a/sim/coralnpu_m3.isa
-+++ b/sim/coralnpu_m3.isa
+diff -u -r a/sim/coralnpu.bin_fmt b/sim/coralnpu.bin_fmt
+--- a/sim/coralnpu.bin_fmt	2026-09-28 19:58:53.645989915 +0000
++++ b/sim/coralnpu.bin_fmt	2026-09-28 19:58:53.646116275 +0000
+@@ -23,4 +23,4 @@
+ #include "coralnpu_memory.bin_fmt"
+ #include "coralnpu_mul.bin_fmt"
+ #include "coralnpu_shift.bin_fmt"
+-#include "external/com_google_mpact-riscv/riscv/riscv32zb.bin_fmt"
++#include "riscv/riscv32zb.bin_fmt"
+diff -u -r a/sim/coralnpu.isa b/sim/coralnpu.isa
+--- a/sim/coralnpu.isa	2026-09-28 19:58:53.658408292 +0000
++++ b/sim/coralnpu.isa	2026-09-28 19:58:53.658522332 +0000
+@@ -16,7 +16,7 @@
+ #include "coralnpu_shift.isa"
+ #include "coralnpu_memory.isa"
+ #include "coralnpu_mul.isa"
+-#include "external/com_google_mpact-riscv/riscv/riscv32zb.isa"
++#include "riscv/riscv32zb.isa"
+ 
+ // Combining all coralnpu instruction sets.
+ slot coralnpu : riscv32i, riscv32m, zicsr, zfencei, privileged, coralnpu_arith,
+diff -u -r a/sim/coralnpu_m3.isa b/sim/coralnpu_m3.isa
+--- a/sim/coralnpu_m3.isa	2026-09-28 19:58:53.684955986 +0000
++++ b/sim/coralnpu_m3.isa	2026-09-28 19:58:53.685098286 +0000
 @@ -13,10 +13,10 @@
  // limitations under the License.
  
@@ -63,14 +82,37 @@ index fd6cc28..12874e8 100644
 +  #include "riscv/riscv_vector_fp_unary_instructions.h"
 +  #include "riscv/riscv_vector_fp_reduction_instructions.h"
 +  #include "riscv/riscv_vector_fp_compare_instructions.h"
+   #include "sim/coralnpu_m3_instructions.h"
  }
  
- isa CoralNPUM3 {
-diff --git a/sim/coralnpu_v2.isa b/sim/coralnpu_v2.isa
-index 4bf5b40..1cb8bfc 100644
---- a/sim/coralnpu_v2.isa
-+++ b/sim/coralnpu_v2.isa
-@@ -28,7 +28,7 @@ isa CoralNPUV2 {
+diff -u -r a/sim/coralnpu_m4.bin_fmt b/sim/coralnpu_m4.bin_fmt
+--- a/sim/coralnpu_m4.bin_fmt	2026-09-28 19:58:53.696920913 +0000
++++ b/sim/coralnpu_m4.bin_fmt	2026-09-28 19:58:53.697088203 +0000
+@@ -13,7 +13,7 @@
+ // limitations under the License.
+ 
+ #include "coralnpu_m3.bin_fmt"
+-#include "external/com_google_mpact-riscv/riscv/riscv_zvt.bin_fmt"
++#include "riscv/riscv_zvt.bin_fmt"
+ 
+ // TODO(b/448154052): Kelvin V2 sim should reuse mpact-riscv isa and bin_fmt files
+ // Matrix-multiply format (OP-VE). Same field layout as VArith but the rd field
+diff -u -r a/sim/coralnpu_m4.isa b/sim/coralnpu_m4.isa
+--- a/sim/coralnpu_m4.isa	2026-09-28 19:58:53.709020530 +0000
++++ b/sim/coralnpu_m4.isa	2026-09-28 19:58:53.709141780 +0000
+@@ -18,7 +18,7 @@
+ }
+ 
+ #include "coralnpu_m3.isa"
+-#include "external/com_google_mpact-riscv/riscv/riscv_zvt.isa"
++#include "riscv/riscv_zvt.isa"
+ 
+ slot coralnpu_m4 : riscv_zvt, coralnpu_m3 {
+   includes {
+diff -u -r a/sim/coralnpu_v2.isa b/sim/coralnpu_v2.isa
+--- a/sim/coralnpu_v2.isa	2026-09-28 19:58:53.727647986 +0000
++++ b/sim/coralnpu_v2.isa	2026-09-28 19:58:53.727944646 +0000
+@@ -28,7 +28,7 @@
  // Basic integer ALU instructions, part of the RiscV 32i subset.
  slot riscv32i {
    includes {
@@ -79,7 +121,7 @@ index 4bf5b40..1cb8bfc 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -222,7 +222,7 @@ slot riscv32i {
+@@ -222,7 +222,7 @@
  // changed to provide performance hints to a simulated microarchitecture.
  slot riscv32_hints {
    includes {
@@ -88,7 +130,7 @@ index 4bf5b40..1cb8bfc 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -369,7 +369,7 @@ slot riscv32_hints {
+@@ -369,7 +369,7 @@
  // Instruction fence.
  slot zfencei {
    includes {
@@ -97,7 +139,7 @@ index 4bf5b40..1cb8bfc 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -383,7 +383,7 @@ slot zfencei {
+@@ -383,7 +383,7 @@
  // RiscV32 multiply/divide instructions.
  slot riscv32m {
    includes {
@@ -106,7 +148,7 @@ index 4bf5b40..1cb8bfc 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -428,7 +428,7 @@ slot riscv32m {
+@@ -428,7 +428,7 @@
  // RiscV32 CSR manipulation instructions.
  slot zicsr {
    includes {
@@ -115,7 +157,7 @@ index 4bf5b40..1cb8bfc 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -506,7 +506,7 @@ slot zicsr {
+@@ -506,7 +506,7 @@
  // RiscV32 F (single precision floating point) instructions.
  slot riscv32f {
    includes {
@@ -124,7 +166,7 @@ index 4bf5b40..1cb8bfc 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -627,7 +627,7 @@ slot riscv32f {
+@@ -627,7 +627,7 @@
  // included for CoralNPU V2.
  slot privileged {
    includes {
@@ -133,7 +175,7 @@ index 4bf5b40..1cb8bfc 100644
    }
    default size = 4;
    default latency = global_latency;
-@@ -646,7 +646,7 @@ slot riscv32_zbb {
+@@ -646,7 +646,7 @@
    resources TwoOp = { next_pc, rs1 : rd[..rd]};
    resources ThreeOp = { next_pc, rs1, rs2 : rd[..rd]};
    includes {
@@ -142,7 +184,7 @@ index 4bf5b40..1cb8bfc 100644
    }
  
    opcodes {
-@@ -743,12 +743,12 @@ slot riscv32_zbb_imm {
+@@ -743,12 +743,12 @@
  
  slot riscv_zve32x {
    includes {

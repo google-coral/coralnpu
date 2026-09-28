@@ -1,0 +1,32 @@
+--- a/mpact/sim/decoder/mpact_sim_isa.bzl	2026-09-28 20:03:29.754583308 +0000
++++ b/mpact/sim/decoder/mpact_sim_isa.bzl	2026-09-28 20:03:29.754730008 +0000
+@@ -298,12 +298,12 @@
+ # a bash array from $(SRCS), then instead of using $(SRCS) in the command, it
+ # uses only the first element of that array.
+ def _make_isa_tool_invocation_command(num_srcs, prefix, isa_name, generator):
+-    cmd = "ARR=($(SRCS)); $(location @mpact-sim//mpact/sim/decoder:decoder_gen) "
++    cmd = "ARR=($(SRCS)); DIRS=(); for f in \"$${ARR[@]}\"; do DIRS+=(\"$$(dirname \"$$f\")\"); DIRS+=(\"$$(dirname \"$$(dirname \"$$f\")\")\"); done; DIRS_STR=$$(IFS=,; echo \"$${DIRS[*]}\"); $(location @mpact-sim//mpact/sim/decoder:decoder_gen) "
+ 
+     # Add the sources that are not in includes.
+     for i in range(0, num_srcs):
+         cmd += "$${ARR[" + str(i) + "]} "
+-    cmd += "--prefix " + prefix + " --generator " + str(generator) + " --output_dir $(@D) --include $$(dirname $${ARR[0]})"
++    cmd += "--prefix " + prefix + " --generator " + str(generator) + " --output_dir $(@D) --include \"$$DIRS_STR\""
+     if isa_name != "":
+         cmd += " --isa_name " + isa_name
+ 
+@@ -313,12 +313,12 @@
+ # those that will be included, the command includes creating a bash array from $(SRCS), then
+ # instead of using $(SRCS) in the command, it uses only the first element of that array.
+ def _make_bin_tool_invocation_command(num_srcs, prefix, decoder_name):
+-    cmd = "ARR=($(SRCS)); $(location @mpact-sim//mpact/sim/decoder:bin_format_gen) "
++    cmd = "ARR=($(SRCS)); DIRS=(); for f in \"$${ARR[@]}\"; do DIRS+=(\"$$(dirname \"$$f\")\"); DIRS+=(\"$$(dirname \"$$(dirname \"$$f\")\")\"); done; DIRS_STR=$$(IFS=,; echo \"$${DIRS[*]}\"); $(location @mpact-sim//mpact/sim/decoder:bin_format_gen) "
+ 
+     # Add the sources that are not in includes.
+     for i in range(0, num_srcs):
+         cmd += "$${ARR[" + str(i) + "]} "
+-    cmd += " --prefix " + prefix + " --output_dir $(@D) --include $$(dirname $${ARR[0]})"
++    cmd += " --prefix " + prefix + " --output_dir $(@D) --include \"$$DIRS_STR\""
+     if decoder_name != "":
+         cmd += " --decoder_name " + decoder_name
+     return cmd

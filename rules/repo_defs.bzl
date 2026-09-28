@@ -88,9 +88,9 @@ def define_mpact_repos():
     maybe(
         http_archive,
         name = "com_google_mpact-riscv",
-        sha256 = "38faef26745f34a82de0daf3b65a207c8d2ecf825f37484a4a27132512583574",
-        strip_prefix = "mpact-riscv-cb68bd4a2cb80dea24d9760dc6397b5854ea41bd",
-        url = "https://github.com/google/mpact-riscv/archive/cb68bd4a2cb80dea24d9760dc6397b5854ea41bd.tar.gz",
+        sha256 = "06d89e9604ea7cc743e0c32d5ab3cf798e22905da19ebb819143b3b4d0df676a",
+        strip_prefix = "mpact-riscv-e4f1e9c1b243954ff8388fd39019248b2ae7341a",
+        url = "https://github.com/google/mpact-riscv/archive/e4f1e9c1b243954ff8388fd39019248b2ae7341a.tar.gz",
         patches = MPACT_RISCV_PATCHES,
         patch_args = ["-p1"],
     )
@@ -98,15 +98,13 @@ def define_mpact_repos():
     maybe(
         http_archive,
         name = "coralnpu_mpact",
-        urls = ["https://github.com/google-coral/coralnpu-mpact/archive/e2a26e6d983f13d4c10875e4e5878a6171c04a06.zip"],
-        sha256 = "426328af9681929b262147538e61c7b6545bebf70e4db2d483c94d9613ac5909",
-        strip_prefix = "coralnpu-mpact-e2a26e6d983f13d4c10875e4e5878a6171c04a06",
+        urls = ["https://github.com/google-coral/coralnpu-mpact/archive/7670ee4c3df4cbc0ea06220c39a19b5d14338ed6.zip"],
+        sha256 = "28fcc03c6b9e63617541b92856d2d5d70e3dc5691d00dc0fa855031d0f23bcd7",
+        strip_prefix = "coralnpu-mpact-7670ee4c3df4cbc0ea06220c39a19b5d14338ed6",
         workspace_file = "@coralnpu_hw//third_party/coralnpu_mpact:WORKSPACE",
         patches = [
-            "@coralnpu_hw//third_party/coralnpu_mpact:0002-Patch-mpact_riscv-WORKSPACE.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0003-Hardwire-mtvec-direct-mode.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0004-Fix-mpact-riscv-includes.patch",
-            "@coralnpu_hw//third_party/coralnpu_mpact:0005-coralnpu-mepc-mask.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0006-Fix-svdpi-includes.patch",
         ],
         patch_args = ["-p1"],
@@ -114,10 +112,22 @@ def define_mpact_repos():
 
     maybe(
         http_archive,
+        name = "mpact-sim",
+        sha256 = "2dc7e2463556f2e29bb6c2429833d9f672774dde79d4ced7f553703018c9e91c",
+        strip_prefix = "mpact-sim-9c43949f80bef9978654473d9703ac29de30bc34",
+        url = "https://github.com/google/mpact-sim/archive/9c43949f80bef9978654473d9703ac29de30bc34.tar.gz",
+        patches = ["@coralnpu_hw//third_party/patches:mpact_sim_isa_includes.patch"],
+        patch_args = ["-p1"],
+    )
+
+    maybe(
+        http_archive,
         name = "com_google_mpact-sim",
-        sha256 = "e4115bbe5c5039d442378da745fc7401c79f9e52df590191d872354c7a999c58",
-        strip_prefix = "mpact-sim-4a9e8505f3a02719b076fdee5a838217d770ad89",
-        url = "https://github.com/google/mpact-sim/archive/4a9e8505f3a02719b076fdee5a838217d770ad89.tar.gz",
+        sha256 = "2dc7e2463556f2e29bb6c2429833d9f672774dde79d4ced7f553703018c9e91c",
+        strip_prefix = "mpact-sim-9c43949f80bef9978654473d9703ac29de30bc34",
+        url = "https://github.com/google/mpact-sim/archive/9c43949f80bef9978654473d9703ac29de30bc34.tar.gz",
+        patches = ["@coralnpu_hw//third_party/patches:mpact_sim_isa_includes.patch"],
+        patch_args = ["-p1"],
     )
 
     maybe(
@@ -148,17 +158,54 @@ def define_mpact_repos():
     )
 
     maybe(
-        http_file,
+        cc_static_library_repo,
         name = "cc_static_library_external",
-        downloaded_file_path = "cc_static_libarary.bzl",
-        sha256 = "1287ce9f7e5fe31ad1b5937781531e4ab3f4656edabf650cca9ca720ceb31806",
-        urls = ["https://raw.githubusercontent.com/project-oak/oak/fcceea755f0274d3a0eb7c0461b30af3dc28e40a/cc/build_defs.bzl"],
     )
 
     maybe(
         svdpi_repo,
         name = "svdpi_h_file",
     )
+
+    maybe(
+        abseil_cpp_compat,
+        name = "abseil-cpp",
+    )
+
+    maybe(
+        http_archive,
+        name = "linenoise",
+        build_file_content = """
+cc_library(
+    name = "linenoise",
+    srcs = ["linenoise.c"],
+    hdrs = ["linenoise.h"],
+    visibility = ["//visibility:public"],
+)
+""",
+        sha256 = "97ad7d4041e11d7fa395819fd773c1892dea89e5292342378a8345692ce89c29",
+        strip_prefix = "linenoise-2.0",
+        url = "https://github.com/antirez/linenoise/archive/refs/tags/2.0.tar.gz",
+    )
+
+def _abseil_cpp_compat_impl(rctx):
+    absl_dir = str(rctx.path(Label("@com_google_absl//:BUILD.bazel")).dirname)
+    rctx.execute(["cp", "-rL", absl_dir + "/.", "."])
+
+abseil_cpp_compat = repository_rule(
+    implementation = _abseil_cpp_compat_impl,
+)
+
+def _cc_static_library_repo_impl(rctx):
+    rctx.file("WORKSPACE", "workspace(name = 'cc_static_library_external')\n")
+    rctx.file("BUILD.bazel", "package(default_visibility = ['//visibility:public'])\n")
+    rctx.file("file/BUILD.bazel", "package(default_visibility = ['//visibility:public'])\n")
+    bzl_content = rctx.read(Label("@coralnpu_hw//rules/cc_static_library:cc_static_libarary.bzl"))
+    rctx.file("file/cc_static_libarary.bzl", bzl_content)
+
+cc_static_library_repo = repository_rule(
+    implementation = _cc_static_library_repo_impl,
+)
 
 def _tflm_pip_deps_compat_impl(rctx):
     rctx.file("WORKSPACE", "workspace(name = 'tflm_pip_deps')\n")

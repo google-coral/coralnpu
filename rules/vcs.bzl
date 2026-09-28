@@ -15,6 +15,7 @@
 """Bazel functions for VCS."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("//rules:uvm_denylist.bzl", "SPIKE_DENYLIST")
 load("//rules:verilog.bzl", "VerilogInfo", "collect_verilog_files")
 
