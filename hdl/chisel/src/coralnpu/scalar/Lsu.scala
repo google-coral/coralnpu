@@ -640,6 +640,22 @@ object LsuCell {
   }
 }
 
+// Bus request interface before transaction ID tagging.
+class BusReq(p: Parameters) extends Bundle {
+  val rowAddr = UInt(p.dbusRowAddrBits.W)
+  val offset  = UInt(p.dbusOffsetBits.W)
+  val size    = UInt(p.dbusSize.W)
+  val write   = Bool()
+  val wdata   = UInt(p.lsuDataBits.W)
+  val wmask   = UInt(p.lsuDataBytes.W)
+}
+
+// Bus request tagged with transaction ID.
+class BusReqWithTxid(p: Parameters) extends Bundle {
+  val txid = UInt(p.lsuSlotTxidWidth.W)
+  val req  = new BusReq(p)
+}
+
 class LsuSuperSlot(p: Parameters) extends Module {
   // Max amount of bytes that a single instruction can operate on.
   // Elements are ordered logically (addr strictly ascending when unit-stride).
@@ -653,14 +669,9 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val windowIndexWidthNormal = log2Ceil(windowSizeNormal)
   val windowIndexWidthStrict = log2Ceil(windowSizeStrict)
 
-  // Simplified bus request interface before bookkeeping.
-  class BusReq extends Bundle {
+  class BookkeepingEntry extends Bundle {
     val rowAddr   = UInt(p.dbusRowAddrBits.W)
-    val offset    = UInt(p.dbusOffsetBits.W)
-    val size      = UInt(p.dbusSize.W)
-    val write     = Bool()
-    val wdata     = UInt(p.lsuDataBits.W)
-    val wmask     = UInt(p.lsuDataBytes.W)
+    val mask      = UInt(nCells.W)
     val cellIndex = Option.when(p.enableRvv)(UInt(ctrWidth.W))
   }
 
@@ -928,7 +939,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
         Mux(isFirstTx, OHToUInt(cells(0).mask) & ~(tx1Size - 1.U), 0.U(p.dbusOffsetBits.W))
 
       val tx = MakeWireBundle[ValidIO[BusReq]](
-        Valid(new BusReq),
+        Valid(new BusReq(p)),
         _.valid        -> Mux(strictMode, reqValidStrict, reqValidNormal),
         _.bits.rowAddr -> rowAddr,
         _.bits.offset  -> txOffset,
@@ -938,7 +949,6 @@ class LsuSuperSlot(p: Parameters) extends Module {
         _.bits.wdata -> Mux(strictMode, wDataStrict, wDataNormal),
         _.bits.wmask -> Mux(strictMode, wMaskStrict, wMaskNormal)
       )
-      tx.bits.cellIndex.foreach(_ := leadIndex)
       val started    = Mux(strictMode, startedStrict, startedNormal)
       val moveLeadOH = Mux(strictMode, moveLeadOHStrict.pad(windowSizeNormal + 1), moveLeadOHNormal)
 
@@ -1788,7 +1798,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val uop = Flipped(Decoupled(new LsuUOp(p)))
     // Data phase
     val vectorData      = Option.when(p.enableRvv)(Flipped(Decoupled(new Rvv2Lsu(p))))
-    val busReq          = Irrevocable(new BusReq)
+    val busReq          = Irrevocable(new BusReqWithTxid(p))
     val busResp         = Flipped(Valid(new DBus2Resp(p))) // We will never make bus wait
     val intWriteback    = Valid(Flipped(new RegfileWriteDataIO(p)))
     val floatWriteback  = Option.when(p.enableFloat)(Valid(Flipped(new FloatRegfileWriteDataIO(p))))
@@ -1812,11 +1822,30 @@ class LsuSuperSlot(p: Parameters) extends Module {
   )
 
   val (tx, starts, moveLeadOH) = state.maybeStart(leadWindow)
-  val acceptNewTx              = RegNext(io.busReq.ready || !io.busReq.valid, true.B)
-  val txPending                = RegInit(MakeInvalid(new BusReq))
-  val txOutgoing               = Mux(txPending.valid, txPending, tx)
+  val txidAllocator            = Module(new IndexAllocatorShifting(p.lsuSlotTxidEntries))
+
+  val txWithTxid = MakeWireBundle[ValidIO[BusReqWithTxid]](
+    Valid(new BusReqWithTxid(p)),
+    _.valid     -> (tx.valid && txidAllocator.io.alloc.valid),
+    _.bits.txid -> txidAllocator.io.alloc.bits,
+    _.bits.req  -> tx.bits
+  )
+
+  val txPending  = RegInit(MakeInvalid(new BusReqWithTxid(p)))
+  val txOutgoing = Mux(txPending.valid, txPending, txWithTxid)
+
+  val faultQueue = Module(new Queue(UInt(p.lsuSlotTxidWidth.W), entries = 1, pipe = true))
+
+  val isBlocked = state.faulted || newFault
+  val txFire    = txOutgoing.valid && (io.busReq.ready || isBlocked)
+
+  faultQueue.io.enq.valid := txOutgoing.valid && isBlocked
+  faultQueue.io.enq.bits  := txOutgoing.bits.txid
+
+  txidAllocator.io.alloc.ready := txFire
+
   txPending := Mux(
-    io.busReq.ready || state.faulted || newFault,
+    txFire,
     MakeInvalid(txPending.bits),
     txOutgoing
   )
@@ -1824,24 +1853,41 @@ class LsuSuperSlot(p: Parameters) extends Module {
   io.busReq <> IrrevocableChecker(
     MakeIrrevocable(
       Mux(
-        state.faulted || newFault,
-        MakeInvalid(tx.bits),
+        isBlocked,
+        MakeInvalid(txWithTxid.bits),
         txOutgoing
       )
     )
   )
   val stateFromUop = state.fromUop(io.uop.bits)
 
-  // TODO: use real bookkeeping
-  val busRespRowAddr   = RegNext(txOutgoing.bits.rowAddr, 0.U)
-  val busRespCellIndex =
-    Option.when(p.enableRvv)(RegNext(txOutgoing.bits.cellIndex.get, 0.U(ctrWidth.W)))
-  val busRespData = VecInit.tabulate(p.lsuDataBytes) { i =>
+  val bookkeeping = Reg(Vec(p.lsuSlotTxidEntries, new BookkeepingEntry))
+  when(txFire) {
+    val entry = MakeWireBundle[BookkeepingEntry](
+      new BookkeepingEntry,
+      _.rowAddr -> txOutgoing.bits.req.rowAddr,
+      _.mask    -> starts
+    )
+    entry.cellIndex.foreach(_ := state.leadIndex)
+    bookkeeping(txOutgoing.bits.txid) := entry
+  }
+
+  faultQueue.io.deq.ready := !io.busResp.valid
+
+  val respValid = io.busResp.valid || faultQueue.io.deq.valid
+  val respTxid  = Mux(io.busResp.valid, io.busResp.bits.txid, faultQueue.io.deq.bits)
+  val respFault = Mux(io.busResp.valid, io.busResp.bits.fault, true.B)
+  val respData  = VecInit.tabulate(p.lsuDataBytes) { i =>
     io.busResp.bits.rdata(i * 8 + 7, i * 8)
   }
-  val busRespMask    = RegNext(starts, 0.U)
-  val faultRespValid = RegNext(txOutgoing.valid && (state.faulted || newFault), false.B)
-  // TODO: fault responses can be adjusted if needed. Currently they're junk.
+
+  txidAllocator.io.free.valid := respValid
+  txidAllocator.io.free.bits  := respTxid
+
+  val respEntry        = bookkeeping(respTxid)
+  val busRespRowAddr   = respEntry.rowAddr
+  val busRespMask      = respEntry.mask
+  val busRespCellIndex = respEntry.cellIndex
 
   val (writebackReq, writebacks) = state.maybeWriteback()
   io.intWriteback.valid     := writebackReq.integer.valid
@@ -1873,20 +1919,21 @@ class LsuSuperSlot(p: Parameters) extends Module {
   }
 
   val canMoveLead = !state.isDone && (
-    !io.busReq.valid || io.busReq.ready
+    !tx.valid || txFire
   )
-  val initCellsData = VecInit.tabulate(nCells) { i =>
+  val effectiveStarts = Mux(txFire, starts, 0.U)
+  val initCellsData   = VecInit.tabulate(nCells) { i =>
     if (i < 4) MakeValid(io.uop.fire, stateFromUop.cells(i).data)
     else MakeInvalid(UInt(8.W))
   }
   val stateFromAction = state.act(
     initCellsData = initCellsData,
-    starts = Mux(io.busReq.ready || state.faulted || newFault, starts, 0.U),
+    starts = effectiveStarts,
     moveLeadOH = MakeValid(canMoveLead, moveLeadOH),
-    resp = io.busResp.valid || faultRespValid,
+    resp = respValid,
     fault = newFault, // state will latch the fault
     respRowAddr = busRespRowAddr,
-    respData = busRespData,
+    respData = respData,
     respMask = busRespMask,
     writebacks = Mux(
       (
@@ -2016,8 +2063,8 @@ class LsuV3(p: Parameters) extends Lsu(p) {
   }
 
   // TODO: refactor out into a bus adapter
-  // TODO: add bookkeeping
-  val addr = Cat(slot.io.busReq.bits.rowAddr, 0.U(p.dbusOffsetBits.W))
+  val req  = slot.io.busReq.bits.req
+  val addr = Cat(req.rowAddr, 0.U(p.dbusOffsetBits.W))
   val itcm = p.m
     .filter(_.memType == MemoryRegionType.IMEM)
     .map(_.contains(addr))
@@ -2036,9 +2083,9 @@ class LsuV3(p: Parameters) extends Lsu(p) {
 
   val ibusFault = MakeWireBundle[ValidIO[FaultInfo]](
     Valid(new FaultInfo(p)),
-    _.valid      -> (slot.io.busReq.valid && slot.io.busReq.bits.write && itcm),
+    _.valid      -> (slot.io.busReq.valid && req.write && itcm),
     _.bits.write -> true.B,
-    _.bits.addr  -> slot.io.busReq.bits.rowAddr,
+    _.bits.addr  -> req.rowAddr,
     _.bits.epc   -> slot.io.pc
   )
 
@@ -2068,34 +2115,37 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     )
   )
 
-  io.ibus.valid := itcm && slot.io.busReq.valid && !slot.io.busReq.bits.write
+  io.ibus.valid := itcm && slot.io.busReq.valid && !req.write
   io.ibus.addr  := addr
   val ibusResp = RegNext(io.ibus.fire || ibusFault.valid, false.B)
 
   io.dbus.valid := dtcm && slot.io.busReq.valid
-  io.dbus.write := slot.io.busReq.bits.write
+  io.dbus.write := req.write
   io.dbus.pc    := slot.io.pc
   io.dbus.addr  := addr
   io.dbus.adrx  := addr
   io.dbus.size  := p.lsuDataBytes.U
-  io.dbus.wdata := slot.io.busReq.bits.wdata
-  io.dbus.wmask := slot.io.busReq.bits.wmask
+  io.dbus.wdata := req.wdata
+  io.dbus.wmask := req.wmask
   val dbusResp = RegNext(io.dbus.valid && io.dbus.ready, false.B)
 
   val use_ebus = !(itcm || dtcm)
 
   io.ebus.dbus.valid := use_ebus && slot.io.busReq.valid
-  io.ebus.dbus.write := slot.io.busReq.bits.write
+  io.ebus.dbus.write := req.write
   io.ebus.dbus.pc    := slot.io.pc
-  io.ebus.dbus.addr  := Cat(slot.io.busReq.bits.rowAddr, slot.io.busReq.bits.offset)
+  io.ebus.dbus.addr  := Cat(req.rowAddr, req.offset)
   io.ebus.dbus.adrx  := addr
-  io.ebus.dbus.size  := slot.io.busReq.bits.size
-  io.ebus.dbus.wdata := slot.io.busReq.bits.wdata
-  io.ebus.dbus.wmask := slot.io.busReq.bits.wmask
+  io.ebus.dbus.size  := req.size
+  io.ebus.dbus.wdata := req.wdata
+  io.ebus.dbus.wmask := req.wmask
   io.ebus.internal   := peri
   val ebusResp = RegNext(io.ebus.dbus.valid && io.ebus.dbus.ready, false.B)
 
+  val respTxid = RegNext(slot.io.busReq.bits.txid, 0.U)
+
   slot.io.busResp.valid      := ibusResp || dbusResp || ebusResp
+  slot.io.busResp.bits.txid  := respTxid
   slot.io.busResp.bits.rdata := MuxUpTo1H(
     WireInit(UInt(p.lsuDataBits.W), DontCare),
     Seq(

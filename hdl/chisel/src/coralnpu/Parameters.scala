@@ -165,10 +165,12 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   var lsuDataBits       = 256
   def lsuDataBytes: Int = { lsuDataBits / 8 }
   // When increasing bus width, this can be limited to improve timing.
-  val lsuStrictWindowBytes = lsuDataBytes
-  def dbusSize             = log2Ceil(lsuDataBytes + 1)
-  def dbusOffsetBits       = log2Ceil(lsuDataBytes)
-  def dbusRowAddrBits      = lsuAddrBits - dbusOffsetBits
+  val lsuStrictWindowBytes    = lsuDataBytes
+  def dbusSize                = log2Ceil(lsuDataBytes + 1)
+  def dbusOffsetBits          = log2Ceil(lsuDataBytes)
+  def dbusRowAddrBits         = lsuAddrBits - dbusOffsetBits
+  val lsuSlotTxidEntries: Int = 4
+  def lsuSlotTxidWidth: Int   = log2Ceil(lsuSlotTxidEntries)
 
   // TCM Size Configuration
   var itcmSizeKBytes = Parameters.itcmSizeKBytesDefault

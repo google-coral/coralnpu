@@ -148,8 +148,8 @@ class DBusIO(p: Parameters, bank: Boolean = false) extends Bundle {
   val rdata = Input(UInt(p.lsuDataBits.W))
 }
 
-// TODO: add txid
 class DBus2Resp(p: Parameters) extends Bundle {
+  val txid  = UInt(p.lsuSlotTxidWidth.W)
   val rdata = UInt(p.lsuDataBits.W)
   val fault = Bool()
 }
