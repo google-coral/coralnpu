@@ -425,7 +425,15 @@ package coralnpu_cosim_checker_pkg;
       itcm_start_address = memory_map_pkg::ITCM_START_ADDR;
       itcm_length = memory_map_pkg::ITCM_LENGTH;
 
+      // sim_config_t is a packed struct passed to C via DPI. In SV packed structs,
+      // the first field is at MSB (bits 127:96) while in C (little-endian) the first
+      // member is at byte offset 0. Streaming operator {<<32{...}} packs 32-bit slices
+      // in reverse order so that itcm_start_address aligns with C struct byte offset 0.
+`ifdef ZVT_ON
+      dpi_cfg_s = {<<32{itcm_start_address, itcm_length, initial_misa_value, 32'd2}};
+`else
       dpi_cfg_s = {<<32{itcm_start_address, itcm_length, initial_misa_value, 32'd1}};
+`endif
 
       test_start_event.wait_trigger();
       forever begin
@@ -481,6 +489,13 @@ package coralnpu_cosim_checker_pkg;
         // Initialize MPACT
         if (mpact_enabled) begin
           void'(mpact_fini());
+          itcm_start_address = memory_map_pkg::ITCM_START_ADDR;
+          itcm_length = memory_map_pkg::ITCM_LENGTH;
+`ifdef ZVT_ON
+          dpi_cfg_s = {<<32{itcm_start_address, itcm_length, initial_misa_value, 32'd2}};
+`else
+          dpi_cfg_s = {<<32{itcm_start_address, itcm_length, initial_misa_value, 32'd1}};
+`endif
           if (mpact_init() != 0) `uvm_error(get_type_name(), "MPACT simulator DPI init failed.")
           if (mpact_config(dpi_cfg_s) != 0) `uvm_error(get_type_name(), "MPACT DPI config failed.")
           if (mpact_load_program(test_elf) != 0)
@@ -555,7 +570,7 @@ package coralnpu_cosim_checker_pkg;
         diagnosis = "⚠️ UNEXPECTED CO-SIMULATION MISMATCH";
       end
 
-      `uvm_error("3WAY_COSIM_MISMATCH", $sformatf(
+      `uvm_error("COSIM_MISMATCH", $sformatf(
                  {
                    "\n========================= [3-WAY CO-SIM MISMATCH] =========================\n",
                    "  PC:          0x%08h\n",
@@ -758,7 +773,7 @@ package coralnpu_cosim_checker_pkg;
         end
       end
 
-      // 4. Tile Writeback Detection
+      // 4. Tile Writeback Detection and Verification
       if (rtl_info.t_wb != 0) begin
         for (int i = 0; i < 16; i++) begin
           if (rtl_info.t_wb[i]) begin
@@ -768,6 +783,50 @@ package coralnpu_cosim_checker_pkg;
                         $sformatf("PC=0x%08h Insn=0x%08h | RTL: %s writeback (retire_index=%0d)",
                                   rtl_info.pc, rtl_info.insn, reg_name, rtl_info.retire_index),
                         UVM_NONE)
+            end
+
+            if (mpact_enabled) begin
+              logic [1023:0][31:0] mpact_words;
+              int unsigned current_tew = 0;
+              int unsigned valid_word_count = 0;
+
+              if (mpact_get_current_matrix_tile(
+                      i, mpact_words, current_tew, valid_word_count
+                  ) != 0) begin
+                `uvm_error("COSIM_API_FAIL", $sformatf(
+                                                 "Failed to get MPACT matrix tile %s at PC 0x%08h",
+                                                 reg_name, rtl_info.pc))
+                return 0;
+              end
+
+              if (valid_word_count > 0) begin
+                int num_128b_chunks = valid_word_count / 4;
+                for (int chunk = 0; chunk < num_128b_chunks && chunk < 16; chunk++) begin
+                  logic [127:0] mpact_chunk = {
+                    mpact_words[chunk*4+3],
+                    mpact_words[chunk*4+2],
+                    mpact_words[chunk*4+1],
+                    mpact_words[chunk*4+0]
+                  };
+                  logic [127:0] rtl_chunk = rvvi_vif.t_wdata[0][rtl_info.retire_index][i][chunk];
+
+                  if (mpact_chunk != rtl_chunk) begin
+                    `uvm_error(
+                        "COSIM_MISMATCH",
+                        $sformatf(
+                            {"\n========================= [TILE CO-SIM MISMATCH] =========================\n",
+                             "  PC:          0x%08h\n", "  Instruction: 0x%08h\n",
+                             "  Tile:        %s (chunk %0d / %0d, TEW=%0d)\n",
+                             "  -------------------------------------------------------------------------\n",
+                             "  RTL:         0x%032h\n", "  MPACT:       0x%032h (MISMATCH)\n",
+                             "  Diagnosis:   🟡 MPACT DIVERGENCE or RTL TILE BUG\n",
+                             "==========================================================================="
+                              }, rtl_info.pc, rtl_info.insn, reg_name, chunk, num_128b_chunks,
+                              current_tew, rtl_chunk, mpact_chunk))
+                    return 0;
+                  end
+                end
+              end
             end
           end
         end
@@ -831,6 +890,13 @@ package coralnpu_cosim_checker_pkg;
         // mip (0x344):
         // Interrupt pending bits reflect asynchronous external signals (PLIC/timer)
         12'h344: return 32'h0000_0000;
+
+`ifdef ZVT_ON
+        // mstatus (0x300):
+        // CoralNPU hardware implements mstatus.MS (Matrix Status bits [30:29]) and factors them into SD (bit 31).
+        // Mask bits [30:29] during Zvt co-simulation until MPACT models mstatus.MS state.
+        12'h300: return ~(32'b11 << 29);
+`endif
 
         // Default: Exact bit-for-bit check on all standard architectural CSRs
         // (mstatus, mscratch, mepc, mcause, mtval, misa, fflags, frm, fcsr, vstart, vxrm, vxsat, tdata1/2, etc.)

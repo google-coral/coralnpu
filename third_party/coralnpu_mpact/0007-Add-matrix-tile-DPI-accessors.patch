@@ -1,0 +1,307 @@
+diff -uNr a/sim/coralnpu_simulator.cc b/sim/coralnpu_simulator.cc
+--- a/sim/coralnpu_simulator.cc	2026-09-28 22:55:05.388233411 +0000
++++ b/sim/coralnpu_simulator.cc	2026-09-28 22:55:33.605407882 +0000
+@@ -16,6 +16,7 @@
+ 
+ #include <cstddef>
+ #include <cstdint>
++#include <cstring>
+ #include <iostream>
+ #include <memory>
+ #include <optional>
+@@ -289,6 +290,80 @@
+   return top_->GetRegisterDataBuffer(name);
+ }
+ 
++namespace {
++int NumTilesForTewHelper(uint32_t tew) {
++  switch (tew) {
++    case 8:  return 16;
++    case 16: return 8;
++    case 32: return 4;
++    case 64: return 8;
++    default: return 0;
++  }
++}
++
++int EteForTewHelper(int tile_elements, uint32_t tew) {
++  return tew == 64 ? tile_elements / 2 : tile_elements;
++}
++
++int CanonicalTileForTewHelper(int tile, uint32_t tew) {
++  const int num_tiles = NumTilesForTewHelper(tew);
++  if (num_tiles == 0) return tile;
++  const int stride = 16 / num_tiles;
++  return tile & ~(stride - 1);
++}
++}  // namespace
++
++absl::StatusOr<std::vector<uint8_t>> CoralNPUSimulator::ReadMatrixTile(
++    uint32_t tile, uint32_t tew) const {
++  if (matrix_state_ == nullptr) {
++    return absl::FailedPreconditionError(
++        "Matrix tile state is not present for this architecture");
++  }
++  if (tile >= 16) {
++    return absl::InvalidArgumentError("Matrix tile index must be below 16");
++  }
++  if (NumTilesForTewHelper(tew) == 0) {
++    return absl::InvalidArgumentError("Matrix TEW must be 8, 16, 32, or 64");
++  }
++
++  const int canonical_tile = CanonicalTileForTewHelper(static_cast<int>(tile), tew);
++  const int ete = EteForTewHelper(matrix_state_->tile_elements(), tew);
++  const int element_bytes = static_cast<int>(tew / 8);
++  std::vector<uint8_t> result(ete * ete * element_bytes);
++  for (int row = 0; row < ete; ++row) {
++    for (int col = 0; col < ete; ++col) {
++      const int offset = (row * ete + col) * element_bytes;
++      switch (tew) {
++        case 8: {
++          const uint8_t value = matrix_state_->GetElem<uint8_t>(
++              canonical_tile, row, col, tew);
++          std::memcpy(&result[offset], &value, sizeof(value));
++          break;
++        }
++        case 16: {
++          const uint16_t value = matrix_state_->GetElem<uint16_t>(
++              canonical_tile, row, col, tew);
++          std::memcpy(&result[offset], &value, sizeof(value));
++          break;
++        }
++        case 32: {
++          const uint32_t value = matrix_state_->GetElem<uint32_t>(
++              canonical_tile, row, col, tew);
++          std::memcpy(&result[offset], &value, sizeof(value));
++          break;
++        }
++        case 64: {
++          const uint64_t value = matrix_state_->GetElem<uint64_t>(
++              canonical_tile, row, col, tew);
++          std::memcpy(&result[offset], &value, sizeof(value));
++          break;
++        }
++      }
++    }
++  }
++  return result;
++}
++
+ absl::StatusOr<size_t> CoralNPUSimulator::ReadMemory(uint64_t address,
+                                                      void* buf, size_t length) {
+   return top_->ReadMemory(address, buf, length);
+diff -uNr a/sim/coralnpu_simulator.h b/sim/coralnpu_simulator.h
+--- a/sim/coralnpu_simulator.h	2026-09-28 22:55:05.388405040 +0000
++++ b/sim/coralnpu_simulator.h	2026-09-28 22:54:50.325364042 +0000
+@@ -102,6 +102,12 @@
+   absl::StatusOr<mpact::sim::generic::DataBuffer*> GetRegisterDataBuffer(
+       const std::string& name);
+ 
++  // Returns one architectural matrix tile as row-major, little-endian
++  // elements at the requested TEW. This intentionally hides the physical
++  // tile-punning layout from debugger and cosim clients.
++  absl::StatusOr<std::vector<uint8_t>> ReadMatrixTile(uint32_t tile,
++                                                      uint32_t tew) const;
++
+   // Read and Write memory methods.
+   absl::StatusOr<size_t> ReadMemory(uint64_t address, void* buf, size_t length);
+   absl::StatusOr<size_t> WriteMemory(uint64_t address, const void* buf,
+@@ -132,6 +138,9 @@
+   [[nodiscard]] mpact::sim::generic::DecoderInterface* decoder() {
+     return decoder_.get();
+   }
++  [[nodiscard]] mpact::sim::riscv::RiscVZvtMatrixState* matrix_state() const {
++    return matrix_state_.get();
++  }
+ 
+  private:
+   std::unique_ptr<mpact::sim::util::MemoryInterface> memory_;
+diff -uNr a/sim/cosim/coralnpu_cosim_dpi.h b/sim/cosim/coralnpu_cosim_dpi.h
+--- a/sim/cosim/coralnpu_cosim_dpi.h	2026-09-28 22:55:05.419845525 +0000
++++ b/sim/cosim/coralnpu_cosim_dpi.h	2026-09-28 22:54:50.325829182 +0000
+@@ -89,6 +89,25 @@
+ // The register value is returned in the svLogicVecVal argument.
+ int mpact_get_vector_register(const char* name, svLogicVecVal* value);
+ 
++// Return the number of 32-bit words required to hold one logical matrix tile
++// at the requested TEW. The tile data is exported row-major and each element
++// is little-endian within the word stream.
++int mpact_get_matrix_tile_word_count(uint32_t tew, uint32_t* word_count);
++
++// Return one logical matrix tile.  is the architectural 4-bit tile
++// specifier; ignored low bits are canonicalized according to TEW. The caller
++// must provide at least the word count returned by
++// mpact_get_matrix_tile_word_count().
++int mpact_get_matrix_tile(uint32_t tile, uint32_t tew, svLogicVecVal* value,
++                          uint32_t word_count);
++
++// Return one logical matrix tile using MPACT's current matrix configuration.
++//  must provide at least TE*TE 32-bit words, where TE is the configured
++// matrix tile edge. The function returns the current TEW and the number of
++// valid words written. Tile aliases are canonicalized according to current TEW.
++int mpact_get_current_matrix_tile(uint32_t tile, svLogicVecVal* value,
++                                  uint32_t* tew, uint32_t* valid_word_count);
++
+ // Return the configured architecture of the simulator.
+ // Returns 0 on success, non-zero on failure.
+ int mpact_get_architecture(coralnpu_architecture_t* architecture);
+diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
+--- a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc	2026-09-28 22:55:05.420004885 +0000
++++ b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc	2026-09-28 22:55:33.605658413 +0000
+@@ -21,6 +21,7 @@
+ #include "sim/coralnpu_simulator.h"
+ #include "sim/coralnpu_v2_state.h"
+ #include "sim/cosim/coralnpu_cosim_dpi.h"
++#include "riscv/riscv_zvt_state.h"
+ #include "absl/log/check.h"
+ #include "absl/log/log.h"
+ #include "absl/status/status.h"
+@@ -32,6 +33,7 @@
+ using ::coralnpu::sim::CoralNPUSimulator;
+ using ::coralnpu::sim::CoralNPUSimulatorOptions;
+ using ::coralnpu::sim::CoralNPUV2State;
++using ::mpact::sim::riscv::RiscVZvtMatrixState;
+ 
+ namespace {
+ 
+@@ -81,6 +83,8 @@
+ 
+   coralnpu_architecture_t architecture() const {
+     switch (options_.architecture) {
++      case Architecture::kM4:
++        return kCoralNPUM4;
+       case Architecture::kM3:
+         return kCoralNPUM3;
+       case Architecture::kV2:
+@@ -344,6 +348,131 @@
+   return 0;
+ }
+ 
++namespace {
++int NumTilesForTewWrapper(uint32_t tew) {
++  switch (tew) {
++    case 8:  return 16;
++    case 16: return 8;
++    case 32: return 4;
++    case 64: return 8;
++    default: return 0;
++  }
++}
++}  // namespace
++
++int mpact_get_matrix_tile_word_count(uint32_t tew, uint32_t* word_count) {
++  if (word_count == nullptr) {
++    LOG(ERROR) << "[DPI] mpact_get_matrix_tile_word_count: output is null.";
++    return -1;
++  }
++  *word_count = 0;
++  if (g_mpact_handle == nullptr) {
++    LOG(ERROR) << "[DPI] mpact_get_matrix_tile_word_count: handle is null.";
++    return -2;
++  }
++  if (!g_mpact_handle->is_initialized() &&
++      !g_mpact_handle->Init(nullptr)) {
++    return -3;
++  }
++  auto* matrix = g_mpact_handle->simulator()->matrix_state();
++  if (matrix == nullptr) {
++    LOG(ERROR) << "[DPI] Matrix state is unavailable for this architecture.";
++    return -4;
++  }
++  if (NumTilesForTewWrapper(tew) == 0) {
++    LOG(ERROR) << "[DPI] Unsupported matrix TEW: " << tew;
++    return -5;
++  }
++  const uint32_t ete = static_cast<uint32_t>(tew == 64 ? matrix->tile_elements() / 2 : matrix->tile_elements());
++  const uint32_t byte_count = ete * ete * (tew / 8);
++  *word_count = (byte_count + sizeof(uint32_t) - 1) / sizeof(uint32_t);
++  return 0;
++}
++
++int mpact_get_matrix_tile(uint32_t tile, uint32_t tew, svLogicVecVal* value,
++                          uint32_t word_count) {
++  if (value == nullptr) {
++    LOG(ERROR) << "[DPI] mpact_get_matrix_tile: value is null.";
++    return -1;
++  }
++  uint32_t required_words = 0;
++  const int count_status =
++      mpact_get_matrix_tile_word_count(tew, &required_words);
++  if (count_status != 0) return count_status;
++  if (word_count < required_words) {
++    LOG(ERROR) << "[DPI] mpact_get_matrix_tile: output has " << word_count
++               << " words, requires " << required_words << ".";
++    return -6;
++  }
++
++  auto result = g_mpact_handle->simulator()->ReadMatrixTile(tile, tew);
++  if (!result.ok()) {
++    LOG(ERROR) << "[DPI] mpact_get_matrix_tile: "
++               << result.status().message();
++    return -7;
++  }
++  for (uint32_t word = 0; word < required_words; ++word) {
++    uint32_t packed = 0;
++    for (uint32_t byte = 0; byte < sizeof(uint32_t); ++byte) {
++      const uint32_t offset = word * sizeof(uint32_t) + byte;
++      if (offset < result->size()) {
++        packed |= static_cast<uint32_t>((*result)[offset]) << (8 * byte);
++      }
++    }
++    value[word].aval = packed;
++    value[word].bval = 0;
++  }
++  return 0;
++}
++
++int mpact_get_current_matrix_tile(uint32_t tile, svLogicVecVal* value,
++                                  uint32_t* tew,
++                                  uint32_t* valid_word_count) {
++  if (value == nullptr || tew == nullptr || valid_word_count == nullptr) {
++    LOG(ERROR) << "[DPI] mpact_get_current_matrix_tile: output is null.";
++    return -1;
++  }
++  *tew = 0;
++  *valid_word_count = 0;
++  if (g_mpact_handle == nullptr) {
++    LOG(ERROR) << "[DPI] mpact_get_current_matrix_tile: handle is null.";
++    return -2;
++  }
++  if (!g_mpact_handle->is_initialized() &&
++      !g_mpact_handle->Init(nullptr)) {
++    return -3;
++  }
++
++  auto* matrix = g_mpact_handle->simulator()->matrix_state();
++  if (matrix == nullptr) {
++    LOG(ERROR) << "[DPI] Matrix state is unavailable for this architecture.";
++    return -4;
++  }
++  const uint32_t current_tew = static_cast<uint32_t>(matrix->tile_element_width_bits());
++  uint32_t required_words = 0;
++  const int count_status =
++      mpact_get_matrix_tile_word_count(current_tew, &required_words);
++  if (count_status != 0) {
++    LOG(ERROR) << "[DPI] Invalid current matrix TEW: " << current_tew;
++    return -5;
++  }
++
++  // TEW=32 is the largest logical tile representation: TE*TE words.
++  const uint32_t max_words =
++      static_cast<uint32_t>(matrix->tile_elements() * matrix->tile_elements());
++  for (uint32_t word = 0; word < max_words; ++word) {
++    value[word].aval = 0;
++    value[word].bval = 0;
++  }
++  const int tile_status =
++      mpact_get_matrix_tile(tile, current_tew, value, max_words);
++  if (tile_status != 0) return -6;
++
++  *tew = current_tew;
++  *valid_word_count = required_words;
++  return 0;
++}
++
+ int mpact_fini() {
+   if (g_mpact_handle == nullptr) {
+     LOG(ERROR) << "[DPI] mpact_fini: g_mpact_handle is null.";

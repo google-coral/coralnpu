@@ -234,7 +234,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "piOI1An6IG3VE6DGb7IjjOTgOomy1o7e9vveC5mfXvA=",
+        "bzlTransitiveDigest": "3kTc3RT2btZYad+VNQKC5CsXoMH8OzeKfJdAEGiyGxs=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -443,7 +443,8 @@
               "patches": [
                 "@@//third_party/coralnpu_mpact:0003-Hardwire-mtvec-direct-mode.patch",
                 "@@//third_party/coralnpu_mpact:0004-Fix-mpact-riscv-includes.patch",
-                "@@//third_party/coralnpu_mpact:0006-Fix-svdpi-includes.patch"
+                "@@//third_party/coralnpu_mpact:0006-Fix-svdpi-includes.patch",
+                "@@//third_party/coralnpu_mpact:0007-Add-matrix-tile-DPI-accessors.patch"
               ],
               "patch_args": [
                 "-p1"
