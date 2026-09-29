@@ -29,6 +29,9 @@ object DmaCsrAddrs {
   val SRC_ADDR  = 0x08
   val DST_ADDR  = 0x0c
   val LEN_FLAGS = 0x10
+  val XFER_CFG  = 0x14
+  val AREA_SIZE = 0x18
+  val PASS_REM  = 0x1c
 }
 
 class DmaCsr(p: TLULParameters) extends Module {
@@ -38,21 +41,23 @@ class DmaCsr(p: TLULParameters) extends Module {
   val gMax   = DmaGeometry.gMax(p)
   val sWidth = DmaGeometry.sWidth(p)
 
-  val lenBits = (new DmaLenFlags).xfer_len.getWidth
-  val tWidth  = lenBits - gMax + 1
+  val tWidth = DmaGeometry.pWidth(p)
 
   val regWidth     = 32
   val regBytes     = regWidth / 8
   val lanesPerBeat = (8 * p.w) / regWidth
 
   val io = IO(new Bundle {
-    val tl          = Flipped(new TLULHost2Device[NoUser, NoUser](p))
-    val desc        = Decoupled(new FillDescriptor(p))
-    val fillBusy    = Input(Bool())
-    val drainBusy   = Input(Bool())
-    val engineError = Input(Bool())
-    val busy        = Output(Bool())
-    val error       = Output(Bool())
+    val tl            = Flipped(new TLULHost2Device[NoUser, NoUser](p))
+    val fillDesc      = Decoupled(new FillDescriptor(p))
+    val drainDesc     = Decoupled(new DrainDescriptor(p))
+    val fillBusy      = Input(Bool())
+    val drainBusy     = Input(Bool())
+    val engineError   = Input(Bool())
+    val passRemaining = Input(UInt(DmaGeometry.pWidth(p).W)) // from fill, for PASS_REM
+    val abort         = Output(Bool())                       // to both engines
+    val busy          = Output(Bool())
+    val error         = Output(Bool())
   })
 
   val tl_a = io.tl.a
@@ -84,11 +89,14 @@ class DmaCsr(p: TLULParameters) extends Module {
   val srcAddrReg  = RegInit(0.U(p.a.W))
   val dstAddrReg  = RegInit(0.U(p.a.W))
   val lenFlagsReg = RegInit(0.U(32.W))
+  val xferCfgReg  = RegInit(1.U(32.W))                  // n_areas = 1 (memcopy) out of reset
+  val areaSizeReg = RegInit(0.U(DmaGeometry.lenBits.W)) // software-written; strided only
 
   val doneReg     = RegInit(false.B)
   val alignErrReg = RegInit(false.B)
   val cfgErrReg   = RegInit(false.B)
   val xferErrReg  = RegInit(false.B)
+  val errorAny    = alignErrReg || cfgErrReg || xferErrReg
 
   val state   = RegInit(CsrState.sIdle)
   val idle    = state === CsrState.sIdle
@@ -98,76 +106,116 @@ class DmaCsr(p: TLULParameters) extends Module {
   val ctrlData  = wdata(CTRL)
 
   // Taken from the write data so one ENABLE|START store both arms and fires.
-  // CTRL[2] is abort: reserved, not implemented.
+  // CTRL[2] is abort: reserved, not implemented. CTRL[3] clears the sticky errors.
   val enableEff  = Mux(ctrlWrite, ctrlData(0), enableReg)
   val startWrite = ctrlWrite && ctrlData(1)
+  val clearErr   = ctrlWrite && ctrlData(3)
 
   // ==========================================
   // DERIVED GEOMETRY
   // ==========================================
-  val lenFlags = lenFlagsReg.asTypeOf(new DmaLenFlags)
-  val len      = lenFlags.xfer_len
-  val fullMask = Fill(N, 1.U)
+  val lenFlags  = lenFlagsReg.asTypeOf(new DmaLenFlags)
+  val len       = lenFlags.xfer_len
+  val xferCfg   = xferCfgReg.asTypeOf(new XferCfg)
+  val nAreas    = xferCfg.n_areas
+  val xferWidth = lenFlags.xfer_width
+  val strided   = nAreas > 1.U
+  val fullMask  = Fill(N, 1.U)
 
+  // Software supplies area_size for strided jobs; memcopy is one area of len bytes.
+  val areaSize = Mux(strided, areaSizeReg, len)
+
+  // Memcopy arm only.
   val totalBeats = ((len +& (N - 1).U) >> gMax).asUInt
-  val tailBytes  = len(gMax - 1, 0)
-  val tailMask   = Mux(
+
+  // Everything below derives from areaSize with shifts and compares.
+  val tailBytes    = areaSize(gMax - 1, 0)
+  val beatsPerArea = ((areaSize +& (N - 1).U) >> gMax).asUInt
+  val lastMask     = Mux(
     tailBytes === 0.U,
     fullMask,
     ((1.U((N + 1).W) << tailBytes).asUInt - 1.U)(N - 1, 0)
   )
 
+  // ==========================================
+  // MODE TABLE — one whole descriptor per mode
+  // ==========================================
+  val fillMc = Wire(new FillDescriptor(p))
+  fillMc.srcAddr       := srcAddrReg
+  fillMc.stride        := N.U
+  fillMc.passes        := (totalBeats +& (N - 1).U) >> gMax
+  fillMc.lastPassBeats := (totalBeats - ((fillMc.passes - 1.U) << gMax))(sWidth - 1, 0)
+  // Forced, not taken from software: a smaller xfer_width would transpose and scramble the copy.
+  fillMc.logElemSize := gMax.U
+
+  val fillSt = Wire(new FillDescriptor(p))
+  fillSt.srcAddr       := srcAddrReg
+  fillSt.stride        := nAreas(sWidth - 1, 0)
+  fillSt.passes        := beatsPerArea
+  fillSt.lastPassBeats := nAreas(sWidth - 1, 0)
+  fillSt.logElemSize   := xferWidth
+
+  // stride / passes / lastPassBeats are shared with fill; reuse, don't recompute.
+  val drainMc = Wire(new DrainDescriptor(p))
+  drainMc.dstAddr       := dstAddrReg
+  drainMc.stride        := fillMc.stride
+  drainMc.passes        := fillMc.passes
+  drainMc.lastPassBeats := fillMc.lastPassBeats
+  drainMc.rowPitch      := N.U
+  drainMc.passAdvance   := (N * N).U
+  drainMc.lastMask      := lastMask
+  drainMc.maskAll       := false.B
+
+  val drainSt = Wire(new DrainDescriptor(p))
+  drainSt.dstAddr       := dstAddrReg
+  drainSt.stride        := fillSt.stride
+  drainSt.passes        := fillSt.passes
+  drainSt.lastPassBeats := fillSt.lastPassBeats
+  // Planes are padded to a whole number of beats so every plane starts N-aligned;
+  // maskAll keeps the tail from writing into the gap before the next plane.
+  drainSt.rowPitch    := beatsPerArea << gMax
+  drainSt.passAdvance := N.U
+  drainSt.lastMask    := lastMask
+  drainSt.maskAll     := true.B
+
+  val fillDesc  = Mux(strided, fillSt, fillMc)
+  val drainDesc = Mux(strided, drainSt, drainMc)
+
   val alignError = (srcAddrReg(gMax - 1, 0) =/= 0.U) || (dstAddrReg(gMax - 1, 0) =/= 0.U)
-  // Full-width beats only, and none of the peripheral-FIFO modes.
-  val cfgError = (lenFlags.xfer_width =/= gMax.U) ||
+  // No peripheral-FIFO modes; areas must be non-empty and fit the buffer.
+  val cfgError = (xferWidth > gMax.U) ||
     lenFlags.src_fixed || lenFlags.dst_fixed || lenFlags.poll_en ||
-    (len === 0.U)
+    (len === 0.U) ||
+    (nAreas === 0.U) || (nAreas > N.U) ||
+    (strided && (areaSizeReg === 0.U))
 
   val startReq = startWrite && enableEff && idle
-  val startOk  = startReq && !alignError && !cfgError
+  // Accounts for a clear in the same CTRL write, like enableEff does for enable.
+  val errorEff = Mux(clearErr, false.B, errorAny)
+  val startOk  = startReq && !alignError && !cfgError && !errorEff
 
   // ==========================================
-  // CHUNK GENERATOR
+  // DESCRIPTOR ISSUE — one whole-job descriptor per engine
   // ==========================================
-  val cur_src     = RegInit(0.U(p.a.W))
-  val cur_dst     = RegInit(0.U(p.a.W))
-  val remaining   = RegInit(0.U(tWidth.W))
-  val lastMaskReg = RegInit(0.U(N.W))
+  // Each engine takes its descriptor once per job, whenever it is ready; the two
+  // need not fire on the same cycle.
+  val fillDescIssued  = RegInit(false.B)
+  val drainDescIssued = RegInit(false.B)
 
-  val chunk  = Mux(remaining > N.U, N.U, remaining)(sWidth - 1, 0)
-  val isLast = remaining <= N.U
+  fillDescIssued  := Mux(startOk, false.B, Mux(io.fillDesc.fire, true.B, fillDescIssued))
+  drainDescIssued := Mux(startOk, false.B, Mux(io.drainDesc.fire, true.B, drainDescIssued))
 
-  io.desc.valid            := running && (remaining =/= 0.U)
-  io.desc.bits.srcAddr     := cur_src
-  io.desc.bits.dstAddr     := cur_dst
-  io.desc.bits.stride      := chunk
-  io.desc.bits.logElemSize := gMax.U
-  // The tail lands on the final beat of the final chunk only.
-  io.desc.bits.lastMask := Mux(isLast, lastMaskReg, fullMask)
-
-  val advance = (chunk << gMax).asUInt
-
-  cur_src := Mux(
-    startOk,
-    srcAddrReg,
-    Mux(io.desc.fire, cur_src + advance, cur_src)
-  )
-  cur_dst := Mux(
-    startOk,
-    dstAddrReg,
-    Mux(io.desc.fire, cur_dst + advance, cur_dst)
-  )
-  remaining := Mux(
-    startOk,
-    totalBeats,
-    Mux(io.desc.fire, remaining - chunk, remaining)
-  )
-  lastMaskReg := Mux(startOk, tailMask, lastMaskReg)
+  io.fillDesc.valid  := running && !fillDescIssued
+  io.drainDesc.valid := running && !drainDescIssued
+  io.fillDesc.bits   := fillDesc
+  io.drainDesc.bits  := drainDesc
 
   // ==========================================
   // SEQUENCER
   // ==========================================
-  val allDone = running && (remaining === 0.U) && !io.fillBusy && !io.drainBusy
+  // Issued flags set the cycle after fire, the same cycle engine busy rises.
+  val allDone = running && fillDescIssued && drainDescIssued &&
+    !io.fillBusy && !io.drainBusy
 
   state := MuxCase(
     state,
@@ -179,40 +227,70 @@ class DmaCsr(p: TLULParameters) extends Module {
 
   enableReg := Mux(ctrlWrite, ctrlData(0), enableReg)
 
-  // Config is frozen while running, so a stray write cannot corrupt a live
-  // transfer or desynchronise cur_src from srcAddrReg.
+  // Config is frozen while running: the descriptors read these registers
+  // directly, and an engine may take its descriptor several cycles after start.
   srcAddrReg  := Mux(hits(SRC_ADDR) && idle, wdata(SRC_ADDR), srcAddrReg)
   dstAddrReg  := Mux(hits(DST_ADDR) && idle, wdata(DST_ADDR), dstAddrReg)
   lenFlagsReg := Mux(hits(LEN_FLAGS) && idle, wdata(LEN_FLAGS), lenFlagsReg)
+  xferCfgReg  := Mux(hits(XFER_CFG) && idle, wdata(XFER_CFG), xferCfgReg)
+  areaSizeReg := Mux(
+    hits(AREA_SIZE) && idle,
+    wdata(AREA_SIZE)(DmaGeometry.lenBits - 1, 0),
+    areaSizeReg
+  )
 
-  doneReg     := Mux(startReq, false.B, Mux(allDone, true.B, doneReg))
-  alignErrReg := Mux(startReq, alignError, alignErrReg)
-  cfgErrReg   := Mux(startReq, cfgError, cfgErrReg)
-  xferErrReg  := Mux(startReq, false.B, Mux(io.engineError, true.B, xferErrReg))
-
-  val errorAny = alignErrReg || cfgErrReg || xferErrReg
+  // Errors are sticky: only an explicit CTRL.clear_error write clears them.
+  // Done sets only on a clean finish, so an abort reads busy=0, done=0, error=1.
+  doneReg     := Mux(startReq, false.B, Mux(allDone && !errorAny, true.B, doneReg))
+  alignErrReg := Mux(startReq && alignError, true.B, Mux(clearErr, false.B, alignErrReg))
+  cfgErrReg   := Mux(startReq && cfgError, true.B, Mux(clearErr, false.B, cfgErrReg))
+  xferErrReg  := Mux(clearErr, false.B, Mux(io.engineError, true.B, xferErrReg))
 
   io.busy  := running
   io.error := errorAny
+  // Only bus errors abort; align/config errors stop the start, so nothing is running.
+  io.abort := xferErrReg
 
-  assert(!io.desc.fire || running, "Descriptor issued outside a transfer")
-  assert(!io.desc.fire || (chunk =/= 0.U), "Zero-beat chunk")
-  assert(!io.desc.fire || (chunk <= N.U), "Chunk exceeds buffer depth")
-  assert(!allDone || (remaining === 0.U), "Done with beats remaining")
   assert(!startOk || (totalBeats =/= 0.U), "Start with zero beats")
+  assert(!io.fillDesc.fire || running, "Fill descriptor issued outside a transfer")
+  assert(!io.drainDesc.fire || running, "Drain descriptor issued outside a transfer")
+
+  // Geometry checks guard on fire: that is when the engine actually takes the
+  // descriptor, and config is frozen from start until then.
+  assert(!io.fillDesc.fire || (fillDesc.passes =/= 0.U), "Zero passes")
+  assert(
+    !io.fillDesc.fire || ((fillDesc.stride =/= 0.U) && (fillDesc.stride <= N.U)),
+    "stride must be in 1..N"
+  )
+  assert(
+    !io.fillDesc.fire || ((fillDesc.lastPassBeats =/= 0.U) &&
+      (fillDesc.lastPassBeats <= fillDesc.stride)),
+    "lastPassBeats must be in 1..stride"
+  )
 
   // ==========================================
   // READ PATH
   // ==========================================
   val ctrlVal   = Cat(0.U((regWidth - 1).W), enableReg)
-  val statusVal = Cat(0.U((regWidth - 5).W), cfgErrReg, alignErrReg, errorAny, doneReg, running)
+  val statusVal = Cat(
+    0.U((regWidth - 6).W),
+    xferErrReg,
+    cfgErrReg,
+    alignErrReg,
+    errorAny,
+    doneReg,
+    running
+  )
 
   val readMap = Map(
     CTRL      -> ctrlVal,
     STATUS    -> statusVal,
     SRC_ADDR  -> srcAddrReg,
     DST_ADDR  -> dstAddrReg,
-    LEN_FLAGS -> lenFlagsReg
+    LEN_FLAGS -> lenFlagsReg,
+    XFER_CFG  -> xferCfgReg,
+    AREA_SIZE -> areaSizeReg.pad(regWidth),
+    PASS_REM  -> io.passRemaining.pad(regWidth)
   )
 
   val readData = Wire(Vec(lanesPerBeat, UInt(regWidth.W)))

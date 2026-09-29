@@ -51,8 +51,13 @@ DMA_CORE_TESTCASES = [
     "test_dma_back_to_back",
     "test_dma_align_error",
     "test_dma_cfg_error",
+    "test_dma_cfg_error_area_size_zero",
     "test_dma_source_integrity",
     "test_dma_randomized",
+    "test_dma_strided_smoke",
+    "test_dma_strided_tail",
+    "test_dma_error_gate",
+    "test_dma_strided_randomized",
 ]
 # END_TESTCASES_FOR_dma_core_cocotb_test
 
