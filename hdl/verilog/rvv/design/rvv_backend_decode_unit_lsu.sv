@@ -3057,11 +3057,18 @@ module rvv_backend_decode_unit_lsu
             end
             TILESEW16: begin
               emul_max      = EMUL2;
-              uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+              uop_index_max = (csr_vl > 'd8) ? (`UOP_INDEX_WIDTH)'('d1) : (`UOP_INDEX_WIDTH)'('d0);
             end
             TILESEW32: begin
               emul_max      = EMUL4;
-              uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+              if (csr_vl > 'd12)
+                uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
+              else if (csr_vl > 'd8)
+                uop_index_max = (`UOP_INDEX_WIDTH)'('d2);
+              else if (csr_vl > 'd4)
+                uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
+              else
+                uop_index_max = (`UOP_INDEX_WIDTH)'('d0);
             end
           endcase
         end
@@ -3530,6 +3537,11 @@ module rvv_backend_decode_unit_lsu
           end
         endcase
       end
+    `ifdef ZVT_ON
+      TILE_LDST: begin
+        evl = (csr_vl > `TE) ? `TE : csr_vl;
+      end
+    `endif
     endcase
   end
   

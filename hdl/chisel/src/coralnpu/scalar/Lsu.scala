@@ -293,6 +293,14 @@ object LsuUOp {
             (eew === "b110".U && sew === "b000".U) -> (lmul + 2.U)
           )
         )
+        // For VME tile load/store, EMUL is determined purely by tile element width (tileEew):
+        val emul_tile = MuxLookup(tileEew, 0.U(3.W))(
+          Seq(
+            "b000".U -> 0.U, // 8-bit  -> EMUL1
+            "b101".U -> 1.U, // 16-bit -> EMUL2
+            "b110".U -> 2.U  // 32-bit -> EMUL4
+          )
+        )
         MuxCase(
           lmul,
           Seq(
@@ -309,7 +317,8 @@ object LsuUOp {
                 (cmd.nfields.get === 7.U) -> 3.U  // NF8 -> LMUL8
               )
             ),
-            (LsuOp.isNonindexedVector(cmd.op) || isTile) -> emul_data
+            isTile                           -> emul_tile,
+            LsuOp.isNonindexedVector(cmd.op) -> emul_data
             // default: indexed vector and scalar
           )
         )
@@ -1337,8 +1346,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
           curr.writebackEmul.next(),
           curr.writebackEmul
         )
-        x.writebackActiveCells.valid := curr.writebackActiveCells.valid && !writebackDone
-        x.writebackActiveCells.bits  := VecInit(curr.writebackActiveCells.bits.map { x =>
+        x.writebackActiveCells.valid := curr.writebackActiveCells.valid && !writebackDone && !allCellsDone
+        x.writebackActiveCells.bits := VecInit(curr.writebackActiveCells.bits.map { x =>
           MuxCase(
             x,
             Seq(
@@ -1395,11 +1404,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         LsuCellState.W_WB,
         Option
           .when(p.enableVme)(
-            // RVV stores never have inactive cells because all cells in active registers
-            // must perform handshakes with the vector core (endCell = vecUnreachableCell).
-            // Therefore, an inactive store cell can only ever occur for tile stores (VTSTORE),
-            // which have no register writeback and complete immediately as DONE.
-            (isTile && uop.store) -> LsuCellState.DONE
+            // Tile loads and stores drop tail uops and complete inactive cells immediately as DONE.
+            isTile -> LsuCellState.DONE
           )
           .toSeq ++ Seq(
           // Masked vector loads must see mask to determine if elements are active.

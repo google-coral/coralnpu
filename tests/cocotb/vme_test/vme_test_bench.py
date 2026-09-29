@@ -619,6 +619,34 @@ async def vme_load_store_test(dut):
             "name": "test_roundtrip_e32_col",
             "dtype": np.int32
         },
+        # Cross-SEW/LMUL and Partial-vl Configurations with vtle32 / vtse32
+        {
+            "name": "test_vtse32_sew8_lmul1",
+            "dtype": np.int32
+        },
+        {
+            "name": "test_vtse32_sew16_lmul1",
+            "dtype": np.int32
+        },
+        {
+            "name": "test_vtse32_vtzero_vtle32",
+            "dtype": np.int32
+        },
+        {
+            "name": "test_vtse32_vsetvli_sew16",
+            "dtype": np.int32,
+            "vl": 8
+        },
+        {
+            "name": "test_vtse32_vsetvli_sew32",
+            "dtype": np.int32,
+            "vl": 4
+        },
+        {
+            "name": "test_vtse32_tn8",
+            "dtype": np.int32,
+            "vl": 8
+        },
     ]
 
     test_names = [tc["name"] for tc in test_cases]
@@ -639,6 +667,7 @@ async def vme_load_store_test(dut):
     for tc in tqdm(test_cases, desc="VME load store tests"):
         name = tc["name"]
         dtype = tc["dtype"]
+        expected_len = tc.get("vl", vl)
 
         iinfo = np.iinfo(dtype)
         num_elements = 1024 // np.dtype(dtype).itemsize
@@ -661,12 +690,18 @@ async def vme_load_store_test(dut):
 
         out = (await fixture.read("out_buf", 1024)).view(dtype)
 
-        expected = in_data[:vl]
-        actual = out[:vl]
+        expected = in_data[:expected_len]
+        actual = out[:expected_len]
 
         np.testing.assert_array_equal(
             actual, expected, err_msg=f"[{name}] Output mismatch"
         )
+        if expected_len < vl:
+            np.testing.assert_array_equal(
+                out[expected_len:vl],
+                np.zeros(vl - expected_len, dtype=dtype),
+                err_msg=f"[{name}] Tail elements should not be written",
+            )
 
 
 @cocotb.test()
