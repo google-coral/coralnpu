@@ -1,5 +1,6 @@
 # Copyright 2026 Antmicro
 
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
@@ -101,50 +102,116 @@ filter_files_by_extension(
     extensions = ["a"],
 )
 
+# Selects the DUT used by the generated UVM regression targets
+# (`collect_coralnpu_elfs`, `collect_coralnpu_riscv_tests`, ISG rules):
+#   rvv - RvvCoreMiniVerificationAxi (default)
+#   vme - VmeCoreMiniVerificationAxi (RVV + Zvt matrix extension)
+# Example: bazel test --//tests/uvm:dut=vme --test_tag_filters=verilator-uvm-regression //...
+string_flag(
+    name = "dut",
+    build_setting_default = "rvv",
+    values = [
+        "rvv",
+        "vme",
+    ],
+)
+
+config_setting(
+    name = "dut_vme",
+    flag_values = {":dut": "vme"},
+)
+
+UVM_VERILATOR_CFLAGS = [
+    "+define+UVM_NO_DEPRECATED",
+    "+define+UVM_NO_REG",
+    "+define+UVM_NO_TLM2",
+    "+define+TB_SUPPORT",
+    "+define+VLEN_128",
+    "+define+ZVE32F_ON",
+    "-Wno-PINMISSING",
+    "-Wno-lint",
+    "-Wno-style",
+    "-Wno-fatal",
+    "--timing",
+    "--timescale 1ns/1ps",
+]
+
+UVM_VERILATOR_DEPS = [
+    ":coralnpu_cosim_lib_clang",
+    ":include_dirs_deps",
+    ":uvm_dpi",
+    "//hdl/verilog:sram_backdoor",
+    "//sw/coralnpu_sim:spike_cosim_dpi",
+]
+
+UVM_VCS_CFLAGS = [
+    "+define+UVM_NO_DEPRECATED",
+    "+define+TB_SUPPORT",
+    "+define+VLEN_128",
+    "+define+ZVE32F_ON",
+    "+define+USE_GENERIC",
+    "-ntb_opts",
+    "uvm-1.2",
+    "-timescale=1ns/1ps",
+    "-debug_access+all",
+]
+
+UVM_VCS_DEPS = [
+    ":include_dirs_deps",
+    "//hdl/verilog:dpi_files",
+    "//sw/coralnpu_sim:spike_cosim_dpi",
+]
+
 verilator_model(
     name = "uvm_sim_verilator",
-    cflags = [
-        "+define+UVM_NO_DEPRECATED",
-        "+define+UVM_NO_REG",
-        "+define+UVM_NO_TLM2",
-        "+define+TB_SUPPORT",
-        "+define+VLEN_128",
-        "+define+ZVE32F_ON",
-        "-Wno-PINMISSING",
-        "-Wno-lint",
-        "-Wno-style",
-        "-Wno-fatal",
-        "--timing",
-        "--timescale 1ns/1ps",
-    ],
+    cflags = UVM_VERILATOR_CFLAGS,
     hdl_toplevel = "coralnpu_tb_top",
     include_dirs = [":include_dirs"],
     verilog_sources = [
         "//hdl/chisel/src/coralnpu:rvv_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
         ":source_files",
     ],
-    deps = [
-        ":coralnpu_cosim_lib_clang",
-        ":include_dirs_deps",
-        ":uvm_dpi",
-        "//hdl/verilog:sram_backdoor",
-        "//sw/coralnpu_sim:spike_cosim_dpi",
+    deps = UVM_VERILATOR_DEPS,
+)
+
+# ZVT_ON enables the Zvt datapath in the RVV backend RTL, instantiates
+# VmeCoreMiniVerificationAxi in coralnpu_tb_top, and selects the M4 (Zvt)
+# architecture in the MPACT co-simulator.
+# ZVTBF16FMM_ON enables bfloat16 matrix multiplication support.
+verilator_model(
+    name = "uvm_sim_verilator_vme",
+    cflags = UVM_VERILATOR_CFLAGS + [
+        "+define+ZVT_ON",
+        "+define+ZVTBF16FMM_ON",
+        "+define+DUT_MODULE=VmeCoreMiniVerificationAxi",
     ],
+    hdl_toplevel = "coralnpu_tb_top",
+    include_dirs = [":include_dirs"],
+    tags = ["manual"],
+    verilog_sources = [
+        "//hdl/chisel/src/coralnpu:vme_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
+        ":source_files",
+    ],
+    deps = UVM_VERILATOR_DEPS,
+)
+
+alias(
+    name = "uvm_vme_sim_verilator",
+    actual = ":uvm_sim_verilator_vme",
+    tags = ["manual"],
+)
+
+alias(
+    name = "uvm_sim_verilator_dut",
+    actual = select({
+        ":dut_vme": ":uvm_sim_verilator_vme",
+        "//conditions:default": ":uvm_sim_verilator",
+    }),
 )
 
 vcs_model(
     name = "uvm_sim_vcs",
-    cflags = [
-        "+define+UVM_NO_DEPRECATED",
-        "+define+TB_SUPPORT",
-        "+define+VLEN_128",
-        "+define+ZVE32F_ON",
-        "+define+USE_GENERIC",
-        "-ntb_opts",
-        "uvm-1.2",
-        "-timescale=1ns/1ps",
-        "-debug_access+all",
-    ],
+    cflags = UVM_VCS_CFLAGS,
     coralnpu_mpact_lib = ":coralnpu_cosim_lib_static_archive",
     hdl_toplevel = "coralnpu_tb_top",
     include_dirs = [":include_dirs"],
@@ -153,75 +220,44 @@ vcs_model(
         ":source_files",
         "//hdl/chisel/src/coralnpu:rvv_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
     ],
-    deps = [
-        ":include_dirs_deps",
-        "//hdl/verilog:dpi_files",
-        "//sw/coralnpu_sim:spike_cosim_dpi",
-    ],
+    deps = UVM_VCS_DEPS,
 )
 
-# TODO: Move / merge once VME is the default target.
-verilator_model(
-    name = "uvm_vme_sim_verilator",
-    cflags = [
-        "+define+UVM_NO_DEPRECATED",
-        "+define+TB_SUPPORT",
-        "+define+VLEN_128",
-        "+define+ZVE32F_ON",
-        "+define+ZVT_ON",
-        "+define+ZVTBF16FMM_ON",
-        "+define+DUT_MODULE=VmeCoreMiniVerificationAxi",
-        "-Wno-PINMISSING",
-        "-Wno-lint",
-        "-Wno-style",
-        "-Wno-fatal",
-        "--timing",
-        "--timescale 1ns/1ps",
-    ],
-    hdl_toplevel = "coralnpu_tb_top",
-    include_dirs = [":include_dirs"],
-    tags = ["manual"],  # Takes hours to run
-    verilog_sources = [
-        "//hdl/chisel/src/coralnpu:vme_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
-        ":source_files",
-    ],
-    deps = [
-        ":coralnpu_cosim_lib_clang",
-        ":include_dirs_deps",
-        ":uvm_dpi",
-        "//hdl/verilog:sram_backdoor",
-        "//sw/coralnpu_sim:spike_cosim_dpi",
-    ],
-)
-
-# TODO: Move / merge once VME is the default target.
 vcs_model(
-    name = "uvm_vme_sim_vcs",
-    cflags = [
-        "+define+UVM_NO_DEPRECATED",
-        "+define+TB_SUPPORT",
-        "+define+VLEN_128",
-        "+define+ZVE32F_ON",
+    name = "uvm_sim_vcs_vme",
+    cflags = UVM_VCS_CFLAGS + [
         "+define+ZVT_ON",
         "+define+ZVTBF16FMM_ON",
         "+define+DUT_MODULE=VmeCoreMiniVerificationAxi",
-        "+define+USE_GENERIC",
-        "-ntb_opts",
-        "uvm-1.2",
-        "-timescale=1ns/1ps",
-        "-debug_access+all",
     ],
     coralnpu_mpact_lib = ":coralnpu_cosim_lib_static_archive",
     hdl_toplevel = "coralnpu_tb_top",
     include_dirs = [":include_dirs"],
-    tags = ["vcs"],
+    tags = [
+        "manual",
+        "vcs",
+    ],
     verilog_sources = [
         ":source_files",
         "//hdl/chisel/src/coralnpu:vme_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
     ],
-    deps = [
-        ":include_dirs_deps",
-        "//hdl/verilog:dpi_files",
-        "//sw/coralnpu_sim:spike_cosim_dpi",
+    deps = UVM_VCS_DEPS,
+)
+
+alias(
+    name = "uvm_vme_sim_vcs",
+    actual = ":uvm_sim_vcs_vme",
+    tags = [
+        "manual",
+        "vcs",
     ],
+)
+
+alias(
+    name = "uvm_sim_vcs_dut",
+    actual = select({
+        ":dut_vme": ":uvm_sim_vcs_vme",
+        "//conditions:default": ":uvm_sim_vcs",
+    }),
+    tags = ["vcs"],
 )

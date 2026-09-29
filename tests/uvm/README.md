@@ -132,3 +132,24 @@ python3 utils/run_uvm_regression.py --simulator=verilator --target=//tests/cocot
 # Run with VCS
 python3 utils/run_uvm_regression.py --simulator=vcs --target=//tests/cocotb:nop_test
 ```
+
+**4. Running on the VME (Zvt) Toplevel:**
+
+The bench can instantiate `VmeCoreMiniVerificationAxi` (RVV plus the Zvt
+matrix extension) instead of `RvvCoreMiniVerificationAxi`. The VME models
+(`//tests/uvm:uvm_sim_verilator_vme`, `//tests/uvm:uvm_sim_vcs_vme`) are built
+with `+define+ZVT_ON`, which enables the Zvt datapath in the RTL, selects the
+VME DUT in `coralnpu_tb_top`, and configures the MPACT co-simulator for the
+M4 (Zvt) architecture.
+
+All generated regression targets pick their model through the
+`//tests/uvm:dut` flag (`rvv` by default), so the existing regressions can be
+rerun on the VME toplevel without separate targets:
+
+```bash
+# Verilator
+bazel test --//tests/uvm:dut=vme --test_tag_filters=verilator-uvm-regression //...
+
+# Python runner
+python3 utils/run_uvm_regression.py --simulator=verilator --dut=vme --target=//tests/cocotb:nop_test
+```

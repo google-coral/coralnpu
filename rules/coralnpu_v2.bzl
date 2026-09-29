@@ -374,7 +374,7 @@ def collect_coralnpu_elfs(tags = []):
             canonical_label = _get_canonical_name(rule["name"])
             verilator_batch_uvm_test(
                 name = "verilator_uvm_regression_{}".format(label_name),
-                model = "//tests/uvm:uvm_sim_verilator",
+                model = "//tests/uvm:uvm_sim_verilator_dut",
                 coralnpu_tests = [elf],
                 timeouts = [TIMEOUT_MAP.get(canonical_label, 100000)],
                 labels = [canonical_label],
@@ -383,7 +383,7 @@ def collect_coralnpu_elfs(tags = []):
             )
             vcs_batch_uvm_test(
                 name = "vcs_uvm_regression_{}".format(label_name),
-                model = "//tests/uvm:uvm_sim_vcs",
+                model = "//tests/uvm:uvm_sim_vcs_dut",
                 coralnpu_tests = [elf],
                 timeouts = [TIMEOUT_MAP.get(canonical_label, 100000)],
                 labels = [canonical_label],
@@ -407,7 +407,7 @@ def collect_coralnpu_riscv_tests(binaries = [], tags = []):
         if not is_uvm_denylisted(canonical_label):
             verilator_batch_uvm_test(
                 name = "verilator_uvm_regression_riscv_tests_{}".format(label_name),
-                model = "//tests/uvm:uvm_sim_verilator",
+                model = "//tests/uvm:uvm_sim_verilator_dut",
                 coralnpu_tests = [":{}".format(elf)],
                 timeouts = [TIMEOUT_MAP.get(canonical_label, 100000)],
                 labels = [canonical_label],
@@ -416,7 +416,7 @@ def collect_coralnpu_riscv_tests(binaries = [], tags = []):
             )
             vcs_batch_uvm_test(
                 name = "vcs_uvm_regression_riscv_tests_{}".format(label_name),
-                model = "//tests/uvm:uvm_sim_vcs",
+                model = "//tests/uvm:uvm_sim_vcs_dut",
                 coralnpu_tests = [":{}".format(elf)],
                 timeouts = [TIMEOUT_MAP.get(canonical_label, 100000)],
                 labels = [canonical_label],

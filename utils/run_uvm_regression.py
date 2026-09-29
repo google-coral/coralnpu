@@ -201,10 +201,23 @@ def get_tohost_addr(elf_path: str) -> Optional[int]:
     return None
 
 
-def get_simulator_binary_path(simulator: str = "verilator") -> str:
-    if simulator == "vcs":
-        return os.path.abspath("bazel-bin/tests/uvm/uvm_sim_vcs")
-    return os.path.abspath("bazel-bin/tests/uvm/uvm_sim_verilator")
+DUT_CHOICES = ("rvv", "vme")
+
+
+def get_uvm_model_name(simulator: str = "verilator", dut: str = "rvv") -> str:
+    """Returns the //tests/uvm model target name for a simulator and DUT."""
+    if dut not in DUT_CHOICES:
+        raise ValueError(f"Unknown DUT '{dut}', expected one of {DUT_CHOICES}")
+    name = "uvm_sim_vcs" if simulator == "vcs" else "uvm_sim_verilator"
+    return name if dut == "rvv" else f"{name}_{dut}"
+
+
+def get_simulator_binary_path(
+    simulator: str = "verilator", dut: str = "rvv"
+) -> str:
+    return os.path.abspath(
+        f"bazel-bin/tests/uvm/{get_uvm_model_name(simulator, dut)}"
+    )
 
 
 def build_simulator(
@@ -213,13 +226,13 @@ def build_simulator(
     mpact_riscv_root: Optional[str] = None,
     verilator_bin: Optional[str] = None,
     verilator_root: Optional[str] = None,
-    uvm_root: Optional[str] = None
+    uvm_root: Optional[str] = None,
+    dut: str = "rvv",
 ) -> bool:
-    logging.info(f"Building UVM Simulator ({simulator}) via Bazel...")
-    target = (
-        "//tests/uvm:uvm_sim_vcs"
-        if simulator == "vcs" else "//tests/uvm:uvm_sim_verilator"
+    logging.info(
+        f"Building UVM Simulator ({simulator}, dut={dut}) via Bazel..."
     )
+    target = f"//tests/uvm:{get_uvm_model_name(simulator, dut)}"
     cmd = ["bazel", "build"]
     if simulator == "vcs":
         cmd.append("--config=vcs")
@@ -300,6 +313,14 @@ def parse_arguments():
         type=str,
         help="Defines simulator used for tests",
         default="vcs"
+    )
+    parser.add_argument(
+        "--dut",
+        type=str,
+        choices=DUT_CHOICES,
+        default="rvv",
+        help="DUT toplevel: rvv (RvvCoreMiniVerificationAxi) or "
+        "vme (VmeCoreMiniVerificationAxi, RVV + Zvt)"
     )
     parser.add_argument(
         "--list-targets", action="store_true", help="List targets and exit"
@@ -690,10 +711,11 @@ def run_full_regression(
     verilator_bin: Optional[str] = None,
     verilator_root: Optional[str] = None,
     uvm_root: Optional[str] = None,
+    dut: str = "rvv",
 ):
     # Build the UVM simulator once
     if not build_simulator(mpact_root, simulator, mpact_riscv_root,
-                           verilator_bin, verilator_root, uvm_root):
+                           verilator_bin, verilator_root, uvm_root, dut):
 
         logging.critical("ERROR: Simulator build failed. Aborting regression.")
         sys.exit(1)
@@ -773,7 +795,7 @@ def run_full_regression(
                     )
                 )
 
-        sim_bin = get_simulator_binary_path(simulator)
+        sim_bin = get_simulator_binary_path(simulator, dut)
         sim_dir = os.path.abspath("./sim_work")
         os.makedirs(sim_dir, exist_ok=True)
         cmd = [
@@ -914,7 +936,7 @@ def main():
         run_full_regression(
             tests_to_run, spike_enabled, mpact_root, mpact_riscv_root,
             temp_elf_dir, args.simulator, verilator_bin, verilator_root,
-            uvm_root
+            uvm_root, args.dut
         )
 
 
