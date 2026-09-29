@@ -296,7 +296,6 @@ class Dispatch(p: Parameters) extends Module {
   val io = IO(new Bundle {
     // Core controls.
     val halted    = Input(Bool())
-    val mactive   = Input(Bool()) // memory active
     val lsuActive = Input(Bool()) // lsu active
 
     val scoreboard = new Bundle {
@@ -489,7 +488,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
   // ---------------------------------------------------------------------------
   // Fence interlock
-  val fence = decodedInsts.map(x => x.isFency() && (io.mactive || io.lsuActive))
+  val fence = decodedInsts.map(x => x.isFency() && io.lsuActive)
 
   // ---------------------------------------------------------------------------
   // Slot 0 interlock
