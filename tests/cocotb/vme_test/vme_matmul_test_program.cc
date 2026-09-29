@@ -15,6 +15,7 @@
 // Test program for the VME (Zvt) matrix arithmetic instructions:
 //   vtmmu.tvv  - uint8 x uint8 -> int32 tile accumulate
 //   vtmms.tvv  - int8  x uint8 -> int32 tile accumulate
+//   vtfmm.alt  - bf16  x bf16  -> fp32  tile accumulate
 //   vtfmm.tvv  - fp32  x fp32  -> fp32  tile accumulate
 // plus vtzero and the register-to-register tile moves vtmv.t.v / vtmv.v.t.
 // Tile state is only ever accessed register-to-register (no vtle/vtse tile
@@ -23,11 +24,6 @@
 //
 // The harness writes the mm_* globals, points `mm_impl` at one of the case
 // runners below, and runs to halt once per case (vcpop_test.cc pattern).
-//
-// Known implementation gaps deliberately not covered here: vtype.altfmt is
-// not settable, so the BF16 matmul (vtfmm.alt.tvv) and the signed-B int8
-// variants are unreachable; mtype.tk is a 2-bit field, so the spec's KMAX=4
-// four-element dot product cannot be configured (tk is 1..3 here).
 
 #include <cstdint>
 
@@ -41,6 +37,8 @@
 // vtype values (vma[7] | vta[6] | vsew[5:3] | vlmul[2:0]).
 static constexpr uint32_t kVtypeSew8Lmul1  = 0xC0;  // ta/ma, SEW8,  LMUL1
 static constexpr uint32_t kVtypeSew32Lmul4 = 0xD2;  // ta/ma, SEW32, LMUL4
+// altfmt[8] | ta/ma, SEW16, LMUL2 (bf16 matmul).
+static constexpr uint32_t kVtypeSew16Lmul2Altfmt = 0x1C9;
 
 // -----------------------------------------------------------------------------
 // Zvt instruction words, emitted via .word since they use vector-register
@@ -49,6 +47,7 @@ static constexpr uint32_t kVtypeSew32Lmul4 = 0xD2;  // ta/ma, SEW32, LMUL4
 //   v8..     A operand (int8 rows at v8/v10/v12/v14: the spec's 8/KMAX row
 //            spacing; fp32 single row spans v8..v11)
 //   v16..    B operand (int8 rows at v16/v18/v20/v22; fp32 row v16..v19)
+//            bf16 rows (LMUL2) at v8/v12 (A) and v16/v20 (B)
 //   a0       tile subset specifier (TSS) scalar for the moves
 //
 // Instructions:
@@ -81,7 +80,7 @@ static inline __attribute__((always_inline)) void VtmvVT(uint32_t tss) {
 // -----------------------------------------------------------------------------
 
 // A and B operands: 4 rows x 16 bytes for int8; the same 64 bytes reinterpreted
-// as 16 fp32 values (single row) for the fp case.
+// as 2 rows x 16 bf16 values for bf16, or 16 fp32 values (single row) for fp32.
 uint8_t mm_a[4 * TE] __attribute__((section(".data"), aligned(16)));
 uint8_t mm_b[4 * TE] __attribute__((section(".data"), aligned(16)));
 // Accumulator preload and result readback, row-major 16x16 x 32-bit.
@@ -164,6 +163,34 @@ static void RunIntCase() {
 }
 
 template <uint32_t TILE>
+static void RunBf16Case() {
+  InitAccumulator<TILE>();
+
+  // bf16 matmul shape: SEW16/LMUL2 + altfmt, mtwiden=2 (TWIDEN=2). Load both
+  // A/B row slots with vl=16; rows >= tk are masked off by the hardware.
+  vme_msetmtype(MtypeValue(/*tm=*/TE, mm_tk, /*mtwiden=*/2), kVtypeSew16Lmul2Altfmt);
+  (void)vme_msettm(mm_tm);
+  (void)vme_msettn(TE);
+  asm volatile(
+      "vle16.v v8,  (%0)\n"
+      "vle16.v v12, (%1)\n"
+      :
+      : "r"(&mm_a[0]), "r"(&mm_a[2 * TE])
+      : "v8", "v9", "v12", "v13", "memory");
+  asm volatile(
+      "vle16.v v16, (%0)\n"
+      "vle16.v v20, (%1)\n"
+      :
+      : "r"(&mm_b[0]), "r"(&mm_b[2 * TE])
+      : "v16", "v17", "v20", "v21", "memory");
+  (void)vme_msettn(mm_tn);
+
+  asm volatile(".word %0" : : "i"(ZvtMatmulFpWord(TILE, /*alt=*/true)) : "memory");
+
+  ReadbackTile<TILE>();
+}
+
+template <uint32_t TILE>
 static void RunFpCase() {
   InitAccumulator<TILE>();
 
@@ -188,6 +215,8 @@ extern "C" {
 __attribute__((used, retain)) void vtmmu_mt0() { RunIntCase<0, false>(); }
 __attribute__((used, retain)) void vtmmu_mt4() { RunIntCase<4, false>(); }
 __attribute__((used, retain)) void vtmms_mt0() { RunIntCase<0, true>(); }
+__attribute__((used, retain)) void vtfmm_bf16_mt0() { RunBf16Case<0>(); }
+__attribute__((used, retain)) void vtfmm_bf16_mt8() { RunBf16Case<8>(); }
 __attribute__((used, retain)) void vtfmm_mt0() { RunFpCase<0>(); }
 __attribute__((used, retain)) void vtfmm_mt8() { RunFpCase<8>(); }
 }

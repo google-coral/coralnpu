@@ -275,7 +275,10 @@ async def vme_mset_csr_test(dut):
 MM_DIM = 16  # TE at VLEN=128
 MM_ROWS = 4  # A/B row slots in the program's operand buffers
 
-_MM_IMPLS = ["vtmmu_mt0", "vtmmu_mt4", "vtmms_mt0", "vtfmm_mt0", "vtfmm_mt8"]
+_MM_IMPLS = [
+    "vtmmu_mt0", "vtmmu_mt4", "vtmms_mt0", "vtfmm_bf16_mt0", "vtfmm_bf16_mt8",
+    "vtfmm_mt0", "vtfmm_mt8"
+]
 _MM_SYMBOLS = [
     "mm_a",
     "mm_b",
@@ -335,8 +338,7 @@ def _check_matmul_result(name, case, actual, expected):
 def _int_matmul_ref(a, b, c_init, tm, tn, tk, signed_a):
     """C[:tm,:tn] += castA(A[:tk,:tm]).T @ uint8(B[:tk,:tn]), int32 wraparound.
 
-    B is always unsigned here: vtype.altfmt (which would make B signed) is not
-    settable in the current RTL.
+    B is always unsigned here (altfmt=0).
     """
     a_rows = a.reshape(MM_ROWS, MM_DIM)
     b_rows = b.reshape(MM_ROWS, MM_DIM)
@@ -347,12 +349,12 @@ def _int_matmul_ref(a, b, c_init, tm, tn, tk, signed_a):
     return (ref & 0xFFFFFFFF).astype(np.uint32)
 
 
-def _fp_matmul_ref(a, b, c_init, tm, tn):
-    """C[:tm,:tn] += outer(A[:tm], B[:tn]) in fp32 (tk=1 for SEW32)."""
-    a_row = a.view(np.float32)[:MM_DIM]
-    b_row = b.view(np.float32)[:MM_DIM]
+def _fp_matmul_ref(a, b, c_init, tm, tn, tk=1):
+    """C[:tm,:tn] += A[:tk,:tm].T @ B[:tk,:tn] in fp32 (tk=1 for SEW32)."""
+    a_rows = a.view(np.float32).reshape(-1, MM_DIM)
+    b_rows = b.view(np.float32).reshape(-1, MM_DIM)
     ref = c_init.view(np.float32).reshape(MM_DIM, MM_DIM).copy()
-    ref[:tm, :tn] += np.outer(a_row[:tm], b_row[:tn]).astype(np.float32)
+    ref[:tm, :tn] += a_rows[:tk, :tm].T @ b_rows[:tk, :tn]
     return ref.view(np.uint32)
 
 
@@ -392,6 +394,47 @@ async def vme_matmul_int8_test(dut):
         )
         actual = await _run_matmul_case(fixture, case, a, b, c_init)
         _check_matmul_result("int8", case, actual, expected)
+
+
+@cocotb.test()
+async def vme_matmul_bf16_test(dut):
+    """vtfmm.alt.tvv bf16 outer-product accumulate into an fp32 tile."""
+    fixture = await _load_matmul_fixture(dut)
+    rng = np.random.default_rng(2026)
+
+    cases = [
+        # vtzero-initialized full-tile multiply with max tk=2 for SEW16.
+        dict(impl="vtfmm_bf16_mt0", init=0, tm=16, tn=16, tk=2),
+        # Accumulate onto a preloaded tile (exercises vtmv.t.v), tile mt8.
+        dict(impl="vtfmm_bf16_mt8", init=1, tm=16, tn=16, tk=2),
+        # tk=1 single-row outer product (row 1 must be masked off by hardware).
+        dict(impl="vtfmm_bf16_mt0", init=1, tm=16, tn=16, tk=1),
+        # Tail case: elements outside [0,tm)x[0,tn) must keep their preload.
+        dict(impl="vtfmm_bf16_mt8", init=1, tm=9, tn=11, tk=2),
+    ]
+
+    for case in cases:
+        # Quarter-integers in [-4, 4] are exact in bf16, and their products and
+        # sums are exact in fp32. All row slots/columns carry random data.
+        # TODO: Use random BF16 values.
+        a_f32 = (rng.integers(-16, 17, 2 * MM_DIM) * 0.25).astype(np.float32)
+        b_f32 = (rng.integers(-16, 17, 2 * MM_DIM) * 0.25).astype(np.float32)
+        a = (a_f32.view(np.uint32) >> 16).astype(np.uint16)
+        b = (b_f32.view(np.uint32) >> 16).astype(np.uint16)
+        c_init = (
+            rng.integers(-100, 101,
+                         MM_DIM * MM_DIM).astype(np.float32).view(np.uint32)
+        )
+        expected = _fp_matmul_ref(
+            a_f32,
+            b_f32,
+            c_init if case["init"] else np.zeros_like(c_init),
+            case["tm"],
+            case["tn"],
+            case["tk"],
+        )
+        actual = await _run_matmul_case(fixture, case, a, b, c_init)
+        _check_matmul_result("bf16", case, actual, expected)
 
 
 @cocotb.test()

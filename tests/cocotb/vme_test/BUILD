@@ -25,6 +25,7 @@ load(
 VME_TEST_TESTCASES = [
     "vme_mset_csr_test",
     "vme_matmul_int8_test",
+    "vme_matmul_bf16_test",
     "vme_matmul_fp32_test",
     "vme_decode_test",
     "vme_load_store_test",
@@ -87,6 +88,7 @@ cocotb_test_suite(
     ],
     vcs_defines = dict(
         VCS_DEFINES,
+        ZVTBF16FMM_ON = "",
         ZVT_ON = "",
     ),
     vcs_test_args = VCS_TEST_ARGS,

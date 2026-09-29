@@ -114,7 +114,10 @@ verilator_cocotb_model(
 # struct gets the matrix-extension fields it needs.
 verilator_cocotb_model(
     name = "vme_core_mini_axi_model",
-    cflags = VERILATOR_BUILD_ARGS + ["-DZVT_ON"],
+    cflags = VERILATOR_BUILD_ARGS + [
+        "-DZVT_ON",
+        "-DZVTBF16FMM_ON",
+    ],
     hdl_toplevel = "VmeCoreMiniAxi",
     trace = False,
     verilog_source = "//hdl/chisel/src/coralnpu:VmeCoreMiniAxi.sv",
@@ -848,6 +851,7 @@ cocotb_test_suite(
     vcs_data = ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"] + VCS_COMMON_DATA,
     vcs_defines = dict(
         VCS_DEFINES,
+        ZVTBF16FMM_ON = "",
         ZVT_ON = "",
     ),
     vcs_test_args = VCS_TEST_ARGS,

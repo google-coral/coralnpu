@@ -116,9 +116,9 @@ static constexpr uint32_t ZvtMatmulIntWord(uint32_t tile, bool signed_a) {
 }
 
 // Matrix multiply floating-point (vtfmm): opcode OP-VE (0x77), funct6=111100, funct3=001 (OPFVV).
-// vs2=v8 (A operand), vs1=v16 (B operand); rd = tile << 1.
-static constexpr uint32_t ZvtMatmulFpWord(uint32_t tile) {
-  return ZvtWord(0x3C, 8, 16, 1, tile << 1, kZvtOpcodeOpVe);
+// vs2=v8 (A operand), vs1=v16 (B operand); rd = (tile << 1) | (alt ? 1 : 0), alt = BF16 A.
+static constexpr uint32_t ZvtMatmulFpWord(uint32_t tile, bool alt = false) {
+  return ZvtWord(0x3C, 8, 16, 1, (tile << 1) | (alt ? 1 : 0), kZvtOpcodeOpVe);
 }
 
 // Tile zero (vtzero): opcode OP-V (0x57), funct6=010000, vs2=11110, rs1=x0, funct3=110, rd=tile<<1.
