@@ -19,6 +19,11 @@ object DispatchTestUtils {
     dut.io.rvv.foreach(_.foreach(_.ready.poke(true.B)))
     dut.io.rvvIdle.foreach(_.poke(true.B))
     dut.io.rvvQueueCapacity.foreach(_.poke(p.instructionLanes.U))
+    dut.io.lsuFfLoadActive.foreach(_.poke(false.B))
+    dut.io.mstatusMs.foreach(_.poke(1.U))
+    dut.io.float.foreach(_.ready.poke(true.B))
+    dut.io.csrFrm.foreach(_.poke(0.U))
+    dut.io.fscoreboard.foreach(_.poke(0.U))
     dut.io.rvvState.foreach { state =>
       state.valid.poke(true.B)
       state.bits.vl.poke(4.U)
@@ -30,6 +35,7 @@ object DispatchTestUtils {
       state.bits.lmul.poke(0.U)
       state.bits.lmul_orig.poke(0.U)
       state.bits.vill.poke(false.B)
+      state.bits.mtwiden.foreach(_.poke(3.U))
     }
   }
 }

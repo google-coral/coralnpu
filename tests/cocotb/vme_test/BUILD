@@ -162,3 +162,9 @@ coralnpu_v2_binary(
     srcs = ["vme_mstatus_ms_test.cc"],
     hdrs = ["vme_test_utils.h"],
 )
+
+coralnpu_v2_binary(
+    name = "vme_scalar_tile_stall_test",
+    srcs = ["vme_scalar_tile_stall_test.S"],
+    crt = False,
+)

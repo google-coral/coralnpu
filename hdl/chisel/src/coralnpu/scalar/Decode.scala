@@ -431,7 +431,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   // Scalar Scoreboard
   val rdAddr   = io.inst.map(_.bits.inst(11, 7))
   val writesRd = decodedInsts.map(d =>
-    (!d.isScalarStore() && !d.isCondBr()) ||
+    (!d.isVector() && !d.isScalarStore() && !d.isCondBr() && !d.isFloat()) ||
       (d.isFloat() && d.floatWritesRd()) ||
       d.rvvWritesRd()
   )
@@ -450,15 +450,15 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   val usesRs1Regd        = decodedInsts.map(d => d.jalr || d.isLsu())
   val usesRs2Regd        = decodedInsts.map(d => d.isLsu() && d.readsRs2())
   val readScoreboardRegd = (0 until p.instructionLanes).map(i =>
-    MuxOR(usesRs1Regd(i), UIntToOH(rs1Addr(i), 32)) |
-      MuxOR(usesRs2Regd(i), UIntToOH(rs2Addr(i), 32))
+    MuxOR(usesRs1Regd(i) && rs1Addr(i) =/= 0.U, UIntToOH(rs1Addr(i), 32)) |
+      MuxOR(usesRs2Regd(i) && rs2Addr(i) =/= 0.U, UIntToOH(rs2Addr(i), 32))
   )
 
   val usesRs1Comb        = decodedInsts.map(d => d.readsRs1())
   val usesRs2Comb        = decodedInsts.map(d => d.readsRs2())
   val readScoreboardComb = (0 until p.instructionLanes).map(i =>
-    MuxOR(usesRs1Comb(i), UIntToOH(rs1Addr(i), 32)) |
-      MuxOR(usesRs2Comb(i), UIntToOH(rs2Addr(i), 32))
+    MuxOR(usesRs1Comb(i) && rs1Addr(i) =/= 0.U, UIntToOH(rs1Addr(i), 32)) |
+      MuxOR(usesRs2Comb(i) && rs2Addr(i) =/= 0.U, UIntToOH(rs2Addr(i), 32))
   )
 
   val readAfterWrite = (0 until p.instructionLanes).map(i =>
