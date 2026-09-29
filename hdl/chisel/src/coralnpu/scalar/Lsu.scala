@@ -1964,7 +1964,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     state.cells(i).data := stateFromAction.cells(i).data
   }
 
-  io.active := state.cells.forall { x =>
+  io.active := !state.cells.forall { x =>
     x.state === LsuCellState.DONE
   }
   // storeComplete is raised iff we've completed all cells and writebacks
@@ -2102,14 +2102,37 @@ class LsuV3(p: Parameters) extends Lsu(p) {
 
   val rawFaultValid = (slot.io.busReq.valid && req.write && itcm) || io.ebus.fault.valid
 
-  rs.io.flush       := io.pipelineFlush || slot.io.fault.valid
-  slot.io.uop.valid := (rs.io.nEnqueued > 0.U) && !rs.io.flush
+  val slotsIdle = !slot.io.active
+
+  // Fault and flush state tracking
+  val isFaulted  = RegInit(false.B)
+  val isFlushing = RegInit(false.B)
+
+  // Fire fault to core for EXACTLY 1 cycle on the initial fault (blocked if already faulted or flushing)
+  val fireNewFault = slot.io.fault.valid && !isFaulted && !isFlushing && !io.pipelineFlush
+
+  // Clear fault and flush state when pipeline flush has occurred and slots are idle
+  val clearFaultState = slotsIdle && (isFlushing || io.pipelineFlush)
+
+  isFaulted  := !clearFaultState && (isFaulted || fireNewFault)
+  isFlushing := !clearFaultState && (isFlushing || io.pipelineFlush)
+
+  // Fault output to core: strictly single-cycle, never re-faults while isFaulted or isFlushing
+  io.fault.valid := fireNewFault
+  io.fault.bits  := slot.io.fault.bits
+
+  // Immediate RS flush on initial fault or pipeline flush
+  rs.io.flush := io.pipelineFlush || fireNewFault
+
+  // Block dispatch from rs while faulted or flushing
+  val canDispatch = !isFaulted && !isFlushing && !io.pipelineFlush
+  slot.io.uop.valid := (rs.io.nEnqueued > 0.U) && !rs.io.flush && canDispatch
 
   flushCmd := MuxCase(
     flushCmd,
     Seq(
-      (io.pipelineFlush || slot.io.fault.valid) -> MakeInvalid(new FlushCmd),
-      io.flush.fire                             -> MakeInvalid(new FlushCmd),
+      (io.pipelineFlush || fireNewFault) -> MakeInvalid(new FlushCmd),
+      io.flush.fire                      -> MakeInvalid(new FlushCmd),
       (io.req(0).fire && (io.req(0).bits.op === LsuOp.FENCEI))
         -> MakeValid(true.B, FlushCmd(io.req(0).bits))
     )
@@ -2177,11 +2200,8 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     io.lsu2vme.get <> slot.io.vmeWriteback.get
   }
 
-  // fault handling
-  io.fault := slot.io.fault
-
   // status reporting
-  io.active        := rs.io.nEnqueued > 0.U || !slot.io.active || flushCmd.valid
+  io.active := rs.io.nEnqueued > 0.U || !slotsIdle || flushCmd.valid || isFaulted || isFlushing
   io.storeComplete := MakeValid(slot.io.storeComplete, slot.io.pc)
 
   io.flush.valid  := flushCmd.valid
