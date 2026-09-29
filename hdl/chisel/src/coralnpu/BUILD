@@ -443,8 +443,6 @@ chisel_library(
         "DBus2Axi.scala",
         "IBus2Axi.scala",
         "Interfaces.scala",
-        "L1DCache.scala",
-        "L1ICache.scala",
         "Library.scala",
         "Parameters.scala",
     ],
@@ -466,7 +464,6 @@ chisel_library(
         "scalar/Decode.scala",
         "scalar/Dvu.scala",
         "scalar/FaultManager.scala",
-        "scalar/Fetch.scala",
         "scalar/Lsu.scala",
         "scalar/Mlu.scala",
         "scalar/Regfile.scala",
@@ -554,30 +551,6 @@ chisel_cc_library(
 )
 
 chisel_cc_library(
-    name = "core_cc_library",
-    chisel_lib = ":coralnpu",
-    emit_class = "coralnpu.EmitCore",
-    extra_outs = [
-        "VCore_parameters.h",
-    ],
-    module_name = "Core",
-)
-
-chisel_cc_library(
-    name = "core_scalar_cc_library",
-    chisel_lib = ":coralnpu",
-    emit_class = "coralnpu.EmitCore",
-    extra_outs = [
-        "VCoreScalar_parameters.h",
-    ],
-    gen_flags = [
-        "--moduleName=CoreScalar",
-    ],
-    module_name = "CoreScalar",
-    verilog_file_path = "CoreScalar.sv",
-)
-
-chisel_cc_library(
     name = "core_mini_cc_library",
     chisel_lib = ":coralnpu",
     emit_class = "coralnpu.EmitCore",
@@ -585,7 +558,6 @@ chisel_cc_library(
         "VCoreMini_parameters.h",
     ],
     gen_flags = [
-        "--enableFetchL0=False",
         "--fetchDataBits=128",
         "--lsuDataBits=128",
         "--moduleName=CoreMini",
@@ -603,7 +575,6 @@ template_rule(
                 "CoreMiniAxi.zip",
             ],
             "gen_flags": [
-                "--enableFetchL0=False",
                 "--fetchDataBits=128",
                 "--lsuDataBits=128",
                 "--enableFloat=True",
@@ -621,7 +592,6 @@ template_rule(
                 "CoreMiniVerificationAxi.zip",
             ],
             "gen_flags": [
-                "--enableFetchL0=False",
                 "--fetchDataBits=128",
                 "--lsuDataBits=128",
                 "--enableFloat=True",
@@ -648,7 +618,6 @@ chisel_cc_library(
         "CoreMiniHighmemAxi.zip",
     ],
     gen_flags = [
-        "--enableFetchL0=False",
         "--fetchDataBits=128",
         "--lsuDataBits=128",
         "--enableFloat=True",
@@ -671,7 +640,6 @@ chisel_cc_library(
         "CoreMini_ITCM512KB_DTCM512KBAxi.zip",
     ],
     gen_flags = [
-        "--enableFetchL0=False",
         "--fetchDataBits=128",
         "--lsuDataBits=128",
         "--enableFloat=True",
@@ -738,7 +706,6 @@ template_rule(
             ],
             "gen_flags": [
                 "--moduleName=RvvCoreMini",
-                "--enableFetchL0=False",
                 "--fetchDataBits=128",
                 "--lsuDataBits=128",
                 "--enableRvv=True",
@@ -941,36 +908,6 @@ chisel_cc_library(
     chisel_lib = ":coralnpu_scalar",
     emit_class = "coralnpu.EmitMlu",
     module_name = "Mlu",
-)
-
-chisel_cc_library(
-    name = "l1dcache_cc_library",
-    chisel_lib = ":coralnpu",
-    emit_class = "coralnpu.EmitL1DCache",
-    module_name = "L1DCache",
-    verilog_deps = [
-        "//hdl/verilog:sram_1rw_256x288",
-    ],
-)
-
-chisel_cc_library(
-    name = "l1dcachebank_cc_library",
-    chisel_lib = ":coralnpu",
-    emit_class = "coralnpu.EmitL1DCacheBank",
-    module_name = "L1DCacheBank",
-    verilog_deps = [
-        "//hdl/verilog:sram_1rw_256x288",
-    ],
-)
-
-chisel_cc_library(
-    name = "l1icache_cc_library",
-    chisel_lib = ":coralnpu",
-    emit_class = "coralnpu.EmitL1ICache",
-    module_name = "L1ICache",
-    verilog_deps = [
-        "//hdl/verilog:sram_1rw_256x256",
-    ],
 )
 
 chisel_binary(

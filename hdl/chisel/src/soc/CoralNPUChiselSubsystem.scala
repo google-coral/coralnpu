@@ -200,7 +200,6 @@ class CoralNPUChiselSubsystem(
             core_p.m = p.memoryRegions
             core_p.lsuDataBits = p.lsuDataBits
             core_p.enableRvv = p.enableRvv
-            core_p.enableFetchL0 = p.enableFetchL0
             core_p.fetchDataBits = p.fetchDataBits
             core_p.enableFloat = p.enableFloat
             core_p.enableZfbfmin = p.enableZfbfmin

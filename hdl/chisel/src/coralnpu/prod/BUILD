@@ -45,7 +45,6 @@ chisel_cc_library(
         "CoreMiniAxi.zip",
     ],
     gen_flags = [
-        "--enableFetchL0=False",
         "--fetchDataBits=128",
         "--lsuDataBits=128",
         "--enableFloat=True",

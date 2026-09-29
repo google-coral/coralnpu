@@ -94,9 +94,7 @@ object EmitCore extends App {
   var useAxi                    = false
   var useTlul                   = false
   for (arg <- args) {
-    if (arg.startsWith("--enableFetchL0")) {
-      p.enableFetchL0 = arg.split("=")(1).toBoolean
-    } else if (arg.startsWith("--enableAxiInstructionFetch")) {
+    if (arg.startsWith("--enableAxiInstructionFetch")) {
       p.enableAxiInstructionFetch = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--xlen")) {
       p.xlen = arg.split("=")(1).toInt

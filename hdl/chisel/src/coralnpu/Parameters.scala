@@ -147,10 +147,6 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
     log2Ceil(scalarRegCount + activeFloatRegCount + rvvRegCount + 2)
   }
 
-  // L0ICache Fetch unit.
-  var enableFetchL0   = true
-  val fetchCacheBytes = 1024
-
   // Enable instruction fetch via AXI master port (fallback for execution outside ITCM)
   var enableAxiInstructionFetch = true
 
@@ -177,20 +173,6 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   // TCM Size Configuration
   var itcmSizeKBytes = Parameters.itcmSizeKBytesDefault
   var dtcmSizeKBytes = Parameters.dtcmSizeKBytesDefault
-
-  // [Internal] L1ICache interface.
-  val l1islots          = 256
-  val l1iassoc          = 4
-  val axi0IdBits        = 4 // (1x banks, 4 bits unused)
-  def axi0AddrBits      = xlen
-  def axi0DataBits: Int = { fetchDataBits }
-
-  // [Internal] L1DCache interface.
-  val l1dslots          = 256 // (x2 banks)
-  val l1dassoc          = 4
-  val axi1IdBits        = 4   // (x2 banks, 3 bits unused)
-  def axi1AddrBits      = xlen
-  def axi1DataBits: Int = { lsuDataBits }
 
   // [Internal] TCM[Vector,Scalar] interface.
   var axi2IdBits         = 6
@@ -222,7 +204,6 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
     newP.enableZfbfmin = this.enableZfbfmin
     newP.enableVectorBf16 = this.enableVectorBf16
     newP.fpuPipeRegs = this.fpuPipeRegs
-    newP.enableFetchL0 = this.enableFetchL0
     newP.enableAxiInstructionFetch = this.enableAxiInstructionFetch
     newP.fetchDataBits = this.fetchDataBits
     newP.lsuDataBits = this.lsuDataBits
@@ -267,8 +248,6 @@ object EmitParametersHeader {
       ("programCounterBits", p.programCounterBits),
       ("fetchAddrBits", p.fetchAddrBits),
       ("lsuAddrBits", p.lsuAddrBits),
-      ("axi0AddrBits", p.axi0AddrBits),
-      ("axi1AddrBits", p.axi1AddrBits),
       ("axi2AddrBits", p.axi2AddrBits),
       ("dbusSize", p.dbusSize),
       ("useRetirementBuffer", p.useRetirementBuffer),

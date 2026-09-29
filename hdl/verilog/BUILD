@@ -19,8 +19,6 @@ exports_files(
         "ClockGate.sv",
         "RstSync.sv",
         "Sram.v",
-        "Sram_1rw_256x256.v",
-        "Sram_1rwm_256x288.v",
         "TlulAdapterSram.sv",
         "Uart.sv",
         "sram_backdoor.core",
@@ -44,20 +42,8 @@ verilog_library(
 )
 
 verilog_library(
-    name = "sram_1rw_256x256",
-    srcs = ["Sram_1rw_256x256.v"],
-    visibility = ["//visibility:public"],
-)
-
-verilog_library(
     name = "Sram",
     srcs = ["Sram.v"],
-    visibility = ["//visibility:public"],
-)
-
-verilog_library(
-    name = "sram_1rw_256x288",
-    srcs = ["Sram_1rwm_256x288.v"],
     visibility = ["//visibility:public"],
 )
 

@@ -244,7 +244,6 @@ class CoreAxiInstructionFetchSpec extends AnyFreeSpec with ChiselSim {
     pFalse.m = MemoryRegions.default
     pFalse.lsuDataBits = 128
     pFalse.fetchDataBits = 128
-    pFalse.enableFetchL0 = false
     pFalse.enableAxiInstructionFetch = false
     val sv = _root_.circt.stage.ChiselStage.emitSystemVerilog(new CoreAxi(pFalse, "CoreAxiNoIbus"))
     assert(!sv.contains("IBus2Axi"))
@@ -255,7 +254,6 @@ class CoreAxiInstructionFetchSpec extends AnyFreeSpec with ChiselSim {
     pTrue.m = MemoryRegions.default
     pTrue.lsuDataBits = 128
     pTrue.fetchDataBits = 128
-    pTrue.enableFetchL0 = false
     pTrue.enableAxiInstructionFetch = true
     val sv = _root_.circt.stage.ChiselStage.emitSystemVerilog(new CoreAxi(pTrue, "CoreAxiWithIbus"))
     assert(sv.contains("IBus2Axi"))

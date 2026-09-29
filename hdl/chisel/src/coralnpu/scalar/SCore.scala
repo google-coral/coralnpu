@@ -50,8 +50,8 @@ class SCore(p: Parameters) extends Module {
 
   // The functional units that make up the core.
   val regfile = Regfile(p)
-  val fetch   = if (p.enableFetchL0) { Fetch(p) }
-  else { Module(new UncachedFetch(p)) }
+  val fetch   = Module(new UncachedFetch(p))
+  // L0 fetch removed (was: else Module(new UncachedFetch(p)))
 
   val csr      = Csr(p)
   val dispatch = Module(new DispatchV2(p))

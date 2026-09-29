@@ -44,7 +44,6 @@ sealed trait ModuleParameters
 case class CoreTlulParameters(
   lsuDataBits: Int,
   enableRvv: Boolean,
-  enableFetchL0: Boolean,
   fetchDataBits: Int,
   enableFloat: Boolean,
   enableZfbfmin: Boolean = true,
@@ -169,7 +168,6 @@ class SoCChiselConfig(
       params = CoreTlulParameters(
         lsuDataBits = 128,
         enableRvv = true,
-        enableFetchL0 = false,
         fetchDataBits = 128,
         enableFloat = true,
         enableZfbfmin = true,
