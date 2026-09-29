@@ -36,9 +36,10 @@ module rvv_backend_falu_unit(
   falu_result_rdy
 );
   // 4-stage pipeline breaks the 32-bit mantissa multiply from the LZA/normalization stage.
+  // 5 stages are supported for ultra-high-frequency (1.0 GHz) timing closure.
   // Note for Physical Design: If 3-cycle architectural latency is preferred, synthesis
   // register retiming ('set_optimize_registers true') on the 3-stage core is an option.
-  parameter int unsigned PIPEREGS  = 32'd4; 
+  parameter int unsigned PIPEREGS  = `FALU_PIPEREGS; 
   //global
   input   logic         clk;
   input   logic         rst_n;

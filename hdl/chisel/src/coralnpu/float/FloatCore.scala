@@ -125,11 +125,17 @@ object GenerateCoreShimSource {
       )
     }
 
-    coreInstantiation += """  // 4-stage pipeline breaks the 32-bit mantissa multiply from the LZA/normalization stage.
+    coreInstantiation += s"""  // 4-stage pipeline breaks the 32-bit mantissa multiply from the LZA/normalization stage.
+        |  // 5 stages are supported for ultra-high-frequency (1.0 GHz) timing closure.
         |  // Note for Physical Design: If 3-cycle architectural latency is preferred, synthesis
         |  // register retiming ('set_optimize_registers true') on the 3-stage core is an option.
+        |`ifdef FPU_PIPEREGS
+        |  localparam int unsigned FPU_PIPE_REGS = `FPU_PIPEREGS;
+        |`else
+        |  localparam int unsigned FPU_PIPE_REGS = ${p.fpuPipeRegs};
+        |`endif
         |  localparam fpnew_pkg::fpu_implementation_t impl = '{
-        |  PipeRegs:   '{default: 'd4},
+        |  PipeRegs:   '{default: FPU_PIPE_REGS},
         |  UnitTypes:  '{'{default: fpnew_pkg::PARALLEL}, // ADDMUL
         |                '{default: fpnew_pkg::MERGED},   // DIVSQRT
         |                '{default: fpnew_pkg::PARALLEL}, // NONCOMP

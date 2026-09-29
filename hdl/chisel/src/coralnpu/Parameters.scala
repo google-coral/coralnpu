@@ -115,6 +115,8 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   var enableFloat      = false
   var enableZfbfmin    = false
   var enableVectorBf16 = false
+  // Pipeline stages for FPU (default 4 stages; set to 5 for ultra-high-frequency/1GHz targets)
+  var fpuPipeRegs: Int = 4
   // Use the Div/Sqrt module from PULP instead of E906.
   // It is smaller, but has small rounding errors.
   val floatPulpDivsqrt = 0
@@ -210,6 +212,7 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
     newP.enableFloat = this.enableFloat
     newP.enableZfbfmin = this.enableZfbfmin
     newP.enableVectorBf16 = this.enableVectorBf16
+    newP.fpuPipeRegs = this.fpuPipeRegs
     newP.enableFetchL0 = this.enableFetchL0
     newP.enableAxiInstructionFetch = this.enableAxiInstructionFetch
     newP.fetchDataBits = this.fetchDataBits

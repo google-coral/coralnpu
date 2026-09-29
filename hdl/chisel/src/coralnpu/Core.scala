@@ -114,6 +114,9 @@ object EmitCore extends App {
       p.enableZfbfmin = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--enableVectorBf16")) {
       p.enableVectorBf16 = arg.split("=")(1).toBoolean
+    } else if (arg.startsWith("--fpuPipeRegs")) {
+      p.fpuPipeRegs = arg.split("=")(1).toInt
+      require(p.fpuPipeRegs >= 0, s"--fpuPipeRegs must be non-negative: ${p.fpuPipeRegs}")
     } else if (arg.startsWith("--enableVerification")) {
       p.enableVerification = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--exposeDebugPorts")) {
@@ -289,6 +292,10 @@ object EmitCore extends App {
         }
         if (p.enableVme) {
           filelist += "+define+ZVT_ON"
+        }
+        if (p.fpuPipeRegs != 4) {
+          filelist += s"+define+FPU_PIPEREGS=${p.fpuPipeRegs}"
+          filelist += s"+define+FALU_PIPEREGS=${p.fpuPipeRegs}"
         }
         filelist ++= packages
         filelist ++= headers

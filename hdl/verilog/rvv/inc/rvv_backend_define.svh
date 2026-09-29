@@ -219,4 +219,13 @@
   `define NUM_BLKPORT         (int'($ceil(`TE/4*`COMPRATIO)*`TE/4))
 `endif // ZVT_ON
 
+// FALU Pipeline stages (default 4; 5 for ultra-high-frequency/1GHz targets)
+`ifndef FALU_PIPEREGS
+  `ifdef FPU_PIPEREGS
+    `define FALU_PIPEREGS `FPU_PIPEREGS
+  `else
+    `define FALU_PIPEREGS 4
+  `endif
+`endif
+
 `endif // HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH

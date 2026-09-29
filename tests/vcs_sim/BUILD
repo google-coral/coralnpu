@@ -24,6 +24,13 @@ template_rule(
             "verilog_deps": ["//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_verilog"],
             "build_args": ["+define+DUT_MODULE=CoreMiniAxi"],
         },
+        "core_mini_axi_1ghz_sim": {
+            "verilog_deps": ["//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_verilog"],
+            "build_args": [
+                "+define+DUT_MODULE=CoreMiniAxi",
+                "+define+FPU_PIPEREGS=5",
+            ],
+        },
         "core_mini_verification_axi_sim": {
             "verilog_deps": ["//hdl/chisel/src/coralnpu:core_mini_verification_axi_cc_library_verilog"],
             "build_args": ["+define+DUT_MODULE=CoreMiniVerificationAxi"],
@@ -44,6 +51,18 @@ template_rule(
                 "+define+ZVE32F_ON",
                 "+define+TB_SUPPORT",
                 "+define+USE_GENERIC",
+            ],
+        },
+        "rvv_core_mini_axi_1ghz_sim": {
+            "verilog_deps": ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
+            "build_args": [
+                "+define+DUT_MODULE=RvvCoreMiniAxi",
+                "+define+VLEN_128",
+                "+define+ZVE32F_ON",
+                "+define+TB_SUPPORT",
+                "+define+USE_GENERIC",
+                "+define+FPU_PIPEREGS=5",
+                "+define+FALU_PIPEREGS=5",
             ],
         },
         "rvv_core_mini_highmem_axi_sim": {
