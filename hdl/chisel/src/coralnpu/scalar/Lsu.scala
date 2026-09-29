@@ -670,7 +670,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val windowIndexWidthStrict = log2Ceil(windowSizeStrict)
 
   class BookkeepingEntry extends Bundle {
-    val rowAddr   = UInt(p.dbusRowAddrBits.W)
+    val addr      = UInt(p.lsuAddrBits.W)
     val mask      = UInt(nCells.W)
     val cellIndex = Option.when(p.enableRvv)(UInt(ctrWidth.W))
   }
@@ -1808,7 +1808,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val pc              = UInt(p.programCounterBits.W)
     val active          = Bool()
     val storeComplete   = Bool()
-    val faultingVstart  = Option.when(p.enableRvv)(Output(Valid(UInt(log2Ceil(p.rvvVlen).W))))
+    val fault           = Output(Valid(new LsuFaultInfo(p)))
   })
 
   val state    = RegInit(State())
@@ -1865,8 +1865,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
   when(txFire) {
     val entry = MakeWireBundle[BookkeepingEntry](
       new BookkeepingEntry,
-      _.rowAddr -> txOutgoing.bits.req.rowAddr,
-      _.mask    -> starts
+      _.addr -> Cat(txOutgoing.bits.req.rowAddr, txOutgoing.bits.req.offset),
+      _.mask -> starts
     )
     entry.cellIndex.foreach(_ := state.leadIndex)
     bookkeeping(txOutgoing.bits.txid) := entry
@@ -1885,7 +1885,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
   txidAllocator.io.free.bits  := respTxid
 
   val respEntry        = bookkeeping(respTxid)
-  val busRespRowAddr   = respEntry.rowAddr
+  val busRespRowAddr   = respEntry.addr(p.lsuAddrBits - 1, p.dbusOffsetBits)
   val busRespMask      = respEntry.mask
   val busRespCellIndex = respEntry.cellIndex
 
@@ -1984,9 +1984,18 @@ class LsuSuperSlot(p: Parameters) extends Module {
       state.vector.get.isVme.get
   }
 
-  io.faultingVstart.foreach { vstartOut =>
-    val isVector = state.vector.map(v => v.segmentStep =/= 0.U).getOrElse(false.B)
-    vstartOut.valid := isVector && newFault
+  val isNewFault = io.busResp.valid && io.busResp.bits.fault && !state.faulted
+
+  val rawFault = MakeWireBundle[ValidIO[FaultInfo]](
+    Valid(new FaultInfo(p)),
+    _.valid      -> isNewFault,
+    _.bits.write -> state.write,
+    _.bits.addr  -> respEntry.addr,
+    _.bits.epc   -> state.pc
+  )
+
+  val vstartVal = Option.when(p.enableRvv) {
+    val isVector     = state.vector.get.segmentStep =/= 0.U
     val faultingCell = busRespCellIndex.get
 
     // 1. Divide faultingCell by (NF + 1) in [1..8]
@@ -2011,8 +2020,10 @@ class LsuSuperSlot(p: Parameters) extends Module {
         4.U -> (divByNf >> 2)
       )
     )
-    vstartOut.bits := vstart(log2Ceil(p.rvvVlen) - 1, 0)
+    MakeValid(isVector && isNewFault, vstart(log2Ceil(p.rvvVlen) - 1, 0))
   }
+
+  io.fault := LsuFaultInfo(p)(rawFault, vstartVal)
 }
 
 class LsuV3(p: Parameters) extends Lsu(p) {
@@ -2089,27 +2100,16 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     _.bits.epc   -> slot.io.pc
   )
 
-  val rawFault = MuxCase(
-    MakeInvalid(new FaultInfo(p)),
-    Seq(
-      io.ebus.fault.valid -> io.ebus.fault,
-      ibusFault.valid     -> ibusFault
-    )
-  )
+  val rawFaultValid = (slot.io.busReq.valid && req.write && itcm) || io.ebus.fault.valid
 
-  val faultReg = LsuFaultInfo(p)(
-    RegNext(rawFault, MakeInvalid(new FaultInfo(p))),
-    slot.io.faultingVstart
-  )
-
-  rs.io.flush       := io.pipelineFlush || faultReg.valid
+  rs.io.flush       := io.pipelineFlush || slot.io.fault.valid
   slot.io.uop.valid := (rs.io.nEnqueued > 0.U) && !rs.io.flush
 
   flushCmd := MuxCase(
     flushCmd,
     Seq(
-      (io.pipelineFlush || faultReg.valid) -> MakeInvalid(new FlushCmd),
-      io.flush.fire                        -> MakeInvalid(new FlushCmd),
+      (io.pipelineFlush || slot.io.fault.valid) -> MakeInvalid(new FlushCmd),
+      io.flush.fire                             -> MakeInvalid(new FlushCmd),
       (io.req(0).fire && (io.req(0).bits.op === LsuOp.FENCEI))
         -> MakeValid(true.B, FlushCmd(io.req(0).bits))
     )
@@ -2154,7 +2154,7 @@ class LsuV3(p: Parameters) extends Lsu(p) {
       ebusResp -> io.ebus.dbus.rdata
     )
   )
-  slot.io.busResp.bits.fault := faultReg.valid
+  slot.io.busResp.bits.fault := RegNext(rawFaultValid, false.B)
 
   slot.io.busReq.ready := MuxUpTo1H(
     false.B,
@@ -2178,7 +2178,7 @@ class LsuV3(p: Parameters) extends Lsu(p) {
   }
 
   // fault handling
-  io.fault := faultReg
+  io.fault := slot.io.fault
 
   // status reporting
   io.active        := rs.io.nEnqueued > 0.U || !slot.io.active || flushCmd.valid
