@@ -37,9 +37,6 @@ DENYLIST = [
     "//tests/cocotb:retire_buffer_full_illegal_inst",
     # Requires custom testbench
     "//tests/cocotb:csr_illegal_write_test",
-    # Actual RVV bugs?
-    "//tests/cocotb/rvv:vmsif_test",
-    "//tests/cocotb/rvv:vmsbf_test",
     "//tests/cocotb/rvv/arithmetics:vmsge_vx_test",
     # MPACT needs update to canonical-NaN
     "//tests/cocotb/rvv/arithmetics:rvv_fdiv_float_rdn_m1",

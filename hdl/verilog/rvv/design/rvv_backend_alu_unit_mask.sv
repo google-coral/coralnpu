@@ -224,9 +224,9 @@ module rvv_backend_alu_unit_mask
               VMSOF,
               VMSIF: begin
                 if (alu_uop.vm==1'b1)
-                  src2_data = vs2_data;
+                  src2_data = vs2_data&tail_mask;
                 else
-                  src2_data = vs2_data&v0_data; 
+                  src2_data = vs2_data&tail_mask&v0_data; 
               end
               // no source operand for VID
             endcase
@@ -429,9 +429,9 @@ module rvv_backend_alu_unit_mask
               VMSOF,
               VMSIF: begin
                 if (alu_uop.vm==1'b1)
-                  result.w_data = result_data;
+                  result.w_data = (result_data & tail_mask) | (vd_data & (~tail_mask));
                 else 
-                  result.w_data = result_data&v0_data | vd_data&(~v0_data);
+                  result.w_data = (result_data & v0_data & tail_mask) | (vd_data & (~(v0_data & tail_mask)));
               end
               VID: begin
                 result.w_data = result_data;
