@@ -45,13 +45,17 @@ class AxiAddress(addrWidthBits: Int, dataWidthBits: Int, idBits: Int) extends Bu
   val qos    = UInt(4.W)
   val region = UInt(4.W)
 
-  def nextAddr(): AxiAddress = {
+  def nextAddr(wrapMask: UInt = 0.U): AxiAddress = {
     val next = Wire(new AxiAddress(addrWidthBits, dataWidthBits, idBits))
-    next      := this
+    next := this
+    val numBytes    = 1.U << this.size
+    val incrAddr    = this.addr + numBytes
+    val wrappedAddr = (this.addr & ~wrapMask) | (incrAddr & wrapMask)
     next.addr := MuxLookup(this.burst, this.addr)(
       Seq(
         AxiBurstType.FIXED.asUInt -> this.addr,
-        AxiBurstType.INCR.asUInt  -> (this.addr + (1.U << this.size))
+        AxiBurstType.INCR.asUInt  -> incrAddr,
+        AxiBurstType.WRAP.asUInt  -> wrappedAddr
       )
     )
     next.len := this.len - 1.U

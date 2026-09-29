@@ -136,7 +136,8 @@ async def test_randomized_address_generator(dut):
     for tx in range(num_transactions):
         burst = random.choice([
             AxiBurstType.FIXED,
-            AxiBurstType.INCR,  #AxiBurstType.WRAP
+            AxiBurstType.INCR,
+            AxiBurstType.WRAP,
         ])
         size = random.randint(0, 5)  # 1 to 32 bytes
 
