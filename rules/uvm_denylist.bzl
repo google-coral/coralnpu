@@ -63,8 +63,6 @@ DENYLIST = [
     # Exclude until MPACT supports VME.
     "*vme*",
     # Exclude remaining ml_ops tests from regression
-    "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_assembly",
-    "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_optimized",
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_highmem",
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_itcm512kb_dtcm512kb",
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem",
@@ -94,6 +92,8 @@ TIMEOUT_MAP = {
     "//examples:coralnpu_v2_rvv_add_intrinsic": 200000,
     "//tests/cocotb:nop_test": 5000000,
     "//tests/cocotb/rvv/ml_ops:rvv_float_matmul": 100000000,
+    "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_assembly": 100000000,
+    "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_optimized": 100000000,
     "//tests/cocotb/rvv/ml_ops:rvv_matmul": 100000000,
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly": 100000000,
     "//tests/cocotb/rvv/ml_ops/static_reference_tests:float_matmul_16x48x16": 100000000,

@@ -27,7 +27,7 @@ class RunUvmRegressionTest(unittest.TestCase):
 
         self.assertIn("//tests/cocotb:zvfbf_test", denylist)
         self.assertIn(
-            "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_assembly", denylist
+            "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_highmem", denylist
         )
         self.assertTrue(
             any(
@@ -42,7 +42,7 @@ class RunUvmRegressionTest(unittest.TestCase):
         self.assertTrue(
             any(
                 fnmatch.fnmatch(
-                    "//tests/cocotb/rvv/ml_ops:rvv_float_matmul_assembly",
+                    "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_highmem",
                     pattern,
                 ) for pattern in denylist
             )
