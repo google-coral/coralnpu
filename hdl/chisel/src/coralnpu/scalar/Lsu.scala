@@ -1457,14 +1457,25 @@ class LsuSuperSlot(p: Parameters) extends Module {
       val (cellRowAddr, cellMask) = if (p.enableRvv) {
         val effStride         = Mux(isIndexed, 0.U(32.W), uop.data)
         val uniqueStructSizes = Seq(1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32)
-        val stridedOffsets    = MuxLookup(
-          uop.bytesPerSegment.get,
-          VecInit.fill(nCells)(0.U(32.W))
-        )(
-          uniqueStructSizes.map { size =>
-            size.U -> State.makeStridedOffsets(size, effStride)
-          }
-        )
+        val stridedOffsets    = VecInit.tabulate(nCells) { i =>
+          val kMult = MuxLookup(
+            uop.bytesPerSegment.get,
+            0.U(indexWidth.W)
+          )(
+            uniqueStructSizes.map { size =>
+              size.U -> (i / size).U(indexWidth.W)
+            }
+          )
+          val rem = MuxLookup(
+            uop.bytesPerSegment.get,
+            0.U(log2Ceil(uniqueStructSizes.max).W)
+          )(
+            uniqueStructSizes.map { size =>
+              size.U -> (i % size).U(log2Ceil(uniqueStructSizes.max).W)
+            }
+          )
+          (kMult * effStride)(31, 0) + rem
+        }
         val stridedAddr    = VecInit.tabulate(nCells) { i => uop.addr + stridedOffsets(i) }
         val stridedRowAddr = VecInit.tabulate(nCells) { i =>
           stridedAddr(i)(p.lsuAddrBits - 1, p.dbusOffsetBits)
