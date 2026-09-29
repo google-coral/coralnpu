@@ -16,40 +16,38 @@ package coralnpu
 
 import chisel3._
 import chisel3.util._
+import bus._
 import common._
 import coralnpu.rvv._
 
 class Lsu(p: Parameters) extends Module {
   val io = IO(new Bundle {
-    // Decode cycle.
-    val req         = Vec(p.instructionLanes, Flipped(Decoupled(new LsuCmd(p))))
+    // Instruction dispatch.
+    val req = Vec(p.instructionLanes, Flipped(Decoupled(new LsuCmd(p))))
+
+    // Register file read ports.
     val busPort     = Flipped(new RegfileBusPortIO(p))
     val busPort_flt = Option.when(p.enableFloat)(Flipped(new RegfileBusPortIO(p)))
 
-    // Execute cycle(s).
+    // Scalar register file writeback.
     val rd     = Valid(Flipped(new RegfileWriteDataIO(p)))
     val rd_flt = Valid(Flipped(new FloatRegfileWriteDataIO(p)))
 
-    // Cached interface.
-    val ibus  = new IBusIO(p)
-    val dbus  = new DBusIO(p)
-    val flush = new IFlushIO(p)
-    val fault = Valid(new LsuFaultInfo(p))
+    // The memory bus.
+    val tlul = new TLULHost2Device[NoUser, NoUser](p.tlParams)
 
-    // DBus that will eventually reach an external bus.
-    // Intended for sending a transaction to an external
-    // peripheral, likely on TileLink or AXI.
-    val ebus = new EBusIO(p)
+    // RVV vector interface.
+    val rvv2lsu  = Option.when(p.enableRvv)(Vec(2, Flipped(Decoupled(new Rvv2Lsu(p)))))
+    val lsu2rvv  = Option.when(p.enableRvv)(Vec(2, Decoupled(new Lsu2Rvv(p))))
+    val rvvState = Option.when(p.enableRvv)(Input(Valid(new RvvConfigState(p))))
 
-    val rvv2lsu = Option.when(p.enableRvv)(Vec(2, Flipped(Decoupled(new Rvv2Lsu(p)))))
-    val lsu2rvv = Option.when(p.enableRvv)(Vec(2, Decoupled(new Lsu2Rvv(p))))
-
+    // VME matrix interface.
     val vme2lsu = Option.when(p.enableVme)(Flipped(Decoupled(new Vme2Lsu(p))))
     val lsu2vme = Option.when(p.enableVme)(Decoupled(new Lsu2Vme(p)))
 
-    // RVV config state
-    val rvvState = Option.when(p.enableRvv)(Input(Valid(new RvvConfigState(p))))
-
+    // Pipeline control and status.
+    val flush         = new IFlushIO(p)
+    val fault         = Valid(new LsuFaultInfo(p))
     val queueCapacity = Output(UInt(3.W))
     val active        = Output(Bool())
     val storeComplete = Output(Valid(UInt(p.programCounterBits.W)))
@@ -2073,34 +2071,35 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     slot.io.vmeData.get <> io.vme2lsu.get
   }
 
-  // TODO: refactor out into a bus adapter
+  // Bus adapter: all memory traffic leaves through one TL-UL port.
   val req  = slot.io.busReq.bits.req
-  val addr = Cat(req.rowAddr, 0.U(p.dbusOffsetBits.W))
-  val itcm = p.m
-    .filter(_.memType == MemoryRegionType.IMEM)
-    .map(_.contains(addr))
-    .reduceOption(_ || _)
-    .getOrElse(false.B)
-  val dtcm = p.m
-    .filter(_.memType == MemoryRegionType.DMEM)
-    .map(_.contains(addr))
-    .reduceOption(_ || _)
-    .getOrElse(true.B)
-  val peri = p.m
-    .filter(_.memType == MemoryRegionType.Peripheral)
-    .map(_.contains(addr))
-    .reduceOption(_ || _)
-    .getOrElse(false.B)
+  val addr = Cat(req.rowAddr, req.offset)
 
-  val ibusFault = MakeWireBundle[ValidIO[FaultInfo]](
-    Valid(new FaultInfo(p)),
-    _.valid      -> (slot.io.busReq.valid && req.write && itcm),
-    _.bits.write -> true.B,
-    _.bits.addr  -> req.rowAddr,
-    _.bits.epc   -> slot.io.pc
+  io.tlul.a.valid := slot.io.busReq.valid
+  io.tlul.a.bits  := MakeWireBundle[TileLink_A_ChannelBase[NoUser]](
+    new TileLink_A_ChannelBase[NoUser](p.tlParams),
+    _.opcode -> Mux(
+      req.write,
+      TLULOpcodesA.PutPartialData.asUInt,
+      TLULOpcodesA.Get.asUInt
+    ),
+    _.param   -> 0.U,
+    _.size    -> Ctz(req.size),
+    _.source  -> Cat(0.U(1.W), slot.io.busReq.bits.txid),
+    _.address -> addr,
+    _.mask    -> req.wmask,
+    _.data    -> req.wdata
   )
+  slot.io.busReq.ready := io.tlul.a.ready
 
-  val rawFaultValid = (slot.io.busReq.valid && req.write && itcm) || io.ebus.fault.valid
+  io.tlul.d.ready := true.B
+
+  val isSlot0Resp = io.tlul.d.bits.source(p.lsuSlotTxidWidth) === 0.U
+
+  slot.io.busResp.valid      := io.tlul.d.valid && isSlot0Resp
+  slot.io.busResp.bits.txid  := io.tlul.d.bits.source(p.lsuSlotTxidWidth - 1, 0)
+  slot.io.busResp.bits.rdata := io.tlul.d.bits.data
+  slot.io.busResp.bits.fault := io.tlul.d.bits.error
 
   val slotsIdle = !slot.io.active
 
@@ -2138,57 +2137,6 @@ class LsuV3(p: Parameters) extends Lsu(p) {
     )
   )
 
-  io.ibus.valid := itcm && slot.io.busReq.valid && !req.write
-  io.ibus.addr  := addr
-  val ibusResp = RegNext(io.ibus.fire || ibusFault.valid, false.B)
-
-  io.dbus.valid := dtcm && slot.io.busReq.valid
-  io.dbus.write := req.write
-  io.dbus.pc    := slot.io.pc
-  io.dbus.addr  := addr
-  io.dbus.adrx  := addr
-  io.dbus.size  := p.lsuDataBytes.U
-  io.dbus.wdata := req.wdata
-  io.dbus.wmask := req.wmask
-  val dbusResp = RegNext(io.dbus.valid && io.dbus.ready, false.B)
-
-  val use_ebus = !(itcm || dtcm)
-
-  io.ebus.dbus.valid := use_ebus && slot.io.busReq.valid
-  io.ebus.dbus.write := req.write
-  io.ebus.dbus.pc    := slot.io.pc
-  io.ebus.dbus.addr  := Cat(req.rowAddr, req.offset)
-  io.ebus.dbus.adrx  := addr
-  io.ebus.dbus.size  := req.size
-  io.ebus.dbus.wdata := req.wdata
-  io.ebus.dbus.wmask := req.wmask
-  io.ebus.internal   := peri
-  val ebusResp = RegNext(io.ebus.dbus.valid && io.ebus.dbus.ready, false.B)
-
-  val respTxid = RegNext(slot.io.busReq.bits.txid, 0.U)
-
-  slot.io.busResp.valid      := ibusResp || dbusResp || ebusResp
-  slot.io.busResp.bits.txid  := respTxid
-  slot.io.busResp.bits.rdata := MuxUpTo1H(
-    WireInit(UInt(p.lsuDataBits.W), DontCare),
-    Seq(
-      ibusResp -> io.ibus.rdata,
-      dbusResp -> io.dbus.rdata,
-      ebusResp -> io.ebus.dbus.rdata
-    )
-  )
-  slot.io.busResp.bits.fault := RegNext(rawFaultValid, false.B)
-
-  slot.io.busReq.ready := MuxUpTo1H(
-    false.B,
-    Seq(
-      // IBus fault is detected here, not on the bus. We need to accept the req.
-      itcm     -> (io.ibus.ready || ibusFault.valid),
-      dtcm     -> io.dbus.ready,
-      use_ebus -> io.ebus.dbus.ready
-    )
-  )
-
   io.rd     := slot.io.intWriteback
   io.rd_flt := slot.io.floatWriteback.getOrElse(MakeInvalid(new FloatRegfileWriteDataIO(p)))
   if (p.enableRvv) {
@@ -2206,5 +2154,4 @@ class LsuV3(p: Parameters) extends Lsu(p) {
 
   io.flush.valid  := flushCmd.valid
   io.flush.pcNext := flushCmd.bits.pcNext
-
 }

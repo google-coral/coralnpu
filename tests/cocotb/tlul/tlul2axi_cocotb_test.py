@@ -43,6 +43,10 @@ async def reset_dut(dut):
     dut.io_tl_a_bits_address.value = 0
     dut.io_tl_a_bits_mask.value = 0
     dut.io_tl_a_bits_data.value = 0
+    dut.io_tl_a_bits_user_rsvd.value = 0
+    dut.io_tl_a_bits_user_instr_type.value = 0x9
+    dut.io_tl_a_bits_user_cmd_intg.value = 0
+    dut.io_tl_a_bits_user_data_intg.value = 0
     await ClockCycles(dut.clock, 2)
     dut.reset.value = 0
     await ClockCycles(dut.clock, 2)
@@ -61,7 +65,9 @@ async def wait_for_signal(clock, signal, timeout_cycles=1000, message=None):
         raise RuntimeError(message)
 
 
-async def tl_send_get(dut, address, source, size, timeout_cycles=1000):
+async def tl_send_get(
+    dut, address, source, size, instr_type=0x9, timeout_cycles=1000
+):
     """Sends a TileLink Get request."""
     dut.io_tl_a_valid.value = 1
     dut.io_tl_a_bits_opcode.value = TLUL_OpcodeA.Get
@@ -70,6 +76,7 @@ async def tl_send_get(dut, address, source, size, timeout_cycles=1000):
     dut.io_tl_a_bits_size.value = size
     dut.io_tl_a_bits_mask.value = 0  # Mask is ignored for Get
     dut.io_tl_a_bits_data.value = 0  # Data is ignored for Get
+    dut.io_tl_a_bits_user_instr_type.value = instr_type
 
     await wait_for_signal(dut.clock, dut.io_tl_a_ready, timeout_cycles)
 
@@ -491,3 +498,49 @@ async def test_put_then_get(dut):
 
     # Allow a few extra cycles for waveform viewing.
     await ClockCycles(dut.clock, 5)
+
+
+@cocotb.test()
+async def test_instr_type_to_prot_mapping(dut):
+    """Verifies OpenTitan MuBi4 instr_type maps to AXI AxPROT[2]."""
+    clock = Clock(dut.clock, 10, unit="us")
+    cocotb.start_soon(clock.start())
+
+    await reset_dut(dut)
+    dut.io_axi_read_addr_ready.value = 0
+    dut.io_axi_write_addr_ready.value = 0
+    dut.io_axi_write_data_ready.value = 0
+    dut.io_axi_write_resp_valid.value = 0
+    dut.io_axi_read_data_valid.value = 0
+
+    for source, instr_type, expected_prot in [
+        (3, 0x9, 0b000),
+        (32, 0x6, 0b100),
+    ]:
+        await tl_send_get(
+            dut,
+            address=0x20000000,
+            source=source,
+            size=4,
+            instr_type=instr_type,
+        )
+        await RisingEdge(dut.clock)
+        assert dut.io_axi_read_addr_valid.value
+        assert int(dut.io_axi_read_addr_bits_prot.value) == expected_prot
+
+        dut.io_axi_read_addr_ready.value = 1
+        await RisingEdge(dut.clock)
+        dut.io_axi_read_addr_ready.value = 0
+
+        await RisingEdge(dut.clock)
+        dut.io_axi_read_data_valid.value = 1
+        dut.io_axi_read_data_bits_id.value = source
+        dut.io_axi_read_data_bits_data.value = 0
+        dut.io_axi_read_data_bits_resp.value = 0
+        dut.io_axi_read_data_bits_last.value = 1
+        dut.io_tl_d_ready.value = 1
+        await wait_for_signal(dut.clock, dut.io_axi_read_data_ready, 1000)
+        await RisingEdge(dut.clock)
+        dut.io_axi_read_data_valid.value = 0
+        dut.io_tl_d_ready.value = 0
+        await ClockCycles(dut.clock, 2)

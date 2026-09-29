@@ -86,7 +86,12 @@ module coralnpu_tb_top;
       .RETIRE(8)
   ) rvvi_trace_vif_t;
 
-  rvvi_trace_vif_t rvvi_vif;
+  rvvi_trace_vif_t                    rvvi_vif;
+
+  logic                               debug_dbus_valid;
+  logic            [AxiAddrWidth-1:0] debug_dbus_addr;
+  logic            [AxiDataWidth-1:0] debug_dbus_wdata;
+  logic                               debug_dbus_write;
 
 
   //--------------------------------------------------------------------------
@@ -195,10 +200,10 @@ module coralnpu_tb_top;
       .io_debug_inst_2                         (), \
       .io_debug_inst_3                         (), \
       .io_debug_cycles                         (), \
-      .io_debug_dbus_valid                     (), \
-      .io_debug_dbus_bits_addr                 (), \
-      .io_debug_dbus_bits_wdata                (), \
-      .io_debug_dbus_bits_write                (), \
+      .io_debug_dbus_valid                     (debug_dbus_valid), \
+      .io_debug_dbus_bits_addr                 (debug_dbus_addr), \
+      .io_debug_dbus_bits_wdata                (debug_dbus_wdata), \
+      .io_debug_dbus_bits_write                (debug_dbus_write), \
       `DEBUG_DISPATCH_LANE(0), \
       `DEBUG_DISPATCH_LANE(1), \
       `DEBUG_DISPATCH_LANE(2), \
@@ -477,26 +482,14 @@ module coralnpu_tb_top;
 
         forever begin
           @(posedge clk);
-          // Check internal data bus (dbus)
-          if (tohost_addr != 32'h0 && u_dut.core.io_dbus_valid && u_dut.core.io_dbus_write &&
-              u_dut.core.io_dbus_addr == tohost_addr) begin
-            if (u_dut.core.io_dbus_wdata[0] == 1'b1) begin
-              `uvm_info("TB_TOP_MONITOR", "tohost write detected on DBUS.", UVM_LOW)
-              uvm_config_db#(logic [127:0])::set(null, "*", "final_tohost_data",
-                                                 u_dut.core.io_dbus_wdata);
-              tohost_written_event.trigger();
-              break;  // Stop monitoring for this test
-            end
-          end
-
-          // Check external bus (ebus)
-          if (tohost_addr != 32'h0 && u_dut.core.io_ebus_dbus_valid &&
-              u_dut.core.io_ebus_dbus_ready && u_dut.core.io_ebus_dbus_write &&
-              u_dut.core.io_ebus_dbus_addr == tohost_addr) begin
-            if (u_dut.core.io_ebus_dbus_wdata[0] == 1'b1) begin
-              `uvm_info("TB_TOP_MONITOR", "tohost write detected on EBUS.", UVM_LOW)
-              uvm_config_db#(logic [127:0])::set(null, "*", "final_tohost_data",
-                                                 u_dut.core.io_ebus_dbus_wdata);
+          if (tohost_addr != 32'h0 && debug_dbus_valid && debug_dbus_write &&
+              debug_dbus_addr == tohost_addr) begin
+            automatic
+            logic [AxiDataWidth-1:0]
+            shifted_wdata = debug_dbus_wdata >> ({tohost_addr[3:2], 5'b0});
+            if (shifted_wdata[0] == 1'b1) begin
+              `uvm_info("TB_TOP_MONITOR", "tohost write detected on debug DBUS.", UVM_LOW)
+              uvm_config_db#(logic [127:0])::set(null, "*", "final_tohost_data", shifted_wdata);
               tohost_written_event.trigger();
               break;  // Stop monitoring for this test
             end

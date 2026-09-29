@@ -14,6 +14,7 @@
 
 package coralnpu
 
+import bus._
 import chisel3._
 import chisel3.simulator.scalatest.ChiselSim
 import org.scalatest.freespec.AnyFreeSpec
@@ -349,5 +350,117 @@ class CoreAxiInstructionFetchSpec extends AnyFreeSpec with ChiselSim {
     pTrue.enableAxiInstructionFetch = true
     val sv = _root_.circt.stage.ChiselStage.emitSystemVerilog(new CoreAxi(pTrue, "CoreAxiWithIbus"))
     assert(sv.contains("IBus2Axi"))
+  }
+}
+
+class CoreDomainTlulBridgeSpec extends AnyFreeSpec with ChiselSim {
+  val tlParams = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
+
+  "CoreDomainTlulBridge isolates gated clock and drains orphaned soft-reset responses" in {
+    simulate(new CoreDomainTlulBridge(tlParams, maxOutstanding = 2, dQueueEntries = 2)) { dut =>
+      dut.reset.poke(true.B)
+      dut.io.coreClkEn.poke(true.B)
+      dut.io.coreReset.poke(false.B)
+      dut.io.tl_h.a.valid.poke(false.B)
+      dut.io.tl_h.a.bits.opcode.poke(TLULOpcodesA.Get.asUInt)
+      dut.io.tl_h.a.bits.param.poke(0.U)
+      dut.io.tl_h.a.bits.size.poke(4.U)
+      dut.io.tl_h.a.bits.source.poke(0.U)
+      dut.io.tl_h.a.bits.address.poke(0.U)
+      dut.io.tl_h.a.bits.mask.poke(0xffff.U)
+      dut.io.tl_h.a.bits.data.poke(0.U)
+      dut.io.tl_h.d.ready.poke(true.B)
+      dut.io.tl_d.a.ready.poke(true.B)
+      dut.io.tl_d.d.valid.poke(false.B)
+      dut.io.tl_d.d.bits.opcode.poke(TLULOpcodesD.AccessAckData.asUInt)
+      dut.io.tl_d.d.bits.param.poke(0.U)
+      dut.io.tl_d.d.bits.size.poke(4.U)
+      dut.io.tl_d.d.bits.source.poke(0.U)
+      dut.io.tl_d.d.bits.sink.poke(0.U)
+      dut.io.tl_d.d.bits.data.poke(0.U)
+      dut.io.tl_d.d.bits.error.poke(false.B)
+      dut.clock.step()
+      dut.reset.poke(false.B)
+
+      // 1. Issue request (source = 0) on active clock edge just before WFI clock gating.
+      dut.io.tl_h.a.valid.poke(true.B)
+      dut.io.tl_h.a.bits.source.poke(0.U)
+      dut.io.tl_d.a.valid.expect(true.B)
+      dut.io.tl_h.a.ready.expect(true.B)
+      dut.clock.step()
+
+      // 2. Clock gate asserts while core still holds speculative a.valid (source = 1) high.
+      // Fabric must NOT accept duplicate requests while gated, and returning response for
+      // source = 0 must be buffered without stalling tl_d.d.ready.
+      dut.io.coreClkEn.poke(false.B)
+      dut.io.tl_h.a.bits.source.poke(1.U)
+      dut.io.tl_d.a.valid.expect(false.B)
+      dut.io.tl_h.a.ready.expect(false.B)
+
+      dut.io.tl_d.d.valid.poke(true.B)
+      dut.io.tl_d.d.bits.source.poke(0.U)
+      dut.io.tl_d.d.bits.data.poke(0x11223344L.U)
+      dut.io.tl_d.d.ready.expect(true.B)
+      dut.io.tl_h.d.valid.expect(false.B)
+      dut.clock.step()
+
+      // Keep gated for extra cycles: buffered response stays held cleanly.
+      dut.io.tl_d.d.valid.poke(false.B)
+      dut.clock.step()
+      dut.io.tl_h.d.valid.expect(false.B)
+      dut.io.tl_d.a.valid.expect(false.B)
+
+      // 3. Ungate clock: buffered response (source = 0) delivers immediately to core.
+      dut.io.coreClkEn.poke(true.B)
+      dut.io.tl_h.a.valid.poke(false.B)
+      dut.io.tl_h.d.valid.expect(true.B)
+      dut.io.tl_h.d.bits.source.expect(0.U)
+      dut.io.tl_h.d.bits.data.expect(0x11223344L.U)
+      dut.clock.step()
+      dut.io.tl_h.d.valid.expect(false.B)
+
+      // 4. Issue 2 requests (source = 0, 1), buffer one during clock-gate, then pulse coreReset.
+      dut.io.tl_h.a.valid.poke(true.B)
+      dut.io.tl_h.a.bits.source.poke(0.U)
+      dut.clock.step()
+      dut.io.tl_h.a.bits.source.poke(1.U)
+      dut.clock.step()
+      dut.io.tl_h.a.valid.poke(false.B)
+
+      // Buffer response 0 while gated.
+      dut.io.coreClkEn.poke(false.B)
+      dut.io.tl_d.d.valid.poke(true.B)
+      dut.io.tl_d.d.bits.source.poke(0.U)
+      dut.io.tl_d.d.bits.data.poke(0xaaaaL.U)
+      dut.clock.step()
+      dut.io.tl_d.d.valid.poke(false.B)
+
+      // Pulse soft reset for 1 cycle while response 1 is still in flight in fabric.
+      dut.io.coreReset.poke(true.B)
+      dut.clock.step()
+      dut.io.coreReset.poke(false.B)
+      dut.io.coreClkEn.poke(true.B)
+
+      // Buffered response 0 must have been flushed, and new post-reset Channel A requests
+      // must remain blocked until orphaned response 1 drains from fabric.
+      dut.io.tl_h.d.valid.expect(false.B)
+      dut.io.tl_h.a.valid.poke(true.B)
+      dut.io.tl_h.a.bits.source.poke(0.U)
+      dut.io.tl_h.a.ready.expect(false.B)
+      dut.io.tl_d.a.valid.expect(false.B)
+
+      // Orphaned response 1 arrives and is silently drained.
+      dut.io.tl_d.d.valid.poke(true.B)
+      dut.io.tl_d.d.bits.source.poke(1.U)
+      dut.io.tl_d.d.bits.data.poke(0xbbbbL.U)
+      dut.io.tl_d.d.ready.expect(true.B)
+      dut.io.tl_h.d.valid.expect(false.B)
+      dut.clock.step()
+      dut.io.tl_d.d.valid.poke(false.B)
+
+      // Now fabric is clean: post-reset Channel A request is accepted immediately.
+      dut.io.tl_h.a.ready.expect(true.B)
+      dut.io.tl_d.a.valid.expect(true.B)
+    }
   }
 }

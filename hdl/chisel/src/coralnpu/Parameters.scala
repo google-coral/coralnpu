@@ -171,16 +171,22 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   def dbusRowAddrBits         = lsuAddrBits - dbusOffsetBits
   val lsuSlotTxidEntries: Int = 8
   def lsuSlotTxidWidth: Int   = log2Ceil(lsuSlotTxidEntries)
+  def lsuTxidWidth: Int       = lsuSlotTxidWidth + 1
 
   // TCM Size Configuration
   var itcmSizeKBytes = Parameters.itcmSizeKBytesDefault
   var dtcmSizeKBytes = Parameters.dtcmSizeKBytesDefault
+  val itcmNumBanks   = 1
+  val dtcmNumBanks   = 2
 
   // [Internal] TCM[Vector,Scalar] interface.
   var axi2IdBits         = 6
   def axi2AddrBits       = xlen
   def axi2DataBits: Int  = { lsuDataBits } // vectorBits
   def axi2DataBytes: Int = { axi2DataBits / 8 }
+
+  // internal tlul interface
+  def tlParams: TLULParameters = toTLUL()
 
   // If set, itcmMemoryFile should contain a path to a Verilog mem file.
   // NB: Only used by CoreAxi

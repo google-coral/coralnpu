@@ -17,6 +17,7 @@ package coralnpu
 
 import chisel3._
 import chisel3.util._
+import bus._
 import common._
 import coralnpu.float.FloatCore
 import coralnpu.rvv.{Rob2Rt, RvvCoreIO}
@@ -38,9 +39,8 @@ class SCore(p: Parameters) extends Module {
     val timer_irq    = Input(Bool())
     val software_irq = Input(Bool())
 
-    val ibus = new IBusIO(p)
-    val dbus = new DBusIO(p)
-    val ebus = new EBusIO(p)
+    val ibus     = new IBusIO(p)
+    val tlul_lsu = new TLULHost2Device[NoUser, NoUser](p.tlParams)
 
     val rvvcore = Option.when(p.enableRvv)(Flipped(new RvvCoreIO(p)))
 
@@ -563,26 +563,15 @@ class SCore(p: Parameters) extends Module {
 
   // ---------------------------------------------------------------------------
   // Fetch Bus
-  // Mux valid
-  io.ibus.valid := Mux(lsu.io.ibus.valid, lsu.io.ibus.valid, fetch.io.ibus.valid)
-  // Mux addr
-  io.ibus.addr := Mux(lsu.io.ibus.valid, lsu.io.ibus.addr, fetch.io.ibus.addr)
-  // Arbitrate ready
-  lsu.io.ibus.ready   := Mux(lsu.io.ibus.valid, io.ibus.ready, false.B)
-  fetch.io.ibus.ready := Mux(lsu.io.ibus.valid, false.B, io.ibus.ready)
-  // Arbitrate error
-  fetch.io.ibus.fault := Mux(lsu.io.ibus.valid, MakeInvalid(new FaultInfo(p)), io.ibus.fault)
-  // Broadcast rdata
-  lsu.io.ibus.rdata   := io.ibus.rdata
+  io.ibus.valid       := fetch.io.ibus.valid
+  io.ibus.addr        := fetch.io.ibus.addr
+  fetch.io.ibus.ready := io.ibus.ready
+  fetch.io.ibus.fault := io.ibus.fault
   fetch.io.ibus.rdata := io.ibus.rdata
 
-  // Tie-off ibus faults in lsu (unused)
-  lsu.io.ibus.fault := MakeInvalid(new FaultInfo(p))
-
   // ---------------------------------------------------------------------------
-  // Local Data Bus Port
-  io.dbus <> lsu.io.dbus
-  io.ebus <> lsu.io.ebus
+  // Data Bus (TileLink-UL)
+  io.tlul_lsu <> lsu.io.tlul
 
   // ---------------------------------------------------------------------------
   // DEBUG
@@ -611,10 +600,12 @@ class SCore(p: Parameters) extends Module {
     debug.addr <> debugAddr
     debug.inst <> debugInst
 
-    debug.dbus.valid      := io.dbus.valid
-    debug.dbus.bits.addr  := io.dbus.addr
-    debug.dbus.bits.wdata := io.dbus.wdata
-    debug.dbus.bits.write := io.dbus.write
+    val isWrite = io.tlul_lsu.a.bits.opcode === TLULOpcodesA.PutFullData.asUInt ||
+      io.tlul_lsu.a.bits.opcode === TLULOpcodesA.PutPartialData.asUInt
+    debug.dbus.valid      := io.tlul_lsu.a.fire
+    debug.dbus.bits.addr  := io.tlul_lsu.a.bits.address
+    debug.dbus.bits.wdata := io.tlul_lsu.a.bits.data
+    debug.dbus.bits.write := isWrite
 
     for (i <- 0 until p.instructionLanes) {
       debug.dispatch(i).instFire := dispatch.io.inst(i).fire

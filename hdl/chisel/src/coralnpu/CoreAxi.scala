@@ -54,8 +54,14 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
 
   val global_reset = (!Mux(io.te, io.aresetn, rst_sync.io.rstn_o).asBool).asAsyncReset
   withClockAndReset(rst_sync.io.clk_o, global_reset) {
+    // Look up memory regions
+    val itcmRegion  = memoryRegions.find(_.memType == MemoryRegionType.IMEM).get
+    val dtcmRegion  = memoryRegions.find(_.memType == MemoryRegionType.DMEM).get
+    val csrRegion   = memoryRegions.find(_.memType == MemoryRegionType.Peripheral).get
+    val csrAddrBits = log2Ceil(csrRegion.memSize)
+
     // Build CSR
-    val csr = Module(new CoreCSR(p))
+    val csr = Module(new CoreTlulCSR(p, addrBits = csrAddrBits, extraIdBits = 1))
     csr.io.internal := false.B
     csr.io.bootAddr := io.boot_addr
 
@@ -143,161 +149,182 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
       dm.io.float_rs.get <> core.io.dm.float_rs.get
     }
 
-    // TCMs are arbitrated between the core ({i|d}bus), the AXI slave interface,
-    // and the debug module.
-    val tcmPortCount = 3
+    val itcmBase = itcmRegion.memStart
+    val dtcmBase = dtcmRegion.memStart
 
-    // Build ITCM and connect to ibus
-    val itcmSizeBytes: Int = 1024 * p.itcmSizeKBytes
-    val itcmSubEntryWidth  = 8
-    val itcmWidth          = p.axi2DataBits
-    val itcmEntries        = itcmSizeBytes / (itcmWidth / 8)
-    val itcm = Module(new TCM128(itcmSizeBytes, itcmSubEntryWidth, memoryRegions(0).memStart))
-    dontTouch(itcm.io)
-    val itcmWrapper = Module(new SRAM(p, log2Ceil(itcmEntries)))
-    itcm.io.addr                 := itcmWrapper.io.sram.address
-    itcm.io.enable               := itcmWrapper.io.sram.enable
-    itcm.io.write                := itcmWrapper.io.sram.isWrite
-    itcm.io.wdata                := itcmWrapper.io.sram.writeData
-    itcm.io.wmask                := itcmWrapper.io.sram.mask
-    itcmWrapper.io.sram.readData := itcm.io.rdata
-    val itcmArbiter = Module(new FabricArbiter(p, tcmPortCount))
-    itcmArbiter.io.port <> itcmWrapper.io.fabric
-
-    // Mux ibus between ITCM (fast path) and AXI (fallback for ROM/SRAM/DDR)
-    assert(memoryRegions(0).memType === MemoryRegionType.IMEM)
-    val inItcm = memoryRegions(0).contains(core.io.ibus.addr)
-
-    // ITCM path: only issue read when address is in ITCM
-    itcmArbiter.io.source(0).readDataAddr := MakeValid(
-      core.io.ibus.valid && (if (p.enableAxiInstructionFetch) inItcm else true.B),
-      core.io.ibus.addr
-    )
-    itcmArbiter.io.source(0).writeDataAddr :=
-      MakeInvalid(UInt(p.axi2AddrBits.W))
-    itcmArbiter.io.source(0).writeDataBits := 0.U
-    itcmArbiter.io.source(0).writeDataStrb := 0.U
-
-    val ibus2axi = Option.when(p.enableAxiInstructionFetch)(IBus2Axi(p, id = 1))
-
-    if (p.enableAxiInstructionFetch) {
-      // AXI path: route instruction fetches outside ITCM through IBus2Axi
-      ibus2axi.get.io.ibus.valid := core.io.ibus.valid && !inItcm
-      ibus2axi.get.io.ibus.addr  := core.io.ibus.addr
-
-      // Mux results back to core.
-      // Register inItcm to break the combinational cycle (addr -> inItcm -> rdata -> core -> addr).
-      // This matches the 1-cycle SRAM read latency: rdata reflects the previous cycle's request source.
-      val inItcmReg = RegNext(inItcm, true.B)
-      core.io.ibus.rdata := Mux(
-        inItcmReg,
-        itcmArbiter.io.source(0).readData.bits,
-        ibus2axi.get.io.ibus.rdata
-      )
-      core.io.ibus.ready := Mux(inItcm, inItcmReg, ibus2axi.get.io.ibus.ready)
-      core.io.ibus.fault := ibus2axi.get.io.ibus.fault
-    } else {
-      core.io.ibus.rdata            := itcmArbiter.io.source(0).readData.bits
-      core.io.ibus.ready            := true.B
-      core.io.ibus.fault.valid      := core.io.ibus.valid && !inItcm
-      core.io.ibus.fault.bits.write := false.B
-      core.io.ibus.fault.bits.addr  := 0.U
-      core.io.ibus.fault.bits.epc   := core.io.ibus.addr
+    // Helper function for banked routing
+    def bankRouteFn(
+      a: TileLink_A_Channel,
+      region: MemoryRegion,
+      numBanks: Int,
+      bankSizeBytes: Int
+    ): Seq[Bool] = {
+      val addr    = a.address
+      val inRange = region.contains(addr)
+      val sel     = if (numBanks > 1) {
+        val offset  = addr - region.memStart.U
+        val bankSel = offset(log2Ceil(region.memSize) - 1, log2Ceil(bankSizeBytes))
+        (0 until numBanks).map { j => inRange && (bankSel === j.U) }
+      } else {
+        Seq(inRange)
+      }
+      val errorSel = !inRange
+      sel ++ Seq(errorSel)
     }
 
-    // Build DTCM and connect to dbus
-    val dtcmSizeBytes: Int = 1024 * p.dtcmSizeKBytes
-    val dtcmWidth          = p.axi2DataBits
-    val dtcmEntries        = dtcmSizeBytes / (dtcmWidth / 8)
-    val dtcmSubEntryWidth  = 8
-    val dtcm = Module(new TCM128(dtcmSizeBytes, dtcmSubEntryWidth, memoryRegions(1).memStart))
-    dontTouch(dtcm.io)
-    val dtcmWrapper = Module(new SRAM(p, log2Ceil(dtcmEntries)))
-    dtcm.io.addr                 := dtcmWrapper.io.sram.address
-    dtcm.io.enable               := dtcmWrapper.io.sram.enable
-    dtcm.io.write                := dtcmWrapper.io.sram.isWrite
-    dtcm.io.wdata                := dtcmWrapper.io.sram.writeData
-    dtcm.io.wmask                := dtcmWrapper.io.sram.mask
-    dtcmWrapper.io.sram.readData := dtcm.io.rdata
-    val dtcmArbiter = Module(new FabricArbiter(p, tcmPortCount))
-    dtcmArbiter.io.port <> dtcmWrapper.io.fabric
-    dtcmArbiter.io.source(0).readDataAddr := MakeValid(
-      core.io.dbus.valid && !core.io.dbus.write,
-      core.io.dbus.addr
+    // Helper function for AXI Slave router
+    val slaveRouteFn = (a: TileLink_A_Channel) => {
+      val inItcm  = itcmRegion.contains(a.address)
+      val inDtcm  = dtcmRegion.contains(a.address)
+      val inCsr   = csrRegion.contains(a.address)
+      val inError = !inItcm && !inDtcm && !inCsr
+      Seq(inItcm, inDtcm, inCsr, inError)
+    }
+
+    // -------------------------------------------------------------------------
+    // Banked DTCM Setup
+    val dtcmSizeBytes         = 1024 * p.dtcmSizeKBytes
+    val dtcmNumBanks          = p.dtcmNumBanks
+    val dtcmBankSizeBytes     = dtcmSizeBytes / dtcmNumBanks
+    val dtcmBankBaseAddresses = (0 until dtcmNumBanks).map { i => dtcmBase + i * dtcmBankSizeBytes }
+    val dtcmRouteFn           =
+      (a: TileLink_A_Channel) => bankRouteFn(a, dtcmRegion, dtcmNumBanks, dtcmBankSizeBytes)
+
+    val bankedDtcm = Module(
+      new BankedDtcm(
+        p = p.toTLUL(),
+        numBanks = dtcmNumBanks,
+        numHosts = 3, // AXI RD, AXI WR, core tlul
+        bankSizeBytes = dtcmBankSizeBytes,
+        bankBaseAddresses = dtcmBankBaseAddresses,
+        routeFn = dtcmRouteFn
+      )
     )
-    dtcmArbiter.io.source(0).writeDataAddr := MakeValid(
-      core.io.dbus.valid && core.io.dbus.write,
-      core.io.dbus.addr
+
+    // -------------------------------------------------------------------------
+    // Banked ITCM Setup
+    val itcmSizeBytes         = 1024 * p.itcmSizeKBytes
+    val itcmNumBanks          = p.itcmNumBanks
+    val itcmBankSizeBytes     = itcmSizeBytes / itcmNumBanks
+    val itcmBankBaseAddresses = (0 until itcmNumBanks).map { i => itcmBase + i * itcmBankSizeBytes }
+    val itcmRouteFn           =
+      (a: TileLink_A_Channel) => bankRouteFn(a, itcmRegion, itcmNumBanks, itcmBankSizeBytes)
+
+    val bankedItcm = Module(
+      new BankedItcm(
+        p = p.toTLUL(),
+        numBanks = itcmNumBanks,
+        numHosts = 3, // AXI RD, AXI WR, Core IBus
+        bankSizeBytes = itcmBankSizeBytes,
+        bankBaseAddresses = itcmBankBaseAddresses,
+        routeFn = itcmRouteFn
+      )
     )
-    dtcmArbiter.io.source(0).writeDataBits := core.io.dbus.wdata
-    dtcmArbiter.io.source(0).writeDataStrb := core.io.dbus.wmask
-    core.io.dbus.rdata                     := dtcmArbiter.io.source(0).readData.bits
-    core.io.dbus.ready                     := true.B // Can always read/write TCM
 
-    // Connect TCMs and CSR into fabric
-    val fabricMux = Module(new FabricMux(p, memoryRegions))
-    fabricMux.io.ports(0) <> itcmArbiter.io.source(1)
-    fabricMux.io.periBusy(0) := itcmArbiter.io.fabricBusy(1)
-    fabricMux.io.ports(1) <> dtcmArbiter.io.source(1)
-    fabricMux.io.periBusy(1) := dtcmArbiter.io.fabricBusy(1)
-    fabricMux.io.ports(2) <> csr.io.fabric
-    fabricMux.io.periBusy(2) := false.B
+    // -------------------------------------------------------------------------
+    // TL-UL Routers for AXI Slave
+    // Route to 3 destinations: 0 -> ITCM, 1 -> DTCM, 2 -> CSR
+    val readRouter = Module(
+      new TlulRouter(
+        p = p.toTLUL(),
+        n = 3,
+        route = slaveRouteFn
+      )
+    )
 
-    itcmArbiter.io.source(2) <> dm.io.itcm
-    dtcmArbiter.io.source(2) <> dm.io.dtcm
+    val writeRouter = Module(
+      new TlulRouter(
+        p = p.toTLUL(),
+        n = 3,
+        route = slaveRouteFn
+      )
+    )
 
-    // Create AXI Slave interface and connect internal fabric to AXI
-    val axiSlave  = Module(new AxiSlave(p))
+    // AXI Slave Converters
+    val axiReadConv  = Module(new AxiRead2TLUL(p.toTLUL()))
+    val axiWriteConv = Module(new AxiWrite2TLUL(p.toTLUL()))
+
     val axiEnable = RegInit(false.B)
     axiEnable := true.B
-    axiSlave.io.fabric <> fabricMux.io.source
-    axiSlave.io.periBusy := fabricMux.io.fabricBusy
-    axiSlave.io.axi.write.addr <> GateDecoupled(io.axi_slave.write.addr, axiEnable)
-    axiSlave.io.axi.write.data <> GateDecoupled(io.axi_slave.write.data, axiEnable)
-    io.axi_slave.write.resp <> GateDecoupled(axiSlave.io.axi.write.resp, axiEnable)
-    axiSlave.io.axi.read.addr <> GateDecoupled(io.axi_slave.read.addr, axiEnable)
-    io.axi_slave.read.data <> GateDecoupled(axiSlave.io.axi.read.data, axiEnable)
 
-    // Connect ebus to AXI Master
-    val ebus2axi = DBus2Axi(p, id = 0)
-    ebus2axi.io.dbus <> core.io.ebus.dbus
-    ebus2axi.io.fault <> core.io.ebus.fault
+    // Connect AXI Slave to Routers
+    axiReadConv.io.axiRead.addr <> GateDecoupled(io.axi_slave.read.addr, axiEnable)
+    io.axi_slave.read.data <> GateDecoupled(axiReadConv.io.axiRead.data, axiEnable)
+    readRouter.io.tl_h <> axiReadConv.io.tl
 
-    // AXI Arbitration
-    // Write channel: only ebus uses it.
-    io.axi_master.write.addr <> GateDecoupled(Queue(ebus2axi.io.axi.write.addr, 2), axiEnable)
-    io.axi_master.write.data <> GateDecoupled(Queue(ebus2axi.io.axi.write.data, 2), axiEnable)
-    ebus2axi.io.axi.write.resp <> Queue(GateDecoupled(io.axi_master.write.resp, axiEnable), 2)
+    axiWriteConv.io.axiWrite.addr <> GateDecoupled(io.axi_slave.write.addr, axiEnable)
+    axiWriteConv.io.axiWrite.data <> GateDecoupled(io.axi_slave.write.data, axiEnable)
+    io.axi_slave.write.resp <> GateDecoupled(axiWriteConv.io.axiWrite.resp, axiEnable)
+    writeRouter.io.tl_h <> axiWriteConv.io.tl
 
-    if (p.enableAxiInstructionFetch) {
-      // Read channel: arbitrate between ibus and ebus.
-      val readAddrArb =
-        Module(
-          new CoralNPURRArbiter(new AxiAddress(p.axi2AddrBits, p.axi2DataBits, p.axi2IdBits), 2)
-        )
-      readAddrArb.io.in(0) <> ebus2axi.io.axi.read.addr
-      readAddrArb.io.in(1) <> ibus2axi.get.io.axi.addr
-      io.axi_master.read.addr <> GateDecoupled(Queue(readAddrArb.io.out, 2), axiEnable)
+    // Connect Routers to Banked Memories
+    bankedItcm.io.tl_h(0) <> readRouter.io.tl_d(0)
+    bankedItcm.io.tl_h(1) <> writeRouter.io.tl_d(0)
 
-      // Route read data back based on ID.
-      val readDataSkid = Queue(GateDecoupled(io.axi_master.read.data, axiEnable), 2)
-      readDataSkid.ready := Mux(
-        readDataSkid.bits.id === 1.U,
-        ibus2axi.get.io.axi.data.ready,
-        ebus2axi.io.axi.read.data.ready
-      )
-      ebus2axi.io.axi.read.data.valid := readDataSkid.valid && readDataSkid.bits.id === 0.U
-      ibus2axi.get.io.axi.data.valid  := readDataSkid.valid && readDataSkid.bits.id === 1.U
+    bankedDtcm.io.tl_h(0) <> readRouter.io.tl_d(1)
+    bankedDtcm.io.tl_h(1) <> writeRouter.io.tl_d(1)
 
-      ebus2axi.io.axi.read.data.bits := readDataSkid.bits
-      ibus2axi.get.io.axi.data.bits  := readDataSkid.bits
-    } else {
-      io.axi_master.read.addr <> GateDecoupled(Queue(ebus2axi.io.axi.read.addr, 2), axiEnable)
+    // Connect Routers to CSR (via Arbiter), stripping region base address
+    val csrArbiter = Module(new TlulArbiter(p.toTLUL(), M = 2))
+    csrArbiter.io.tl_h(0) <> readRouter.io.tl_d(2)
+    csrArbiter.io.tl_h(1) <> writeRouter.io.tl_d(2)
+    val csrOffset = (csrArbiter.io.tl_d.a.bits.address - csrRegion.memStart.U)(csrAddrBits - 1, 0)
+    csrArbiter.io.tl_d.connectNarrowAddr(csr.io.tl, csrOffset)
 
-      val readDataSkid = Queue(GateDecoupled(io.axi_master.read.data, axiEnable), 2)
-      readDataSkid.ready              := ebus2axi.io.axi.read.data.ready
-      ebus2axi.io.axi.read.data.valid := readDataSkid.valid
-      ebus2axi.io.axi.read.data.bits  := readDataSkid.bits
+    // -------------------------------------------------------------------------
+    // Core Bus Connections
+    val coreClkEn     = cg.io.enable || io.te
+    val coreSoftReset = !io.te && (csr.io.reset || dm.io.ndmreset)
+
+    // Core IBus -> IBus2Axi -> AxiRead2TLUL -> BankedItcm
+    val coreIbus2Axi     = Module(new IBus2Axi(p))
+    val coreIbusReadConv = Module(new AxiRead2TLUL(p.toTLUL()))
+    coreIbus2Axi.io.ibus <> core.io.ibus
+    coreIbusReadConv.io.axiRead <> coreIbus2Axi.io.axi
+    bankedItcm.io.tl_h(2) <> coreIbusReadConv.io.tl
+
+    val lsuBridge =
+      Module(new CoreDomainTlulBridge(p.toTLUL(), maxOutstanding = p.lsuSlotTxidEntries))
+    lsuBridge.io.coreClkEn := coreClkEn
+    lsuBridge.io.coreReset := coreSoftReset
+    lsuBridge.io.tl_h <> core.io.tlul_lsu
+
+    val masterRouteFn = (a: TileLink_A_Channel) => {
+      val inItcm     = itcmRegion.contains(a.address)
+      val inDtcm     = dtcmRegion.contains(a.address)
+      val inCsr      = csrRegion.contains(a.address)
+      val inError    = inItcm || inCsr
+      val isExternal = !inDtcm && !inError
+      Seq(inDtcm, isExternal, inError)
     }
+
+    val tlulRouter = Module(new TlulRouter(p.toTLUL(), n = 2, route = masterRouteFn))
+    tlulRouter.io.tl_h <> lsuBridge.io.tl_d
+
+    val tlul2Axi = Module(
+      new TLUL2Axi(
+        p.toTLUL(),
+        p.axi2DataBits,
+        p.axi2AddrBits,
+        p.axi2IdBits,
+        () => new NoUser,
+        () => new NoUser
+      )
+    )
+
+    // Core DBus -> BankedDtcm or AXI
+    bankedDtcm.io.tl_h(2) <> tlulRouter.io.tl_d(0)
+    tlul2Axi.io.tl_a <> tlulRouter.io.tl_d(1).a
+    tlul2Axi.io.tl_d <> tlulRouter.io.tl_d(1).d
+
+    io.axi_master.write.addr <> GateDecoupled(tlul2Axi.io.axi.write.addr, axiEnable)
+    io.axi_master.write.data <> GateDecoupled(tlul2Axi.io.axi.write.data, axiEnable)
+    tlul2Axi.io.axi.write.resp <> GateDecoupled(io.axi_master.write.resp, axiEnable)
+    io.axi_master.read.addr <> GateDecoupled(tlul2Axi.io.axi.read.addr, axiEnable)
+    tlul2Axi.io.axi.read.data <> GateDecoupled(io.axi_master.read.data, axiEnable)
+
+    // DM Tie-offs
+    dm.io.itcm := DontCare
+    dm.io.dtcm := DontCare
   }
 }

@@ -15,6 +15,7 @@
 package coralnpu
 
 import chisel3._
+import bus._
 
 import coralnpu.rvv.RvvCore
 
@@ -41,10 +42,8 @@ class Core(p: Parameters, moduleName: String) extends Module with RequireAsyncRe
 
     // Bus between core and instruction memories.
     val ibus = new IBusIO(p)
-    // Bus between core and data memories.
-    val dbus = new DBusIO(p)
-    // Bus between core and and external memories or peripherals.
-    val ebus = new EBusIO(p)
+    // Bus between core and data memories, external memories, or peripherals.
+    val tlul_lsu = new TLULHost2Device[NoUser, NoUser](p.tlParams)
 
     val debug = Option.when(p.shouldExposeDebugPorts)(new DebugIO(p))
   })
@@ -59,7 +58,7 @@ class Core(p: Parameters, moduleName: String) extends Module with RequireAsyncRe
   // Scalar Core outputs.
   io.csr <> score.io.csr
   io.ibus <> score.io.ibus
-  io.ebus <> score.io.ebus
+  io.tlul_lsu <> score.io.tlul_lsu
   io.halted             := score.io.halted
   io.fault              := score.io.fault
   io.wfi                := score.io.wfi
@@ -74,10 +73,6 @@ class Core(p: Parameters, moduleName: String) extends Module with RequireAsyncRe
     "Debug port presence mismatch between Core and SCore"
   )
   io.debug.zip(score.io.debug).foreach { case (ioDebug, scoreDebug) => ioDebug <> scoreDebug }
-
-  // ---------------------------------------------------------------------------
-  // Local Data Bus Port
-  io.dbus <> score.io.dbus
 }
 
 object EmitCore extends App {

@@ -42,9 +42,9 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
     val tl_d = Flipped(Decoupled(new TileLink_D_ChannelBase(tlul_p, userDGen))) // TileLink Input
   })
 
-  // Mapping AXI ID to instr_type (MuBi4.True for instruction, MuBi4.False for data).
-  // ID 1 is for IBus, others are for DBus.
-  def idToInstrType(id: UInt): UInt = Mux(id === 1.U, MuBi4.True.asUInt, MuBi4.False.asUInt)
+  // Map AXI AxPROT[2] (instruction vs. data access) to OpenTitan TL-UL instr_type.
+  def protToInstrType(prot: UInt): UInt =
+    Mux(prot(2), MuBi4.True.asUInt, MuBi4.False.asUInt)
 
   val read_addr_q  = Queue(io.axi.read.addr, entries = 2)
   val write_addr_q = Queue(io.axi.write.addr, entries = 2)
@@ -57,6 +57,7 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   val r_unroll_size  = RegInit(0.U(3.W))
   val r_unroll_len   = RegInit(0.U(8.W))
   val r_unroll_burst = RegInit(0.U(2.W))
+  val r_unroll_prot  = RegInit(0.U(3.W))
 
   val r_req   = read_addr_q.bits
   val r_valid = read_addr_q.valid
@@ -66,6 +67,7 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   val r_current_size  = Mux(r_unroll_busy, r_unroll_size, r_req.size)
   val r_current_len   = Mux(r_unroll_busy, r_unroll_len, r_req.len)
   val r_current_burst = Mux(r_unroll_busy, r_unroll_burst, r_req.burst)
+  val r_current_prot  = Mux(r_unroll_busy, r_unroll_prot, r_req.prot)
 
   val r_beats_left   = RegInit(VecInit(Seq.fill(1 << p.o)(0.U(8.W))))
   val r_burst_active = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
@@ -82,7 +84,7 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   read_stream.bits.mask            := Fill(tlul_p.w, 1.U)
   read_stream.bits.data            := 0.U((8 * tlul_p.w).W)
   read_stream.bits.user            := 0.U.asTypeOf(io.tl_a.bits.user)
-  read_stream.bits.user.instr_type := idToInstrType(r_current_id)
+  read_stream.bits.user.instr_type := protToInstrType(r_current_prot)
 
   val r_addr_inc = 1.U << r_current_size
 
@@ -101,6 +103,7 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   r_unroll_size  := Mux(r_start, r_req.size, r_unroll_size)
   r_unroll_len   := Mux(r_start, r_req.len - 1.U, Mux(r_step, r_unroll_len - 1.U, r_unroll_len))
   r_unroll_burst := Mux(r_start, r_req.burst, r_unroll_burst)
+  r_unroll_prot  := Mux(r_start, r_req.prot, r_unroll_prot)
 
   read_addr_q.ready := read_stream.ready && !id_conflict && (!r_unroll_busy && r_req.len === 0.U || r_unroll_busy && r_unroll_len === 0.U)
 
@@ -111,6 +114,7 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   val w_unroll_size  = RegInit(0.U(3.W))
   val w_unroll_len   = RegInit(0.U(8.W))
   val w_unroll_burst = RegInit(0.U(2.W))
+  val w_unroll_prot  = RegInit(0.U(3.W))
 
   val w_req  = write_addr_q.bits
   val w_data = write_data_q.bits
@@ -120,6 +124,7 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   val w_current_size  = Mux(w_unroll_busy, w_unroll_size, w_req.size)
   val w_current_len   = Mux(w_unroll_busy, w_unroll_len, w_req.len)
   val w_current_burst = Mux(w_unroll_busy, w_unroll_burst, w_req.burst)
+  val w_current_prot  = Mux(w_unroll_busy, w_unroll_prot, w_req.prot)
 
   val w_beats_left   = RegInit(VecInit(Seq.fill(1 << p.o)(0.U(8.W))))
   val w_burst_active = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
@@ -147,7 +152,7 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   write_stream.bits.mask            := w_data.strb
   write_stream.bits.data            := w_data.data
   write_stream.bits.user            := 0.U.asTypeOf(io.tl_a.bits.user)
-  write_stream.bits.user.instr_type := idToInstrType(w_current_id)
+  write_stream.bits.user.instr_type := protToInstrType(w_current_prot)
 
   val w_addr_inc = 1.U << w_current_size
   val w_last     = (w_unroll_busy && w_unroll_len === 0.U) || (!w_unroll_busy && w_req.len === 0.U)
@@ -172,6 +177,7 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   w_unroll_size  := Mux(w_start, w_req.size, w_unroll_size)
   w_unroll_len   := Mux(w_start, w_req.len - 1.U, Mux(w_step, w_unroll_len - 1.U, w_unroll_len))
   w_unroll_burst := Mux(w_start, w_req.burst, w_unroll_burst)
+  w_unroll_prot  := Mux(w_start, w_req.prot, w_unroll_prot)
 
   write_addr_q.ready := write_stream.ready && write_data_q.valid && !w_id_conflict && w_last
   write_data_q.ready := write_stream.ready && (!w_unroll_busy && !w_id_conflict || w_unroll_busy)

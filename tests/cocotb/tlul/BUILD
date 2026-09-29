@@ -30,6 +30,7 @@ TLUL2AXI_TESTCASES = [
     "test_get_request",
     "test_backpressure",
     "test_put_then_get",
+    "test_instr_type_to_prot_mapping",
 ]
 # END_TESTCASES_FOR_tlul2axi_cocotb_test
 
@@ -65,6 +66,7 @@ AXI2TLUL_TESTCASES = [
     "test_write_request",
     "test_read_request",
     "test_read_error",
+    "test_prot_instr_type_mapping",
 ]
 # END_TESTCASES_FOR_axi2tlul_cocotb_test
 

@@ -107,7 +107,9 @@ async def axi_send_write(
     dut.io_axi_write_data_valid.value = 0
 
 
-async def axi_send_read(dut, address, source, size, timeout_cycles=1000):
+async def axi_send_read(
+    dut, address, source, size, prot=0, timeout_cycles=1000
+):
     """Sends an AXI read transaction."""
     dut.io_axi_read_addr_valid.value = 1
     dut.io_axi_read_addr_bits_addr.value = address
@@ -119,7 +121,7 @@ async def axi_send_read(dut, address, source, size, timeout_cycles=1000):
     dut.io_axi_read_addr_bits_cache.value = 0
     dut.io_axi_read_addr_bits_qos.value = 0
     dut.io_axi_read_addr_bits_region.value = 0
-    dut.io_axi_read_addr_bits_prot.value = 0
+    dut.io_axi_read_addr_bits_prot.value = prot
 
     for _ in range(timeout_cycles):
         await RisingEdge(dut.clock)
@@ -554,3 +556,50 @@ async def test_read_burst(dut):
 
     await RisingEdge(dut.clock)
     dut.io_tl_d_valid.value = 0
+
+
+@cocotb.test()
+async def test_prot_instr_type_mapping(dut):
+    """Verifies AxPROT[2] maps to OpenTitan MuBi4 instr_type independent of AXI ID."""
+    clock = Clock(dut.clock, 10, unit="us")
+    cocotb.start_soon(clock.start())
+
+    await reset_dut(dut)
+    dut.io_tl_a_ready.value = 0
+    dut.io_tl_d_valid.value = 0
+
+    mubi4_true = 0x6
+    mubi4_false = 0x9
+
+    for source, prot, expected_instr_type in [
+        (1, 0b000, mubi4_false),
+        (5, 0b100, mubi4_true),
+    ]:
+        await axi_send_read(
+            dut,
+            address=0x40010014,
+            source=source,
+            size=2,
+            prot=prot,
+        )
+        await RisingEdge(dut.clock)
+        assert dut.io_tl_a_valid.value
+        assert int(
+            dut.io_tl_a_bits_user_instr_type.value
+        ) == expected_instr_type
+
+        dut.io_tl_a_ready.value = 1
+        await RisingEdge(dut.clock)
+        dut.io_tl_a_ready.value = 0
+
+        await RisingEdge(dut.clock)
+        dut.io_tl_d_valid.value = 1
+        dut.io_tl_d_bits_opcode.value = TLUL_OpcodeD.AccessAckData
+        dut.io_tl_d_bits_source.value = source
+        dut.io_tl_d_bits_data.value = 0
+        dut.io_tl_d_bits_error.value = 0
+        dut.io_axi_read_data_ready.value = 1
+        await RisingEdge(dut.clock)
+        dut.io_tl_d_valid.value = 0
+        dut.io_axi_read_data_ready.value = 0
+        await ClockCycles(dut.clock, 2)

@@ -16,7 +16,7 @@ package bus
 
 import chisel3._
 import chisel3.util._
-import common.CoralNPURRArbiter
+import common.{CoralNPURRArbiter, MuBi4}
 
 /** TLUL2Axi: A Chisel module that serves as a bridge between a TileLink-UL master and an AXI4
   * slave.
@@ -32,7 +32,7 @@ import common.CoralNPURRArbiter
   * @param maxWriteTx
   *   Maximum number of in-flight write transactions.
   */
-class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
+class TLUL2Axi[A_USER <: Data, D_USER <: Data](
   val p_tl: TLULParameters,
   val axiDataBits: Int,
   val axiAddrBits: Int,
@@ -103,13 +103,19 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
     new Queue(new AxiWriteData(axiDataBits, axiIdBits), entries = 1, pipe = true)
   )
 
+  val a_prot = tl_a_q_remapped.bits.user match {
+    case u: TLUL_A_User_InstrType =>
+      Mux(u.instr_type === MuBi4.True.asUInt, "b100".U(3.W), 0.U(3.W))
+    case _ => 0.U(3.W)
+  }
+
   aw_q.io.enq.valid := tl_a_q_remapped.valid && is_put && w_q.io.enq.ready && write_tx_info_q.io.enq.ready
   aw_q.io.enq.bits.addr   := tl_a_q_remapped.bits.address
   aw_q.io.enq.bits.id     := tl_a_q_remapped.bits.source
   aw_q.io.enq.bits.len    := 0.U
   aw_q.io.enq.bits.size   := tl_a_q_remapped.bits.size
   aw_q.io.enq.bits.burst  := AxiBurstType.INCR.asUInt
-  aw_q.io.enq.bits.prot   := 0.U
+  aw_q.io.enq.bits.prot   := a_prot
   aw_q.io.enq.bits.lock   := 0.U
   aw_q.io.enq.bits.cache  := 0.U
   aw_q.io.enq.bits.qos    := 0.U
@@ -130,7 +136,7 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   io.axi.read.addr.bits.len   := 0.U                      // No bursting
   io.axi.read.addr.bits.size  := tl_a_q_remapped.bits.size
   io.axi.read.addr.bits.burst := AxiBurstType.INCR.asUInt // Doesn't matter
-  io.axi.read.addr.bits.prot  := 0.U                      // Default protection
+  io.axi.read.addr.bits.prot  := a_prot                   // Instruction/data protection
 
   // Dequeue from TileLink queue when AXI transaction is accepted
   val get_ready = io.axi.read.addr.ready && read_tx_info_q.io.enq.ready
