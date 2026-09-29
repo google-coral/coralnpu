@@ -38,22 +38,6 @@ DENYLIST = [
     # Requires custom testbench
     "//tests/cocotb:csr_illegal_write_test",
     "//tests/cocotb/rvv/arithmetics:vmsge_vx_test",
-    # MPACT needs update to canonical-NaN
-    "//tests/cocotb/rvv/arithmetics:rvv_fdiv_float_rdn_m1",
-    "//tests/cocotb/rvv/arithmetics:rvv_fdiv_float_rmm_m1",
-    "//tests/cocotb/rvv/arithmetics:rvv_fdiv_float_rne_m1",
-    "//tests/cocotb/rvv/arithmetics:rvv_fdiv_float_rtz_m1",
-    "//tests/cocotb/rvv/arithmetics:rvv_fdiv_float_rup_m1",
-    "//tests/cocotb/rvv/arithmetics:vfdiv_vf_test_rdn",
-    "//tests/cocotb/rvv/arithmetics:vfdiv_vf_test_rmm",
-    "//tests/cocotb/rvv/arithmetics:vfdiv_vf_test_rne",
-    "//tests/cocotb/rvv/arithmetics:vfdiv_vf_test_rtz",
-    "//tests/cocotb/rvv/arithmetics:vfdiv_vf_test_rup",
-    "//tests/cocotb/rvv/arithmetics:vfrdiv_vf_test_rdn",
-    "//tests/cocotb/rvv/arithmetics:vfrdiv_vf_test_rmm",
-    "//tests/cocotb/rvv/arithmetics:vfrdiv_vf_test_rne",
-    "//tests/cocotb/rvv/arithmetics:vfrdiv_vf_test_rtz",
-    "//tests/cocotb/rvv/arithmetics:vfrdiv_vf_test_rup",
     # Exclude until MPACT supports the vector bf16 spec.
     "*bf16*",
     "//tests/cocotb:zvfbf_test",
