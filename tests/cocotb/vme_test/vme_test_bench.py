@@ -1319,11 +1319,11 @@ async def vme_mstatus_ms_test(dut):
     assert not fixture.fault(), "Core faulted unexpectedly"
     assert trap_count_val == 0, f"Expected 0 traps, got {trap_count_val}"
 
-    # Read the 5 recorded mstatus values (5 * 4 = 20 bytes)
-    raw_bytes = (await fixture.read("mstatus_val", 20)).tobytes()
+    # Read the 6 recorded mstatus values (6 * 4 = 24 bytes)
+    raw_bytes = (await fixture.read("mstatus_val", 24)).tobytes()
     mstatus_words = [
         int.from_bytes(raw_bytes[i * 4:(i + 1) * 4], "little")
-        for i in range(5)
+        for i in range(6)
     ]
 
     for idx, w in enumerate(mstatus_words):
@@ -1331,22 +1331,30 @@ async def vme_mstatus_ms_test(dut):
             f"mstatus_words[{idx}] = 0x{w:08x} (SD={w>>31}, MS={(w>>29)&3}, FS={(w>>13)&3}, VS={(w>>9)&3})"
         )
 
-    # Step 0: Initial state: MS = 2'b01 (Initial), SD = 0
+    # Step 0: Initial state: MS = 2'b01 (Initial), SD = 0, VS = 2'b01 (Initial), FS = 2'b01 (Initial)
     ms_step0 = (mstatus_words[0] >> 29) & 0x3
     sd_step0 = (mstatus_words[0] >> 31) & 0x1
+    vs_step0 = (mstatus_words[0] >> 9) & 0x3
+    fs_step0 = (mstatus_words[0] >> 13) & 0x3
     assert ms_step0 == 1, f"Step 0: Expected MS=1 (Initial), got {ms_step0}"
     assert sd_step0 == 0, f"Step 0: Expected SD=0, got {sd_step0}"
+    assert vs_step0 == 1, f"Step 0: Expected VS=1 (Initial), got {vs_step0}"
+    assert fs_step0 == 1, f"Step 0: Expected FS=1 (Initial), got {fs_step0}"
 
-    # Step 1: After vtzero: MS = 2'b11 (Dirty), SD = 1
+    # Step 1: After vtzero: MS = 2'b11 (Dirty), VS = 2'b11 (Dirty), SD = 1
     ms_step1 = (mstatus_words[1] >> 29) & 0x3
     sd_step1 = (mstatus_words[1] >> 31) & 0x1
+    vs_step1 = (mstatus_words[1] >> 9) & 0x3
     assert ms_step1 == 3, f"Step 1: Expected MS=3 (Dirty), got {ms_step1}"
+    assert vs_step1 == 3, f"Step 1: Expected VS=3 (Dirty), got {vs_step1}"
     assert sd_step1 == 1, f"Step 1: Expected SD=1, got {sd_step1}"
 
-    # Step 2: After write MS=Clean (2'b10): MS = 2'b10 (Clean), SD = 0
+    # Step 2: After write MS=Clean (2'b10), VS=Initial (2'b01): MS = Clean, SD = 0
     ms_step2 = (mstatus_words[2] >> 29) & 0x3
     sd_step2 = (mstatus_words[2] >> 31) & 0x1
+    vs_step2 = (mstatus_words[2] >> 9) & 0x3
     assert ms_step2 == 2, f"Step 2: Expected MS=2 (Clean), got {ms_step2}"
+    assert vs_step2 == 1, f"Step 2: Expected VS=1 (Initial), got {vs_step2}"
     assert sd_step2 == 0, f"Step 2: Expected SD=0, got {sd_step2}"
 
     # Step 3: After vtdiscard: MS = 2'b01 (Initial), SD = 0
@@ -1361,4 +1369,16 @@ async def vme_mstatus_ms_test(dut):
     assert ms_step4 == 0, f"Step 4: Expected MS=0 (Off), got {ms_step4}"
     assert sd_step4 == 0, f"Step 4: Expected SD=0, got {sd_step4}"
 
-    cocotb.log.info("✓ mstatus.MS transitions verified successfully")
+    # Step 5: After vtfmm: MS = 2'b11 (Dirty), VS = 2'b11 (Dirty), FS = 2'b11 (Dirty), SD = 1
+    ms_step5 = (mstatus_words[5] >> 29) & 0x3
+    sd_step5 = (mstatus_words[5] >> 31) & 0x1
+    vs_step5 = (mstatus_words[5] >> 9) & 0x3
+    fs_step5 = (mstatus_words[5] >> 13) & 0x3
+    assert ms_step5 == 3, f"Step 5: Expected MS=3 (Dirty), got {ms_step5}"
+    assert vs_step5 == 3, f"Step 5: Expected VS=3 (Dirty), got {vs_step5}"
+    assert fs_step5 == 3, f"Step 5: Expected FS=3 (Dirty), got {fs_step5}"
+    assert sd_step5 == 1, f"Step 5: Expected SD=1, got {sd_step5}"
+
+    cocotb.log.info(
+        "✓ mstatus.MS, VS, and FS transitions verified successfully"
+    )

@@ -264,6 +264,13 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     }
   }
 
+  def isVtfmm(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      isVtxmm() && (funct3() === "b001".U)
+    }
+  }
+
   def isVtzero(): Bool = {
     if (!p.enableVme) { false.B }
     else {

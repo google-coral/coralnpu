@@ -146,4 +146,5 @@ coralnpu_v2_binary(
 coralnpu_v2_binary(
     name = "vme_mstatus_ms_test",
     srcs = ["vme_mstatus_ms_test.cc"],
+    hdrs = ["vme_test_utils.h"],
 )

@@ -274,6 +274,14 @@ class DecodedInstruction(p: Parameters) extends Bundle {
     }
   }
 
+  def isVtfmm(): Bool = {
+    if (p.enableVme) {
+      rvv.map(r => r.valid && r.bits.isVtfmm()).getOrElse(false.B)
+    } else {
+      false.B
+    }
+  }
+
   def readsRs1(): Bool = {
     isCondBr() || isAluReg() || isAluImm() || isAlu1Bit() || isAlu2Bit() ||
     isCsr() || isMul() || isDvu() || jalr || floatReadsScalarRs1() ||
@@ -366,6 +374,7 @@ class Dispatch(p: Parameters) extends Module {
     val mstatusMs        = Option.when(p.enableVme)(Input(UInt(2.W)))
     val vmeDiscard       = Option.when(p.enableVme)(Output(Bool()))
     val vmeDirty         = Option.when(p.enableVme)(Output(Bool()))
+    val vmeFpDirty       = Option.when(p.enableVme && p.enableFloat)(Output(Bool()))
 
     // Float interface
     val float  = Option.when(p.enableFloat)(Decoupled(new FloatInstruction(p)))
@@ -1116,6 +1125,11 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     io.vmeDirty.get := (0 until p.instructionLanes)
       .map(i => io.inst(i).fire && decodedInsts(i).writesTile())
       .reduce(_ || _)
+    if (p.enableFloat) {
+      io.vmeFpDirty.get := (0 until p.instructionLanes)
+        .map(i => io.inst(i).fire && decodedInsts(i).isVtfmm())
+        .reduce(_ || _)
+    }
   }
 }
 

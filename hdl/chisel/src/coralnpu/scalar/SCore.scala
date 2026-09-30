@@ -102,6 +102,9 @@ class SCore(p: Parameters) extends Module {
       dispatch.io.mstatusMs.get := csr.io.mstatus_ms.get
       csr.io.vme_discard.get    := dispatch.io.vmeDiscard.get
       csr.io.vme_dirty.get      := dispatch.io.vmeDirty.get
+      if (p.enableFloat) {
+        csr.io.vme_fp_dirty.get := dispatch.io.vmeFpDirty.get
+      }
     }
 
   }

@@ -14,6 +14,8 @@
 
 #include <cstdint>
 
+#include "vme_test_utils.h"
+
 extern "C" {
 
 typedef void (*test_func_t)(void);
@@ -190,7 +192,17 @@ __attribute__((used, retain)) void mstatus_ms_transitions(void) {
       ::
           : "x6", "x9", "x10", "x11", "x13", "x14", "x15", "x16");
 
-  // Step 1: Execute vtzero -> should transition MS to Dirty (11), SD to 1
+  // Reset VS and FS to Initial (01) before vtzero so we can test that vtzero transitions VS to
+  // Dirty
+  asm volatile(
+      "li t0, (1 << 13) | (1 << 9) \n"
+      "csrs mstatus, t0 \n"  // FS bit 0 = 1, VS bit 0 = 1
+      "li t0, (2 << 13) | (2 << 9) \n"
+      "csrc mstatus, t0 \n"  // FS bit 1 = 0, VS bit 1 = 0 -> Initial (01)
+      ::
+          : "t0");
+
+  // Step 1: Execute vtzero -> should transition MS to Dirty (11), VS to Dirty (11), SD to 1
   asm volatile(".word 0x43E06057 \n");  // vtzero mt0
   asm volatile("csrr %0, mstatus" : "=r"(val));
   mstatus_val[1] = val;
@@ -234,6 +246,37 @@ __attribute__((used, retain)) void mstatus_ms_transitions(void) {
           : "t0");
   asm volatile("csrr %0, mstatus" : "=r"(val));
   mstatus_val[4] = val;
+
+  // Step 5: Verify floating-point tile matrix multiply (vtfmm) sets both FS and VS to Dirty (11)
+  // Re-enable MS (Clean=10) and set FS=Initial (01), VS=Initial (01)
+  asm volatile(
+      "li t0, (3 << 29) \n"
+      "csrc mstatus, t0 \n"
+      "li t0, (2 << 29) \n"
+      "csrs mstatus, t0 \n"  // MS = Clean (10)
+      "li t0, (1 << 13) | (1 << 9) \n"
+      "csrs mstatus, t0 \n"  // FS bit 0 = 1, VS bit 0 = 1
+      "li t0, (2 << 13) | (2 << 9) \n"
+      "csrc mstatus, t0 \n"  // FS bit 1 = 0, VS bit 1 = 0 -> FS = Initial (01), VS = Initial (01)
+      ::
+          : "t0");
+  // Set configuration for FP32 matmul: SEW32, LMUL4, tm=4, tn=4, tk=1
+  asm volatile(
+      "li x6, 0x4042 \n"
+      "li x9, 0x0D2 \n"
+      ".word 0x82937057 \n"  // msetmtype x6, x9 (SEW32/LMUL4, mtwiden=1)
+      "li x10, 4 \n"
+      ".word 0x840575D7 \n"  // msettn x11, x10
+      "li x14, 4 \n"
+      ".word 0x841776D7 \n"  // msettm x13, x14
+      "li x16, 1 \n"
+      ".word 0x842877D7 \n"  // msettk x15, x16
+      ::
+          : "x6", "x9", "x10", "x11", "x13", "x14", "x15", "x16");
+  // Execute vtfmm.tvv mt0, v16, v8 (funct6=111100, vm=1, funct3=001, opcode=0x77)
+  asm volatile(".word %0 \n" ::"i"(ZvtMatmulFpWord(0, /*alt=*/false)) : "memory");
+  asm volatile("csrr %0, mstatus" : "=r"(val));
+  mstatus_val[5] = val;
 }
 
 test_func_t test_fn = ms_off_vtle;

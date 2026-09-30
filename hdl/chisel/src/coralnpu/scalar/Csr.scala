@@ -224,16 +224,17 @@ class Csr(p: Parameters) extends Module {
     val req = Flipped(Valid(new CsrCmd(p)))
 
     // Execute cycle.
-    val rs1         = Flipped(new RegfileReadDataIO(p))
-    val rd          = Valid(Flipped(new RegfileWriteDataIO(p)))
-    val bru         = Flipped(new CsrBruIO(p))
-    val float       = Option.when(p.enableFloat) { Flipped(new CsrFloatIO(p)) }
-    val rvv         = Option.when(p.enableRvv) { new CsrRvvIO(p) }
-    val float_dirty = Option.when(p.enableFloat)(Input(Bool()))
-    val rvv_dirty   = Option.when(p.enableRvv)(Input(Bool()))
-    val vme_discard = Option.when(p.enableVme)(Input(Bool()))
-    val vme_dirty   = Option.when(p.enableVme)(Input(Bool()))
-    val mstatus_ms  = Option.when(p.enableVme)(Output(UInt(2.W)))
+    val rs1          = Flipped(new RegfileReadDataIO(p))
+    val rd           = Valid(Flipped(new RegfileWriteDataIO(p)))
+    val bru          = Flipped(new CsrBruIO(p))
+    val float        = Option.when(p.enableFloat) { Flipped(new CsrFloatIO(p)) }
+    val rvv          = Option.when(p.enableRvv) { new CsrRvvIO(p) }
+    val float_dirty  = Option.when(p.enableFloat)(Input(Bool()))
+    val rvv_dirty    = Option.when(p.enableRvv)(Input(Bool()))
+    val vme_discard  = Option.when(p.enableVme)(Input(Bool()))
+    val vme_dirty    = Option.when(p.enableVme)(Input(Bool()))
+    val vme_fp_dirty = Option.when(p.enableVme && p.enableFloat)(Input(Bool()))
+    val mstatus_ms   = Option.when(p.enableVme)(Output(UInt(2.W)))
 
     val counters = Input(new CsrCounters(p))
 
@@ -597,13 +598,15 @@ class Csr(p: Parameters) extends Module {
   val float_dirty_event = Option.when(p.enableFloat) {
     (is_csr_write && (fflagsEn || frmEn || fcsrEn)) ||
     io.float.get.in.fflags.valid ||
-    io.float_dirty.get
+    io.float_dirty.get ||
+    (if (p.enableVme) io.vme_fp_dirty.get else false.B)
   }
 
   val rvv_dirty_event = Option.when(p.enableRvv) {
     (is_csr_write && (vstartEn.get || vxrmEn.get || vxsatEn.get || vlEn.get || vtypeEn.get)) ||
     io.rvv.get.fflags.valid ||
-    io.rvv_dirty.get
+    io.rvv_dirty.get ||
+    (if (p.enableVme) io.vme_dirty.get else false.B)
   }
 
   if (p.enableFloat) {
