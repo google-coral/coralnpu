@@ -300,6 +300,11 @@ RVV_ASSEMBLY_TESTCASES = [
     "core_mini_rvv_lsu_indexed_short_vl_test",
     "core_mini_rvv_vstart_pipeline_test",
     "core_mini_rvv_vstart_dual_dispatch_lsu_test",
+    "core_mini_rvv_vstart_forwarding_debug_breakpoint_test",
+    "core_mini_rvv_vstart_forwarding_debug_async_halt_test",
+    "core_mini_rvv_vstart_forwarding_whole_reg_control_test",
+    "core_mini_rvv_vstart_forwarding_squash_test",
+    "core_mini_rvv_vill_trap_squashed_load_test",
 ]
 # END_TESTCASES_FOR_rvv_assembly_cocotb_test
 

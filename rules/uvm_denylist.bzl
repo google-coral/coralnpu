@@ -25,6 +25,8 @@ DENYLIST = [
     "//tests/cocotb/rvv:rvv_vill_loop_trap_test",
     "//tests/cocotb/rvv:rvv_vstart_vmv_scalar_test",
     "//tests/cocotb/rvv:rvv_vstart_vset_test",
+    "//tests/cocotb/rvv:rvv_vstart_forwarding_squash_test",
+    "//tests/cocotb/rvv:rvv_vill_trap_squashed_load_test",
     "//tests/cocotb/exceptions:vfwadd_trap",
     "//tests/cocotb/exceptions:vfwsub_trap",
     "//tests/cocotb/exceptions:vfwmul_trap",

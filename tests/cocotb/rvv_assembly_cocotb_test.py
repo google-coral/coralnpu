@@ -490,7 +490,7 @@ async def core_mini_vill_whole_reg_test(dut):
     src_data = np.arange(1, 129, dtype=np.uint8)
     await fixture.write("src_data", src_data)
 
-    await fixture.run_to_halt()
+    await fixture.run_to_halt(timeout_cycles=20000)
 
     faulted = await fixture.read_word("faulted")
     assert faulted == 0, f"Unexpected fault occurred (faulted={faulted})"
@@ -2532,3 +2532,401 @@ async def core_mini_rvv_vstart_dual_dispatch_lsu_test(dut):
         f" got {[hex(x) for x in out_ctrl]},"
         f" expected {[hex(x) for x in expected_ctrl]}"
     )
+
+
+_FWD_ELF = (
+    "coralnpu_hw/tests/cocotb/rvv/rvv_vstart_forwarding_debug_test.elf"
+)
+_FWD_SYMS = [
+    "test_sel", "ctrl_out", "ctrl_vstart", "dbg1_vxor", "dbg2_vxor",
+    "dbg2_addi", "dbg2_vle", "dbg2_nop", "out_dbg1", "out_dbg2", "loop_iters",
+    "out_loop", "loop_csrw", "loop_win_start", "loop_vxor"
+]
+_FWD_FILL = 0x7FC0
+_DBG_EXPECTED = np.array([0x00A4, 0x0088, 0x1234, 0x5678], dtype=np.uint16)
+_CSR_VSTART = 0x008
+_CSR_TSELECT = 0x7A0
+_CSR_TDATA1 = 0x7A1
+_CSR_TDATA2 = 0x7A2
+_CSR_DCSR = 0x7B0
+_CSR_DPC = 0x7B1
+
+
+async def _fwd_load(dut, test_sel):
+    fixture = await VerilatorTestFixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(r.Rlocation(_FWD_ELF), _FWD_SYMS)
+    await fixture.write("test_sel", np.array([test_sel], dtype=np.uint32))
+    return fixture
+
+
+async def _dm_halt_state(cm):
+    dcsr = await cm.dm_read_reg(_CSR_DCSR)
+    dpc = await cm.dm_read_reg(_CSR_DPC)
+    vstart = await cm.dm_read_reg(_CSR_VSTART)
+    return (dcsr >> 6) & 0b111, dpc, vstart
+
+
+@cocotb.test()
+async def core_mini_rvv_vstart_forwarding_debug_breakpoint_test(dut):
+    """T3a: debug halts (trigger + single-step) around the packet."""
+    fixture = await _fwd_load(dut, 1)
+    cm = fixture.core_mini_axi
+    sym = fixture.symbols
+
+    await cm.dm_request_halt()
+    await cm.execute_from(fixture.entry_point)
+    await cm.dm_wait_for_halted()
+
+    # Breakpoint on the packet head: nothing in the packet dispatched yet.
+    await cm.dm_write_reg(_CSR_TSELECT, 0)
+    await cm.dm_write_reg(_CSR_TDATA2, sym["dbg1_vxor"])
+    await cm.dm_write_reg(_CSR_TDATA1, 0x68001044)
+    for vxor in ("dbg1_vxor", "dbg2_vxor"):
+        await cm.dm_write_reg(_CSR_TDATA2, sym[vxor])
+        await cm.dm_request_resume()
+        await cm.dm_wait_for_halted()
+        cause, dpc, vstart = await _dm_halt_state(cm)
+        dut._log.info(
+            f"break {vxor}: cause={cause} dpc={hex(dpc)}"
+            f" vstart={vstart}"
+        )
+        assert cause == 2 and dpc == sym[vxor]
+        assert vstart == 2, f"halt at {vxor}: vstart={vstart}, expected 2"
+
+    await cm.dm_write_reg(_CSR_TSELECT, 0)
+    await cm.dm_write_reg(_CSR_TDATA1, 0)
+    await cm.dm_write_reg(_CSR_TDATA2, 0)
+    dcsr = await cm.dm_read_reg(_CSR_DCSR)
+    await cm.dm_write_reg(_CSR_DCSR, dcsr | (1 << 2))
+    for nxt in ("dbg2_addi", "dbg2_vle", "dbg2_nop"):
+        await cm.dm_request_resume()
+        await cm.dm_wait_for_halted()
+        cause, dpc, vstart = await _dm_halt_state(cm)
+        dut._log.info(
+            f"step -> {nxt}: cause={cause} dpc={hex(dpc)}"
+            f" vstart={vstart}"
+        )
+        assert cause == 4 and dpc == sym[nxt]
+        assert vstart == 0, (
+            f"halt at {nxt} (vxor retired): vstart={vstart}, expected 0"
+        )
+    dcsr = await cm.dm_read_reg(_CSR_DCSR)
+    await cm.dm_write_reg(_CSR_DCSR, dcsr & ~(1 << 2))
+    await cm.dm_request_resume()
+    await cm.wait_for_halted(timeout_cycles=20000)
+
+    for name in ("out_dbg1", "out_dbg2"):
+        got = (await fixture.read(name, 8)).view(np.uint16)
+        dut._log.info(f"{name}: {[hex(x) for x in got]}")
+        assert np.array_equal(got, _DBG_EXPECTED), (
+            f"{name}: got {[hex(x) for x in got]},"
+            f" expected {[hex(x) for x in _DBG_EXPECTED]}"
+        )
+
+
+@cocotb.test()
+async def core_mini_rvv_vstart_forwarding_debug_async_halt_test(dut):
+    """T3b: random asynchronous debug halts over a looped packet."""
+    import random
+    from cocotb.triggers import ClockCycles
+
+    fixture = await _fwd_load(dut, 2)
+    cm = fixture.core_mini_axi
+    sym = fixture.symbols
+    iters = int((await fixture.read_word("loop_iters")).view(np.uint32)[0])
+    rng = random.Random(77)
+
+    await cm.execute_from(fixture.entry_point)
+    halts = 0
+    in_window = 0
+    for _ in range(40):
+        await ClockCycles(dut.io_aclk, rng.randint(0, 200))
+        if dut.io_halted.value == 1:
+            break
+        await cm.dm_request_halt()
+        await cm.dm_wait_for_halted()
+        cause, dpc, vstart = await _dm_halt_state(cm)
+        win = sym["loop_win_start"] <= dpc <= sym["loop_vxor"]
+        halts += 1
+        in_window += int(win)
+        dut._log.info(
+            f"halt {halts}: cause={cause} dpc={hex(dpc)}"
+            f" vstart={vstart} in_window={win}"
+        )
+        assert cause == 3
+        assert vstart == (2 if win else 0), (
+            f"halt at dpc={hex(dpc)}: vstart={vstart}, expected"
+            f" {2 if win else 0}"
+        )
+        await cm.dm_request_resume()
+        await cm.dm_wait_for_resumed()
+
+    await cm.wait_for_halted(timeout_cycles=200000)
+    dut._log.info(f"{halts} halts, {in_window} inside the vstart=2 window")
+    assert in_window >= 1, "no halt landed inside the vstart=2 window"
+
+    out = (await fixture.read("out_loop",
+                              iters * 8)).view(np.uint16).reshape(iters, 4)
+    for i in range(iters):
+        assert np.array_equal(out[i], _DBG_EXPECTED), (
+            f"iteration {i}: got {[hex(x) for x in out[i]]},"
+            f" expected {[hex(x) for x in _DBG_EXPECTED]}"
+        )
+
+
+@cocotb.test()
+async def core_mini_rvv_vstart_forwarding_whole_reg_control_test(dut):
+    """Control: vill=1, vstart=2, lone whole-register load honours vstart."""
+    fixture = await _fwd_load(dut, 0)
+    try:
+        await fixture.run_to_halt(timeout_cycles=20000)
+    except AssertionError:
+        cm = fixture.core_mini_axi
+        await cm.dm_request_halt()
+        await cm.dm_wait_for_halted()
+        cause, dpc, vstart = await _dm_halt_state(cm)
+        dut._log.error(f"timeout: dpc={hex(dpc)} vstart={vstart}")
+        raise
+    out = (await fixture.read("ctrl_out", 16)).view(np.uint16)
+    dut._log.info(f"control out: {[hex(x) for x in out]}")
+    expected = np.array([
+        _FWD_FILL, _FWD_FILL, 0x3333, 0x4444, 0x5555, 0x6666, 0x7777, 0x8888
+    ],
+                        dtype=np.uint16)
+    assert np.array_equal(out, expected), (
+        f"whole-register load under vill ignored vstart=2: got"
+        f" {[hex(x) for x in out]}"
+    )
+    vstart = int((await fixture.read_word("ctrl_vstart")).view(np.uint32)[0])
+    assert vstart == 0, f"vstart after the load = {vstart}, expected 0"
+
+
+_SQUASH_ELF = (
+    "coralnpu_hw/tests/cocotb/rvv/rvv_vstart_forwarding_squash_test.elf"
+)
+_SQUASH_SYMS = [
+    "test_sel", "trap_count", "trap_log", "probe_insn", "t1_vadd", "t2_vadd",
+    "t3_vadd", "t4_vle", "t5_vadd", "t6_vle", "case_snap", "case_out",
+    "vstart_after_trap", "vstart_final", "resume_pc", "snap_ptr"
+]
+# The .data globals the program writes, restored before each case.
+_SQUASH_STATE = [
+    "trap_count", "trap_log", "resume_pc", "snap_ptr", "case_snap", "case_out",
+    "vstart_after_trap", "vstart_final"
+]
+_SQUASH_EXT_ADDR = 0x20000000
+_SQUASH_EXT = np.array([
+    0xAAAA, 0xBBBB, 0xCCCC, 0xDDDD, 0xEEEE, 0xFFFF, 0x1357, 0x2468
+],
+                       dtype=np.uint16)
+_SQUASH_SRC = np.array([
+    0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666, 0x7777, 0x8888
+],
+                       dtype=np.uint16)
+_SQUASH_FILL = np.full(8, _FWD_FILL, dtype=np.uint16)
+
+
+def _hex(values):
+    return [hex(x) for x in np.atleast_1d(values)]
+
+
+async def _squash_run(dut, fixture, init, test_sel):
+    """Runs the probe and case T<test_sel>, and returns the results."""
+    await fixture.core_mini_axi.reset()
+    for name, value in init.items():
+        await fixture.write(name, value)
+    await fixture.write("test_sel", np.array([test_sel], dtype=np.uint32))
+
+    async def word(name):
+        return int((await fixture.read_word(name)).view(np.uint32)[0])
+
+    hung = False
+    try:
+        await fixture.run_to_halt(timeout_cycles=20000)
+    except AssertionError:
+        hung = True
+        cm = fixture.core_mini_axi
+        await cm.dm_request_halt()
+        await cm.dm_wait_for_halted()
+        dpc = await cm.dm_read_reg(_CSR_DPC)
+        dut._log.error(f"T{test_sel}: core hung, dpc={hex(dpc)}")
+
+    res = {
+        "case":
+        f"T{test_sel}",
+        "sym":
+        fixture.symbols,
+        "hung":
+        hung,
+        "trap_count":
+        await word("trap_count"),
+        "trap_log": (await fixture.read("trap_log",
+                                        128)).view(np.uint32).reshape(8, 4),
+        "snap": (await fixture.read("case_snap", 16)).view(np.uint16),
+        "out": (await fixture.read("case_out", 16)).view(np.uint16),
+        "vstart_after_trap":
+        await word("vstart_after_trap"),
+        "vstart_final":
+        await word("vstart_final"),
+    }
+    for i in range(min(res["trap_count"], 8)):
+        mcause, mepc, mtval, vstart = res["trap_log"][i]
+        dut._log.info(
+            f"trap[{i}]: mcause={mcause} mepc={hex(mepc)}"
+            f" mtval={hex(mtval)} vstart={vstart}"
+        )
+    dut._log.info(f"snap={_hex(res['snap'])} out={_hex(res['out'])}")
+    dut._log.info(
+        f"vstart_after_trap={res['vstart_after_trap']}"
+        f" vstart_final={res['vstart_final']}"
+    )
+
+    mcause, mepc, _, _ = res["trap_log"][0]
+    assert mcause == 5 and mepc == res["sym"]["probe_insn"], (
+        f"the probe load at 0x1ffffffc did not fault (mcause={mcause}"
+        f" mepc={hex(mepc)}), so the faulting cases test nothing"
+    )
+    return res
+
+
+def _squash_check_trap(res, mcause, pc_sym, vstart):
+    """The case must raise exactly one trap, then run to completion."""
+    case = res["case"]
+    assert res["trap_count"] == 2, (
+        f"{case}: expected exactly 1 trap after the probe, got"
+        f" {res['trap_count'] - 1}"
+    )
+    got_mcause, got_mepc, _, got_vstart = res["trap_log"][1]
+    assert got_mcause == mcause and got_mepc == res["sym"][pc_sym], (
+        f"{case}: expected mcause={mcause} at {hex(res['sym'][pc_sym])},"
+        f" got mcause={got_mcause} at {hex(got_mepc)}"
+    )
+    assert got_vstart == vstart, (
+        f"{case}: vstart in the trap handler = {got_vstart}, expected"
+        f" {vstart}"
+    )
+    assert res["vstart_after_trap"] == vstart
+    assert not res["hung"], f"{case}: core hung after the trap"
+
+
+_SQUASH_DTCM_OUT = np.concatenate([_SQUASH_FILL[:2], _SQUASH_SRC[2:]])
+_SQUASH_EXT_OUT = np.concatenate([_SQUASH_FILL[:2], _SQUASH_EXT[:6]])
+# (test_sel, mcause, trap pc symbol, vstart at the trap, expected results)
+_SQUASH_CASES = [
+    # T1: an RVV trap squashes the load dispatched with it.
+    (
+        1, 2, "t1_vadd", 2, {
+            "snap": _SQUASH_FILL,
+            "out": _SQUASH_DTCM_OUT,
+            "vstart_final": 0
+        }
+    ),
+    # T2: the squashed load faults on elements [0, vstart).
+    (
+        2, 2, "t2_vadd", 2, {
+            "snap": _SQUASH_FILL,
+            "out": _SQUASH_EXT_OUT,
+            "vstart_final": 0
+        }
+    ),
+    # T3: T2 behind a long div, so the trap retires after the load faults.
+    (
+        3, 2, "t3_vadd", 2, {
+            "snap": _SQUASH_FILL,
+            "out": _SQUASH_EXT_OUT,
+            "vstart_final": 0
+        }
+    ),
+    # T4: an older faulting load beats a younger RVV trap.
+    (4, 5, "t4_vle", 2, {}),
+    # T5: an RVV trap squashes the store dispatched with it.
+    (
+        5, 2, "t5_vadd", 2, {
+            "out":
+            np.concatenate([np.zeros(1, dtype=np.uint16), _SQUASH_SRC[1:]]),
+            "vstart_final": 0
+        }
+    ),
+    # T6: a load behind a long div faults with its own vstart (4, not 0).
+    (6, 5, "t6_vle", 4, {}),
+]
+
+
+@cocotb.test()
+async def core_mini_rvv_vstart_forwarding_squash_test(dut):
+    """Runs cases T1-T6 of the squash test, loading the ELF once."""
+    fixture = await VerilatorTestFixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation(_SQUASH_ELF), _SQUASH_SYMS
+    )
+    await fixture.core_mini_axi.write(
+        _SQUASH_EXT_ADDR, _SQUASH_EXT.view(np.uint8)
+    )
+    init = {name: await fixture.read(name) for name in _SQUASH_STATE}
+    for test_sel, mcause, pc_sym, vstart, expected in _SQUASH_CASES:
+        res = await _squash_run(dut, fixture, init, test_sel)
+        _squash_check_trap(res, mcause, pc_sym, vstart)
+        for k, v in expected.items():
+            assert np.array_equal(
+                res[k], v
+            ), (f"{res['case']}: {k}={_hex(res[k])}, expected {_hex(v)}")
+
+
+@cocotb.test()
+async def core_mini_rvv_vill_trap_squashed_load_test(dut):
+    """RVV vill trap squashing a co-dispatched vl1re16.v must not hang."""
+    fixture = await VerilatorTestFixture.Create(dut)
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation(
+            "coralnpu_hw/tests/cocotb/rvv/rvv_vill_trap_squashed_load_test.elf"
+        ), [
+            "trap_count", "trap_mcause", "trap_mepc", "trap_vstart",
+            "squash_vadd", "out_reload", "out_after", "vstart_final"
+        ]
+    )
+
+    async def word(name):
+        return int((await fixture.read_word(name)).view(np.uint32)[0])
+
+    hung = False
+    try:
+        await fixture.run_to_halt(timeout_cycles=20000)
+    except AssertionError:
+        hung = True
+        cm = fixture.core_mini_axi
+        await cm.dm_request_halt()
+        await cm.dm_wait_for_halted()
+        dpc = await cm.dm_read_reg(_CSR_DPC)
+        dut._log.error(f"core hung, dpc={hex(dpc)}")
+
+    trap_count = await word("trap_count")
+    mcause = await word("trap_mcause")
+    mepc = await word("trap_mepc")
+    vstart = await word("trap_vstart")
+    out_reload = (await fixture.read("out_reload", 16)).view(np.uint16)
+    out_after = (await fixture.read("out_after", 16)).view(np.uint16)
+    dut._log.info(
+        f"traps={trap_count} mcause={mcause} mepc={hex(mepc)}"
+        f" vstart={vstart}"
+    )
+    dut._log.info(f"out_reload={_hex(out_reload)}")
+    dut._log.info(f"out_after={_hex(out_after)}")
+
+    assert trap_count == 1, f"expected 1 trap, got {trap_count}"
+    assert mcause == 2 and mepc == fixture.symbols["squash_vadd"], (
+        f"expected illegal-instruction trap at the vadd, got mcause={mcause}"
+        f" mepc={hex(mepc)}"
+    )
+    assert vstart == 2, f"vstart at trap = {vstart}, expected 2"
+    assert not hung, (
+        "core hung after the RVV trap squashed the co-dispatched"
+        " whole-register load"
+    )
+    expected_reload = np.concatenate([_SQUASH_FILL[:2], _SQUASH_SRC[2:]])
+    assert np.array_equal(out_reload, expected_reload
+                          ), (f"re-executed load got {_hex(out_reload)}")
+    assert np.array_equal(out_after, np.full(8, 0x5A5A, dtype=np.uint16))
+    assert await word("vstart_final") == 0

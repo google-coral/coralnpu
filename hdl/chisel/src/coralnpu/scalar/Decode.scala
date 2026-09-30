@@ -547,6 +547,12 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     Seq.fill(p.instructionLanes)(true.B)
   }
 
+  // Every RVV instruction resets vstart to zero, so an LSU op behind an older
+  // RVV instruction in the same packet uses vstart = 0. This matches
+  // RvvFrontEnd and the retirement buffer, which use the same rvv.valid
+  // predicate. An older RVV instruction that doesn't reset vstart must trap,
+  // and then this op is squashed. rvvVillRobEmptyInterlock ensures such a
+  // squashed op is never a vector load/store.
   val rvvVstartCleared = Option.when(p.enableRvv) {
     decodedInsts.map(_.rvv.get.valid).scan(false.B)(_ || _)
   }
@@ -590,6 +596,26 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       val vill      = configInvalid(i) || io.rvvState.get.bits.vill
       val inFlight  = !io.retirement_buffer_empty || !io.rvvIdle.getOrElse(true.B) || io.lsuActive
       !(isDiscard && (vill || inFlight))
+    })
+  } else {
+    Seq.fill(p.instructionLanes)(true.B)
+  }
+
+  // Rvv Vill serialization
+  // With vill=1, an older RVV arithmetic instruction traps in RvvFrontEnd after
+  // it has been dispatched. Whole-register loads/stores are legal under vill,
+  // so without this they could run in the scalar LSU ahead of that trap, and
+  // the squashed op's lsu2rvv result would reach the RVV backend after the
+  // flush and hang it. Rather than gating only whole-register loads/stores,
+  // stall all RVV instructions (e.g. vset{i}vl{i}, whole-register moves, and
+  // whole-register loads/stores) while vill=1 so they only dispatch from slot 0
+  // once the retirement buffer has drained. rvvConfigInterlock keeps vector
+  // loads/stores back while the config state is invalid, so vill is up to date
+  // here.
+  val rvvVillRobEmptyInterlock = if (p.enableRvv) {
+    (0 until p.instructionLanes).map(i => {
+      val isRvv = decodedInsts(i).rvv.get.valid
+      !isRvv || !io.rvvState.get.bits.vill || ((i == 0).B && io.retirement_buffer_empty)
     })
   } else {
     Seq.fill(p.instructionLanes)(true.B)
@@ -662,7 +688,8 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       rvvVstartInterlock(i) &&    // Don't dispatch illegal vstart != 0
       rvvVillInterlock(i) &&      // Don't dispatch illegal vill != 0 on non-WR load/store
       vmeMsOffInterlock(i) && // Don't dispatch tile instructions or vtdiscard if mstatus.MS == Off
-      vmeDiscardVillInterlock(i) && // Don't dispatch vtdiscard if vill == 1
+      vmeDiscardVillInterlock(i) &&  // Don't dispatch vtdiscard if vill == 1
+      rvvVillRobEmptyInterlock(i) && // Stall RVV instructions until ROB drains when vill == 1
       // rvvLsuInterlock(i) &&  // Dispatch only one Rvv LsuOp
       lsuInterlock(i) &&                     // Ensure lsu instructions can be dispatched into queue
       rvvInterlock(i) &&                     // Ensure rvv instructions can be dispatched into queue
