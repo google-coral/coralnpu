@@ -492,7 +492,7 @@ chisel_library(
 chisel_library(
     name = "srams",
     srcs = [
-        "Sram.scala",
+        "SramBlock.scala",
         "SramNx128.scala",
     ],
     resource_strip_prefix = "hdl/verilog",
