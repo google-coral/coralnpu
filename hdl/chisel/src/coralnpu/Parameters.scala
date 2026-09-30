@@ -203,7 +203,6 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
     newP.enableFloat = this.enableFloat
     newP.enableZfbfmin = this.enableZfbfmin
     newP.enableVectorBf16 = this.enableVectorBf16
-    newP.fpuPipeRegs = this.fpuPipeRegs
     newP.enableAxiInstructionFetch = this.enableAxiInstructionFetch
     newP.fetchDataBits = this.fetchDataBits
     newP.lsuDataBits = this.lsuDataBits

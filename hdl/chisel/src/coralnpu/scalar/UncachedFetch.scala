@@ -572,7 +572,8 @@ class UncachedFetch(p: Parameters) extends FetchUnit(p) {
     new InstructionBuffer(new FetchInstruction(p), p.fetchInstrSlots, window)
   )
   instructionBuffer.io.feedIn <> ctrl.io.bufferRequest
-  io.inst.lanes <> instructionBuffer.io.out.take(4)
+  io.inst.lanes <> instructionBuffer.io.out.take(p.instructionLanes)
+  instructionBuffer.io.out.drop(p.instructionLanes).foreach(_.ready := false.B)
   instructionBuffer.io.flush := io.iflush.valid || branch.valid || io.debug_pc.valid
 
   val pc = RegInit(0.U(p.fetchAddrBits.W))
