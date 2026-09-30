@@ -237,17 +237,14 @@ object GenerateCoreShimSource {
         """
           |    output vmeRt_valid,
           |    output [3:0] vmeRt_rob_tag,
-          |    output vmeRt_is_store,""".stripMargin
+          |    output vmeRt_is_store,
+          |    output [3:0] vmeRt_mask,
+          |    output [3:0] vmeRt_idx,""".stripMargin
       if (enableVerification) {
         val subtiles = (p.vmeTe * p.vmeTe) / 16
         val tileBits = subtiles * 128
         moduleInterface +=
           s"""
-             |    output [3:0] vmeRt_mask,
-             |    output [3:0] vmeRt_idx_0,
-             |    output [3:0] vmeRt_idx_1,
-             |    output [3:0] vmeRt_idx_2,
-             |    output [3:0] vmeRt_idx_3,
              |    output [${tileBits - 1}:0] vmeRt_data_0,
              |    output [${tileBits - 1}:0] vmeRt_data_1,
              |    output [${tileBits - 1}:0] vmeRt_data_2,
@@ -506,31 +503,25 @@ object GenerateCoreShimSource {
           |  assign vmeRt_valid    = vmeRtVld_o;
           |  assign vmeRt_rob_tag  = vmeRt_o.rob_tag;
           |  assign vmeRt_is_store = vmeRt_o.isStore;
+          |  assign vmeRt_mask     = vmeRt_o.mtIdxVld;
+          |  assign vmeRt_idx      = vmeRt_o.mtIdx;
           |`else
           |  assign vmeRt_valid    = 1'b0;
           |  assign vmeRt_rob_tag  = 4'b0;
           |  assign vmeRt_is_store = 1'b0;
+          |  assign vmeRt_mask     = 4'b0;
+          |  assign vmeRt_idx      = 4'b0;
           |`endif
           |""".stripMargin
       if (enableVerification) {
         coreInstantiation +=
           """`ifdef ZVT_ON
             |`ifdef RVVI_ON
-            |  assign vmeRt_mask     = vmeRt_o.mtIdxVld;
-            |  assign vmeRt_idx_0    = vmeRt_o.mtIdx[0];
-            |  assign vmeRt_idx_1    = vmeRt_o.mtIdx[1];
-            |  assign vmeRt_idx_2    = vmeRt_o.mtIdx[2];
-            |  assign vmeRt_idx_3    = vmeRt_o.mtIdx[3];
             |  assign vmeRt_data_0   = vmeRt_o.mtData[0];
             |  assign vmeRt_data_1   = vmeRt_o.mtData[1];
             |  assign vmeRt_data_2   = vmeRt_o.mtData[2];
             |  assign vmeRt_data_3   = vmeRt_o.mtData[3];
             |`else
-            |  assign vmeRt_mask     = 4'b0;
-            |  assign vmeRt_idx_0    = 4'b0;
-            |  assign vmeRt_idx_1    = 4'b0;
-            |  assign vmeRt_idx_2    = 4'b0;
-            |  assign vmeRt_idx_3    = 4'b0;
             |  assign vmeRt_data_0   = '0;
             |  assign vmeRt_data_1   = '0;
             |  assign vmeRt_data_2   = '0;
@@ -542,11 +533,6 @@ object GenerateCoreShimSource {
             |  assign vmeRt_pc       = 32'b0;
             |`endif
             |`else
-            |  assign vmeRt_mask     = 4'b0;
-            |  assign vmeRt_idx_0    = 4'b0;
-            |  assign vmeRt_idx_1    = 4'b0;
-            |  assign vmeRt_idx_2    = 4'b0;
-            |  assign vmeRt_idx_3    = 4'b0;
             |  assign vmeRt_data_0   = '0;
             |  assign vmeRt_data_1   = '0;
             |  assign vmeRt_data_2   = '0;
@@ -758,11 +744,8 @@ class RvvCoreWrapper(p: Parameters)
     val vmeRt_valid    = Option.when(p.enableVme)(Output(Bool()))
     val vmeRt_rob_tag  = Option.when(p.enableVme)(Output(UInt(4.W)))
     val vmeRt_is_store = Option.when(p.enableVme)(Output(Bool()))
-    val vmeRt_mask     = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
-    val vmeRt_idx_0    = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
-    val vmeRt_idx_1    = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
-    val vmeRt_idx_2    = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
-    val vmeRt_idx_3    = Option.when(p.enableVme && p.enableVerification)(Output(UInt(4.W)))
+    val vmeRt_mask     = Option.when(p.enableVme)(Output(UInt(4.W)))
+    val vmeRt_idx      = Option.when(p.enableVme)(Output(UInt(4.W)))
     val vmeRt_data_0   = Option.when(p.enableVme && p.enableVerification)(
       Output(UInt((((p.vmeTe * p.vmeTe) / 16) * 128).W))
     )
@@ -998,13 +981,10 @@ class RvvCoreShim(p: Parameters) extends Module {
     io.vmeRt.get.valid         := rvvCoreWrapper.io.vmeRt_valid.get
     io.vmeRt.get.bits.rob_tag  := rvvCoreWrapper.io.vmeRt_rob_tag.get
     io.vmeRt.get.bits.is_store := rvvCoreWrapper.io.vmeRt_is_store.get
+    io.vmeRt.get.bits.mask     := rvvCoreWrapper.io.vmeRt_mask.get
+    io.vmeRt.get.bits.idx      := rvvCoreWrapper.io.vmeRt_idx.get
     if (p.enableVerification) {
       val subtiles = (p.vmeTe * p.vmeTe) / 16
-      io.vmeRt.get.bits.mask.get   := rvvCoreWrapper.io.vmeRt_mask.get
-      io.vmeRt.get.bits.idx.get(0) := rvvCoreWrapper.io.vmeRt_idx_0.get
-      io.vmeRt.get.bits.idx.get(1) := rvvCoreWrapper.io.vmeRt_idx_1.get
-      io.vmeRt.get.bits.idx.get(2) := rvvCoreWrapper.io.vmeRt_idx_2.get
-      io.vmeRt.get.bits.idx.get(3) := rvvCoreWrapper.io.vmeRt_idx_3.get
       for (s <- 0 until subtiles) {
         io.vmeRt.get.bits.data.get(0)(s) := rvvCoreWrapper.io.vmeRt_data_0
           .get((s + 1) * 128 - 1, s * 128)

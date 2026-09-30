@@ -3603,7 +3603,7 @@ module rvv_backend_decode_unit_ari
 
           VWRXUNARY0: begin
             case(vs2_opcode)
-              VMV_S_X: check_special = inst_vm&(inst_vs2=='b0)&(csr_vstart=='b0);
+              VMV_S_X: check_special = inst_vm;
             `ifdef ZVT_ON
               VTMVVT:  check_special = inst_vm;
               VTZERO:  check_special = inst_vm&(inst_vs1==5'b00000)&(inst_vd[0]=='b0)&check_mtd_align&check_tm&check_tn;
@@ -3769,7 +3769,7 @@ module rvv_backend_decode_unit_ari
           end
 
           VWRFUNARY0: begin
-            check_special = inst_vm&(vs2_opcode==VFMV_S_F)&(csr_vstart=='b0);
+            check_special = inst_vm&(vs2_opcode==VFMV_S_F);
           end
 
           VFSLIDE1UP: begin
@@ -3914,9 +3914,28 @@ module rvv_backend_decode_unit_ari
         endcase
       end
 
-      `ifdef ZVT_ON
       OPMVX: begin
-        if((inst_funct6==VWRXUNARY0)&&(vs2_opcode==VTZERO)) evstart = 'b0;
+        case(inst_funct6)
+          VWRXUNARY0: begin
+            case(vs2_opcode)
+            `ifdef ZVT_ON
+              VTZERO,
+            `endif
+              VMV_S_X: evstart = 'b0;
+            endcase
+          end
+        endcase
+      end
+
+      `ifdef ZVE32F_ON
+      OPFVF: begin
+        case(inst_funct6)
+          VWRFUNARY0: begin
+            case(vs2_opcode)
+              VFMV_S_F: evstart = 'b0;
+            endcase
+          end
+        endcase
       end
       `endif
     endcase
@@ -4021,7 +4040,6 @@ module rvv_backend_decode_unit_ari
     
     // Instructions that write an x register or f register do so even when vstart >= vl, including when vl=0.
     case(inst_funct3) 
-
       OPIVI: begin
         case(inst_funct6)
           VSMUL_VMVNRR: begin
@@ -4045,6 +4063,17 @@ module rvv_backend_decode_unit_ari
           end
         endcase
       end
+
+      OPMVX: begin
+        case(inst_funct6)
+          VWRXUNARY0: begin
+            case(vs2_opcode)
+              VMV_S_X: check_vstart_sle_vl = {1'b0,csr_vstart} < csr_vl;
+            endcase
+          end
+        endcase
+      end
+
       `ifdef ZVE32F_ON
       OPFVV: begin
         case(inst_funct6)
@@ -4053,6 +4082,16 @@ module rvv_backend_decode_unit_ari
               check_vl_not_0      = 'b1;
               check_vstart_sle_vl = 'b1;
             end
+          end
+        endcase
+      end
+      
+      OPFVF: begin
+        case(inst_funct6)
+          VWRFUNARY0: begin
+            case(vs2_opcode)
+              VFMV_S_F: check_vstart_sle_vl = {1'b0,csr_vstart} < evl;
+            endcase
           end
         endcase
       end

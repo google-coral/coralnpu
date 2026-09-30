@@ -53,7 +53,7 @@ module fp_mulfront#(
 
   `ifdef ASSERT_ON
     `rvv_expect(OUT_EXP_BITS >= IN_EXP_BITS+1)
-      else $warning("Exponent overflow not supported in order to improve precision");
+      else $error("Exponent overflow not supported in order to improve precision");
   `endif
 
   assign prod_sign = a_sign ^ b_sign;
@@ -125,6 +125,7 @@ module fp_mulfront#(
   // merge 1&2
   wire [IN_SIG_BITS*2-1:0] prod_significand_raw = {(IN_SIG_BITS)'('b0), a_significand} * {(IN_SIG_BITS)'('b0), b_significand};
   assign prod_exponent_raw =  // add MSB +1 bits, sign +1 bits -> total +2
+    (a_zero | b_zero) ? {2'b11, {IN_EXP_BITS{1'b0}}} :
     {2'b0, a_exponent + a_is_subnormal} + {2'b0, b_exponent + b_is_subnormal} - BIAS + 1;
 
   // LZA hint: LZC(prod) is either La+Lb or La+Lb+1 depending on whether the
@@ -134,8 +135,7 @@ module fp_mulfront#(
   localparam int unsigned RAW_LZC_WIDTH = 32'($clog2(IN_SIG_BITS*2));
   wire [RAW_LZC_WIDTH-1:0] lza_scnt = {1'b0, lzc_a_cnt} + {1'b0, lzc_b_cnt} + 1'b1;
 
-  assign prod_exponent_norm = (a_zero | b_zero) ? prod_exponent_raw
-    : prod_exponent_raw - (IN_EXP_BITS+2)'($signed({1'b0, lza_scnt})) + 1'b1;
+  assign prod_exponent_norm = prod_exponent_raw - (IN_EXP_BITS+2)'($signed({1'b0, lza_scnt})) + 1'b1;
 
   // 3. Align
   fp_align#(
@@ -174,7 +174,7 @@ module fp_mulfront#(
       .cnt_o(ref_lzc_cnt),
       .empty_o(ref_lzc_empty));
     `rvv_expect(ref_lzc_empty || (lza_scnt == ref_lzc_cnt) || (lza_scnt == ref_lzc_cnt + 1'b1))
-      else $warning("lza_scnt does not follow LZA condition of lzc_cnt");
+      else $error("lza_scnt does not follow LZA condition of lzc_cnt");
   `endif
 
 endmodule

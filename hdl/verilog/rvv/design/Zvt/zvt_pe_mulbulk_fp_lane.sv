@@ -31,9 +31,9 @@ module zvt_pe_mulbulk_fp_lane#(
   // assert format is supported
   `ifdef ASSERT_ON
     `rvv_forbid(up_valid && reg_enable[0] && (!FP_FMT_CONFIG[src_fmt] || !FP_FMT_CONFIG[dst_fmt]))
-      else $warning("Unsupported source format detected");
+      else $error("Unsupported source format detected");
     `rvv_forbid(up_valid && reg_enable[0] && dst_fmt != fpnew_pkg::FP32)
-      else $warning("Destination format is not FP32");
+      else $error("Destination format is not FP32");
   `endif
 
   // The super-format that can hold all input formats
@@ -106,7 +106,7 @@ module zvt_pe_mulbulk_fp_lane#(
         localparam FMT_BITS = EXP_BITS+MAN_BITS+1;
         `ifdef ASSERT_ON
           `rvv_forbid(WIDTH % FMT_BITS != 0)
-            else $warning("Format needs padding");
+            else $error("Format needs padding");
         `endif
         localparam FMT_VEC_LEN = WIDTH/FMT_BITS;
 
@@ -165,7 +165,7 @@ module zvt_pe_mulbulk_fp_lane#(
             `rvv_forbid(up_valid && reg_enable[0] && int'(src_fmt) == i &&
               |(mask[j*(VEC_LEN/FMT_VEC_LEN) +: (VEC_LEN/FMT_VEC_LEN)]) !=
               &(mask[j*(VEC_LEN/FMT_VEC_LEN) +: (VEC_LEN/FMT_VEC_LEN)]))
-              else $warning("Partial mask detected on element #%d with src_fmt=%d!", j, i);
+              else $error("Partial mask detected on element #%d with src_fmt=%d!", j, i);
           `endif
 
           fp_mulfront#(
@@ -210,14 +210,14 @@ module zvt_pe_mulbulk_fp_lane#(
           `ifdef ASSERT_ON
             `rvv_forbid(up_valid && reg_enable[0] && src_fmt == i && FMT_VEC_LEN == 1 &&
                 ((!fmt_products[i][j].significand[PROD_SIG_BITS-1]) ^ (!(|fmt_products[i][j].exponent))))
-              else $warning("Significand and exponent argue on multiply stage is a subnormal");
+              else $error("Significand and exponent argue on multiply stage is a subnormal");
             if (j != 0) begin
               `rvv_forbid(up_valid && reg_enable[0] && src_fmt == i &&
                 fmt_products[i][j].exponent != fmt_products[i][0].exponent)
-                else $warning("Batch normalize failed on multiply stage");
+                else $error("Batch normalize failed on multiply stage");
             end
             `rvv_forbid(up_valid && reg_enable[0] && src_fmt == i && align_overflow)
-              else $warning("Mul-bulk should not overflow at mul-stage. Is SUPER_EXP_BITS too narrow?");
+              else $error("Mul-bulk should not overflow at mul-stage. Is SUPER_EXP_BITS too narrow?");
           `endif
         end
 
@@ -471,7 +471,7 @@ module zvt_pe_mulbulk_fp_lane#(
           assign fmt_tree_zero[i]   = fmt_zero;
           `ifdef ASSERT_ON
             `rvv_expect(PROD_EXP_BITS >= $clog2(FMT_TREE_STAGE + 1))
-              else $warning("Overflow detect on fmt_tree_exp offset feeding u_vec_align.in_exponent!");
+              else $error("Overflow detect on fmt_tree_exp offset feeding u_vec_align.in_exponent!");
           `endif
 
           // Connect fp_align's output to fp_round input of this format
@@ -525,7 +525,7 @@ module zvt_pe_mulbulk_fp_lane#(
 
   `ifdef ASSERT_ON
     `rvv_expect(!down_valid || ((preround_exponent != 0) == preround_lead_bit))
-      else $warning("Significand and exponent argue on rounding stage is a subnormal");
+      else $error("Significand and exponent argue on rounding stage is a subnormal");
   `endif
   // ----------
   // rounding to dst_fmt

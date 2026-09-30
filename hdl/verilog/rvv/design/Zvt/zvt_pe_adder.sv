@@ -128,7 +128,7 @@ module zvt_pe_adder #(
   logic                   fp_valid,  int_valid;
   `ifdef ASSERT_ON
     `rvv_forbid(reg_enable[NUM_INP_REGS+NUM_MID_REGS] & (fp_valid == int_valid))
-      else $warning("Mul-Bulk output pipeline valid when not exactly one of fp/int_valid is assert");
+      else $error("Mul-Bulk output pipeline valid when not exactly one of fp/int_valid is assert");
   `endif
 
   always_comb begin

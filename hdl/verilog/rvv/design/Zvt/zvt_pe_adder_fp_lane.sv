@@ -72,12 +72,12 @@ module zvt_pe_adder_fp_lane#(
 
   `ifdef ASSERT_ON
     `rvv_expect(`WORD_WIDTH == 32)
-      else $warning("We only support FP32 currently");
+      else $error("We only support FP32 currently");
     
     // If significand[23] == 1: significand implies it is a normal
     // If sum_exponent == 0: exponent implies it is a subnormal
     `rvv_forbid(up_valid && reg_enable[0] && sum_significand[23] == (sum_exponent == 0))
-      else $warning("Significand and exponent argue on sum stage is a subnormal");
+      else $error("Significand and exponent argue on sum stage is a subnormal");
   `endif
 
   // ----------

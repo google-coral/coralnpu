@@ -575,16 +575,6 @@ module zvt (
 `endif
   assign vmeRt.rob_tag = vmeRtCmd.rob_tag;
   assign vmeRt.isStore = vmeRtCmd.isStore;
-
-`ifdef RVVI_ON
-  // status
-  always_comb begin
-    vmeRt.status = 'b0;
-    for(int i=0;i<`NUM_BLK;i++) begin
-      vmeRt.status = vmeRt.status | mtRtInfo[i].status;
-    end
-  end
-
   // mt_index
   always_comb begin
     case(vmeRtCmd.eew_mt)
@@ -612,10 +602,16 @@ module zvt (
     endcase
   end
 
-  assign vmeRt.mtIdx[0] = vmeRtCmd.mt_index;
-  assign vmeRt.mtIdx[1] = vmeRtCmd.mt_index + 'd1;
-  assign vmeRt.mtIdx[2] = vmeRtCmd.mt_index + 'd2;
-  assign vmeRt.mtIdx[3] = vmeRtCmd.mt_index + 'd3;
+  assign vmeRt.mtIdx = vmeRtCmd.mtIdx;
+
+`ifdef RVVI_ON
+  // status
+  always_comb begin
+    vmeRt.status = 'b0;
+    for(int i=0;i<`NUM_BLK;i++) begin
+      vmeRt.status = vmeRt.status | mtRtInfo[i].status;
+    end
+  end
 
   // data remap
   always_comb begin

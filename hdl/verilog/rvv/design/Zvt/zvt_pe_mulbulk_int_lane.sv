@@ -27,13 +27,13 @@ module zvt_pe_mulbulk_int_lane#(
   `ifdef ASSERT_ON
     `rvv_expect(!(up_valid && reg_enable[0]) || (
                 fpnew_pkg::int_width(src_fmt)<=WIDTH && WIDTH%fpnew_pkg::int_width(src_fmt) == 0))
-      else $warning("Input type too wide!");
+      else $error("Input type too wide!");
     `rvv_expect(!(up_valid && reg_enable[0]) || (
                   (INT_FMT_CONFIG[0] && (src_fmt == fpnew_pkg::INT8 )) ||
                   (INT_FMT_CONFIG[1] && (src_fmt == fpnew_pkg::INT16))))
-      else $warning("Input type not supported");
+      else $error("Input type not supported");
     `rvv_expect(!(up_valid && reg_enable[0]) || fpnew_pkg::int_width(dst_fmt)==WIDTH)
-      else $warning("Output type not supported");
+      else $error("Output type not supported");
   `endif
 
   // ----------
@@ -68,7 +68,7 @@ module zvt_pe_mulbulk_int_lane#(
           && pp_raw[i][j][16] == pp_raw[i][j][15])   // signed:   fits in int16
           : (pp_raw[i][j][17] == 1'b0
           && pp_raw[i][j][16] == 1'b0))              // unsigned: fits in uint16
-          else $warning("pp_raw does not fit in 16-bit %s range", any_signed ? "signed" : "unsigned");
+          else $error("pp_raw does not fit in 16-bit %s range", any_signed ? "signed" : "unsigned");
       `endif
 
       // 3. select enable bits from src_fmt

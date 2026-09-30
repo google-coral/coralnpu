@@ -3051,23 +3051,17 @@ module rvv_backend_decode_unit_lsu
 
       `ifdef ZVT_ON
         TILELDST: begin
-          case(csr_lmul)
-            LMUL1: begin
-              if(inst_funct6[5:3]==TILESEW8) begin
-                emul_max = EMUL1;
-              end
+          case(inst_funct6[5:3])
+            TILESEW8: begin
+              emul_max = EMUL1;
             end
-            LMUL2: begin
-              if(inst_funct6[5:3]==TILESEW16) begin
-                emul_max      = EMUL2;
-                uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
-              end
+            TILESEW16: begin
+              emul_max      = EMUL2;
+              uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
             end
-            LMUL4: begin
-              if(inst_funct6[5:3]==TILESEW32) begin
-                emul_max      = EMUL4;
-                uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-              end
+            TILESEW32: begin
+              emul_max      = EMUL4;
+              uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
             end
           endcase
         end

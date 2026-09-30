@@ -509,11 +509,11 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       val tileTagMatch  =
         tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === pIdx)
       for (k <- 0 until 4) {
-        val hit = tileTagMatch && tilePort.bits.mask.get(k)
+        val hit = tileTagMatch && tilePort.bits.mask(k)
         nextTileEntry(k).valid    := Mux(hit, true.B, tileWriteAccumulator.get(pIdx)(k).valid)
         nextTileEntry(k).bits.idx := Mux(
           hit,
-          tilePort.bits.idx.get(k),
+          tilePort.bits.idx + k.U,
           tileWriteAccumulator.get(pIdx)(k).bits.idx
         )
         nextTileEntry(k).bits.data := Mux(

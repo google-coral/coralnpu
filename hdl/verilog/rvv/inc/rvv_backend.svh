@@ -759,12 +759,10 @@ typedef struct packed {
   logic                                               isMv2Vme;
   logic                                               isZero;
   logic                                               isPe;
-`ifdef RVVI_ON
+  logic [$clog2(`NUM_MT)-1:0]                         mtIdx;
   logic [$clog2(`TE)-1:0]                             tssIndex;
   logic                                               tssPattern;
-  logic [$clog2(`NUM_MT)-1:0]                         mt_index;
   EEW_e                                               eew_mt;
-`endif
 } VME_RTCMD_t;
 
 typedef struct packed {
@@ -798,10 +796,10 @@ typedef struct packed {
 `endif
   logic [`ROB_TAG_WIDTH-1:0]                          rob_tag;
   logic                                               isStore;
+  logic [3:0]                                         mtIdxVld;
+  logic [$clog2(`NUM_MT)-1:0]                         mtIdx;
 `ifdef RVVI_ON
   fpnew_pkg::status_t                                 status;
-  logic [3:0]                                         mtIdxVld;
-  logic [3:0][$clog2(`NUM_MT)-1:0]                    mtIdx;
   logic [3:0][`NUM_SUBTILE-1:0][`SUBTILE_SIZE*8-1:0]  mtData;       
 `endif
 } VMERT_t;

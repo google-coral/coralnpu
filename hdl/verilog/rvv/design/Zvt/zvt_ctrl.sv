@@ -167,7 +167,17 @@ module zvt_ctrl (
   
   // vtzero encodes its destination tile in rd (dst_index[4:1]); TSS ops
   // encode it in rs1 (tss.tile).
-  assign tile      = isZero ? uop[0].dst_index[4:1] : uop[0].tss.tile;
+  always_comb begin
+    if(isPe[0] || isZero)
+      tile = uop[0].dst_index[4:1];
+    else begin
+      case(uop[0].eew_mt)
+        EEW8:    tile = uop[0].tss.tile;
+        EEW16:   tile = {uop[0].tss.tile[$clog2(`NUM_MT)-1:1], 1'b0};
+        default: tile = {uop[0].tss.tile[$clog2(`NUM_MT)-1:2], 2'b0};
+      endcase
+    end
+  end
   assign pattern   = uop[0].tss.pattern;
   assign index     = uop[0].tss.index;
   assign vstart    = uop[0].vstart;
@@ -477,10 +487,10 @@ module zvt_ctrl (
       EEW16: begin
         for(int i=0; i<`TE/4*`COMPRATIO; i++) begin
           for(int j=0; j<`TE/4/2; j++) begin
-            zeroWriteMtIdx[0][`TE/4/2*i+j] = {tile[3:1], 1'b0};
-            zeroWriteMtIdx[1][`TE/4/2*i+j] = {tile[3:1], 1'b0};
-            zeroWriteMtIdx[2][`TE/4/2*i+j] = {tile[3:1], 1'b1};
-            zeroWriteMtIdx[3][`TE/4/2*i+j] = {tile[3:1], 1'b1};
+            zeroWriteMtIdx[0][`TE/4/2*i+j] = {tile[$clog2(`NUM_MT)-1:1], 1'b0};
+            zeroWriteMtIdx[1][`TE/4/2*i+j] = {tile[$clog2(`NUM_MT)-1:1], 1'b0};
+            zeroWriteMtIdx[2][`TE/4/2*i+j] = {tile[$clog2(`NUM_MT)-1:1], 1'b1};
+            zeroWriteMtIdx[3][`TE/4/2*i+j] = {tile[$clog2(`NUM_MT)-1:1], 1'b1};
             
             zeroWriteSubIdx[0][`TE/4/2*i+j] = (`SUBTILE_SIZE)'((`TE/4)*(`TE/4*`COMPRATIO)*cnt+`TE/4*i+2*j);
             zeroWriteSubIdx[1][`TE/4/2*i+j] = (`SUBTILE_SIZE)'((`TE/4)*(`TE/4*`COMPRATIO)*cnt+`TE/4*i+2*j+'d1);
@@ -537,10 +547,10 @@ module zvt_ctrl (
       default: begin  // EEW32
         for(int i=0; i<`TE/4*`COMPRATIO; i++) begin
           for(int j=0; j<`TE/2/2; j++) begin
-            zeroWriteMtIdx[0][`TE/4*i+j] = {tile[3:2], 2'd0};
-            zeroWriteMtIdx[1][`TE/4*i+j] = {tile[3:2], 2'd1};
-            zeroWriteMtIdx[2][`TE/4*i+j] = {tile[3:2], 2'd2};
-            zeroWriteMtIdx[3][`TE/4*i+j] = {tile[3:2], 2'd3};
+            zeroWriteMtIdx[0][`TE/4*i+j] = {tile[$clog2(`NUM_MT)-1:2], 2'd0};
+            zeroWriteMtIdx[1][`TE/4*i+j] = {tile[$clog2(`NUM_MT)-1:2], 2'd1};
+            zeroWriteMtIdx[2][`TE/4*i+j] = {tile[$clog2(`NUM_MT)-1:2], 2'd2};
+            zeroWriteMtIdx[3][`TE/4*i+j] = {tile[$clog2(`NUM_MT)-1:2], 2'd3};
             
             zeroWriteSubIdx[0][`TE/4*i+j] = (`SUBTILE_SIZE)'((`TE/4)*(`TE/4*`COMPRATIO)*cnt+`TE/4*i+j);
             zeroWriteSubIdx[1][`TE/4*i+j] = (`SUBTILE_SIZE)'((`TE/4)*(`TE/4*`COMPRATIO)*cnt+`TE/4*i+j);
@@ -678,24 +688,24 @@ module zvt_ctrl (
   end
 
   // retire cmd information 
-  assign rtCmdVld       = isPe[0] ? &(peCmdVld&peCmdRdy) : !isMv2Rvv & uopVld[0] & uopRdy[0] & uop[0].last_uop_valid;
+  assign rtCmdVld         = isPe[0] ? &(peCmdVld&peCmdRdy) : !isMv2Rvv & uopVld[0] & uopRdy[0] & uop[0].last_uop_valid;
 `ifdef TB_SUPPORT
-  assign rtCmd.inst_pc  = uop[0].uop_pc;
+  assign rtCmd.inst_pc    = uop[0].uop_pc;
 `endif
-  assign rtCmd.rob_tag  = uop[0].rob_tag;
-  assign rtCmd.isStore  = isVme2Lsu;
-  assign rtCmd.isLoad   = isLsu2Vme;
-  assign rtCmd.isMv2Vme = isMv2Vme;
-  assign rtCmd.isZero   = isZero;
-  assign rtCmd.isPe     = isPe[0];
-`ifdef RVVI_ON
-  assign rtCmd.tssIndex = index;
+  assign rtCmd.rob_tag    = uop[0].rob_tag;
+  assign rtCmd.isStore    = isVme2Lsu;
+  assign rtCmd.isLoad     = isLsu2Vme;
+  assign rtCmd.isMv2Vme   = isMv2Vme;
+  assign rtCmd.isZero     = isZero;
+  assign rtCmd.isPe       = isPe[0];
+  assign rtCmd.mtIdx      = tile;
+  assign rtCmd.tssIndex   = index;
   assign rtCmd.tssPattern = pattern;
-  assign rtCmd.mt_index = (isMv2Vme || isLsu2Vme) ? tile : uop[0].dst_index[4:1];
-  assign rtCmd.eew_mt   = uop[0].eew_mt;
+  assign rtCmd.eew_mt     = uop[0].eew_mt;
 
+`ifdef RVVI_ON
   assign miscRtInfo.uop_pc = uop[0].uop_pc;
-  assign miscRtInfo.mtIdx  = (isMv2Vme || isLsu2Vme) ? tile : uop[0].dst_index[4:1];
+  assign miscRtInfo.mtIdx  = tile;
 `endif
 
   // Every rtCmd push must be matched by exactly one push into each of zvt's
