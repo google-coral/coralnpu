@@ -22,9 +22,6 @@
 # If this script exits with a non-zero exit code, it's considered as a failure
 # and the output will be discarded.
 
-git_rev=$(git rev-parse HEAD)
-if [[ $? != 0 ]];
-then
-  exit 1
+if git_rev=$(git rev-parse HEAD 2>/dev/null); then
+  echo "CORALNPU_BUILD_GIT_VERSION ${git_rev}"
 fi
-echo "CORALNPU_BUILD_GIT_VERSION ${git_rev}"
