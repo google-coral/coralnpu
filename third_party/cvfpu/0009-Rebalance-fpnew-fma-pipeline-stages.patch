@@ -1,7 +1,15 @@
 diff -Naur a/src/fpnew_fma.sv b/src/fpnew_fma.sv
 --- a/src/fpnew_fma.sv	2026-08-27 21:39:15.353671045 +0000
 +++ b/src/fpnew_fma.sv	2026-09-16 19:28:03.627881359 +0000
-@@ -86,6 +86,8 @@
+@@ -79,13 +79,15 @@
+   localparam NUM_INP_REGS = PipeConfig == fpnew_pkg::BEFORE
+                             ? NumPipeRegs
+                             : (PipeConfig == fpnew_pkg::DISTRIBUTED
+-                               ? ((NumPipeRegs + 1) / 3) // Second to get distributed regs
++                               ? ((NumPipeRegs == 4) ? 1 : ((NumPipeRegs + 2) / 3)) // Second to get distributed regs
+                                : 0); // no regs here otherwise
+   localparam NUM_MID_REGS = PipeConfig == fpnew_pkg::INSIDE
+                           ? NumPipeRegs
                            : (PipeConfig == fpnew_pkg::DISTRIBUTED
                               ? ((NumPipeRegs + 2) / 3) // First to get distributed regs
                               : 0); // no regs here otherwise
@@ -245,7 +253,15 @@ diff -Naur a/src/fpnew_fma.sv b/src/fpnew_fma.sv
 diff -Naur a/src/fpnew_fma_multi.sv b/src/fpnew_fma_multi.sv
 --- a/src/fpnew_fma_multi.sv	2026-08-27 21:39:15.351671048 +0000
 +++ b/src/fpnew_fma_multi.sv	2026-09-16 19:28:03.628881357 +0000
-@@ -93,6 +93,8 @@
+@@ -86,13 +86,15 @@
+   localparam NUM_INP_REGS = PipeConfig == fpnew_pkg::BEFORE
+                             ? NumPipeRegs
+                             : (PipeConfig == fpnew_pkg::DISTRIBUTED
+-                               ? ((NumPipeRegs + 1) / 3) // Second to get distributed regs
++                               ? ((NumPipeRegs == 4) ? 1 : ((NumPipeRegs + 2) / 3)) // Second to get distributed regs
+                                : 0); // no regs here otherwise
+   localparam NUM_MID_REGS = PipeConfig == fpnew_pkg::INSIDE
+                           ? NumPipeRegs
                            : (PipeConfig == fpnew_pkg::DISTRIBUTED
                               ? ((NumPipeRegs + 2) / 3) // First to get distributed regs
                               : 0); // no regs here otherwise
