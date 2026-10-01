@@ -67,15 +67,6 @@ py_library(
 )
 
 py_library(
-    name = "elf_util",
-    srcs = ["elf_util.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("pyelftools"),
-    ],
-)
-
-py_library(
     name = "backdoor",
     srcs = ["backdoor.py"],
     visibility = ["//visibility:public"],
@@ -169,8 +160,8 @@ py_binary(
         "//sw/utils/tflite_runner:tflite_runner.elf",
     ],
     deps = [
-        ":elf_util",
         ":ftdi_spi_master_lib",
+        "//coralnpu_test_utils/sim_backends:common_utils",
         "@bazel_tools//tools/python/runfiles",
     ],
 )

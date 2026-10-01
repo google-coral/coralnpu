@@ -37,8 +37,8 @@ except ImportError:
     sys.modules["coralnpu_hw"] = _coralnpu_hw
 
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_hw.coralnpu_test_utils.elf_util import parse_elf
 from coralnpu_hw.coralnpu_test_utils.ftdi_spi_master import FtdiSpiMaster
+from coralnpu_hw.coralnpu_test_utils.sim_backends.common_utils import parse_elf_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -157,26 +157,20 @@ class TfliteProfiler:
             'model_buffer', 'model_size', 'cycle_count', 'init_status',
             'invoke_status', 'debug_log_buffer', 'debug_log_ptr'
         ]
-        entry_point, symbol_map = parse_elf(
-            self.runner_elf_path, required_symbols
+        self.entry_point, self.symbols, _ = parse_elf_symbols(
+            self.runner_elf_path,
+            symbols=required_symbols,
+            strict=True,
         )
-        self.entry_point = entry_point
-        self.symbols = symbol_map
 
-        if self.entry_point is None or not all(sym in self.symbols
-                                               for sym in required_symbols):
-            raise ValueError(
-                "Could not find all required symbols in runner ELF."
-            )
-
-        for name, sym_info in self.symbols.items():
-            logger.info(f"  Found symbol '{name}' at 0x{sym_info.addr:x}")
+        for name, addr in self.symbols.items():
+            logger.info(f"  Found symbol '{name}' at 0x{addr:x}")
 
     def _get_device_logs(self):
         """Reads device-side debug logs from memory and returns them as string."""
         try:
             ptr_data = self.spi_master.read_data(
-                self.symbols['debug_log_ptr'].addr, 4
+                self.symbols['debug_log_ptr'], 4
             )
             ptr = struct.unpack("<I", ptr_data)[0]
             if ptr == 0:
@@ -190,7 +184,7 @@ class TfliteProfiler:
                 ptr = LOG_BUFFER_SIZE
 
             log_data = self.spi_master.read_data(
-                self.symbols['debug_log_buffer'].addr, ptr
+                self.symbols['debug_log_buffer'], ptr
             )
             return log_data.decode('utf-8', errors='replace')
         except Exception as e:
@@ -349,17 +343,15 @@ class TfliteProfiler:
 
         # 2. Inject model data and size
         logger.info(
-            f"Injecting model data to 0x{self.symbols['model_buffer'].addr:x}..."
+            f"Injecting model data to 0x{self.symbols['model_buffer']:x}..."
         )
-        self.spi_master.load_data(
-            model_data, self.symbols['model_buffer'].addr
-        )
+        self.spi_master.load_data(model_data, self.symbols['model_buffer'])
 
         logger.info(
-            f"Setting model size to {model_sz} at 0x{self.symbols['model_size'].addr:x}..."
+            f"Setting model size to {model_sz} at 0x{self.symbols['model_size']:x}..."
         )
         size_bytes = struct.pack("<I", model_sz)
-        self.spi_master.load_data(size_bytes, self.symbols['model_size'].addr)
+        self.spi_master.load_data(size_bytes, self.symbols['model_size'])
 
         # 3. Start execution
         self.spi_master.set_entry_point(self.entry_point)
@@ -374,11 +366,11 @@ class TfliteProfiler:
         if not self.spi_master.poll_for_halt(timeout=300.0):
             # Read status upon timeout to help debug
             init_status_data = self.spi_master.read_data(
-                self.symbols['init_status'].addr, 4
+                self.symbols['init_status'], 4
             )
             init_status = struct.unpack("<i", init_status_data)[0]
             invoke_status_data = self.spi_master.read_data(
-                self.symbols['invoke_status'].addr, 4
+                self.symbols['invoke_status'], 4
             )
             invoke_status = struct.unpack("<i", invoke_status_data)[0]
             logger.error(
@@ -392,12 +384,12 @@ class TfliteProfiler:
 
         # 5. Check status
         init_status_data = self.spi_master.read_data(
-            self.symbols['init_status'].addr, 4
+            self.symbols['init_status'], 4
         )
         init_status = struct.unpack("<i", init_status_data)[0]
 
         invoke_status_data = self.spi_master.read_data(
-            self.symbols['invoke_status'].addr, 4
+            self.symbols['invoke_status'], 4
         )
         invoke_status = struct.unpack("<i", invoke_status_data)[0]
 
@@ -414,9 +406,7 @@ class TfliteProfiler:
             )
 
         # 6. Read cycle count
-        cycle_data = self.spi_master.read_data(
-            self.symbols['cycle_count'].addr, 8
-        )
+        cycle_data = self.spi_master.read_data(self.symbols['cycle_count'], 8)
         cycles = struct.unpack("<Q", cycle_data)[0]
 
         # 7. Retrieve logs for fallback analysis (on success)
