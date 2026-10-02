@@ -2,30 +2,48 @@ diff --git a/sim/coralnpu_m4_instructions.cc b/sim/coralnpu_m4_instructions.cc
 index 1234567..89abcdef 100644
 --- a/sim/coralnpu_m4_instructions.cc
 +++ b/sim/coralnpu_m4_instructions.cc
-@@ -52,6 +52,11 @@ void CoralNPUM4Vtle(int eew_bits,
+@@ -52,9 +52,18 @@ void CoralNPUM4Vtle(int eew_bits,
    auto* state = static_cast<::coralnpu::sim::CoralNPUM4State*>(
        matrix_state->riscv_state());
    auto* vector_state = state->rv_vector();
++  const int kVstart = vector_state->vstart();
++  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
 +  if (eew_bits > vector_state->max_elen() || vector_state->is_vill() ||
-+      state->IsMatrixStatusOff()) {
++      state->IsMatrixStatusOff() || kVstart >= kCount) {
 +    ::mpact::sim::riscv::RiscVZvtVtle(eew_bits, inst);
 +    return;
 +  }
    const uint64_t kBase =
        ::mpact::sim::generic::GetInstructionSource<uint64_t>(inst, 0);
    const int kElementSize = eew_bits / 8;
-@@ -75,6 +80,11 @@ void CoralNPUM4Vtse(int eew_bits,
+-  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
+-  if (!state->HasPermission(kBase, kCount * kElementSize,
++  const uint64_t kAddr =
++      kBase + static_cast<uint64_t>(kVstart) * kElementSize;
++  const int kActiveBytes = (kCount - kVstart) * kElementSize;
++  if (!state->HasPermission(kAddr, kActiveBytes,
+                             ::coralnpu::sim::MemoryPermission::kRead)) {
+@@ -75,9 +84,18 @@ void CoralNPUM4Vtse(int eew_bits,
    auto* state = static_cast<::coralnpu::sim::CoralNPUM4State*>(
        matrix_state->riscv_state());
    auto* vector_state = state->rv_vector();
++  const int kVstart = vector_state->vstart();
++  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
 +  if (eew_bits > vector_state->max_elen() || vector_state->is_vill() ||
-+      state->IsMatrixStatusOff()) {
++      state->IsMatrixStatusOff() || kVstart >= kCount) {
 +    ::mpact::sim::riscv::RiscVZvtVtse(eew_bits, inst);
 +    return;
 +  }
    const uint64_t kBase =
        ::mpact::sim::generic::GetInstructionSource<uint64_t>(inst, 0);
    const int kElementSize = eew_bits / 8;
+-  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
+-  if (!state->HasPermission(kBase, kCount * kElementSize,
++  const uint64_t kAddr =
++      kBase + static_cast<uint64_t>(kVstart) * kElementSize;
++  const int kActiveBytes = (kCount - kVstart) * kElementSize;
++  if (!state->HasPermission(kAddr, kActiveBytes,
+                             ::coralnpu::sim::MemoryPermission::kWrite)) {
 diff --git a/sim/coralnpu_m4_state.cc b/sim/coralnpu_m4_state.cc
 index 51303be..7b4ad32 100755
 --- a/sim/coralnpu_m4_state.cc

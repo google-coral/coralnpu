@@ -40,7 +40,6 @@ module rvv_backend_decode_unit_lsu
 `ifdef ZVT_ON
   logic   [1:0]                   csr_mtwiden;
   logic   [$clog2(`TE):0]         csr_tm;
-  TSS_t                           tss;
 `endif  
   EMUL_e                          emul_vd;          
   EMUL_e                          emul_vs2;          
@@ -108,9 +107,6 @@ module rvv_backend_decode_unit_lsu
   `ifdef ZVT_ON
   assign csr_mtwiden    = inst_valid ? inst.arch_state.mtwiden : 'b0;
   assign csr_tm         = inst_valid ? inst.arch_state.tm : 'b0;
-  assign tss.tile       = rs1[30:27];
-  assign tss.pattern    = rs1[24];
-  assign tss.index      = rs1[$clog2(`TE)-1:0];
 `endif
 
 // decode funct6
@@ -3390,7 +3386,7 @@ module rvv_backend_decode_unit_lsu
 
       `ifdef ZVT_ON
         TILE_LDST: begin
-          check_special = inst_vm&(csr_vstart<=(`VSTART_WIDTH)'(tss.index));
+          check_special = inst_vm&check_evl_not_0&check_vstart_sle_evl;
         end
       `endif
     endcase

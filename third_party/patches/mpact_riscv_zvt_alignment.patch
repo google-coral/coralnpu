@@ -347,7 +347,7 @@ index 9a7965b..f7fa184 100644
  }
  
  // Number of kTile-subset elements processed: min(vl, EFFECTIVE_TILE_EDGE) for
-@@ -271,6 +355,11 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
+@@ -271,9 +355,17 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;
    auto* vector_state = matrix_state->riscv_state()->rv_vector();
@@ -356,10 +356,16 @@ index 9a7965b..f7fa184 100644
 +    return;
 +  }
 +  vector_state->MarkDirty();
++  const int kVstart = vector_state->vstart();
++  vector_state->clear_vstart();
    const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 0));
    const int kSewBytes = vector_state->selected_element_width();
    const int kTileElementWidth = kSewBytes * 8;
-@@ -305,6 +394,11 @@ void RiscVZvtVtmvTv(const Instruction* inst) {
+   const int kCount =
+       TileSubsetCount(matrix_state, vector_state, kTileElementWidth);
++  if (kVstart >= kCount) return;
+   const int kElementsPerVector =
+@@ -305,13 +397,21 @@ void RiscVZvtVtmvTv(const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;
    auto* vector_state = matrix_state->riscv_state()->rv_vector();
@@ -368,10 +374,21 @@ index 9a7965b..f7fa184 100644
 +    return;
 +  }
 +  matrix_state->MarkDirty();
++  const int kVstart = vector_state->vstart();
++  vector_state->clear_vstart();
    auto* vs = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
    const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));
    const int kSewBytes = vector_state->selected_element_width();
-@@ -335,6 +429,12 @@ void RiscVZvtVtle(int eew_bits, const Instruction* inst) {
+   const int kTileElementWidth = kSewBytes * 8;
+   const int kCount =
+       TileSubsetCount(matrix_state, vector_state, kTileElementWidth);
++  if (kVstart >= kCount) return;
+   const int kElementsPerVector =
+       vector_state->vector_register_byte_length() / kSewBytes;
+-  for (int kElem = 0; kElem < kCount; kElem++) {
++  for (int kElem = kVstart; kElem < kCount; kElem++) {
+     const int kReg = kElem / kElementsPerVector;
+@@ -335,14 +435,25 @@ void RiscVZvtVtle(int eew_bits, const Instruction* inst) {
    auto* matrix_state = *m_result;
    auto* state = matrix_state->riscv_state();
    auto* vector_state = state->rv_vector();
@@ -381,10 +398,27 @@ index 9a7965b..f7fa184 100644
 +    return;
 +  }
 +  matrix_state->MarkDirty();
++  const int kVstart = vector_state->vstart();
++  vector_state->clear_vstart();
    const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);       // rs1
    const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));  // rs2
    const int kElementSize = eew_bits / 8;
-@@ -359,6 +459,12 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+   const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
+-  DataBuffer* db = matrix_state->GetScratchDb(kCount * kElementSize);
+-  state->memory()->Load(kBase, db, nullptr, nullptr);
++  if (kVstart >= kCount) return;
++  const int kActiveCount = kCount - kVstart;
++  DataBuffer* db = matrix_state->GetScratchDb(kActiveCount * kElementSize);
++  state->memory()->Load(kBase + static_cast<uint64_t>(kVstart) * kElementSize,
++                        db, nullptr, nullptr);
+   absl::Span<uint8_t> bytes = db->Get<uint8_t>();
+-  for (int kE = 0; kE < kCount; kE++) {
++  for (int kE = kVstart; kE < kCount; kE++) {
+     uint64_t kVal = 0;
+-    std::memcpy(&kVal, &bytes[kE * kElementSize], kElementSize);
++    std::memcpy(&kVal, &bytes[(kE - kVstart) * kElementSize], kElementSize);
+     if (kTss.pattern == kTssPatternCol) {
+@@ -359,18 +470,29 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
    auto* matrix_state = *m_result;
    auto* state = matrix_state->riscv_state();
    auto* vector_state = state->rv_vector();
@@ -394,9 +428,30 @@ index 9a7965b..f7fa184 100644
 +    return;
 +  }
 +  vector_state->MarkDirty();
++  const int kVstart = vector_state->vstart();
++  vector_state->clear_vstart();
    const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);       // rs1
    const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));  // rs2
    const int kElementSize = eew_bits / 8;
+   const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
+-  DataBuffer* db = matrix_state->GetScratchDb(kCount * kElementSize);
++  if (kVstart >= kCount) return;
++  const int kActiveCount = kCount - kVstart;
++  DataBuffer* db = matrix_state->GetScratchDb(kActiveCount * kElementSize);
+   absl::Span<uint8_t> bytes = db->Get<uint8_t>();
+-  for (int kE = 0; kE < kCount; kE++) {
++  for (int kE = kVstart; kE < kCount; kE++) {
+     const uint64_t kVal =
+         (kTss.pattern == kTssPatternCol)
+             ? LoadTileBits(matrix_state, kTss.kTile, kE, kTss.index, eew_bits)
+             : LoadTileBits(matrix_state, kTss.kTile, kTss.index, kE, eew_bits);
+-    std::memcpy(&bytes[kE * kElementSize], &kVal, kElementSize);
++    std::memcpy(&bytes[(kE - kVstart) * kElementSize], &kVal, kElementSize);
+   }
+-  state->memory()->Store(kBase, db);
++  state->memory()->Store(kBase + static_cast<uint64_t>(kVstart) * kElementSize,
++                         db);
+ }
 @@ -382,7 +488,21 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
  void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
    auto m_result = GetMatrixState(inst);

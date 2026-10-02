@@ -51,7 +51,6 @@ module rvv_backend_decode_unit_ari
   logic   [$clog2(`TE):0]         csr_tm;
   logic   [$clog2(`TE):0]         csr_tn;
   logic   [2:0]                   csr_tk;
-  TSS_t                           tss;
 `endif  
   EMUL_e                          emul_vd;          
   EMUL_e                          emul_vs2;          
@@ -132,9 +131,6 @@ module rvv_backend_decode_unit_ari
   assign csr_tm         = inst_valid ? inst.arch_state.tm : 'b0;
   assign csr_tn         = csr_vl[$clog2(`TE):0];
   assign csr_tk         = inst_valid ? inst.arch_state.tk : 'b0;
-  assign tss.tile       = rs1[30:27];
-  assign tss.pattern    = rs1[24];
-  assign tss.index      = rs1[$clog2(`TE)-1:0];
 `endif
 
   always_comb begin
@@ -3618,7 +3614,7 @@ module rvv_backend_decode_unit_ari
 
         `ifdef ZVT_ON
           VCOMPRESS_VTMVTV: begin
-            check_special = inst_vm&(inst_vd==5'b00000)&check_tn&(csr_vstart<=(`VSTART_WIDTH)'(tss.index));
+            check_special = inst_vm&(inst_vd==5'b00000)&check_tn&check_vstart_sle_vl;
           end
         `endif
         endcase

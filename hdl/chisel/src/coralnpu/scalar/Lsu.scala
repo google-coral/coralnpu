@@ -1984,12 +1984,18 @@ class LsuV3(p: Parameters) extends Lsu(p) {
   }
 
   // Prepare and align instructions for the queue.
-  val ops = (0 until p.instructionLanes).map(i =>
+  val ops = (0 until p.instructionLanes).map { i =>
+    val uop        = LsuUOp(p, i, io.req(i).bits, io.busPort, io.busPort_flt, io.rvvState)
+    val isTileNoop = if (p.enableVme) {
+      LsuOp.isTile(io.req(i).bits.op) && (uop.vstart.get >= uop.vl.get)
+    } else {
+      false.B
+    }
     MakeValid(
-      io.req(i).fire && (io.req(i).bits.op =/= LsuOp.FENCEI),
-      LsuUOp(p, i, io.req(i).bits, io.busPort, io.busPort_flt, io.rvvState)
+      io.req(i).fire && (io.req(i).bits.op =/= LsuOp.FENCEI) && !isTileNoop,
+      uop
     )
-  )
+  }
   val alignedOps = Aligner(ops)
 
   rs.io.enqValid := PopCount(alignedOps.map(_.valid))

@@ -520,6 +520,78 @@ VME_SUBTEST(test_vtse32_tn8) {
       : "vl", "vtype");
 }
 
+// Case 7: Tile load/store with vl == 0 and vstart == 0 (vl <= vstart).
+VME_SUBTEST(test_vtle32_vtse32_vl0) {
+  uint32_t mtype   = (16 << 10) | 3;         // tm=16, sew=e8, lmul=m1
+  uint32_t vtype   = (0xc0) | (0 << 3) | 0;  // e8, m1, ta, ma
+  uint32_t sixteen = 16;
+  uint32_t tss     = 0;  // Row access, tile 0, row 0
+  asm volatile(
+      ".insn r 0b1010111, 0b111, 0b1000001, x0, %[mtype], %[vtype] \n"    // msetmtype
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[sixteen], x0 \n"        // msettn (vl=16)
+      ".insn r 0b0000111, 0b111, 0b0101001, zero, %[in_buf], %[tss] \n"   // vtle32
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, x0, x0 \n"                // msettn (vl=0)
+      ".insn r 0b0000111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtle32 (no-op)
+      ".insn r 0b0100111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtse32 (no-op)
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[sixteen], x0 \n"        // msettn (vl=16)
+      ".insn r 0b0100111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtse32
+      : "+m"(*(int32_t(*)[256])out_buf)
+      : [mtype] "r"(mtype), [vtype] "r"(vtype), [sixteen] "r"(sixteen), [in_buf] "r"(in_buf),
+        [out_buf] "r"(out_buf), [tss] "r"(tss), "m"(*(const int32_t(*)[256])in_buf)
+      : "vl", "vtype");
+}
+
+// Case 8: Tile load/store with vl == vstart > 0 (vl=4, vstart=4).
+VME_SUBTEST(test_vtle32_vtse32_vl_eq_vstart) {
+  uint32_t mtype   = (16 << 10) | 3;         // tm=16, sew=e8, lmul=m1
+  uint32_t vtype   = (0xc0) | (0 << 3) | 0;  // e8, m1, ta, ma
+  uint32_t sixteen = 16;
+  uint32_t four    = 4;
+  uint32_t tss     = 0;  // Row access, tile 0, row 0
+  asm volatile(
+      ".insn r 0b1010111, 0b111, 0b1000001, x0, %[mtype], %[vtype] \n"    // msetmtype
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[sixteen], x0 \n"        // msettn (vl=16)
+      ".insn r 0b0000111, 0b111, 0b0101001, zero, %[in_buf], %[tss] \n"   // vtle32
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[four], x0 \n"           // msettn (vl=4)
+      "csrw vstart, %[four] \n"                                           // vstart=4
+      ".insn r 0b0000111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtle32 (no-op)
+      "csrw vstart, %[four] \n"                                           // vstart=4
+      ".insn r 0b0100111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtse32 (no-op)
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[sixteen], x0 \n"        // msettn (vl=16)
+      ".insn r 0b0100111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtse32
+      : "+m"(*(int32_t(*)[256])out_buf)
+      : [mtype] "r"(mtype), [vtype] "r"(vtype), [sixteen] "r"(sixteen), [four] "r"(four),
+        [in_buf] "r"(in_buf), [out_buf] "r"(out_buf), [tss] "r"(tss),
+        "m"(*(const int32_t(*)[256])in_buf)
+      : "vl", "vtype");
+}
+
+// Case 9: Tile load/store with vl < vstart (vl=4, vstart=8).
+VME_SUBTEST(test_vtle32_vtse32_vl_lt_vstart) {
+  uint32_t mtype   = (16 << 10) | 3;         // tm=16, sew=e8, lmul=m1
+  uint32_t vtype   = (0xc0) | (0 << 3) | 0;  // e8, m1, ta, ma
+  uint32_t sixteen = 16;
+  uint32_t four    = 4;
+  uint32_t eight   = 8;
+  uint32_t tss     = 0;  // Row access, tile 0, row 0
+  asm volatile(
+      ".insn r 0b1010111, 0b111, 0b1000001, x0, %[mtype], %[vtype] \n"    // msetmtype
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[sixteen], x0 \n"        // msettn (vl=16)
+      ".insn r 0b0000111, 0b111, 0b0101001, zero, %[in_buf], %[tss] \n"   // vtle32
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[four], x0 \n"           // msettn (vl=4)
+      "csrw vstart, %[eight] \n"                                          // vstart=8
+      ".insn r 0b0000111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtle32 (no-op)
+      "csrw vstart, %[eight] \n"                                          // vstart=8
+      ".insn r 0b0100111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtse32 (no-op)
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[sixteen], x0 \n"        // msettn (vl=16)
+      ".insn r 0b0100111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtse32
+      : "+m"(*(int32_t(*)[256])out_buf)
+      : [mtype] "r"(mtype), [vtype] "r"(vtype), [sixteen] "r"(sixteen), [four] "r"(four),
+        [eight] "r"(eight), [in_buf] "r"(in_buf), [out_buf] "r"(out_buf), [tss] "r"(tss),
+        "m"(*(const int32_t(*)[256])in_buf)
+      : "vl", "vtype");
+}
+
 volatile test_func_t test_fn __attribute__((section(".data"))) = nullptr;
 
 static void run_and_verify_out_buf(test_func_t fn) {

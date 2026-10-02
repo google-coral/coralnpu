@@ -532,6 +532,17 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         .get(pIdx) := Mux(validBufferEntry, nextTileEntry, tileWriteAccumulator.get(pIdx))
     }
 
+    val tileDe2RtMatch = if (p.enableVme) {
+      io.writeDataVector
+        .map(y =>
+          y.map(x => x.valid && x.bits.last_uop_valid && (x.bits.rob_tag === pIdx))
+            .reduce(_ | _)
+        )
+        .getOrElse(false.B)
+    } else {
+      false.B
+    }
+
     val tileReady = if (p.enableVme) {
       val tilePort     = io.writeDataTile.get
       val tileTagMatch =
@@ -541,7 +552,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       } else {
         false.B
       }
-      tileTagMatch || tileAcc
+      tileTagMatch || tileDe2RtMatch || tileAcc
     } else {
       true.B
     }
@@ -549,9 +560,12 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     // If the entry is active and its data dependency is met (or it has no dependency)...
     // Special care here for vector, as multiple instructions are allowed to be dispatched for the same destination register.
     // This differs from how the scalar/float scoreboards restrict dispatch.
+    val storeReady =
+      (storeComplete.valid && storeComplete.bits === bufferEntry.addr) ||
+        (bufferEntry.isVector && tileDe2RtMatch)
     val dataReady = (scalarWriteIdxMap.reduce(_ | _) || floatWriteIdxMap.reduce(
       _ | _
-    ) || vectorReady || nonWritingInstr || (bufferEntry.isTile && tileReady) || (storeInstr && storeComplete.valid && storeComplete.bits === bufferEntry.addr))
+    ) || vectorReady || nonWritingInstr || (bufferEntry.isTile && tileReady) || (storeInstr && storeReady))
     val isControlFlow = bufferEntry.isControlFlow
     val isBranch      = bufferEntry.isBranch
     // For the last entry in the buffer, we can't see the next instruction yet (it hasn't been enqueued or wrapped visibly).

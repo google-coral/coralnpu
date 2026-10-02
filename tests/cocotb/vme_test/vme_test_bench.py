@@ -647,6 +647,18 @@ async def vme_load_store_test(dut):
             "dtype": np.int32,
             "vl": 8
         },
+        {
+            "name": "test_vtle32_vtse32_vl0",
+            "dtype": np.int32,
+        },
+        {
+            "name": "test_vtle32_vtse32_vl_eq_vstart",
+            "dtype": np.int32,
+        },
+        {
+            "name": "test_vtle32_vtse32_vl_lt_vstart",
+            "dtype": np.int32,
+        },
     ]
 
     test_names = [tc["name"] for tc in test_cases]
