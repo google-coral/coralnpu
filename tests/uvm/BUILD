@@ -180,6 +180,7 @@ verilator_model(
     ],
     hdl_toplevel = "coralnpu_tb_top",
     include_dirs = [":include_dirs"],
+    tags = ["manual"],  # Takes hours to run
     verilog_sources = [
         "//hdl/chisel/src/coralnpu:vme_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
         ":source_files",
