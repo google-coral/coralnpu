@@ -368,7 +368,7 @@ diff -Naur a/src/fpnew_fma_multi.sv b/src/fpnew_fma_multi.sv
 +  fpnew_pkg::fp_format_e [0:NUM_NORM_REGS]                   norm_pipe_dst_fmt_q;
 +  logic [0:NUM_NORM_REGS]                                    norm_pipe_eff_sub_q;
 +  logic [0:NUM_NORM_REGS]                                    norm_pipe_of_before_round_q;
-+  logic [0:NUM_NORM_REGS][3*SUPER_EXP_BITS+4:0]              norm_pipe_sum_sticky_q;
++  logic [0:NUM_NORM_REGS][2*PRECISION_BITS+2:0]              norm_pipe_sum_sticky_q;
 +  logic [0:NUM_NORM_REGS]                                    norm_pipe_res_is_spec_q;
 +  fp_t  [0:NUM_NORM_REGS]                                    norm_pipe_spec_res_q;
 +  fpnew_pkg::status_t [0:NUM_NORM_REGS]                      norm_pipe_spec_stat_q;
