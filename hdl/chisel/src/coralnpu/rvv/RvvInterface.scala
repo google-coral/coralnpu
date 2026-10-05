@@ -98,7 +98,7 @@ class RvvCoreIO(p: Parameters) extends Bundle {
 
   // Config state.
   val configState     = Output(Valid(new RvvConfigState(p)))
-  val nextConfigMtype = Option.when(p.enableVme)(Output(UInt(32.W)))
+  val nextConfigMtype = Option.when(p.enableVme)(Output(UInt(p.xlen.W)))
 
   // Async scalar regfile writes.
   val async_rd  = Decoupled(new RegfileWriteDataIO(p))
@@ -125,16 +125,16 @@ class RvvCoreIO(p: Parameters) extends Bundle {
 class Rob2Rt(p: Parameters) extends Bundle {
   val valid          = Bool()
   val w_valid        = Bool()
-  val w_index        = UInt(5.W)
+  val w_index        = UInt(p.rvvRegCountWidth.W)
   val w_data         = Option.when(p.enableVerification)(UInt(p.rvvVlen.W))
   val w_type         = UInt(2.W)                // W_DATA_TYPE_e: 0=NOWRITE, 1=VRF, 2=XRF, 3=FRF
   val vd_type        = UInt((p.rvvVlenb * 2).W) // BYTE_TYPE_t: 2 bits per byte
   val trap_flag      = Bool()
   val vector_csr     = new RvvConfigState(p)
   val vxsaturate     = UInt(p.rvvVlenb.W)
-  val uop_pc         = Option.when(p.enableVerification)(UInt(32.W))
+  val uop_pc         = Option.when(p.enableVerification)(UInt(p.programCounterBits.W))
   val last_uop_valid = Bool()
-  val rob_tag        = UInt(4.W)
+  val rob_tag        = UInt(log2Ceil(p.retirementBufferSize).W)
 }
 
 class RvvCsrIO(p: Parameters) extends Bundle {

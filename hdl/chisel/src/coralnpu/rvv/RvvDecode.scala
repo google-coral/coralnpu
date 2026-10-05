@@ -36,7 +36,7 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
   val pc      = UInt(p.programCounterBits.W)
   val opcode  = RvvCompressedOpcode()
   val bits    = UInt(25.W)
-  val rob_tag = UInt(4.W)
+  val rob_tag = UInt(log2Ceil(p.retirementBufferSize).W)
 
   def originalEncoding(): UInt = {
     val lower7bits = MuxLookup(opcode, 0.U)(

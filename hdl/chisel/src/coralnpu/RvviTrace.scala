@@ -19,6 +19,17 @@ import chisel3.util._
 
 object GenerateRvviTraceSource {
   def apply(p: Parameters): String = {
+    val insnMsb       = p.instructionBits - 1
+    val pcMsb         = p.programCounterBits - 1
+    val scalarDataMsb = (p.scalarRegCount * p.xlen) - 1
+    val scalarWbMsb   = p.scalarRegCount - 1
+    val floatDataMsb  = (p.floatRegCount * p.xlen) - 1
+    val floatWbMsb    = p.floatRegCount - 1
+    val vecDataMsb    = (p.rvvRegCount * p.rvvVlen) - 1
+    val vecWbMsb      = p.rvvRegCount - 1
+    val tileDataMsb   = (p.vmeRegCount * p.vmeTileBits) - 1
+    val tileWbMsb     = p.vmeRegCount - 1
+
     var moduleInterface = "module RvviTraceBlackBox(\n"
     moduleInterface += "  input logic clk_i,\n"
     for (i <- 0 until p.retirementLanes) {
@@ -27,35 +38,34 @@ object GenerateRvviTraceSource {
       moduleInterface +=
         "  input logic [63:0] order_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
-        "  input logic [31:0] insn_i_GENI,\n".replaceAll("GENI", i.toString)
+        s"  input logic [${insnMsb}:0] insn_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
         "  input logic trap_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
         "  input logic debug_mode_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
-        "  input logic [31:0] pc_rdata_i_GENI,\n".replaceAll("GENI", i.toString)
+        s"  input logic [${pcMsb}:0] pc_rdata_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
-        "  input logic [1023:0] x_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
+        s"  input logic [${scalarDataMsb}:0] x_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
-        "  input logic [31:0] x_wb_i_GENI,\n".replaceAll("GENI", i.toString)
+        s"  input logic [${scalarWbMsb}:0] x_wb_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
-        "  input logic [1023:0] f_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
+        s"  input logic [${floatDataMsb}:0] f_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
-        "  input logic [31:0] f_wb_i_GENI,\n".replaceAll("GENI", i.toString)
+        s"  input logic [${floatWbMsb}:0] f_wb_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
-        "  input logic [4095:0] v_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
+        s"  input logic [${vecDataMsb}:0] v_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
-        "  input logic [31:0] v_wb_i_GENI,\n".replaceAll("GENI", i.toString)
-      val tileDataMsb = (16 * ((p.vmeTe * p.vmeTe) / 16) * 128) - 1
+        s"  input logic [${vecWbMsb}:0] v_wb_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
         s"  input logic [${tileDataMsb}:0] t_wdata_i_GENI,\n".replaceAll("GENI", i.toString)
       moduleInterface +=
-        "  input logic [15:0] t_wb_i_GENI,\n".replaceAll("GENI", i.toString)
+        s"  input logic [${tileWbMsb}:0] t_wb_i_GENI,\n".replaceAll("GENI", i.toString)
       for (j <- 0 until p.retirementLanes) {
         moduleInterface +=
           "  input logic [GENSZ:0] csr_i_GENIDX,\n"
             .replaceAll("GENIDX", (i * p.retirementLanes + j).toString)
-            .replaceAll("GENSZ", (((4096 / p.retirementLanes) * 32) - 1).toString)
+            .replaceAll("GENSZ", (((4096 / p.retirementLanes) * p.xlen) - 1).toString)
       }
       moduleInterface +=
         "  input logic [4095:0] csr_wb_i_GENI,\n".replaceAll("GENI", i.toString)
@@ -66,15 +76,18 @@ object GenerateRvviTraceSource {
 
     var coreInstantiation = """
         |  rvviTrace #(
-        |    .ILEN(32),
-        |    .XLEN(32),
-        |    .FLEN(32),
-        |    .VLEN(128),
+        |    .ILEN(GEN_ILEN),
+        |    .XLEN(GEN_XLEN),
+        |    .FLEN(GEN_XLEN),
+        |    .VLEN(GEN_VLEN),
         |    .MTE(GEN_MTE),
         |    .NHART(1),
         |    .RETIRE(GEN_retirementLanes)
         |  ) rvvi();
         |"""
+      .replaceAll("GEN_ILEN", p.instructionBits.toString)
+      .replaceAll("GEN_XLEN", p.xlen.toString)
+      .replaceAll("GEN_VLEN", p.rvvVlen.toString)
       .replaceAll("GEN_MTE", p.vmeTe.toString)
       .replaceAll("GEN_retirementLanes", p.retirementLanes.toString)
       .stripMargin
@@ -152,10 +165,11 @@ object GenerateRvviTraceSource {
         "GENI",
         i.toString
       )
-      coreInstantiation += "  assign rvvi.pc_wdata[0][GENI] = 32'b0;\n".replaceAll(
-        "GENI",
-        i.toString
-      )
+      coreInstantiation += s"  assign rvvi.pc_wdata[0][GENI] = ${p.programCounterBits}'b0;\n"
+        .replaceAll(
+          "GENI",
+          i.toString
+        )
       coreInstantiation += "  assign rvvi.halt[0][GENI] = 1'b0;\n".replaceAll("GENI", i.toString)
       coreInstantiation += "  assign rvvi.ixl[0][GENI] = 2'b0;\n".replaceAll("GENI", i.toString)
       coreInstantiation += "  assign rvvi.mode[0][GENI] = 2'b0;\n".replaceAll("GENI", i.toString)
@@ -173,22 +187,22 @@ class RvviTraceBlackBox(p: Parameters)
     val clk_i        = Input(Clock())
     val valid_i      = Input(Vec(p.retirementLanes, Bool()))
     val order_i      = Input(Vec(p.retirementLanes, UInt(64.W)))
-    val insn_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
+    val insn_i       = Input(Vec(p.retirementLanes, UInt(p.instructionBits.W)))
     val trap_i       = Input(Vec(p.retirementLanes, Bool()))
     val debug_mode_i = Input(Vec(p.retirementLanes, Bool()))
-    val pc_rdata_i   = Input(Vec(p.retirementLanes, UInt(32.W)))
-    val x_wdata_i    = Input(Vec(p.retirementLanes, UInt((32 * 32).W)))
-    val x_wb_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
-    val f_wdata_i    = Input(Vec(p.retirementLanes, UInt((32 * 32).W)))
-    val f_wb_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
-    val v_wdata_i    = Input(Vec(p.retirementLanes, UInt((32 * 128).W)))
-    val v_wb_i       = Input(Vec(p.retirementLanes, UInt(32.W)))
-    val t_wdata_i = Input(Vec(p.retirementLanes, UInt((16 * ((p.vmeTe * p.vmeTe) / 16) * 128).W)))
-    val t_wb_i    = Input(Vec(p.retirementLanes, UInt(16.W)))
-    val csr_i     = Input(
+    val pc_rdata_i   = Input(Vec(p.retirementLanes, UInt(p.programCounterBits.W)))
+    val x_wdata_i    = Input(Vec(p.retirementLanes, UInt((p.scalarRegCount * p.xlen).W)))
+    val x_wb_i       = Input(Vec(p.retirementLanes, UInt(p.scalarRegCount.W)))
+    val f_wdata_i    = Input(Vec(p.retirementLanes, UInt((p.floatRegCount * p.xlen).W)))
+    val f_wb_i       = Input(Vec(p.retirementLanes, UInt(p.floatRegCount.W)))
+    val v_wdata_i    = Input(Vec(p.retirementLanes, UInt((p.rvvRegCount * p.rvvVlen).W)))
+    val v_wb_i       = Input(Vec(p.retirementLanes, UInt(p.rvvRegCount.W)))
+    val t_wdata_i    = Input(Vec(p.retirementLanes, UInt((p.vmeRegCount * p.vmeTileBits).W)))
+    val t_wb_i       = Input(Vec(p.retirementLanes, UInt(p.vmeRegCount.W)))
+    val csr_i        = Input(
       Vec(
         p.retirementLanes * p.retirementLanes,
-        UInt(((4096 / p.retirementLanes) * 32).W)
+        UInt(((4096 / p.retirementLanes) * p.xlen).W)
       )
     )
     val csr_wb_i = Input(Vec(p.retirementLanes, UInt(4096.W)))
@@ -202,16 +216,19 @@ class RvviTrace(p: Parameters) extends Module {
     val rb  = Input(new RetirementBufferDebugIO(p))
     val csr = Input(new CsrTraceIO(p))
   })
-  val x_wdata = Wire(Vec(p.retirementLanes, Vec(32, UInt(32.W))))
-  val x_wb    = Wire(Vec(p.retirementLanes, Vec(32, Bool())))
-  val f_wdata = Wire(Vec(p.retirementLanes, Vec(32, UInt(32.W))))
-  val f_wb    = Wire(Vec(p.retirementLanes, Vec(32, Bool())))
-  val v_wdata = Wire(Vec(p.retirementLanes, Vec(32, UInt(128.W))))
-  val v_wb    = Wire(Vec(p.retirementLanes, Vec(32, Bool())))
-  val t_wdata = Wire(Vec(p.retirementLanes, Vec(16, Vec((p.vmeTe * p.vmeTe) / 16, UInt(128.W)))))
-  val t_wb    = Wire(Vec(p.retirementLanes, Vec(16, Bool())))
-  val csr     = Wire(Vec(p.retirementLanes, Vec(4096, UInt(32.W))))
-  val csr_wb  = Wire(Vec(p.retirementLanes, Vec(4096, Bool())))
+  val x_wdata = Wire(Vec(p.retirementLanes, Vec(p.scalarRegCount, UInt(p.xlen.W))))
+  val x_wb    = Wire(Vec(p.retirementLanes, Vec(p.scalarRegCount, Bool())))
+  val f_wdata = Wire(Vec(p.retirementLanes, Vec(p.floatRegCount, UInt(p.xlen.W))))
+  val f_wb    = Wire(Vec(p.retirementLanes, Vec(p.floatRegCount, Bool())))
+  val v_wdata = Wire(Vec(p.retirementLanes, Vec(p.rvvRegCount, UInt(p.rvvVlen.W))))
+  val v_wb    = Wire(Vec(p.retirementLanes, Vec(p.rvvRegCount, Bool())))
+  val t_wdata =
+    Wire(
+      Vec(p.retirementLanes, Vec(p.vmeRegCount, Vec(p.vmeNumSubtiles, UInt(p.vmeSubtileBits.W))))
+    )
+  val t_wb   = Wire(Vec(p.retirementLanes, Vec(p.vmeRegCount, Bool())))
+  val csr    = Wire(Vec(p.retirementLanes, Vec(4096, UInt(p.xlen.W))))
+  val csr_wb = Wire(Vec(p.retirementLanes, Vec(4096, Bool())))
 
   val count = RegInit(0.U(64.W))
   count := count + PopCount(io.rb.inst.map(_.valid))
@@ -256,15 +273,19 @@ class RvviTrace(p: Parameters) extends Module {
 
     rvviTraceBlackBox.io.pc_rdata_i(i) := MuxOR(valid, pc_rdata)
 
-    for (j <- 0 until 32) {
+    for (j <- 0 until p.scalarRegCount) {
       val x_wb_valid = valid && (wb_idx === j.U)
       x_wdata(i)(j) := MuxOR(x_wb_valid, wdata)
       x_wb(i)(j)    := x_wb_valid
+    }
 
+    for (j <- 0 until p.floatRegCount) {
       val f_wb_valid = valid && (wb_idx === j.U + p.floatRegfileBaseAddr.U)
       f_wdata(i)(j) := MuxOR(f_wb_valid, wdata)
       f_wb(i)(j)    := f_wb_valid
+    }
 
+    for (j <- 0 until p.rvvRegCount) {
       if (p.enableRvv) {
         val vecWrites = io.rb.inst(i).bits.vecWrites.get
         val hits      = vecWrites.map(w => valid && w.valid && w.bits.idx === j.U)
@@ -282,7 +303,7 @@ class RvviTrace(p: Parameters) extends Module {
 
     if (p.enableVme) {
       val tileWrites = io.rb.inst(i).bits.tileWrites.get
-      for (j <- 0 until 16) {
+      for (j <- 0 until p.vmeRegCount) {
         val hits    = tileWrites.map(w => valid && !trap && w.valid && (w.bits.idx === j.U))
         val hit     = hits.reduce(_ | _)
         val hitData = PriorityMux(hits, tileWrites.map(_.bits.data))
@@ -290,7 +311,7 @@ class RvviTrace(p: Parameters) extends Module {
         t_wb(i)(j)    := hit
       }
     } else {
-      for (j <- 0 until 16) {
+      for (j <- 0 until p.vmeRegCount) {
         t_wdata(i)(j) := 0.U.asTypeOf(t_wdata(i)(j))
         t_wb(i)(j)    := false.B
       }

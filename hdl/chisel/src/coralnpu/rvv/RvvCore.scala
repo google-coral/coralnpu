@@ -29,6 +29,17 @@ object GenerateCoreShimSource {
     val instructionLanes   = p.instructionLanes
     val numRetireLanes     = p.rvvRetireLanes
     val vlen               = p.rvvVlen
+    val vlenMinus1         = vlen - 1
+    val vlenbMinus1        = p.rvvVlenb - 1
+    val vdTypeMsb          = p.rvvVlenb * 2 - 1
+    val vstartLen          = log2Ceil(vlen) - 1
+    val vlLen              = log2Ceil(vlen + 1) - 1
+    val rvvRegMsb          = p.rvvRegCountWidth - 1
+    val scalarRegMsb       = p.scalarRegCountWidth - 1
+    val floatRegMsb        = p.floatRegCountWidth - 1
+    val robTagMsb          = log2Ceil(p.retirementBufferSize) - 1
+    val tileIdxMsb         = p.vmeRegCountWidth - 1
+    val pcMsb              = p.programCounterBits - 1
     val xlen               = p.xlen
     val xlenMinus1         = xlen - 1
     val enableVme          = p.enableVme
@@ -44,18 +55,16 @@ object GenerateCoreShimSource {
         |    input logic vxsat,
         |    input logic [2:0] frm,
         |    input logic flush,
-        |""".stripMargin.replaceAll("VSTART_LEN", (log2Ceil(vlen) - 1).toString)
+        |""".stripMargin.replaceAll("VSTART_LEN", vstartLen.toString)
 
     // Add instruction interface inputs
     for (i <- 0 until instructionLanes) {
-      moduleInterface += """    input inst_GENI_valid,
-            |    input [XLEN_MINUS_1:0] inst_GENI_bits_pc,
-            |    input [1:0] inst_GENI_bits_opcode,
-            |    input [24:0] inst_GENI_bits_bits,
-            |    input [3:0] inst_GENI_bits_rob_tag,
+      moduleInterface += s"""    input inst_${i}_valid,
+            |    input [${pcMsb}:0] inst_${i}_bits_pc,
+            |    input [1:0] inst_${i}_bits_opcode,
+            |    input [24:0] inst_${i}_bits_bits,
+            |    input [${robTagMsb}:0] inst_${i}_bits_rob_tag,
             |""".stripMargin
-        .replaceAll("GENI", i.toString)
-        .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
     }
 
     // Add regfile read interface inputs
@@ -80,51 +89,46 @@ object GenerateCoreShimSource {
 
     // Add regfile write interface outputs
     for (i <- 0 until instructionLanes) {
-      moduleInterface += """    output rd_GENI_valid,
-            |    output [4:0] rd_GENI_bits_addr,
-            |    output [XLEN_MINUS_1:0] rd_GENI_bits_data,
+      moduleInterface += s"""    output rd_${i}_valid,
+            |    output [${scalarRegMsb}:0] rd_${i}_bits_addr,
+            |    output [${xlenMinus1}:0] rd_${i}_bits_data,
             |""".stripMargin
-        .replaceAll("GENI", i.toString)
-        .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
     }
 
-    moduleInterface += """    output async_rd_valid,
-        |    output [4:0] async_rd_bits_addr,
-        |    output [XLEN_MINUS_1:0] async_rd_bits_data,
+    moduleInterface += s"""    output async_rd_valid,
+        |    output [${scalarRegMsb}:0] async_rd_bits_addr,
+        |    output [${xlenMinus1}:0] async_rd_bits_data,
         |    input async_rd_ready,
         |    output async_frd_valid,
-        |    output [4:0] async_frd_bits_addr,
-        |    output [XLEN_MINUS_1:0] async_frd_bits_data,
+        |    output [${floatRegMsb}:0] async_frd_bits_addr,
+        |    output [${xlenMinus1}:0] async_frd_bits_data,
         |    input async_frd_ready,
-        |""".stripMargin.replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
+        |""".stripMargin
 
     // RVV to LSU
     for (i <- 0 until 2) {
-      moduleInterface += """    output rvv2lsu_GENI_valid,
-            |    output rvv2lsu_GENI_bits_idx_valid,
-            |    output [4:0] rvv2lsu_GENI_bits_idx_bits_addr,
-            |    output [VLEN-1:0] rvv2lsu_GENI_bits_idx_bits_data,
-            |    output rvv2lsu_GENI_bits_vregfile_valid,
-            |    output [4:0] rvv2lsu_GENI_bits_vregfile_bits_addr,
-            |    output [VLEN-1:0] rvv2lsu_GENI_bits_vregfile_bits_data,
-            |    output rvv2lsu_GENI_bits_mask_valid,
-            |    output [(VLEN/8)-1:0] rvv2lsu_GENI_bits_mask_bits,
-            |    input rvv2lsu_GENI_ready,
-            |""".stripMargin.replaceAll("GENI", i.toString).replaceAll("VLEN", vlen.toString)
+      moduleInterface += s"""    output rvv2lsu_${i}_valid,
+            |    output rvv2lsu_${i}_bits_idx_valid,
+            |    output [${rvvRegMsb}:0] rvv2lsu_${i}_bits_idx_bits_addr,
+            |    output [${vlenMinus1}:0] rvv2lsu_${i}_bits_idx_bits_data,
+            |    output rvv2lsu_${i}_bits_vregfile_valid,
+            |    output [${rvvRegMsb}:0] rvv2lsu_${i}_bits_vregfile_bits_addr,
+            |    output [${vlenMinus1}:0] rvv2lsu_${i}_bits_vregfile_bits_data,
+            |    output rvv2lsu_${i}_bits_mask_valid,
+            |    output [${vlenbMinus1}:0] rvv2lsu_${i}_bits_mask_bits,
+            |    input rvv2lsu_${i}_ready,
+            |""".stripMargin
     }
 
     // LSU to RVV
     for (i <- 0 until 2) {
-      moduleInterface += """    input lsu2rvv_GENI_valid,
-            |    input [4:0] lsu2rvv_GENI_bits_addr,
-            |    input [VLEN-1:0] lsu2rvv_GENI_bits_data,
-            |    input  lsu2rvv_GENI_bits_last,
-            |    input [TAIL_IDX_BITS:0] lsu2rvv_GENI_bits_ff_tail_index,
-            |    output lsu2rvv_GENI_ready,
+      moduleInterface += s"""    input lsu2rvv_${i}_valid,
+            |    input [${rvvRegMsb}:0] lsu2rvv_${i}_bits_addr,
+            |    input [${vlenMinus1}:0] lsu2rvv_${i}_bits_data,
+            |    input  lsu2rvv_${i}_bits_last,
+            |    input [${log2Ceil(p.rvvVlenb + 1) - 1}:0] lsu2rvv_${i}_bits_ff_tail_index,
+            |    output lsu2rvv_${i}_ready,
             |""".stripMargin
-        .replaceAll("GENI", i.toString)
-        .replaceAll("VLEN", vlen.toString)
-        .replaceAll("TAIL_IDX_BITS", (log2Ceil(vlen / 8 + 1) - 1).toString)
     }
 
     if (p.enableVme) {
@@ -138,17 +142,17 @@ object GenerateCoreShimSource {
     }
 
     // Add CSR output
-    moduleInterface += """    output vcsr_valid,
-        |    output [VSTART_LEN:0] vcsr_vstart,
+    moduleInterface += s"""    output vcsr_valid,
+        |    output [${vstartLen}:0] vcsr_vstart,
         |    output [1:0] vcsr_xrm,
         |    output vcsr_vxsat,
         |    input vcsr_ready,
-        |""".stripMargin.replaceAll("VSTART_LEN", (log2Ceil(vlen) - 1).toString)
+        |""".stripMargin
 
     // Add RVV Config state output
-    moduleInterface += """    output configStateValid,
-        |    output [7:0] configVl,
-        |    output [VSTART_LEN:0] configVstart,
+    moduleInterface += s"""    output configStateValid,
+        |    output [${vlLen}:0] configVl,
+        |    output [${vstartLen}:0] configVstart,
         |    output configMa,
         |    output configTa,
         |    output [1:0] configXrm,
@@ -157,73 +161,59 @@ object GenerateCoreShimSource {
         |    output [2:0] configLmulOrig,
         |    output configVill,
         |    output configAltfmt,
-        |    output [31:0] configMtype,
-        |    output [31:0] nextConfigMtype,
+        |    output [${xlenMinus1}:0] configMtype,
+        |    output [${xlenMinus1}:0] nextConfigMtype,
         |    output logic rvv_idle,
         |    output logic [3:0] queue_capacity,
-        |""".stripMargin.replaceAll("VSTART_LEN", (log2Ceil(vlen) - 1).toString)
+        |""".stripMargin
 
     // Add rd_rob2rt_o interface outputs
     for (i <- 0 until numRetireLanes) {
-      moduleInterface += """
-            |    output rd_rob2rt_o_GENI_valid,
-            |    output rd_rob2rt_o_GENI_w_valid,
-            |    output [4:0] rd_rob2rt_o_GENI_w_index,
-            |""".stripMargin.replaceAll("GENI", i.toString)
-      if (enableVerification) {
-        moduleInterface += "    output [127:0] rd_rob2rt_o_GENI_w_data,\n".replaceAll(
-          "GENI",
-          i.toString
-        )
-      }
-      moduleInterface += """    output [1:0] rd_rob2rt_o_GENI_w_type,
-            |    output [31:0] rd_rob2rt_o_GENI_vd_type,
-            |    output rd_rob2rt_o_GENI_trap_flag,
-            |    output [7:0] rd_rob2rt_o_GENI_vector_csr_vl,
-            |    output [VSTART_LEN:0] rd_rob2rt_o_GENI_vector_csr_vstart,
-            |    output rd_rob2rt_o_GENI_vector_csr_ma,
-            |    output rd_rob2rt_o_GENI_vector_csr_ta,
-            |    output [1:0] rd_rob2rt_o_GENI_vector_csr_xrm,
-            |    output [2:0] rd_rob2rt_o_GENI_vector_csr_sew,
-            |    output [2:0] rd_rob2rt_o_GENI_vector_csr_lmul,
-            |    output [2:0] rd_rob2rt_o_GENI_vector_csr_lmul_orig,
-            |    output rd_rob2rt_o_GENI_vector_csr_vill,
+      moduleInterface += s"""
+            |    output rd_rob2rt_o_${i}_valid,
+            |    output rd_rob2rt_o_${i}_w_valid,
+            |    output [${rvvRegMsb}:0] rd_rob2rt_o_${i}_w_index,
             |""".stripMargin
-        .replaceAll("GENI", i.toString)
-        .replaceAll("VSTART_LEN", (log2Ceil(vlen) - 1).toString)
-      if (p.enableVme) {
-        moduleInterface += """    output [31:0] rd_rob2rt_o_GENI_vector_csr_mtype,
-            |    output [1:0]  rd_rob2rt_o_GENI_vector_csr_mtwiden,
-            |    output [13:0] rd_rob2rt_o_GENI_vector_csr_tm,
-            |    output [2:0]  rd_rob2rt_o_GENI_vector_csr_tk,
-            |    output rd_rob2rt_o_GENI_vector_csr_altfmt,
-            |""".stripMargin.replaceAll("GENI", i.toString)
-      }
-      moduleInterface += "    output [15:0] rd_rob2rt_o_GENI_vxsaturate,\n".replaceAll(
-        "GENI",
-        i.toString
-      )
       if (enableVerification) {
-        moduleInterface += "    output [31:0] rd_rob2rt_o_GENI_uop_pc,\n".replaceAll(
-          "GENI",
-          i.toString
-        )
+        moduleInterface += s"    output [${vlenMinus1}:0] rd_rob2rt_o_${i}_w_data,\n"
       }
-      moduleInterface += """    output rd_rob2rt_o_GENI_last_uop_valid,
-            |    output [3:0]  rd_rob2rt_o_GENI_rob_tag,
-            |""".stripMargin.replaceAll("GENI", i.toString)
+      moduleInterface += s"""    output [1:0] rd_rob2rt_o_${i}_w_type,
+            |    output [${vdTypeMsb}:0] rd_rob2rt_o_${i}_vd_type,
+            |    output rd_rob2rt_o_${i}_trap_flag,
+            |    output [${vlLen}:0] rd_rob2rt_o_${i}_vector_csr_vl,
+            |    output [${vstartLen}:0] rd_rob2rt_o_${i}_vector_csr_vstart,
+            |    output rd_rob2rt_o_${i}_vector_csr_ma,
+            |    output rd_rob2rt_o_${i}_vector_csr_ta,
+            |    output [1:0] rd_rob2rt_o_${i}_vector_csr_xrm,
+            |    output [2:0] rd_rob2rt_o_${i}_vector_csr_sew,
+            |    output [2:0] rd_rob2rt_o_${i}_vector_csr_lmul,
+            |    output [2:0] rd_rob2rt_o_${i}_vector_csr_lmul_orig,
+            |    output rd_rob2rt_o_${i}_vector_csr_vill,
+            |""".stripMargin
+      if (p.enableVme) {
+        moduleInterface += s"""    output [${xlenMinus1}:0] rd_rob2rt_o_${i}_vector_csr_mtype,
+            |    output [1:0]  rd_rob2rt_o_${i}_vector_csr_mtwiden,
+            |    output [13:0] rd_rob2rt_o_${i}_vector_csr_tm,
+            |    output [2:0]  rd_rob2rt_o_${i}_vector_csr_tk,
+            |    output rd_rob2rt_o_${i}_vector_csr_altfmt,
+            |""".stripMargin
+      }
+      moduleInterface += s"    output [${vlenbMinus1}:0] rd_rob2rt_o_${i}_vxsaturate,\n"
+      if (enableVerification) {
+        moduleInterface += s"    output [${pcMsb}:0] rd_rob2rt_o_${i}_uop_pc,\n"
+      }
+      moduleInterface += s"""    output rd_rob2rt_o_${i}_last_uop_valid,
+            |    output [${robTagMsb}:0]  rd_rob2rt_o_${i}_rob_tag,
+            |""".stripMargin
     }
 
     // Add trap interface outputs
-    moduleInterface += """
+    moduleInterface += s"""
         |    output trap_valid,
-        |    output [XLEN_MINUS_1:0] trap_bits_pc,
+        |    output [${pcMsb}:0] trap_bits_pc,
         |    output [1:0] trap_bits_opcode,
         |    output [24:0] trap_bits_bits,
-        |    output [3:0] trap_bits_rob_tag,""".stripMargin.replaceAll(
-      "XLEN_MINUS_1",
-      xlenMinus1.toString
-    )
+        |    output [${robTagMsb}:0] trap_bits_rob_tag,""".stripMargin
 
     // Add vxsat and fflags backend update outputs
     moduleInterface += """
@@ -233,23 +223,23 @@ object GenerateCoreShimSource {
         |    output [4:0] wr_fflags_o,""".stripMargin
 
     if (p.enableVme) {
+      val tileMaskMsb = p.vmeMaxTileWrites - 1
       moduleInterface +=
-        """
-          |    output vmeRt_valid,
-          |    output [3:0] vmeRt_rob_tag,
-          |    output vmeRt_is_store,
-          |    output [3:0] vmeRt_mask,
-          |    output [3:0] vmeRt_idx,""".stripMargin
+        s"""
+           |    output vmeRt_valid,
+           |    output [${robTagMsb}:0] vmeRt_rob_tag,
+           |    output vmeRt_is_store,
+           |    output [${tileMaskMsb}:0] vmeRt_mask,
+           |    output [${tileIdxMsb}:0] vmeRt_idx,""".stripMargin
       if (enableVerification) {
-        val subtiles = (p.vmeTe * p.vmeTe) / 16
-        val tileBits = subtiles * 128
+        val tileBits = p.vmeTileBits
         moduleInterface +=
           s"""
              |    output [${tileBits - 1}:0] vmeRt_data_0,
              |    output [${tileBits - 1}:0] vmeRt_data_1,
              |    output [${tileBits - 1}:0] vmeRt_data_2,
              |    output [${tileBits - 1}:0] vmeRt_data_3,
-             |    output [31:0] vmeRt_pc,""".stripMargin
+             |    output [${pcMsb}:0] vmeRt_pc,""".stripMargin
       }
     }
 
@@ -331,16 +321,16 @@ object GenerateCoreShimSource {
     }
 
     // RVV2LSU
-    coreInstantiation += """  logic [2-1:0] uop_lsu_valid_rvv2lsu;
+    coreInstantiation += s"""  logic [2-1:0] uop_lsu_valid_rvv2lsu;
       |  logic [2-1:0] uop_lsu_idx_valid_rvv2lsu;
-      |  logic [2-1:0][4:0] uop_lsu_idx_addr_rvv2lsu;
-      |  logic [2-1:0][VLEN-1:0] uop_lsu_idx_data_rvv2lsu;
+      |  logic [2-1:0][${rvvRegMsb}:0] uop_lsu_idx_addr_rvv2lsu;
+      |  logic [2-1:0][${vlenMinus1}:0] uop_lsu_idx_data_rvv2lsu;
       |  logic [2-1:0] uop_lsu_vregfile_valid_rvv2lsu;
-      |  logic [2-1:0][4:0] uop_lsu_vregfile_addr_rvv2lsu;
-      |  logic [2-1:0][VLEN-1:0] uop_lsu_vregfile_data_rvv2lsu;
+      |  logic [2-1:0][${rvvRegMsb}:0] uop_lsu_vregfile_addr_rvv2lsu;
+      |  logic [2-1:0][${vlenMinus1}:0] uop_lsu_vregfile_data_rvv2lsu;
       |  logic [2-1:0] uop_lsu_v0_valid_rvv2lsu;
-      |  logic [2-1:0][(VLEN/8)-1:0] uop_lsu_v0_data_rvv2lsu;
-      |  logic [2-1:0] uop_lsu_ready_lsu2rvv;""".stripMargin.replaceAll("VLEN", vlen.toString)
+      |  logic [2-1:0][${vlenbMinus1}:0] uop_lsu_v0_data_rvv2lsu;
+      |  logic [2-1:0] uop_lsu_ready_lsu2rvv;""".stripMargin
     for (i <- 0 until 2) {
       coreInstantiation += """
           |  assign rvv2lsu_GENI_valid = uop_lsu_valid_rvv2lsu[GENI];
@@ -357,14 +347,12 @@ object GenerateCoreShimSource {
     }
 
     // LSU2RVV
-    coreInstantiation += """  logic [2-1:0] uop_lsu_valid_lsu2rvv;
-      |  logic  [2-1:0][4:0]  uop_lsu_addr_lsu2rvv;
-      |  logic  [2-1:0][VLEN-1:0] uop_lsu_wdata_lsu2rvv;
+    coreInstantiation += s"""  logic [2-1:0] uop_lsu_valid_lsu2rvv;
+      |  logic  [2-1:0][${rvvRegMsb}:0]  uop_lsu_addr_lsu2rvv;
+      |  logic  [2-1:0][${vlenMinus1}:0] uop_lsu_wdata_lsu2rvv;
       |  logic  [2-1:0] uop_lsu_last_lsu2rvv;
-      |  logic  [2-1:0][TAIL_IDX_BITS:0] uop_lsu_ff_tail_index_lsu2rvv;
+      |  logic  [2-1:0][${log2Ceil(p.rvvVlenb + 1) - 1}:0] uop_lsu_ff_tail_index_lsu2rvv;
       |  logic  [2-1:0] uop_lsu_ready_rvv2lsu;""".stripMargin
-      .replaceAll("VLEN", vlen.toString)
-      .replaceAll("TAIL_IDX_BITS", (log2Ceil(vlen / 8 + 1) - 1).toString)
     for (i <- 0 until 2) {
       coreInstantiation += """
           |  assign uop_lsu_valid_lsu2rvv[GENI] = lsu2rvv_GENI_valid;
@@ -387,12 +375,10 @@ object GenerateCoreShimSource {
     }
 
     // Scalar regfile write temp output
-    coreInstantiation += """  logic [GENN-1:0] reg_write_valid;
-        |  logic [GENN-1:0][4:0] reg_write_addr;
-        |  logic [GENN-1:0][XLEN_MINUS_1:0] reg_write_data;
+    coreInstantiation += s"""  logic [${instructionLanes}-1:0] reg_write_valid;
+        |  logic [${instructionLanes}-1:0][${scalarRegMsb}:0] reg_write_addr;
+        |  logic [${instructionLanes}-1:0][${xlenMinus1}:0] reg_write_data;
         |""".stripMargin
-      .replaceAll("GENN", instructionLanes.toString)
-      .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
 
     // VCSR temp output
     coreInstantiation += """  RVVConfigState vector_csr;
@@ -499,20 +485,20 @@ object GenerateCoreShimSource {
 
     if (p.enableVme) {
       coreInstantiation +=
-        """`ifdef ZVT_ON
-          |  assign vmeRt_valid    = vmeRtVld_o;
-          |  assign vmeRt_rob_tag  = vmeRt_o.rob_tag;
-          |  assign vmeRt_is_store = vmeRt_o.isStore;
-          |  assign vmeRt_mask     = vmeRt_o.mtIdxVld;
-          |  assign vmeRt_idx      = vmeRt_o.mtIdx;
-          |`else
-          |  assign vmeRt_valid    = 1'b0;
-          |  assign vmeRt_rob_tag  = 4'b0;
-          |  assign vmeRt_is_store = 1'b0;
-          |  assign vmeRt_mask     = 4'b0;
-          |  assign vmeRt_idx      = 4'b0;
-          |`endif
-          |""".stripMargin
+        s"""`ifdef ZVT_ON
+           |  assign vmeRt_valid    = vmeRtVld_o;
+           |  assign vmeRt_rob_tag  = vmeRt_o.rob_tag;
+           |  assign vmeRt_is_store = vmeRt_o.isStore;
+           |  assign vmeRt_mask     = vmeRt_o.mtIdxVld;
+           |  assign vmeRt_idx      = vmeRt_o.mtIdx;
+           |`else
+           |  assign vmeRt_valid    = 1'b0;
+           |  assign vmeRt_rob_tag  = '0;
+           |  assign vmeRt_is_store = 1'b0;
+           |  assign vmeRt_mask     = ${p.vmeMaxTileWrites}'b0;
+           |  assign vmeRt_idx      = '0;
+           |`endif
+           |""".stripMargin
       if (enableVerification) {
         coreInstantiation +=
           """`ifdef ZVT_ON
@@ -530,14 +516,14 @@ object GenerateCoreShimSource {
             |`ifdef TB_SUPPORT
             |  assign vmeRt_pc       = vmeRt_o.inst_pc;
             |`else
-            |  assign vmeRt_pc       = 32'b0;
+            |  assign vmeRt_pc       = '0;
             |`endif
             |`else
             |  assign vmeRt_data_0   = '0;
             |  assign vmeRt_data_1   = '0;
             |  assign vmeRt_data_2   = '0;
             |  assign vmeRt_data_3   = '0;
-            |  assign vmeRt_pc       = 32'b0;
+            |  assign vmeRt_pc       = '0;
             |`endif
             |""".stripMargin
       }
@@ -700,7 +686,7 @@ class RvvCoreWrapper(p: Parameters)
     val trap        = Output(Valid(new RvvCompressedInstruction(p)))
 
     val vcsr_valid  = Output(Bool())
-    val vcsr_vstart = Output(UInt(7.W))
+    val vcsr_vstart = Output(UInt(log2Ceil(p.rvvVlen).W))
     val vcsr_xrm    = Output(UInt(2.W))
     val vcsr_vxsat  = Output(Bool())
     val vcsr_ready  = Input(Bool())
@@ -722,8 +708,8 @@ class RvvCoreWrapper(p: Parameters)
 
     // Config state
     val configStateValid = Output(Bool())
-    val configVl         = Output(UInt(8.W))
-    val configVstart     = Output(UInt(7.W))
+    val configVl         = Output(UInt(log2Ceil(p.rvvVlen + 1).W))
+    val configVstart     = Output(UInt(log2Ceil(p.rvvVlen).W))
     val configMa         = Output(Bool())
     val configTa         = Output(Bool())
     val configXrm        = Output(UInt(2.W))
@@ -735,30 +721,27 @@ class RvvCoreWrapper(p: Parameters)
 
     val configVill      = Output(Bool())
     val configAltfmt    = Output(Bool())
-    val configMtype     = Output(UInt(32.W))
-    val nextConfigMtype = Output(UInt(32.W))
+    val configMtype     = Output(UInt(p.xlen.W))
+    val nextConfigMtype = Output(UInt(p.xlen.W))
     val rvv_idle        = Output(Bool())
 
     val queue_capacity = Output(UInt(4.W))
 
     val vmeRt_valid    = Option.when(p.enableVme)(Output(Bool()))
-    val vmeRt_rob_tag  = Option.when(p.enableVme)(Output(UInt(4.W)))
+    val vmeRt_rob_tag  = Option.when(p.enableVme)(Output(UInt(log2Ceil(p.retirementBufferSize).W)))
     val vmeRt_is_store = Option.when(p.enableVme)(Output(Bool()))
-    val vmeRt_mask     = Option.when(p.enableVme)(Output(UInt(4.W)))
-    val vmeRt_idx      = Option.when(p.enableVme)(Output(UInt(4.W)))
-    val vmeRt_data_0   = Option.when(p.enableVme && p.enableVerification)(
-      Output(UInt((((p.vmeTe * p.vmeTe) / 16) * 128).W))
-    )
-    val vmeRt_data_1 = Option.when(p.enableVme && p.enableVerification)(
-      Output(UInt((((p.vmeTe * p.vmeTe) / 16) * 128).W))
-    )
-    val vmeRt_data_2 = Option.when(p.enableVme && p.enableVerification)(
-      Output(UInt((((p.vmeTe * p.vmeTe) / 16) * 128).W))
-    )
-    val vmeRt_data_3 = Option.when(p.enableVme && p.enableVerification)(
-      Output(UInt((((p.vmeTe * p.vmeTe) / 16) * 128).W))
-    )
-    val vmeRt_pc = Option.when(p.enableVme && p.enableVerification)(Output(UInt(32.W)))
+    val vmeRt_mask     = Option.when(p.enableVme)(Output(UInt(p.vmeMaxTileWrites.W)))
+    val vmeRt_idx      = Option.when(p.enableVme)(Output(UInt(p.vmeRegCountWidth.W)))
+    val vmeRt_data_0   =
+      Option.when(p.enableVme && p.enableVerification)(Output(UInt(p.vmeTileBits.W)))
+    val vmeRt_data_1 =
+      Option.when(p.enableVme && p.enableVerification)(Output(UInt(p.vmeTileBits.W)))
+    val vmeRt_data_2 =
+      Option.when(p.enableVme && p.enableVerification)(Output(UInt(p.vmeTileBits.W)))
+    val vmeRt_data_3 =
+      Option.when(p.enableVme && p.enableVerification)(Output(UInt(p.vmeTileBits.W)))
+    val vmeRt_pc =
+      Option.when(p.enableVme && p.enableVerification)(Output(UInt(p.programCounterBits.W)))
   })
   dontTouch(io.rd_rob2rt_o)
 
@@ -984,16 +967,13 @@ class RvvCoreShim(p: Parameters) extends Module {
     io.vmeRt.get.bits.mask     := rvvCoreWrapper.io.vmeRt_mask.get
     io.vmeRt.get.bits.idx      := rvvCoreWrapper.io.vmeRt_idx.get
     if (p.enableVerification) {
-      val subtiles = (p.vmeTe * p.vmeTe) / 16
-      for (s <- 0 until subtiles) {
-        io.vmeRt.get.bits.data.get(0)(s) := rvvCoreWrapper.io.vmeRt_data_0
-          .get((s + 1) * 128 - 1, s * 128)
-        io.vmeRt.get.bits.data.get(1)(s) := rvvCoreWrapper.io.vmeRt_data_1
-          .get((s + 1) * 128 - 1, s * 128)
-        io.vmeRt.get.bits.data.get(2)(s) := rvvCoreWrapper.io.vmeRt_data_2
-          .get((s + 1) * 128 - 1, s * 128)
-        io.vmeRt.get.bits.data.get(3)(s) := rvvCoreWrapper.io.vmeRt_data_3
-          .get((s + 1) * 128 - 1, s * 128)
+      for (s <- 0 until p.vmeNumSubtiles) {
+        val msb = (s + 1) * p.vmeSubtileBits - 1
+        val lsb = s * p.vmeSubtileBits
+        io.vmeRt.get.bits.data.get(0)(s) := rvvCoreWrapper.io.vmeRt_data_0.get(msb, lsb)
+        io.vmeRt.get.bits.data.get(1)(s) := rvvCoreWrapper.io.vmeRt_data_1.get(msb, lsb)
+        io.vmeRt.get.bits.data.get(2)(s) := rvvCoreWrapper.io.vmeRt_data_2.get(msb, lsb)
+        io.vmeRt.get.bits.data.get(3)(s) := rvvCoreWrapper.io.vmeRt_data_3.get(msb, lsb)
       }
       io.vmeRt.get.bits.pc.foreach(_ := rvvCoreWrapper.io.vmeRt_pc.get)
     }

@@ -105,9 +105,16 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   def rvvRetireLanes: Int = instructionLanes + 2
 
   // Enable VME (Zvt) non-tile state and mset* instructions. Requires enableRvv.
-  var enableVme  = false
-  val vmeTeRatio = 8
-  def vmeTe: Int = { rvvVlen / vmeTeRatio }
+  var enableVme           = false
+  val vmeTeRatio          = 8
+  def vmeTe: Int          = { rvvVlen / vmeTeRatio }
+  val vmeSubtileBytes     = 16
+  def vmeSubtileBits: Int = { vmeSubtileBytes * 8 }
+  def vmeNumSubtiles: Int = { (vmeTe * vmeTe) / vmeSubtileBytes }
+  def vmeTileBits: Int    = { vmeNumSubtiles * vmeSubtileBits }
+  // Maximum number of destination tiles written by a single VME instruction
+  // (determined by the maximum tile widening factor mtwiden = 4).
+  val vmeMaxTileWrites = 4
 
   def useRetirementBuffer: Boolean = { enableVerification }
 
@@ -129,6 +136,8 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   val rvvRegfileBaseAddr            = 64
   val rvvRegCount                   = 32
   val rvvRegCountWidth              = log2Ceil(rvvRegCount)
+  val vmeRegCount                   = 16
+  val vmeRegCountWidth              = log2Ceil(vmeRegCount)
   val retirementBufferSize          = 16
   val retirementLanes               = 8
   def retirementBufferIdxWidth: Int = {

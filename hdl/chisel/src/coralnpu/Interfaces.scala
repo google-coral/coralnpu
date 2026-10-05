@@ -194,17 +194,19 @@ class DFlushIO(p: Parameters) extends Bundle {
 }
 
 class TileWrite(p: Parameters) extends Bundle {
-  val idx  = UInt(4.W)
-  val data = Vec((p.vmeTe * p.vmeTe) / 16, UInt(128.W))
+  val idx  = UInt(p.vmeRegCountWidth.W)
+  val data = Vec(p.vmeNumSubtiles, UInt(p.vmeSubtileBits.W))
 }
 
 class TileWriteDataIO(p: Parameters) extends Bundle {
   val rob_tag  = UInt(log2Ceil(p.retirementBufferSize).W)
   val is_store = Bool()
-  val mask     = UInt(4.W)
-  val idx      = UInt(4.W)
-  val data = Option.when(p.enableVerification)(Vec(4, Vec((p.vmeTe * p.vmeTe) / 16, UInt(128.W))))
-  val pc   = Option.when(p.enableVerification)(UInt(32.W))
+  val mask     = UInt(p.vmeMaxTileWrites.W)
+  val idx      = UInt(p.vmeRegCountWidth.W)
+  val data     = Option.when(p.enableVerification)(
+    Vec(p.vmeMaxTileWrites, Vec(p.vmeNumSubtiles, UInt(p.vmeSubtileBits.W)))
+  )
+  val pc = Option.when(p.enableVerification)(UInt(p.programCounterBits.W))
 }
 
 class RetirementBufferDebugIO(p: Parameters) extends Bundle {
@@ -220,13 +222,13 @@ class RetirementBufferDebugIO(p: Parameters) extends Bundle {
           8,
           Valid(new Bundle {
             val data = UInt(p.rvvVlen.W)
-            val idx  = UInt(log2Ceil(p.rvvRegCount).W)
+            val idx  = UInt(p.rvvRegCountWidth.W)
           })
         )
       )
       val tileWrites = Option.when(p.enableVme)(
         Vec(
-          4,
+          p.vmeMaxTileWrites,
           Valid(new TileWrite(p))
         )
       )
@@ -260,12 +262,12 @@ class DebugIO(p: Parameters) extends Bundle {
 
   val regfile = new Bundle {
     // At decode time, what registers the instructions will write to.
-    val writeAddr = Vec(p.instructionLanes, Valid(UInt(log2Ceil(p.scalarRegCount).W)))
+    val writeAddr = Vec(p.instructionLanes, Valid(UInt(p.scalarRegCountWidth.W)))
     // Writeback to the register file.
     val writeData = Vec(
       p.instructionLanes + 2,
       Valid(new Bundle {
-        val addr = UInt(log2Ceil(p.scalarRegCount).W)
+        val addr = UInt(p.scalarRegCountWidth.W)
         val data = UInt(p.xlen.W)
       })
     )
@@ -273,12 +275,12 @@ class DebugIO(p: Parameters) extends Bundle {
 
   val float = Option.when(p.enableFloat)(new Bundle {
     // Decode
-    val writeAddr = Valid(UInt(log2Ceil(p.floatRegCount).W))
+    val writeAddr = Valid(UInt(p.floatRegCountWidth.W))
     // Execute
     val writeData = Vec(
       2,
       Valid(new Bundle {
-        val addr = UInt(log2Ceil(p.floatRegCount).W)
+        val addr = UInt(p.floatRegCountWidth.W)
         val data = UInt(p.xlen.W)
       })
     )
@@ -294,23 +296,23 @@ class RegfileReadDataIO(p: Parameters) extends Bundle {
 
 class RegfileWriteAddrIO(p: Parameters) extends Bundle {
   val valid = Input(Bool())
-  val addr  = Input(UInt(log2Ceil(p.scalarRegCount).W))
+  val addr  = Input(UInt(p.scalarRegCountWidth.W))
 }
 
 class RegfileWriteDataIO(p: Parameters) extends Bundle {
-  val addr = Input(UInt(log2Ceil(p.scalarRegCount).W))
+  val addr = Input(UInt(p.scalarRegCountWidth.W))
   val data = Input(UInt(p.xlen.W))
 }
 
 class FloatRegfileWriteDataIO(p: Parameters) extends Bundle {
-  val addr = Input(UInt(log2Ceil(p.floatRegCount).W))
+  val addr = Input(UInt(p.floatRegCountWidth.W))
   val data = Input(UInt(32.W))
 }
 
 class VectorWriteDataIO(p: Parameters) extends Bundle {
-  val addr           = Input(UInt(5.W))
+  val addr           = Input(UInt(p.rvvRegCountWidth.W))
   val data           = Option.when(p.enableVerification)(Input(UInt(p.lsuDataBits.W)))
-  val uop_pc         = Option.when(p.enableVerification)(Input(UInt(32.W)))
+  val uop_pc         = Option.when(p.enableVerification)(Input(UInt(p.programCounterBits.W)))
   val last_uop_valid = Input(Bool())
   val rob_tag        = Input(UInt(log2Ceil(p.retirementBufferSize).W))
 }
@@ -331,21 +333,21 @@ object CsrOp extends ChiselEnum {
 }
 
 class CsrCmd(p: Parameters) extends Bundle {
-  val addr  = UInt(log2Ceil(p.scalarRegCount).W)
+  val addr  = UInt(p.scalarRegCountWidth.W)
   val index = UInt(12.W)
-  val rs1   = UInt(log2Ceil(p.scalarRegCount).W)
+  val rs1   = UInt(p.scalarRegCountWidth.W)
   val op    = CsrOp()
 }
 
 class FRegfileRead(p: Parameters) extends Bundle {
   val valid = Input(Bool())
-  val addr  = Input(UInt(log2Ceil(p.floatRegCount).W))
+  val addr  = Input(UInt(p.floatRegCountWidth.W))
   val data  = Output(new Fp32)
 }
 
 class FRegfileWrite(p: Parameters) extends Bundle {
   val valid = Input(Bool())
-  val addr  = Input(UInt(log2Ceil(p.floatRegCount).W))
+  val addr  = Input(UInt(p.floatRegCountWidth.W))
   val data  = Input(new Fp32)
 }
 
@@ -357,7 +359,7 @@ class CoreDMIO(p: Parameters) extends Bundle {
   val csr_rd     = Output(Valid(UInt(p.xlen.W)))
   val scalar_rd  = Flipped(Decoupled(new RegfileWriteDataIO(p)))
   val scalar_rs  = new Bundle {
-    val idx  = Input(UInt(log2Ceil(p.scalarRegCount).W))
+    val idx  = Input(UInt(p.scalarRegCountWidth.W))
     val data = Output(UInt(p.xlen.W))
   }
   val float_rd   = Option.when(p.enableFloat)(new FRegfileWrite(p))
@@ -377,6 +379,6 @@ class FaultManagerOutput(p: Parameters) extends Bundle {
   val mcause  = UInt(p.xlen.W)
   val decode  = Bool()
   val is_rvv  = Option.when(p.enableRvv)(Bool())
-  val rob_tag = Option.when(p.enableRvv)(UInt(4.W))
+  val rob_tag = Option.when(p.enableRvv)(UInt(log2Ceil(p.retirementBufferSize).W))
   val vstart  = Option.when(p.enableRvv)(Valid(UInt(log2Ceil(p.rvvVlen).W)))
 }

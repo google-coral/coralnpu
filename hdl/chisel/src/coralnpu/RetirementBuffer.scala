@@ -357,7 +357,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
 
   class VectorWrite extends Bundle {
     val data = UInt(p.rvvVlen.W)
-    val idx  = UInt(log2Ceil(p.rvvRegCount).W)
+    val idx  = UInt(p.rvvRegCountWidth.W)
   }
 
   // Maintain a re-order buffer of instruction completion result.
@@ -385,13 +385,17 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   }
 
   val tileWriteAccumulator = Option.when(!mini && p.enableVme && p.enableVerification)(
-    RegInit(VecInit.fill(bufferSize)(VecInit.fill(4)(0.U.asTypeOf(Valid(new TileWrite(p))))))
+    RegInit(
+      VecInit.fill(bufferSize)(
+        VecInit.fill(p.vmeMaxTileWrites)(0.U.asTypeOf(Valid(new TileWrite(p))))
+      )
+    )
   )
   val tileAccumulatorNext = Option.when(!mini && p.enableVme && p.enableVerification)(
-    Wire(Vec(bufferSize, Vec(4, Valid(new TileWrite(p)))))
+    Wire(Vec(bufferSize, Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p)))))
   )
   val debugTileWrites = Option.when(!mini && p.enableVme && p.enableVerification)(
-    Wire(Vec(bufferSize, Vec(4, Valid(new TileWrite(p)))))
+    Wire(Vec(bufferSize, Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p)))))
   )
   if (!mini && p.enableVme && p.enableVerification) {
     tileAccumulatorNext.get := tileWriteAccumulator.get
@@ -475,7 +479,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       for (k <- 0 until 8) {
         val hits  = Wire(Vec(p.rvvRetireLanes, Bool()))
         val datas = Wire(Vec(p.rvvRetireLanes, UInt(p.rvvVlen.W)))
-        val idxs  = Wire(Vec(p.rvvRetireLanes, UInt(5.W)))
+        val idxs  = Wire(Vec(p.rvvRetireLanes, UInt(p.rvvRegCountWidth.W)))
 
         for (j <- 0 until p.rvvRetireLanes) {
           val port = io.writeDataVector.get(j)
@@ -504,11 +508,11 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     }
 
     if (!mini && p.enableVme && p.enableVerification) {
-      val nextTileEntry = Wire(Vec(4, Valid(new TileWrite(p))))
+      val nextTileEntry = Wire(Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p))))
       val tilePort      = io.writeDataTile.get
       val tileTagMatch  =
         tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === pIdx)
-      for (k <- 0 until 4) {
+      for (k <- 0 until p.vmeMaxTileWrites) {
         val hit = tileTagMatch && tilePort.bits.mask(k)
         nextTileEntry(k).valid    := Mux(hit, true.B, tileWriteAccumulator.get(pIdx)(k).valid)
         nextTileEntry(k).bits.idx := Mux(
@@ -784,8 +788,8 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         if (!mini && p.enableVerification) {
           val tagWidth         = log2Ceil(bufferSize)
           val pIdx             = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
-          val maskedTileWrites = Wire(Vec(4, Valid(new TileWrite(p))))
-          for (k <- 0 until 4) {
+          val maskedTileWrites = Wire(Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p))))
+          for (k <- 0 until p.vmeMaxTileWrites) {
             maskedTileWrites(k).valid := debugTileWrites.get(pIdx)(k).valid && !resultUpdate(
               i
             ).bits.trap
