@@ -1,0 +1,12 @@
+# Ignore synthesis run artifacts
+work/
+results/
+reports/
+logs/
+objects/
+*.log
+*.rpt
+RvvCoreMiniAxi.sv
+flow_runs.db
+telemetry/
+results_*/

@@ -246,6 +246,37 @@ module Sram #(
   always @(posedge clock) rvalid_reg <= enable;
   assign rvalid = rvalid_reg;
 
+`elsif USE_ASAP7
+  ///////////////////////////
+  //////// ASAP7 SRAM ///////
+  ///////////////////////////
+  if (NUM_ENTRIES == 2048) begin
+    fakeram_2048x128 u_sram (
+        .rd_out(rdata),
+        .addr_in(addr),
+        .we_in(write & (|wmask)),
+        .wd_in(wdata),
+        .clk(clock),
+        .ce_in(enable)
+    );
+  end else if (NUM_ENTRIES == 512) begin
+    fakeram_512x128 u_sram (
+        .rd_out(rdata),
+        .addr_in(addr),
+        .we_in(write & (|wmask)),
+        .wd_in(wdata),
+        .clk(clock),
+        .ce_in(enable)
+    );
+  end else begin
+    initial begin
+      $error("Unsupported SRAM size for ASAP7: %d", NUM_ENTRIES);
+    end
+  end
+
+  reg rvalid_reg;
+  always @(posedge clock) rvalid_reg <= enable;
+  assign rvalid = rvalid_reg;
 
 `else
   ///////////////////////////
