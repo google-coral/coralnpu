@@ -22,7 +22,7 @@ class TCM128(
   tcmSizeBytes: Int,
   tcmSubEntryWidth: Int,
   globalBaseAddr: Int = 0,
-  availableBlockSizes: Seq[Int] = Seq(512, 128)
+  availableBlockSizes: Seq[Int] = Seq(4096, 512, 128)
 ) extends Module {
   val tcmWidth      = 128
   val tcmEntries    = tcmSizeBytes / (tcmWidth / 8)

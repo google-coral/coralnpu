@@ -42,7 +42,7 @@ module zvt_pe_mulbulk_int_lane#(
   genvar i, j, k;
 
   logic signed[WIDTH/8-1:0][8:0]               A, B;
-  logic signed[WIDTH/8-1:0][WIDTH/8-1:0][17:0] pp_raw;
+  (* use_dsp = "yes" *) logic signed[WIDTH/8-1:0][WIDTH/8-1:0][17:0] pp_raw;
   logic signed[WIDTH/8-1:0][WIDTH/8-1:0][15:0] pp;        // pp[x][y]: x->operands[0], y->operands[1]
   logic signed[WIDTH/8-1:0][WIDTH/8-1:0]       pp_enable;
   generate for (i = 0; i < WIDTH/8; i++) begin: gen_pp_a
@@ -54,7 +54,7 @@ module zvt_pe_mulbulk_int_lane#(
     
     // 2. make partial products (pp=Ai*Bj)
     for (j = 0; j < WIDTH/8; j++) begin: pp_b
-      assign pp_raw[i][j] = signed'({{9{A[i][8]}}, A[i]}) * signed'({{9{B[j][8]}}, B[j]});
+      (* use_dsp = "yes" *) assign pp_raw[i][j] = signed'({{9{A[i][8]}}, A[i]}) * signed'({{9{B[j][8]}}, B[j]});
       assign pp[i][j] = pp_raw[i][j][15:0];  // no overflow when actual input is [u]int8, guarded
       `ifdef ASSERT_ON
         wire inject_en_j = (INT_FMT_CONFIG[0] && (src_fmt == fpnew_pkg::INT8 )) ||

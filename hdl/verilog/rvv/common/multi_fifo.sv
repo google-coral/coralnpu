@@ -68,7 +68,7 @@ module multi_fifo
   output  logic [DEPTH_BITS  :0]  entry_count;  // the number of occupied entry.
 
 // ---internal signal definition--------------------------------------
-  T mem[DEPTH-1:0];
+  (* ram_style = "distributed" *) T mem[DEPTH-1:0];
 
   logic                           entry_count_en; 
   logic         [DEPTH_BITS  :0]  entry_count_now;
@@ -272,6 +272,13 @@ module multi_fifo
         end
       end
       else begin
+`ifdef FPGA_XILINX
+        always_ff @(posedge clk) begin
+          for (int j=0; j<M; j++) begin
+            if (push_seq[j]) mem[wind_wptr[j]] <= datain_seq[j];
+          end
+        end
+`else
         always_ff @(posedge clk or negedge rst_n) begin
           if (!rst_n)
             for (int j=0; j<DEPTH; j++) begin
@@ -283,6 +290,7 @@ module multi_fifo
             end
           end
         end
+`endif
       end
     else begin
       if (POP_CLEAR&FULL_PUSH) begin

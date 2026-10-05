@@ -259,6 +259,7 @@ module Sram #(
   assign rvalid = rvalid_reg;
 
 `ifdef SYNTHESIS
+  (* ram_style = "ultra" *)
   bit [127:0] mem[0:NUM_ENTRIES-1];
   reg [ADDR_WIDTH-1:0] raddr;
 

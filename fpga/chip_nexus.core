@@ -25,6 +25,7 @@ filesets:
       - rtl/chip_nexus.sv
       - rtl/clkgen_wrapper.sv
       - rtl/clkgen_xilultrascaleplus.sv
+      - rtl/fpga_axi_reg_slice.sv
     file_type: systemVerilogSource
 
   files_constraints:
@@ -38,6 +39,8 @@ filesets:
       - vivado_hook_write_bitstream_post.tcl: { file_type: user, copyto: vivado_hook_write_bitstream_post.tcl }
       - check_pin_assignments.tcl: { file_type: user, copyto: check_pin_assignments.tcl }
       - vivado_pre_opt_hooks.tcl: { file_type: user, copyto: vivado_pre_opt_hooks.tcl }
+      - vivado_post_place_hooks.tcl: { file_type: user, copyto: vivado_post_place_hooks.tcl }
+      - vivado_post_route_hooks.tcl: { file_type: user, copyto: vivado_post_route_hooks.tcl }
       - pblock_u_isp.tcl: { file_type: user, copyto: pblock_u_isp.tcl }
       - pblock_u_ddr.tcl: { file_type: user, copyto: pblock_u_ddr.tcl }
 
@@ -113,6 +116,10 @@ parameters:
     description: "Enable ZVE32F RVV profile"
     default: true
     paramtype: vlogdefine
+  ZVT_ON:
+    datatype: bool
+    description: "Enable ZVT extension"
+    paramtype: vlogdefine
 
 targets:
   default: &default_target
@@ -139,7 +146,7 @@ targets:
       - TB_SUPPORT=true
       - VLEN_128=true
       - ZVE32F_ON=true
+      - ZVT_ON
     tools:
       vivado:
         part: "xcvu13p-fhga2104-2-e"
-

@@ -116,8 +116,13 @@
   `define NUM_VME               0
 `endif
 
+`define NUM_ARI               (`NUM_ALU+`NUM_PMTRDT+`NUM_MUL+`NUM_DIV+`NUM_FALU+`NUM_VME)
+`ifdef FPGA_XILINX
+`define NUM_PU_NOPINGPONG       (`NUM_LSU)
+`else
 `define NUM_PU_NOPINGPONG       (`NUM_LSU+`NUM_VME)
-`define NUM_PU                  (`NUM_LSU+`NUM_VME+`NUM_ALU+`NUM_MUL+`NUM_PMTRDT+`NUM_DIV+`NUM_FALU)
+`endif
+`define NUM_PU                  (`NUM_ARI+`NUM_LSU)
 
 `ifdef ARBITER_ON
 `define NUM_SMPORT              4

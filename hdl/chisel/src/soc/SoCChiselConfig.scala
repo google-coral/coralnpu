@@ -50,6 +50,7 @@ case class CoreTlulParameters(
   enableZfbfmin: Boolean = true,
   enableVectorBf16: Boolean = true,
   enableAxiInstructionFetch: Boolean = true,
+  enableVme: Boolean = false,
   memoryRegions: Seq[MemoryRegion]
 ) extends ModuleParameters
 
@@ -119,13 +120,35 @@ object SoCChiselConfig {
   def apply(
     itcmSize: MemorySize = MemorySize.fromKBytes(Parameters.itcmSizeKBytesDefault),
     dtcmSize: MemorySize = MemorySize.fromKBytes(Parameters.dtcmSizeKBytesDefault),
-    xlen: Int = 32
+    xlen: Int = 32,
+    enableVme: Boolean = false
   ): SoCChiselConfig = {
-    new SoCChiselConfig(itcmSize, dtcmSize, xlen)
+    new SoCChiselConfig(itcmSize, dtcmSize, xlen, enableVme)
   }
 }
 
-class SoCChiselConfig(itcmSize: MemorySize, dtcmSize: MemorySize, val xlen: Int = 32) {
+class SoCChiselMatrixConfig(
+  itcmSize: MemorySize,
+  dtcmSize: MemorySize,
+  xlen: Int = 32
+) extends SoCChiselConfig(itcmSize, dtcmSize, xlen, enableVme = true)
+
+object SoCChiselMatrixConfig {
+  def apply(
+    itcmSize: MemorySize = MemorySize.fromKBytes(Parameters.itcmSizeKBytesDefault),
+    dtcmSize: MemorySize = MemorySize.fromKBytes(Parameters.dtcmSizeKBytesDefault),
+    xlen: Int = 32
+  ): SoCChiselMatrixConfig = {
+    new SoCChiselMatrixConfig(itcmSize, dtcmSize, xlen)
+  }
+}
+
+class SoCChiselConfig(
+  itcmSize: MemorySize,
+  dtcmSize: MemorySize,
+  val xlen: Int = 32,
+  val enableVme: Boolean = false
+) {
   // --- Memory Map ---
   val memoryRegions = {
     val defaultItcmSize = MemorySize.fromKBytes(Parameters.itcmSizeKBytesDefault)
@@ -151,6 +174,7 @@ class SoCChiselConfig(itcmSize: MemorySize, dtcmSize: MemorySize, val xlen: Int 
         enableFloat = true,
         enableZfbfmin = true,
         enableVectorBf16 = true,
+        enableVme = enableVme,
         memoryRegions = memoryRegions
       ),
       hostConnections = Map("io.tl_host" -> "coralnpu_core"),

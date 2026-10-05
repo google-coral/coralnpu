@@ -22,7 +22,7 @@ module zvt_pe_adder_int_lane#(
   wire [`WORD_WIDTH-1:0] src2 = iso_do_subtract ? ~iso_operands[1] : iso_operands[1];
   wire carry_in = iso_do_subtract;
 
-  wire [`WORD_WIDTH-1:0] sum = iso_operands[0] + src2 + carry_in; // let it overflow
+  (* use_dsp = "yes" *) wire [`WORD_WIDTH-1:0] sum = iso_operands[0] + src2 + carry_in; // let it overflow
 
   typedef struct packed {
     logic [`WORD_WIDTH-1:0] result;

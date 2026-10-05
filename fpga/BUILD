@@ -24,7 +24,11 @@ load("//rules:utils.bzl", "cc_embed_data", "template_rule")
 
 package(default_visibility = ["//visibility:public"])
 
-_CLOCK_FREQUENCY_MHZ = "50"
+_MATRIX_CLOCK_FREQUENCY_MHZ = "30"
+
+_VECTOR_CLOCK_FREQUENCY_MHZ = "50"
+
+_CLOCK_FREQUENCY_MHZ = _MATRIX_CLOCK_FREQUENCY_MHZ
 
 _ISP_CLOCK_FREQUENCY_MHZ = "10"
 
@@ -74,6 +78,7 @@ VERILATOR_OPTIONS_COMMON = [
     "-DTB_SUPPORT",
     # RVV
     "-DVLEN_128",
+    "-DZVE32F_ON",
     "-Wno-BLKANDNBLK",
     "-Wno-CASEX",
     # allows verilator to ignore timing code in rtl
@@ -87,6 +92,33 @@ VERILATOR_OPTIONS_COMMON = [
 ]
 
 string_list_flag(
+    name = "verilator_options_vector_normal",
+    build_setting_default = VERILATOR_OPTIONS_COMMON,
+)
+
+string_list_flag(
+    name = "verilator_options_vector_highmem",
+    build_setting_default = [
+        "-CFLAGS \"-DCHISEL_SUBSYSTEM_HIGHMEM\"",
+    ] + VERILATOR_OPTIONS_COMMON,
+)
+
+string_list_flag(
+    name = "verilator_options_matrix_normal",
+    build_setting_default = [
+        "-DZVT_ON",
+    ] + VERILATOR_OPTIONS_COMMON,
+)
+
+string_list_flag(
+    name = "verilator_options_matrix_highmem",
+    build_setting_default = [
+        "-CFLAGS \"-DCHISEL_SUBSYSTEM_HIGHMEM\"",
+        "-DZVT_ON",
+    ] + VERILATOR_OPTIONS_COMMON,
+)
+
+string_list_flag(
     name = "verilator_options_default",
     build_setting_default = VERILATOR_OPTIONS_COMMON,
 )
@@ -95,6 +127,7 @@ string_list_flag(
     name = "verilator_options_highmem",
     build_setting_default = [
         "-CFLAGS \"-DCHISEL_SUBSYSTEM_HIGHMEM\"",
+        "-DZVT_ON",
     ] + VERILATOR_OPTIONS_COMMON,
 )
 
@@ -401,31 +434,69 @@ filegroup(
     output_group = "vmem_file",
 )
 
-# Configuration for different memory variants
-_MEM_CONFIGS = [
+# Configurations for all 4 variants:
+# 1. Vector Normal: 50 MHz, ITCM 8KB, DTCM 32KB, Vector only
+# 2. Vector Highmem: 50 MHz, ITCM 1024KB, DTCM 1024KB, Vector only
+# 3. Matrix Normal: 30 MHz, ITCM 8KB, DTCM 32KB, Matrix (VME enabled)
+# 4. Matrix Highmem: 30 MHz, ITCM 1024KB, DTCM 1024KB, Matrix (VME enabled)
+_ALL_CONFIGS = [
     {
-        "name": "default",
-        "suffix": "",
+        "name": "vector_normal",
+        "suffix": "_vector_normal",
         "chisel_core": "//fpga/ip/coralnpu_chisel_subsystem_default:coralnpu_chisel_subsystem_default.core",
         "chisel_rtl": "//fpga/ip/coralnpu_chisel_subsystem_default:rtl_files",
-        "verilator_options": ":verilator_options_default",
+        "verilator_options": ":verilator_options_vector_normal",
+        "clock_frequency_mhz": _VECTOR_CLOCK_FREQUENCY_MHZ,
         "itcm": "8",
         "dtcm": "32",
         "rom_vmem": ":rom_test_vmem",
         "rom_vmem_file": "$(location :rom_test_vmem)",
+        "zvt_flags": [],
     },
     {
-        "name": "highmem",
-        "suffix": "_highmem",
+        "name": "vector_highmem",
+        "suffix": "_vector_highmem",
         "chisel_core": "//fpga/ip/coralnpu_chisel_subsystem_highmem:coralnpu_chisel_subsystem_highmem.core",
         "chisel_rtl": "//fpga/ip/coralnpu_chisel_subsystem_highmem:rtl_files",
-        "verilator_options": ":verilator_options_highmem",
+        "verilator_options": ":verilator_options_vector_highmem",
+        "clock_frequency_mhz": _VECTOR_CLOCK_FREQUENCY_MHZ,
         "itcm": "1024",
         "dtcm": "1024",
         "rom_vmem": ":rom_test_highmem_vmem",
         "rom_vmem_file": "$(location :rom_test_highmem_vmem)",
+        "zvt_flags": [],
+    },
+    {
+        "name": "matrix_normal",
+        "suffix": "_matrix_normal",
+        "chisel_core": "//fpga/ip/coralnpu_chisel_subsystem_matrix:coralnpu_chisel_subsystem_matrix.core",
+        "chisel_rtl": "//fpga/ip/coralnpu_chisel_subsystem_matrix:rtl_files",
+        "verilator_options": ":verilator_options_matrix_normal",
+        "clock_frequency_mhz": _MATRIX_CLOCK_FREQUENCY_MHZ,
+        "itcm": "8",
+        "dtcm": "32",
+        "rom_vmem": ":rom_test_vmem",
+        "rom_vmem_file": "$(location :rom_test_vmem)",
+        "zvt_flags": ["--ZVT_ON=true"],
+    },
+    {
+        "name": "matrix_highmem",
+        "suffix": "_matrix_highmem",
+        "chisel_core": "//fpga/ip/coralnpu_chisel_subsystem_matrix_highmem:coralnpu_chisel_subsystem_matrix_highmem.core",
+        "chisel_rtl": "//fpga/ip/coralnpu_chisel_subsystem_matrix_highmem:rtl_files",
+        "verilator_options": ":verilator_options_matrix_highmem",
+        "clock_frequency_mhz": _MATRIX_CLOCK_FREQUENCY_MHZ,
+        "itcm": "1024",
+        "dtcm": "1024",
+        "rom_vmem": ":rom_test_highmem_vmem",
+        "rom_vmem_file": "$(location :rom_test_highmem_vmem)",
+        "zvt_flags": ["--ZVT_ON=true"],
     },
 ]
+
+_MEM_CONFIGS = _ALL_CONFIGS
+
+_NEXUS_CONFIGS = _ALL_CONFIGS
 
 # Boot modes to generate for each memory variant
 _BOOT_MODES = [
@@ -503,9 +574,9 @@ _VERILATOR_NAME_MAP = {
         "srcs": VERILATOR_COMMON_SRCS + [m["chisel_rtl"]] + ([m["rom_vmem"]] if b["is_rom"] else []),
         "verilator_options": m["verilator_options"],
         "flags": [
-            "--ClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,
+            "--ClockFrequencyMhz=" + m["clock_frequency_mhz"],
             "--IspClockFrequencyMhz=" + _ISP_CLOCK_FREQUENCY_MHZ,
-            "--SpimClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,
+            "--SpimClockFrequencyMhz=" + m["clock_frequency_mhz"],
             "--ItcmSizeKBytes=" + m["itcm"],
             "--DtcmSizeKBytes=" + m["dtcm"],
         ] + ([
@@ -528,6 +599,28 @@ template_rule(
     target = "sim",
 )
 
+# Verilator target aliases:
+# - Default targets (no suffix), `_matrix`, and `_highmem` alias to the matrix_highmem target.
+# - `_vector` aliases point to the vector_normal target.
+[
+    alias(
+        name = alias_name,
+        actual = target_name,
+    )
+    for alias_name, target_name in [
+        ("build_chip_verilator", ":build_chip_verilator_matrix_highmem"),
+        ("build_chip_verilator_default", ":build_chip_verilator_matrix_highmem"),
+        ("build_chip_verilator_matrix", ":build_chip_verilator_matrix_highmem"),
+        ("build_chip_verilator_highmem", ":build_chip_verilator_matrix_highmem"),
+        ("build_chip_verilator_vector", ":build_chip_verilator_vector_normal"),
+        ("build_chip_verilator_rom", ":build_chip_verilator_matrix_highmem_rom"),
+        ("build_chip_verilator_default_rom", ":build_chip_verilator_matrix_highmem_rom"),
+        ("build_chip_verilator_matrix_rom", ":build_chip_verilator_matrix_highmem_rom"),
+        ("build_chip_verilator_highmem_rom", ":build_chip_verilator_matrix_highmem_rom"),
+        ("build_chip_verilator_vector_rom", ":build_chip_verilator_vector_normal_rom"),
+    ]
+]
+
 DDR_CORES = [
     "//internal/fpga/ip/ddr4:ddr4.core",
     "//internal/fpga/ip/ddr4_phy:ddr4_phy.core",
@@ -548,6 +641,8 @@ VIVADO_HOOKS = [
     "vivado_hook_write_bitstream_post.tcl",
     "check_pin_assignments.tcl",
     "vivado_pre_opt_hooks.tcl",
+    "vivado_post_place_hooks.tcl",
+    "vivado_post_route_hooks.tcl",
     "pblock_u_isp.tcl",
     "pblock_u_ddr.tcl",
 ]
@@ -564,23 +659,23 @@ NEXUS_COMMON_CORES = [
 
 # Generate Nexus build targets (bitstream, synth_only, and elab_only)
 _NEXUS_NAME_MAP = {
-    "build_chip_nexus_" + build_type + m["suffix"] + b["suffix"]: {
-        "cores": CORALNPU_SOC_CORES_COMMON + NEXUS_COMMON_CORES + [m["chisel_core"]],
-        "srcs": NEXUS_COMMON_SRCS + [m["chisel_rtl"]] + ([m["rom_vmem"]] if b["is_rom"] else []),
+    "build_chip_nexus_" + build_type + c["suffix"] + b["suffix"]: {
+        "cores": CORALNPU_SOC_CORES_COMMON + NEXUS_COMMON_CORES + [c["chisel_core"]],
+        "srcs": NEXUS_COMMON_SRCS + [c["chisel_rtl"]] + ([c["rom_vmem"]] if b["is_rom"] else []),
         "flags": [
-            "--ClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,
+            "--ClockFrequencyMhz=" + c["clock_frequency_mhz"],
             "--IspClockFrequencyMhz=" + _ISP_CLOCK_FREQUENCY_MHZ,
             "--SpimClockFrequencyMhz=" + _SPIM_CLOCK_FREQUENCY_MHZ,
-            "--ItcmSizeKBytes=" + m["itcm"],
-            "--DtcmSizeKBytes=" + m["dtcm"],
-        ] + ([
+            "--ItcmSizeKBytes=" + c["itcm"],
+            "--DtcmSizeKBytes=" + c["dtcm"],
+        ] + c["zvt_flags"] + ([
             "--EnableAutoboot=1",
-            "--MemInitFile=" + m["rom_vmem_file"],
+            "--MemInitFile=" + c["rom_vmem_file"],
             "--BootAddr=268435456",
         ] if b["is_rom"] else []) + (["--pnr=none"] if build_type in ("synth_only", "elab_only") else []),
         "target": "elab" if build_type == "elab_only" else "synth",
     }
-    for m in _MEM_CONFIGS
+    for c in _NEXUS_CONFIGS
     for b in _BOOT_MODES
     for build_type in [
         "bitstream",
@@ -599,9 +694,37 @@ template_rule(
     tags = ["manual"],
 )
 
+# Nexus target aliases:
+# - Default targets (no suffix), `_matrix`, and `_highmem` alias to the 30 MHz matrix highmem bitstream.
+# - `_vector` and `_default` alias to the 50 MHz vector normal bitstream.
+[
+    alias(
+        name = "build_chip_nexus_" + build_type + alias_suffix,
+        actual = ":build_chip_nexus_" + build_type + target_suffix,
+        tags = ["manual"],
+    )
+    for build_type in [
+        "bitstream",
+        "synth_only",
+        "elab_only",
+    ]
+    for alias_suffix, target_suffix in [
+        ("", "_matrix_highmem"),
+        ("_matrix", "_matrix_highmem"),
+        ("_highmem", "_matrix_highmem"),
+        ("_vector", "_vector_normal"),
+        ("_default", "_vector_normal"),
+        ("_rom", "_matrix_highmem_rom"),
+        ("_matrix_rom", "_matrix_highmem_rom"),
+        ("_highmem_rom", "_matrix_highmem_rom"),
+        ("_vector_rom", "_vector_normal_rom"),
+        ("_default_rom", "_vector_normal_rom"),
+    ]
+]
+
 filegroup(
     name = "chip_verilator_binary",
-    srcs = [":build_chip_verilator"],
+    srcs = [":build_chip_verilator_vector_normal"],
     output_group = "binary",
 )
 
@@ -627,7 +750,7 @@ genrule(
 
 filegroup(
     name = "chip_verilator_rom_binary",
-    srcs = [":build_chip_verilator_rom"],
+    srcs = [":build_chip_verilator_vector_normal_rom"],
     output_group = "binary",
 )
 

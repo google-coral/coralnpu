@@ -15,9 +15,11 @@ class CoralNPUChiselSubsystemIO(
   val enableTestHarness: Boolean,
   val itcmSize: MemorySize,
   val dtcmSize: MemorySize,
-  val xlen: Int = 32
+  val xlen: Int = 32,
+  val enableVme: Boolean = false
 ) extends Bundle {
-  val cfg = SoCChiselConfig(itcmSize, dtcmSize, xlen).crossbar
+  val socConfig = SoCChiselConfig(itcmSize, dtcmSize, xlen, enableVme)
+  val cfg       = socConfig.crossbar
 
   // --- Clocks and Resets ---
   val clk_i  = Input(Clock())
@@ -33,9 +35,9 @@ class CoralNPUChiselSubsystemIO(
 
   // --- Identify Internal vs. External Connections ---
   val internalHosts =
-    SoCChiselConfig(itcmSize, dtcmSize, xlen).modules.flatMap(_.hostConnections.values).toSet
+    socConfig.modules.flatMap(_.hostConnections.values).toSet
   val internalDevices =
-    SoCChiselConfig(itcmSize, dtcmSize, xlen).modules.flatMap(_.deviceConnections.values).toSet
+    socConfig.modules.flatMap(_.deviceConnections.values).toSet
 
   // These devices are handled specially within the subsystem (e.g., converted to AXI)
   // and should not have external TileLink ports created for them.
@@ -61,7 +63,7 @@ class CoralNPUChiselSubsystemIO(
 
   // --- Manually define peripheral ports for now ---
   val allExternalPortsConfig =
-    SoCChiselConfig(itcmSize, dtcmSize, xlen).modules.flatMap(_.externalPorts)
+    socConfig.modules.flatMap(_.externalPorts)
   val external_ports = new DataRecord(allExternalPortsConfig.map { p =>
     val port = p.portType match {
       case coralnpu.soc.Clk          => Clock()
@@ -107,7 +109,8 @@ class CoralNPUChiselSubsystem(
   val itcmSize: MemorySize,
   val dtcmSize: MemorySize,
   val xlen: Int = 32,
-  val moduleName: String = ""
+  val moduleName: String = "",
+  val enableVme: Boolean = false
 ) extends RawModule {
   val testHarnessSuffix    = if (enableTestHarness) "TestHarness" else ""
   override val desiredName = {
@@ -133,10 +136,12 @@ class CoralNPUChiselSubsystem(
       enableTestHarness,
       itcmSize,
       dtcmSize,
-      xlen
+      xlen,
+      enableVme
     )
   )
-  val cfg = SoCChiselConfig(itcmSize, dtcmSize, xlen).crossbar
+  val socConfig = SoCChiselConfig(itcmSize, dtcmSize, xlen, enableVme)
+  val cfg       = socConfig.crossbar
 
   /** A helper function to recursively traverse a Chisel Bundle and populate a map with the full
     * hierarchical path to every port and sub-port.
@@ -159,7 +164,7 @@ class CoralNPUChiselSubsystem(
   withClockAndReset(io.clk_i, (!io.rst_ni.asBool).asAsyncReset) {
     // --- 1. Instantiate spi2tlul first (with hardware reset) ---
     val spi2tlul_config =
-      SoCChiselConfig(itcmSize, dtcmSize, xlen).modules.find(_.name == "spi2tlul").get
+      socConfig.modules.find(_.name == "spi2tlul").get
     val spi2tlul = {
       val p          = spi2tlul_config.params.asInstanceOf[Spi2TlulParameters]
       val spi2tlul_p = new Parameters(xlen = xlen)
@@ -200,6 +205,7 @@ class CoralNPUChiselSubsystem(
             core_p.enableFloat = p.enableFloat
             core_p.enableZfbfmin = p.enableZfbfmin
             core_p.enableVectorBf16 = p.enableVectorBf16
+            core_p.enableVme = p.enableVme
             core_p.enableAxiInstructionFetch = p.enableAxiInstructionFetch
             core_p.itcmSizeKBytes = itcmSize.kBytes
             core_p.dtcmSizeKBytes = dtcmSize.kBytes
@@ -252,7 +258,7 @@ class CoralNPUChiselSubsystem(
     }
 
     // --- 5. Instantiate other modules ---
-    val otherModules = SoCChiselConfig(itcmSize, dtcmSize).modules
+    val otherModules = socConfig.modules
       .filter(_.name != "spi2tlul")
       .flatMap { config =>
         val m = instantiateModule(config)
@@ -294,7 +300,7 @@ class CoralNPUChiselSubsystem(
     }
 
     // Connect all modules based on the configuration.
-    SoCChiselConfig(itcmSize, dtcmSize).modules
+    socConfig.modules
       .filter(c => instantiatedModules.contains(c.name))
       .foreach { config =>
         config.hostConnections.foreach { case (modulePort, xbarPort) =>
@@ -364,6 +370,21 @@ class CoralNPUChiselSubsystem(
     val ddr_ctrl_tlul_p = deviceParams(cfg.devices.indexWhere(_.name == "ddr_ctrl"))
     val ddr_ctrl_axi_p  = new Parameters(xlen = xlen)
     ddr_ctrl_axi_p.lsuDataBits = ddr_ctrl_tlul_p.w * 8
+    val ddr_ctrl_buf = Module(
+      new TlulFifoSync(
+        ddr_ctrl_tlul_p,
+        reqDepth = 2,
+        rspDepth = 2,
+        reqPass = false,
+        rspPass = false
+      )
+    )
+    ddr_ctrl_buf.clock          := ddr_clk
+    ddr_ctrl_buf.reset          := ddr_rst
+    ddr_ctrl_buf.io.spare_req_i := 0.U
+    ddr_ctrl_buf.io.spare_rsp_i := 0.U
+    ddr_ctrl_buf.io.host <> xbar.io.devices("ddr_ctrl")
+
     val ddr_ctrl_axi_conv = Module(
       new TLUL2Axi(
         ddr_ctrl_tlul_p,
@@ -376,8 +397,8 @@ class CoralNPUChiselSubsystem(
     )
     ddr_ctrl_axi_conv.clock := ddr_clk
     ddr_ctrl_axi_conv.reset := ddr_rst
-    ddr_ctrl_axi_conv.io.tl_a <> xbar.io.devices("ddr_ctrl").a
-    ddr_ctrl_axi_conv.io.tl_d <> xbar.io.devices("ddr_ctrl").d
+    ddr_ctrl_axi_conv.io.tl_a <> ddr_ctrl_buf.io.device.a
+    ddr_ctrl_axi_conv.io.tl_d <> ddr_ctrl_buf.io.device.d
     io.ddr_ctrl_axi <> ddr_ctrl_axi_conv.io.axi
 
     // --- DDR Memory AXI Interface (128-bit TL -> 256-bit TL -> 256-bit AXI) ---
@@ -395,6 +416,22 @@ class CoralNPUChiselSubsystem(
       p.axi2IdBits = 1
       p
     }
+
+    val ddr_mem_tlul_p = deviceParams(cfg.devices.indexWhere(_.name == "ddr_mem"))
+    val ddr_mem_buf    = Module(
+      new TlulFifoSync(
+        ddr_mem_tlul_p,
+        reqDepth = 2,
+        rspDepth = 2,
+        reqPass = false,
+        rspPass = false
+      )
+    )
+    ddr_mem_buf.clock          := ddr_clk
+    ddr_mem_buf.reset          := ddr_rst
+    ddr_mem_buf.io.spare_req_i := 0.U
+    ddr_mem_buf.io.spare_rsp_i := 0.U
+    ddr_mem_buf.io.host <> xbar.io.devices("ddr_mem")
 
     // Instantiate the bridge: 128-bit (from xbar) to 256-bit.
     val ddr_mem_bridge = Module(new TlulWidthBridge(xbar.commonParams, ddr_mem_256_tlul_p))
@@ -416,8 +453,8 @@ class CoralNPUChiselSubsystem(
     ddr_mem_axi_conv.clock := ddr_clk
     ddr_mem_axi_conv.reset := ddr_rst
 
-    // Wire the components together: Xbar (128) -> Bridge -> AXI Conv (256) -> IO (256)
-    ddr_mem_bridge.io.tl_h <> xbar.io.devices("ddr_mem")
+    // Wire the components together: Xbar (128) -> Buffer -> Bridge -> AXI Conv (256) -> IO (256)
+    ddr_mem_bridge.io.tl_h <> ddr_mem_buf.io.device
     ddr_mem_axi_conv.io.tl_a <> ddr_mem_bridge.io.tl_d.a
     ddr_mem_bridge.io.tl_d.d <> ddr_mem_axi_conv.io.tl_d
     io.ddr_mem_axi <> ddr_mem_axi_conv.io.axi
@@ -479,89 +516,141 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths, StandardOpenOption}
 import coralnpu.Parameters
 
-object CoralNPUChiselSubsystemEmitter extends App {
-  val enableTestHarness = args.contains("--enableTestHarness")
+abstract class BaseCoralNPUChiselSubsystemEmitter {
+  def makeConfig(itcmSize: MemorySize, dtcmSize: MemorySize, xlen: Int): SoCChiselConfig
+  def defaultModuleName(itcmSize: MemorySize, dtcmSize: MemorySize, xlen: Int): String
 
-  // --- Parse command-line arguments for TCM sizes ---
-  var itcmSizeKBytes = Parameters.itcmSizeKBytesDefault // Default ITCM size in KBytes
-  var dtcmSizeKBytes = Parameters.dtcmSizeKBytesDefault // Default DTCM size in KBytes
-  var xlen           = 32
-  var moduleName     = ""
-  args.sliding(2, 1).foreach {
-    case Array("--itcmSizeKBytes", size) => itcmSizeKBytes = size.toInt
-    case Array("--dtcmSizeKBytes", size) => dtcmSizeKBytes = size.toInt
-    case Array("--xlen", size)           => xlen = size.toInt
-    case Array("--moduleName", name)     => moduleName = name
-    case _                               =>
-  }
+  def main(args: Array[String]): Unit = {
+    val enableTestHarness = args.contains("--enableTestHarness")
 
-  val itcmSize = MemorySize.fromKBytes(itcmSizeKBytes)
-  val dtcmSize = MemorySize.fromKBytes(dtcmSizeKBytes)
-
-  val flagsWithValues = Set("--itcmSizeKBytes", "--dtcmSizeKBytes", "--xlen", "--moduleName")
-  val indicesToSkip   = args.zipWithIndex
-    .collect {
-      case (arg, idx) if flagsWithValues.contains(arg) => Seq(idx, idx + 1)
+    // --- Parse command-line arguments for TCM sizes ---
+    var itcmSizeKBytes = Parameters.itcmSizeKBytesDefault // Default ITCM size in KBytes
+    var dtcmSizeKBytes = Parameters.dtcmSizeKBytesDefault // Default DTCM size in KBytes
+    var xlen           = 32
+    var moduleName     = ""
+    args.sliding(2, 1).foreach {
+      case Array("--itcmSizeKBytes", size) => itcmSizeKBytes = size.toInt
+      case Array("--dtcmSizeKBytes", size) => dtcmSizeKBytes = size.toInt
+      case Array("--xlen", size)           => xlen = size.toInt
+      case Array("--moduleName", name)     => moduleName = name
+      case _                               =>
     }
-    .flatten
-    .toSet
 
-  val chiselArgs = args.zipWithIndex.collect {
-    case (arg, idx)
-        if !indicesToSkip.contains(idx) &&
-          !arg.startsWith("--enableTestHarness") &&
-          !arg.startsWith("--target-dir=") =>
-      arg
-  }
-
-  val hostParams =
-    SoCChiselConfig(itcmSize, dtcmSize, xlen).crossbar.hosts(enableTestHarness).map { host =>
-      new bus.TLULParameters(dataBits = host.width, addrBits = xlen, idBits = 6)
+    val itcmSize  = MemorySize.fromKBytes(itcmSizeKBytes)
+    val dtcmSize  = MemorySize.fromKBytes(dtcmSizeKBytes)
+    val socConfig = makeConfig(itcmSize, dtcmSize, xlen)
+    if (moduleName.isEmpty) {
+      moduleName = defaultModuleName(itcmSize, dtcmSize, xlen)
     }
-  val deviceParams = SoCChiselConfig(itcmSize, dtcmSize, xlen).crossbar.devices.map { device =>
-    new bus.TLULParameters(dataBits = device.width, addrBits = xlen, idBits = 10)
-  }
 
-  // Manually parse arguments to find the target directory.
-  var targetDir: Option[String] = None
-  args.foreach {
-    case s if s.startsWith("--target-dir=") => targetDir = Some(s.stripPrefix("--target-dir="))
-    case "--enableTestHarness"              => // Already handled by filterNot
-    case _                                  => // Ignore other arguments
-  }
+    val flagsWithValues = Set("--itcmSizeKBytes", "--dtcmSizeKBytes", "--xlen", "--moduleName")
+    val indicesToSkip   = args.zipWithIndex
+      .collect {
+        case (arg, idx) if flagsWithValues.contains(arg) => Seq(idx, idx + 1)
+      }
+      .flatten
+      .toSet
 
-  // The subsystem module must be created in the ChiselStage context.
-  lazy val subsystem =
-    new CoralNPUChiselSubsystem(
-      hostParams,
-      deviceParams,
-      enableTestHarness,
-      itcmSize,
-      dtcmSize,
-      xlen,
-      moduleName
+    val chiselArgs = args.zipWithIndex.collect {
+      case (arg, idx)
+          if !indicesToSkip.contains(idx) &&
+            !arg.startsWith("--enableTestHarness") &&
+            !arg.startsWith("--enableVme") &&
+            !arg.startsWith("--target-dir=") =>
+        arg
+    }
+
+    val hostParams =
+      socConfig.crossbar.hosts(enableTestHarness).map { host =>
+        new bus.TLULParameters(dataBits = host.width, addrBits = xlen, idBits = 6)
+      }
+    val deviceParams = socConfig.crossbar.devices.map { device =>
+      new bus.TLULParameters(dataBits = device.width, addrBits = xlen, idBits = 10)
+    }
+
+    // Manually parse arguments to find the target directory.
+    var targetDir: Option[String] = None
+    args.foreach {
+      case s if s.startsWith("--target-dir=") => targetDir = Some(s.stripPrefix("--target-dir="))
+      case "--enableTestHarness"              => // Already handled by filterNot
+      case "--enableVme"                      => // Ignored
+      case _                                  => // Ignore other arguments
+    }
+
+    // The subsystem module must be created in the ChiselStage context.
+    lazy val subsystem =
+      new CoralNPUChiselSubsystem(
+        hostParams,
+        deviceParams,
+        enableTestHarness,
+        itcmSize,
+        dtcmSize,
+        xlen,
+        moduleName,
+        socConfig.enableVme
+      )
+
+    val firtoolOpts = Array(
+      // Disable `automatic logic =`, Suppress location comments
+      "--lowering-options=disallowLocalVariables,locationInfoStyle=none",
+      "-enable-layers=Verification"
     )
+    val systemVerilogSource =
+      ChiselStage.emitSystemVerilog(subsystem, chiselArgs.toArray, firtoolOpts)
 
-  val firtoolOpts = Array(
-    // Disable `automatic logic =`, Suppress location comments
-    "--lowering-options=disallowLocalVariables,locationInfoStyle=none",
-    "-enable-layers=Verification"
-  )
-  val systemVerilogSource =
-    ChiselStage.emitSystemVerilog(subsystem, chiselArgs.toArray, firtoolOpts)
+    // CIRCT adds extra data to the end of the file. Remove it.
+    val resourcesSeparator =
+      "// ----- 8< ----- FILE \"firrtl_black_box_resource_files.f\" ----- 8< -----"
+    val strippedVerilogSource = systemVerilogSource.split(resourcesSeparator)(0)
 
-  // CIRCT adds extra data to the end of the file. Remove it.
-  val resourcesSeparator =
-    "// ----- 8< ----- FILE \"firrtl_black_box_resource_files.f\" ----- 8< -----"
-  val strippedVerilogSource = systemVerilogSource.split(resourcesSeparator)(0)
+    // Write the stripped Verilog to the target directory.
+    targetDir.foreach { dir =>
+      Files.write(
+        Paths.get(dir, subsystem.name + ".sv"),
+        strippedVerilogSource.getBytes(StandardCharsets.UTF_8),
+        StandardOpenOption.CREATE,
+        StandardOpenOption.TRUNCATE_EXISTING
+      )
+    }
+  }
+}
 
-  // Write the stripped Verilog to the target directory.
-  targetDir.foreach { dir =>
-    Files.write(
-      Paths.get(dir, subsystem.name + ".sv"),
-      strippedVerilogSource.getBytes(StandardCharsets.UTF_8),
-      StandardOpenOption.CREATE,
-      StandardOpenOption.TRUNCATE_EXISTING
-    )
+object CoralNPUChiselSubsystemEmitter extends BaseCoralNPUChiselSubsystemEmitter {
+  override def makeConfig(itcmSize: MemorySize, dtcmSize: MemorySize, xlen: Int): SoCChiselConfig =
+    SoCChiselConfig(itcmSize, dtcmSize, xlen)
+
+  override def defaultModuleName(itcmSize: MemorySize, dtcmSize: MemorySize, xlen: Int): String = {
+    val xlenSuffix = if (xlen == 32) "" else s"${xlen}"
+    if (
+      itcmSize.kBytes == Parameters.itcmSizeKBytesDefault && dtcmSize.kBytes == Parameters.dtcmSizeKBytesDefault
+    ) {
+      s"CoralNPUChiselSubsystem$xlenSuffix"
+    } else if (
+      itcmSize.kBytes == Parameters.itcmSizeKBytesHighmem && dtcmSize.kBytes == Parameters.dtcmSizeKBytesHighmem
+    ) {
+      s"CoralNPUChiselSubsystemHighmem$xlenSuffix"
+    } else {
+      s"CoralNPUChiselSubsystem_ITCM${itcmSize.kBytes}KB_DTCM${dtcmSize.kBytes}KB$xlenSuffix"
+    }
+  }
+}
+
+object CoralNPUChiselSubsystemMatrixEmitter extends BaseCoralNPUChiselSubsystemEmitter {
+  override def makeConfig(itcmSize: MemorySize, dtcmSize: MemorySize, xlen: Int): SoCChiselConfig =
+    SoCChiselMatrixConfig(itcmSize, dtcmSize, xlen)
+
+  override def defaultModuleName(itcmSize: MemorySize, dtcmSize: MemorySize, xlen: Int): String = {
+    val xlenSuffix = if (xlen == 32) "" else s"${xlen}"
+    if (
+      itcmSize.kBytes == Parameters.itcmSizeKBytesDefault && dtcmSize.kBytes == Parameters.dtcmSizeKBytesDefault
+    ) {
+      s"CoralNPUChiselSubsystemMatrix$xlenSuffix"
+    } else if (
+      itcmSize.kBytes == Parameters.itcmSizeKBytesHighmem && dtcmSize.kBytes == Parameters.dtcmSizeKBytesHighmem
+    ) {
+      s"CoralNPUChiselSubsystemMatrixHighmem$xlenSuffix"
+    } else {
+      s"CoralNPUChiselSubsystemMatrix_ITCM${itcmSize.kBytes}KB_DTCM${dtcmSize.kBytes}KB$xlenSuffix"
+    }
   }
 }

@@ -14,7 +14,7 @@
 
 load("@coralnpu_hw//rules:chisel.bzl", "chisel_binary", "chisel_cc_library", "chisel_library")
 load("@coralnpu_hw//rules:coco_tb.bzl", "verilator_cocotb_model")
-load("//hdl/chisel/src/coralnpu:flags.bzl", "RVV_CORE_MINI_AXI_VOPTS")
+load("//hdl/chisel/src/coralnpu:flags.bzl", "RVV_CORE_MINI_AXI_VOPTS", "VME_CORE_MINI_AXI_VOPTS")
 load(
     "//tests/cocotb:build_defs.bzl",
     "VERILATOR_BUILD_ARGS",
@@ -189,6 +189,28 @@ chisel_cc_library(
     ],
     module_name = "CoralNPUChiselSubsystemHighmem",
     vopts = RVV_CORE_MINI_AXI_VOPTS,
+)
+
+chisel_cc_library(
+    name = "coralnpu_chisel_subsystem_matrix_cc_library",
+    chisel_lib = ":coralnpu_chisel_subsystem_lib",
+    emit_class = "coralnpu.soc.CoralNPUChiselSubsystemMatrixEmitter",
+    module_name = "CoralNPUChiselSubsystemMatrix",
+    vopts = VME_CORE_MINI_AXI_VOPTS,
+)
+
+chisel_cc_library(
+    name = "coralnpu_chisel_subsystem_matrix_highmem_cc_library",
+    chisel_lib = ":coralnpu_chisel_subsystem_lib",
+    emit_class = "coralnpu.soc.CoralNPUChiselSubsystemMatrixEmitter",
+    gen_flags = [
+        "--itcmSizeKBytes",
+        "1024",
+        "--dtcmSizeKBytes",
+        "1024",
+    ],
+    module_name = "CoralNPUChiselSubsystemMatrixHighmem",
+    vopts = VME_CORE_MINI_AXI_VOPTS,
 )
 
 chisel_cc_library(

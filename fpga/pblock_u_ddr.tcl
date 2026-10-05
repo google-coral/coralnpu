@@ -13,31 +13,33 @@
 # limitations under the License.
 
 # ==============================================================================
-# DDR4 CONTROLLER FLOORPLANNING & PLACEMENT LOCK
+# DDR4 Controller & Interface Logic Pblock Configuration for VU13P
 # ==============================================================================
-# Hard-binds the 59,000 DDR4 controller primitives (i_ddr4) to Clock Regions
-# X3Y8:X4Y11 on the far right edge of the FPGA die (I/O Banks 68-71).
+# Floorplanning the DDR4 memory interface logic to SLR2 (where DDR4 I/O banks
+# and hard memory controllers reside) avoids cross-SLR routing congestion.
 # ==============================================================================
 
-# Delete existing pblock if re-running
+# Check if DDR4 controller exists in the netlist
+if {[llength [get_cells -quiet -hierarchical -filter {NAME =~ *u_ddr4_mem_intfc*}]] == 0} {
+    puts "INFO: No DDR4 memory interface detected. Skipping DDR4 Pblock creation."
+    return
+}
+
 if {[llength [get_pblocks -quiet pblock_ddr4]] > 0} {
-    delete_pblock [get_pblocks pblock_ddr4]
-    puts "INFO: Deleted existing pblock_ddr4 to start fresh."
+    delete_pblocks [get_pblocks pblock_ddr4]
 }
 
 # Find top DDR controller cell, 250MHz AXI CDC FIFO, AXI Bridge, and ID Remapper
-set ddr_cells [get_cells -quiet -hierarchical -filter {NAME =~ i_ddr4 || NAME =~ *ddr_ctrl* || NAME =~ *deviceInterfaces_ddr_ctrl_bridge*}]
+set ddr_cells [get_cells -quiet -hierarchical -filter {IS_PRIMITIVE == 0 && (NAME =~ i_ddr4 || NAME =~ *ddr_ctrl* || NAME =~ *deviceInterfaces_ddr_ctrl_bridge*)}]
 
 if {[llength $ddr_cells] > 0} {
     create_pblock pblock_ddr4
     add_cells_to_pblock [get_pblocks pblock_ddr4] $ddr_cells
 
-    # Floorplan to physical DDR I/O Bank clock regions (4 columns: X1Y8 to X4Y11)
-    resize_pblock [get_pblocks pblock_ddr4] -add {CLOCKREGION_X1Y8:CLOCKREGION_X4Y11}
+    # Range covering DDR4 Hard Blocks and surrounding logic in SLR2
+    resize_pblock [get_pblocks pblock_ddr4] -add {CLOCKREGION_X0Y8:CLOCKREGION_X5Y11}
 
-    # Set soft bounds to allow interconnect buffers to route cleanly
-    set_property IS_SOFT TRUE [get_pblocks pblock_ddr4]
-    puts "INFO: Created pblock_ddr4 spanning CLOCKREGION_X1Y8:CLOCKREGION_X4Y11 for [llength $ddr_cells] DDR instances."
-} else {
-    puts "INFO: No top i_ddr4 instance found for pblock_ddr4 floorplanning."
+    # Soft constraint allows router to utilize neighboring routing resources
+    set_property CONTAIN_ROUTING false [get_pblocks pblock_ddr4]
+    puts "INFO: Successfully configured Pblock pblock_ddr4 in SLR2 for [llength $ddr_cells] cells."
 }

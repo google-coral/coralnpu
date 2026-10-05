@@ -463,6 +463,45 @@ module chip_nexus #(
       .io_ddr_ctrl_axi_r_ready(c0_ddr4_s_axi_ctrl_rready),
       .io_ddr_ctrl_axi_r_bits_data(c0_ddr4_s_axi_ctrl_rdata),
       .io_ddr_ctrl_axi_r_bits_resp(c0_ddr4_s_axi_ctrl_rresp),
+`ifdef FPGA_XILINX
+      .io_ddr_mem_axi_aw_valid(soc_axi_awvalid),
+      .io_ddr_mem_axi_aw_ready(soc_axi_awready),
+      .io_ddr_mem_axi_aw_bits_addr(soc_ddr_mem_axi_aw_bits_addr),
+      .io_ddr_mem_axi_aw_bits_prot(soc_axi_awprot),
+      .io_ddr_mem_axi_aw_bits_id(soc_axi_awid),
+      .io_ddr_mem_axi_aw_bits_len(soc_axi_awlen),
+      .io_ddr_mem_axi_aw_bits_size(soc_axi_awsize),
+      .io_ddr_mem_axi_aw_bits_burst(soc_axi_awburst),
+      .io_ddr_mem_axi_aw_bits_lock(soc_axi_awlock),
+      .io_ddr_mem_axi_aw_bits_cache(soc_axi_awcache),
+      .io_ddr_mem_axi_aw_bits_qos(soc_axi_awqos),
+      .io_ddr_mem_axi_w_valid(soc_axi_wvalid),
+      .io_ddr_mem_axi_w_ready(soc_axi_wready),
+      .io_ddr_mem_axi_w_bits_data(soc_axi_wdata),
+      .io_ddr_mem_axi_w_bits_last(soc_axi_wlast),
+      .io_ddr_mem_axi_w_bits_strb(soc_axi_wstrb),
+      .io_ddr_mem_axi_b_valid(soc_axi_bvalid),
+      .io_ddr_mem_axi_b_ready(soc_axi_bready),
+      .io_ddr_mem_axi_b_bits_id(soc_axi_bid),
+      .io_ddr_mem_axi_b_bits_resp(soc_axi_bresp),
+      .io_ddr_mem_axi_ar_valid(soc_axi_arvalid),
+      .io_ddr_mem_axi_ar_ready(soc_axi_arready),
+      .io_ddr_mem_axi_ar_bits_addr(soc_ddr_mem_axi_ar_bits_addr),
+      .io_ddr_mem_axi_ar_bits_prot(soc_axi_arprot),
+      .io_ddr_mem_axi_ar_bits_id(soc_axi_arid),
+      .io_ddr_mem_axi_ar_bits_len(soc_axi_arlen),
+      .io_ddr_mem_axi_ar_bits_size(soc_axi_arsize),
+      .io_ddr_mem_axi_ar_bits_burst(soc_axi_arburst),
+      .io_ddr_mem_axi_ar_bits_lock(soc_axi_arlock),
+      .io_ddr_mem_axi_ar_bits_cache(soc_axi_arcache),
+      .io_ddr_mem_axi_ar_bits_qos(soc_axi_arqos),
+      .io_ddr_mem_axi_r_valid(soc_axi_rvalid),
+      .io_ddr_mem_axi_r_ready(soc_axi_rready),
+      .io_ddr_mem_axi_r_bits_data(soc_axi_rdata),
+      .io_ddr_mem_axi_r_bits_id(soc_axi_rid),
+      .io_ddr_mem_axi_r_bits_resp(soc_axi_rresp),
+      .io_ddr_mem_axi_r_bits_last(soc_axi_rlast),
+`else
       .io_ddr_mem_axi_aw_valid(c0_ddr4_s_axi_awvalid),
       .io_ddr_mem_axi_aw_ready(c0_ddr4_s_axi_awready),
       .io_ddr_mem_axi_aw_bits_addr(soc_ddr_mem_axi_aw_bits_addr),
@@ -500,6 +539,7 @@ module chip_nexus #(
       .io_ddr_mem_axi_r_bits_id(c0_ddr4_s_axi_rid),
       .io_ddr_mem_axi_r_bits_resp(c0_ddr4_s_axi_rresp),
       .io_ddr_mem_axi_r_bits_last(c0_ddr4_s_axi_rlast),
+`endif
       .io_dm_req_valid(dm_req_valid),
       .io_dm_req_ready(dm_req_ready),
       .io_dm_req_bits_address(dm_req.addr),
@@ -511,7 +551,147 @@ module chip_nexus #(
       .io_dm_rsp_bits_op(dm_rsp.resp)
   );
 
+`ifdef FPGA_XILINX
+  logic [ 33:0] soc_axi_awaddr;
+  logic [  3:0] soc_axi_awid;
+  logic [  7:0] soc_axi_awlen;
+  logic [  2:0] soc_axi_awsize;
+  logic [  1:0] soc_axi_awburst;
+  logic [  0:0] soc_axi_awlock;
+  logic [  3:0] soc_axi_awcache;
+  logic [  2:0] soc_axi_awprot;
+  logic [  3:0] soc_axi_awqos;
+  logic         soc_axi_awvalid;
+  logic         soc_axi_awready;
+
+  logic [511:0] soc_axi_wdata;
+  logic [ 63:0] soc_axi_wstrb;
+  logic         soc_axi_wlast;
+  logic         soc_axi_wvalid;
+  logic         soc_axi_wready;
+
+  logic [  3:0] soc_axi_bid;
+  logic [  1:0] soc_axi_bresp;
+  logic         soc_axi_bvalid;
+  logic         soc_axi_bready;
+
+  logic [ 33:0] soc_axi_araddr;
+  logic [  3:0] soc_axi_arid;
+  logic [  7:0] soc_axi_arlen;
+  logic [  2:0] soc_axi_arsize;
+  logic [  1:0] soc_axi_arburst;
+  logic [  0:0] soc_axi_arlock;
+  logic [  3:0] soc_axi_arcache;
+  logic [  2:0] soc_axi_arprot;
+  logic [  3:0] soc_axi_arqos;
+  logic         soc_axi_arvalid;
+  logic         soc_axi_arready;
+
+  logic [  3:0] soc_axi_rid;
+  logic [511:0] soc_axi_rdata;
+  logic [  1:0] soc_axi_rresp;
+  logic         soc_axi_rlast;
+  logic         soc_axi_rvalid;
+  logic         soc_axi_rready;
+
+  assign soc_axi_awaddr = 34'(soc_ddr_mem_axi_aw_bits_addr);
+  assign soc_axi_araddr = 34'(soc_ddr_mem_axi_ar_bits_addr);
+
+  fpga_axi_reg_slice #(
+      .ADDR_WIDTH(34),
+      .DATA_WIDTH(512),
+      .ID_WIDTH  (4)
+  ) u_ddr_axi_reg_slice (
+      .clk  (c0_ddr4_ui_clk),
+      .rst_n(!c0_ddr4_ui_clk_sync_rst),
+
+      .s_axi_awvalid(soc_axi_awvalid),
+      .s_axi_awready(soc_axi_awready),
+      .s_axi_awaddr (soc_axi_awaddr),
+      .s_axi_awid   (soc_axi_awid),
+      .s_axi_awlen  (soc_axi_awlen),
+      .s_axi_awsize (soc_axi_awsize),
+      .s_axi_awburst(soc_axi_awburst),
+      .s_axi_awlock (soc_axi_awlock),
+      .s_axi_awcache(soc_axi_awcache),
+      .s_axi_awprot (soc_axi_awprot),
+      .s_axi_awqos  (soc_axi_awqos),
+
+      .s_axi_wvalid(soc_axi_wvalid),
+      .s_axi_wready(soc_axi_wready),
+      .s_axi_wdata (soc_axi_wdata),
+      .s_axi_wstrb (soc_axi_wstrb),
+      .s_axi_wlast (soc_axi_wlast),
+
+      .s_axi_bvalid(soc_axi_bvalid),
+      .s_axi_bready(soc_axi_bready),
+      .s_axi_bid   (soc_axi_bid),
+      .s_axi_bresp (soc_axi_bresp),
+
+      .s_axi_arvalid(soc_axi_arvalid),
+      .s_axi_arready(soc_axi_arready),
+      .s_axi_araddr (soc_axi_araddr),
+      .s_axi_arid   (soc_axi_arid),
+      .s_axi_arlen  (soc_axi_arlen),
+      .s_axi_arsize (soc_axi_arsize),
+      .s_axi_arburst(soc_axi_arburst),
+      .s_axi_arlock (soc_axi_arlock),
+      .s_axi_arcache(soc_axi_arcache),
+      .s_axi_arprot (soc_axi_arprot),
+      .s_axi_arqos  (soc_axi_arqos),
+
+      .s_axi_rvalid(soc_axi_rvalid),
+      .s_axi_rready(soc_axi_rready),
+      .s_axi_rid   (soc_axi_rid),
+      .s_axi_rdata (soc_axi_rdata),
+      .s_axi_rresp (soc_axi_rresp),
+      .s_axi_rlast (soc_axi_rlast),
+
+      .m_axi_awvalid(c0_ddr4_s_axi_awvalid),
+      .m_axi_awready(c0_ddr4_s_axi_awready),
+      .m_axi_awaddr (c0_ddr4_s_axi_awaddr),
+      .m_axi_awid   (c0_ddr4_s_axi_awid),
+      .m_axi_awlen  (c0_ddr4_s_axi_awlen),
+      .m_axi_awsize (c0_ddr4_s_axi_awsize),
+      .m_axi_awburst(c0_ddr4_s_axi_awburst),
+      .m_axi_awlock (c0_ddr4_s_axi_awlock),
+      .m_axi_awcache(c0_ddr4_s_axi_awcache),
+      .m_axi_awprot (c0_ddr4_s_axi_awprot),
+      .m_axi_awqos  (c0_ddr4_s_axi_awqos),
+
+      .m_axi_wvalid(c0_ddr4_s_axi_wvalid),
+      .m_axi_wready(c0_ddr4_s_axi_wready),
+      .m_axi_wdata (c0_ddr4_s_axi_wdata),
+      .m_axi_wstrb (c0_ddr4_s_axi_wstrb),
+      .m_axi_wlast (c0_ddr4_s_axi_wlast),
+
+      .m_axi_bvalid(c0_ddr4_s_axi_bvalid),
+      .m_axi_bready(c0_ddr4_s_axi_bready),
+      .m_axi_bid   (c0_ddr4_s_axi_bid),
+      .m_axi_bresp (c0_ddr4_s_axi_bresp),
+
+      .m_axi_arvalid(c0_ddr4_s_axi_arvalid),
+      .m_axi_arready(c0_ddr4_s_axi_arready),
+      .m_axi_araddr (c0_ddr4_s_axi_araddr),
+      .m_axi_arid   (c0_ddr4_s_axi_arid),
+      .m_axi_arlen  (c0_ddr4_s_axi_arlen),
+      .m_axi_arsize (c0_ddr4_s_axi_arsize),
+      .m_axi_arburst(c0_ddr4_s_axi_arburst),
+      .m_axi_arlock (c0_ddr4_s_axi_arlock),
+      .m_axi_arcache(c0_ddr4_s_axi_arcache),
+      .m_axi_arprot (c0_ddr4_s_axi_arprot),
+      .m_axi_arqos  (c0_ddr4_s_axi_arqos),
+
+      .m_axi_rvalid(c0_ddr4_s_axi_rvalid),
+      .m_axi_rready(c0_ddr4_s_axi_rready),
+      .m_axi_rid   (c0_ddr4_s_axi_rid),
+      .m_axi_rdata (c0_ddr4_s_axi_rdata),
+      .m_axi_rresp (c0_ddr4_s_axi_rresp),
+      .m_axi_rlast (c0_ddr4_s_axi_rlast)
+  );
+`else
   assign c0_ddr4_s_axi_awaddr = 34'(soc_ddr_mem_axi_aw_bits_addr);
   assign c0_ddr4_s_axi_araddr = 34'(soc_ddr_mem_axi_ar_bits_addr);
+`endif
 
 endmodule

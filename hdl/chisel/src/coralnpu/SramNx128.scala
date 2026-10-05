@@ -20,7 +20,7 @@ import chisel3.util._
 class Sram_Nx128(
   tcmEntries: Int,
   globalBaseAddr: Int = 0,
-  availableBlockSizes: Seq[Int] = Seq(512, 128)
+  availableBlockSizes: Seq[Int] = Seq(4096, 512, 128)
 ) extends Module {
   override val desiredName = "SRAM_" + tcmEntries + "x128"
   val addrBits             = log2Ceil(tcmEntries)

@@ -21,7 +21,8 @@ create_clock -period 200.00 -name ISP_DVP_PCLK -waveform {0 100.0} [get_ports IS
 
 # Generated Clocks
 create_generated_clock -name clk_main [get_pin i_clkgen/i_clkgen/pll/CLKOUT0]
-create_generated_clock -name clk_aon [get_pin i_clkgen/i_clkgen/pll/CLKOUT4]
+create_generated_clock -name clk_spim [get_pin i_clkgen/i_clkgen/pll/CLKOUT2]
+create_generated_clock -name clk_aon  [get_pin i_clkgen/i_clkgen/pll/CLKOUT4]
 
 # Reset
 set_property -dict { PACKAGE_PIN AR19 IOSTANDARD LVCMOS18 } [get_ports { rst_ni }];
@@ -117,11 +118,14 @@ set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets ISP_DVP_PCLK_IBUF_inst/O]
 # Asynchronous Clock Groups
 # Define all primary, asynchronous clocks
 set_clock_groups -asynchronous \
-  -group [get_clocks -include_generated_clocks sys_clk_pin] \
-  -group [get_clocks -include_generated_clocks c0_sys_clk_p] \
-  -group [get_clocks spi_clk_i] \
-  -group [get_clocks jtag_tck_i] \
-  -group [get_clocks ISP_DVP_PCLK]
+  -group [get_clocks -quiet clk_main] \
+  -group [get_clocks -quiet -filter {NAME =~ *spim*}] \
+  -group [get_clocks -quiet clk_aon] \
+  -group [get_clocks -quiet sys_clk_pin] \
+  -group [get_clocks -quiet -include_generated_clocks c0_sys_clk_p] \
+  -group [get_clocks -quiet spi_clk_i] \
+  -group [get_clocks -quiet jtag_tck_i] \
+  -group [get_clocks -quiet ISP_DVP_PCLK]
 
 # SPI Probe Outputs (PMOD3) -> Reassigned to SpiMaster
 # PMOD4: 1=AY38, 2=BA39, 3=AW35, 4=AY35, 7=AY40, 8=BA40, 9=AW36, 10=BC40
@@ -142,3 +146,7 @@ set_property -dict { PACKAGE_PIN BC40 IOSTANDARD LVCMOS18 } [get_ports { gpio[3]
 # Proactively replicate high-fanout drivers feeding 512-bit DDR write data/strobe bus (250MHz DDR clock)
 set_property MAX_FANOUT 16 [get_nets -quiet -hierarchical -filter {NAME =~ *USE_UPSIZER.upsizer_d2*wdata*}]
 set_property MAX_FANOUT 16 [get_nets -quiet -hierarchical -filter {NAME =~ *USE_UPSIZER.upsizer_d2*wstrb*}]
+
+# Enforce all on-chip memories in URAM (192 URAM288 blocks = 15% device URAM, 0 BRAMs)
+set_property RAM_STYLE ultra [get_cells -quiet -hierarchical -filter {NAME =~ *dtcm*mem_reg* || NAME =~ *itcm*mem_reg* || NAME =~ *sram*mem_reg*}]
+
