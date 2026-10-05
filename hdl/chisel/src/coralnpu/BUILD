@@ -844,6 +844,7 @@ template_rule(
                 "--enableVerification=True",
             ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
             "module_name": "VmeCoreMiniVerificationAxi",
+            "tags": ["manual"],
         },
         "vme_core_mini_highmem_axi_cc_library": {
             "extra_outs": [
@@ -856,6 +857,7 @@ template_rule(
                 "--dtcmSizeKBytes=1024",
             ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
             "module_name": "VmeCoreMiniHighmemAxi",
+            "tags": ["manual"],
         },
         "vme_core_mini_verification_highmem_axi_cc_library": {
             "verilog_file_path": "VmeCoreMiniVerificationHighmemAxi.sv",
@@ -870,6 +872,7 @@ template_rule(
                 "--dtcmSizeKBytes=1024",
             ] + VME_CORE_MINI_AXI_COMMON_GEN_FLAGS,
             "module_name": "VmeCoreMiniVerificationHighmemAxi",
+            "tags": ["manual"],
         },
     },
     chisel_lib = ":coralnpu",
@@ -881,6 +884,7 @@ filter_files_by_extension(
     name = "vme_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
     src = ":vme_core_mini_verification_axi_cc_library_emit_verilog",
     extensions = ["sv"],
+    tags = ["manual"],
 )
 
 vcstatic_lint(

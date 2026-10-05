@@ -65,6 +65,7 @@ def chisel_binary(
         main_class,
         srcs = [],
         deps = [],
+        tags = [],
         visibility = None):
     scala_binary(
         name = name,
@@ -82,6 +83,7 @@ def chisel_binary(
             "@coralnpu_maven//:org_chipsalliance_chisel_plugin_2_13_6",
         ],
         scalacopts = SCALA_COPTS,
+        tags = tags,
         visibility = visibility,
     )
 
@@ -155,12 +157,14 @@ def chisel_cc_library(
         verilog_file_path = "",
         vopts = [],
         gen_flags = [],
-        extra_outs = []):
+        extra_outs = [],
+        tags = []):
     gen_binary_name = name + "_emit_verilog_binary"
     chisel_binary(
         name = gen_binary_name,
         deps = [chisel_lib],
         main_class = emit_class,
+        tags = tags,
     )
     if verilog_file_path == "":
         verilog_file_path = module_name + ".sv"
@@ -171,6 +175,7 @@ def chisel_cc_library(
         srcs = [],
         outs = [verilog_file_path] + extra_outs,
         cmd = "CHISEL_FIRTOOL_PATH=$$(dirname $(execpath @coralnpu_hw//third_party/llvm-firtool:firtool)) ./$(location " + gen_binary_name + ") --target-dir=$(RULEDIR) " + gen_flags,
+        tags = tags,
         tools = [
             ":{}".format(gen_binary_name),
             "@coralnpu_hw//third_party/llvm-firtool:firtool",
@@ -181,6 +186,7 @@ def chisel_cc_library(
         name = name + "_verilog",
         srcs = [verilog_file_path],
         deps = verilog_deps,
+        tags = tags,
     )
 
     # Most use cases seem to be SystemC - so let's
@@ -189,6 +195,7 @@ def chisel_cc_library(
         name = "{}".format(name),
         module = ":{}_verilog".format(name),
         module_top = module_name,
+        tags = tags,
         visibility = ["//visibility:public"],
         # TODO(derekjchow): Re-enable the default -Wall?
         vopts = vopts + ["--pins-bv", "2"],
@@ -202,6 +209,7 @@ def chisel_cc_library(
         name = "{}_cc".format(name),
         module = ":{}_verilog".format(name),
         module_top = module_name,
+        tags = tags,
         visibility = ["//visibility:public"],
         # TODO(derekjchow): Re-enable the default -Wall?
         vopts = vopts + ["--pins-bv", "2"],
