@@ -647,6 +647,13 @@ object GenerateBackendConfig {
     } else {
       config += "//`define ZVFBFWMA_ON\n"
     }
+    if (p.enableVme) {
+      config += "`ifndef ZVT_ON\n`define ZVT_ON\n`endif\n"
+      config += "`ifndef ZVTBF16FMM_ON\n`define ZVTBF16FMM_ON\n`endif\n"
+    } else {
+      config += "//`define ZVT_ON\n"
+      config += "//`define ZVTBF16FMM_ON\n"
+    }
     config += """
         |// LSU interaction
         |`define UNMK_USCS_LOAD_NOHANDSHAKE

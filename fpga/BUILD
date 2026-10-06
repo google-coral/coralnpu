@@ -107,6 +107,7 @@ string_list_flag(
     name = "verilator_options_matrix_normal",
     build_setting_default = [
         "-DZVT_ON",
+        "-DZVTBF16FMM_ON",
     ] + VERILATOR_OPTIONS_COMMON,
 )
 
@@ -115,6 +116,7 @@ string_list_flag(
     build_setting_default = [
         "-CFLAGS \"-DCHISEL_SUBSYSTEM_HIGHMEM\"",
         "-DZVT_ON",
+        "-DZVTBF16FMM_ON",
     ] + VERILATOR_OPTIONS_COMMON,
 )
 
@@ -128,6 +130,7 @@ string_list_flag(
     build_setting_default = [
         "-CFLAGS \"-DCHISEL_SUBSYSTEM_HIGHMEM\"",
         "-DZVT_ON",
+        "-DZVTBF16FMM_ON",
     ] + VERILATOR_OPTIONS_COMMON,
 )
 
@@ -477,7 +480,10 @@ _ALL_CONFIGS = [
         "dtcm": "32",
         "rom_vmem": ":rom_test_vmem",
         "rom_vmem_file": "$(location :rom_test_vmem)",
-        "zvt_flags": ["--ZVT_ON=true"],
+        "zvt_flags": [
+            "--ZVT_ON=true",
+            "--ZVTBF16FMM_ON=true",
+        ],
     },
     {
         "name": "matrix_highmem",
@@ -490,13 +496,44 @@ _ALL_CONFIGS = [
         "dtcm": "1024",
         "rom_vmem": ":rom_test_highmem_vmem",
         "rom_vmem_file": "$(location :rom_test_highmem_vmem)",
-        "zvt_flags": ["--ZVT_ON=true"],
+        "zvt_flags": [
+            "--ZVT_ON=true",
+            "--ZVTBF16FMM_ON=true",
+        ],
     },
 ]
 
 _MEM_CONFIGS = _ALL_CONFIGS
 
-_NEXUS_CONFIGS = _ALL_CONFIGS
+_NEXUS_CONFIGS = [
+    {
+        "name": "vector",
+        "suffix": "_vector",
+        "chisel_core": "//fpga/ip/coralnpu_chisel_subsystem_highmem:coralnpu_chisel_subsystem_highmem.core",
+        "chisel_rtl": "//fpga/ip/coralnpu_chisel_subsystem_highmem:rtl_files",
+        "clock_frequency_mhz": _VECTOR_CLOCK_FREQUENCY_MHZ,
+        "itcm": "1024",
+        "dtcm": "1024",
+        "rom_vmem": ":rom_test_highmem_vmem",
+        "rom_vmem_file": "$(location :rom_test_highmem_vmem)",
+        "zvt_flags": [],
+    },
+    {
+        "name": "matrix",
+        "suffix": "_matrix",
+        "chisel_core": "//fpga/ip/coralnpu_chisel_subsystem_matrix_highmem:coralnpu_chisel_subsystem_matrix_highmem.core",
+        "chisel_rtl": "//fpga/ip/coralnpu_chisel_subsystem_matrix_highmem:rtl_files",
+        "clock_frequency_mhz": _MATRIX_CLOCK_FREQUENCY_MHZ,
+        "itcm": "1024",
+        "dtcm": "1024",
+        "rom_vmem": ":rom_test_highmem_vmem",
+        "rom_vmem_file": "$(location :rom_test_highmem_vmem)",
+        "zvt_flags": [
+            "--ZVT_ON=true",
+            "--ZVTBF16FMM_ON=true",
+        ],
+    },
+]
 
 # Boot modes to generate for each memory variant
 _BOOT_MODES = [
@@ -695,8 +732,9 @@ template_rule(
 )
 
 # Nexus target aliases:
-# - Default targets (no suffix), `_matrix`, and `_highmem` alias to the 30 MHz matrix highmem bitstream.
-# - `_vector` and `_default` alias to the 50 MHz vector normal bitstream.
+# - Nexus targets are always highmem (1024KB ITCM / 1024KB DTCM).
+# - Default targets (no suffix), `_matrix_highmem`, and `_highmem` alias to `_matrix` (30 MHz).
+# - `_vector_highmem` and `_default` alias to `_vector` (50 MHz).
 [
     alias(
         name = "build_chip_nexus_" + build_type + alias_suffix,
@@ -709,16 +747,16 @@ template_rule(
         "elab_only",
     ]
     for alias_suffix, target_suffix in [
-        ("", "_matrix_highmem"),
-        ("_matrix", "_matrix_highmem"),
-        ("_highmem", "_matrix_highmem"),
-        ("_vector", "_vector_normal"),
-        ("_default", "_vector_normal"),
-        ("_rom", "_matrix_highmem_rom"),
-        ("_matrix_rom", "_matrix_highmem_rom"),
-        ("_highmem_rom", "_matrix_highmem_rom"),
-        ("_vector_rom", "_vector_normal_rom"),
-        ("_default_rom", "_vector_normal_rom"),
+        ("", "_matrix"),
+        ("_matrix_highmem", "_matrix"),
+        ("_highmem", "_matrix"),
+        ("_vector_highmem", "_vector"),
+        ("_default", "_vector"),
+        ("_rom", "_matrix_rom"),
+        ("_matrix_highmem_rom", "_matrix_rom"),
+        ("_highmem_rom", "_matrix_rom"),
+        ("_vector_highmem_rom", "_vector_rom"),
+        ("_default_rom", "_vector_rom"),
     ]
 ]
 

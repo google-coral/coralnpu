@@ -120,6 +120,10 @@ parameters:
     datatype: bool
     description: "Enable ZVT extension"
     paramtype: vlogdefine
+  ZVTBF16FMM_ON:
+    datatype: bool
+    description: "Enable ZVT BF16 FMM extension"
+    paramtype: vlogdefine
 
 targets:
   default: &default_target
@@ -147,6 +151,7 @@ targets:
       - VLEN_128=true
       - ZVE32F_ON=true
       - ZVT_ON
+      - ZVTBF16FMM_ON
     tools:
       vivado:
         part: "xcvu13p-fhga2104-2-e"
