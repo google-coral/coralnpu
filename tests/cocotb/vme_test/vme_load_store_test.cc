@@ -468,10 +468,10 @@ VME_SUBTEST(test_vtse32_vtzero_vtle32) {
 
 // Case 4: vsetvli SEW16 / LMUL1 configuration (vl=8) before vtle32 / vtse32.
 VME_SUBTEST(test_vtse32_vsetvli_sew16) {
-  uint32_t mtype   = (16 << 10) | 2;         // tm=16, mtwiden=2
-  uint32_t vtype   = (0xc0) | (1 << 3) | 0;  // e16, m1, ta, ma
-  uint32_t eight   = 8;
-  uint32_t tss     = 0;  // Row access, tile 0, row 0
+  uint32_t mtype = (16 << 10) | 2;         // tm=16, mtwiden=2
+  uint32_t vtype = (0xc0) | (1 << 3) | 0;  // e16, m1, ta, ma
+  uint32_t eight = 8;
+  uint32_t tss   = 0;  // Row access, tile 0, row 0
   asm volatile(
       ".insn r 0b1010111, 0b111, 0b1000010, x0, %[mtype], %[vtype] \n"    // msetmtype
       ".insn r 0b1010111, 0b111, 0b1000100, x0, %[eight], x0 \n"          // msettn (vl=8)
@@ -485,10 +485,10 @@ VME_SUBTEST(test_vtse32_vsetvli_sew16) {
 
 // Case 5: vsetvli SEW32 / LMUL1 configuration (vl=4) before vtle32 / vtse32.
 VME_SUBTEST(test_vtse32_vsetvli_sew32) {
-  uint32_t mtype   = (16 << 10) | 1;         // tm=16, mtwiden=1
-  uint32_t vtype   = (0xc0) | (2 << 3) | 0;  // e32, m1, ta, ma
-  uint32_t four    = 4;
-  uint32_t tss     = 0;  // Row access, tile 0, row 0
+  uint32_t mtype = (16 << 10) | 1;         // tm=16, mtwiden=1
+  uint32_t vtype = (0xc0) | (2 << 3) | 0;  // e32, m1, ta, ma
+  uint32_t four  = 4;
+  uint32_t tss   = 0;  // Row access, tile 0, row 0
   asm volatile(
       ".insn r 0b1010111, 0b111, 0b1000010, x0, %[mtype], %[vtype] \n"    // msetmtype
       ".insn r 0b1010111, 0b111, 0b1000100, x0, %[four], x0 \n"           // msettn (vl=4)
