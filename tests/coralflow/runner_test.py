@@ -235,6 +235,28 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsInstance(inst, _AsyncFixtureWrapper)
 
+    async def test_create_fixture_fpga_defaults_highmem(self):
+        mock_mod = mock.MagicMock()
+        mock_sync_fpga = MockSyncFpgaFixture()
+        mock_mod.FpgaTestFixture.create = mock.MagicMock(
+            return_value=mock_sync_fpga
+        )
+        os.environ["CORALNPU_FPGA_SERIAL"] = "FTDI-999"
+        if "CORALFLOW_HIGHMEM" in os.environ:
+            del os.environ["CORALFLOW_HIGHMEM"]
+
+        with mock.patch("importlib.import_module",
+                        return_value=mock_mod) as mock_import, \
+             mock.patch.object(sys, "argv", ["test.py"]):
+            inst = await _create_fixture("nexus_fpga")
+            mock_import.assert_called_once_with(
+                "coralnpu_test_utils.sim_backends.fpga_test_fixture"
+            )
+            mock_mod.FpgaTestFixture.create.assert_called_once_with(
+                usb_serial="FTDI-999", highmem=True
+            )
+            self.assertIsInstance(inst, _AsyncFixtureWrapper)
+
     async def test_create_fixture_fpga_cli_flags(self):
         mock_mod = mock.MagicMock()
         mock_sync_fpga = MockSyncFpgaFixture()
@@ -248,6 +270,22 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
             inst = await _create_fixture("nexus_fpga")
             mock_mod.FpgaTestFixture.create.assert_called_once_with(
                 usb_serial="Nexus-FTDI-16", highmem=True, verify=True
+            )
+            self.assertIsInstance(inst, _AsyncFixtureWrapper)
+
+    async def test_create_fixture_fpga_cli_lowmem(self):
+        mock_mod = mock.MagicMock()
+        mock_sync_fpga = MockSyncFpgaFixture()
+        mock_mod.FpgaTestFixture.create = mock.MagicMock(
+            return_value=mock_sync_fpga
+        )
+        os.environ["CORALFLOW_HIGHMEM"] = "1"
+
+        with mock.patch("importlib.import_module", return_value=mock_mod), \
+             mock.patch.object(sys, "argv", ["test_matmul.py", "--usb-serial", "Nexus-FTDI-16", "--lowmem"]):
+            inst = await _create_fixture("nexus_fpga")
+            mock_mod.FpgaTestFixture.create.assert_called_once_with(
+                usb_serial="Nexus-FTDI-16", highmem=False
             )
             self.assertIsInstance(inst, _AsyncFixtureWrapper)
 

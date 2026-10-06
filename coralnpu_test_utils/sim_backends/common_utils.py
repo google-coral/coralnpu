@@ -19,6 +19,8 @@ import os
 import struct
 from typing import Any
 from bazel_tools.tools.python.runfiles import runfiles
+from elftools.common.exceptions import ELFError
+from elftools.elf.constants import P_FLAGS
 from elftools.elf.elffile import ELFFile
 import numpy as np
 
@@ -83,6 +85,34 @@ def resolve_runfile_path(path: str | os.PathLike) -> str:
         if loc:
             return loc
     return path_str
+
+
+def get_elf_dtcm_origin(elf_path: str | os.PathLike) -> int | None:
+    """Returns the base virtual address of the ELF's DTCM/data segment, or None if not determinable."""
+    resolved = resolve_runfile_path(elf_path)
+    if not resolved or not os.path.exists(resolved):
+        return None
+
+    try:
+        with open(resolved, "rb") as f:
+            elf = ELFFile(f)
+            # 1. Search for a non-empty writable LOAD segment (standard for DTCM data/bss)
+            for seg in elf.iter_segments():
+                if (seg["p_type"] == "PT_LOAD"
+                        and (seg["p_flags"] & P_FLAGS.PF_W)
+                        and seg["p_memsz"] > 0):
+                    return int(seg["p_vaddr"])
+
+            # 2. Check standard DTCM section headers (.data, .bss, .sdata, .sbss)
+            for sec_name in (".data", ".bss", ".sdata", ".sbss"):
+                sec = elf.get_section_by_name(sec_name)
+                if (sec is not None and sec["sh_size"] > 0
+                        and sec["sh_addr"] > 0):
+                    return int(sec["sh_addr"])
+    except (OSError, ELFError):
+        return None
+
+    return None
 
 
 def parse_elf_symbols(

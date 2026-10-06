@@ -27,6 +27,7 @@ import numpy as np
 from coralnpu_test_utils.sim_backends.common_utils import (
     BytesResult,
     WordResult,
+    get_elf_dtcm_origin,
     infer_read_size_bytes,
     parse_elf_symbols,
     reconstruct_read_data,
@@ -111,6 +112,13 @@ class CommonUtilsTest(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             resolve_symbol_address("missing_required_sym", lazy_syms)
+
+    def test_get_elf_dtcm_origin(self):
+        elf_path = resolve_runfile_path(
+            "tests/cocotb/rvv/arithmetics/rvv_add_int8_m1.elf"
+        )
+        self.assertEqual(get_elf_dtcm_origin(elf_path), 0x00010000)
+        self.assertIsNone(get_elf_dtcm_origin("/nonexistent/file.elf"))
 
 
 class TestVerilatorTestFixture(unittest.IsolatedAsyncioTestCase):
@@ -720,6 +728,79 @@ class TestFpgaTestFixture(unittest.TestCase):
             mock_exists.side_effect = lambda p: p == "/path/to/binary.elf"
             resolved = FpgaTestFixture.resolve_path("/path/to/binary.elf")
             self.assertEqual(resolved, "/path/to/binary.elf")
+
+    @patch("coralnpu_test_utils.sim_backends.fpga_test_fixture.FtdiSpiMaster")
+    @patch(
+        "coralnpu_test_utils.sim_backends.fpga_test_fixture.get_elf_dtcm_origin"
+    )
+    @patch(
+        "coralnpu_test_utils.sim_backends.fpga_test_fixture.parse_elf_symbols"
+    )
+    @patch("os.path.exists", return_value=True)
+    def test_load_elf_layout_mismatch_highmem_raises(
+        self, mock_exists, mock_parse, mock_dtcm, mock_ftdi_cls
+    ):
+        highmem_fixture = FpgaTestFixture(
+            usb_serial="Nexus-FTDI-12",
+            highmem=True,
+            auto_recovery=False,
+        )
+        mock_dtcm.return_value = 0x00010000  # Lowmem DTCM base
+
+        with self.assertRaises(ValueError) as ctx:
+            highmem_fixture.load_elf_and_lookup_symbols("rvv_add.elf")
+        self.assertIn("Memory layout mismatch", str(ctx.exception))
+        self.assertIn("LOWMEM", str(ctx.exception))
+
+    @patch("coralnpu_test_utils.sim_backends.fpga_test_fixture.FtdiSpiMaster")
+    @patch(
+        "coralnpu_test_utils.sim_backends.fpga_test_fixture.get_elf_dtcm_origin"
+    )
+    @patch(
+        "coralnpu_test_utils.sim_backends.fpga_test_fixture.parse_elf_symbols"
+    )
+    @patch("os.path.exists", return_value=True)
+    def test_load_elf_layout_mismatch_lowmem_raises(
+        self, mock_exists, mock_parse, mock_dtcm, mock_ftdi_cls
+    ):
+        lowmem_fixture = FpgaTestFixture(
+            usb_serial="Nexus-FTDI-12",
+            highmem=False,
+            auto_recovery=False,
+        )
+        mock_dtcm.return_value = 0x00100000  # Highmem DTCM base
+
+        with self.assertRaises(ValueError) as ctx:
+            lowmem_fixture.load_elf_and_lookup_symbols(
+                "rvv_matmul_highmem.elf"
+            )
+        self.assertIn("Memory layout mismatch", str(ctx.exception))
+        self.assertIn("HIGHMEM", str(ctx.exception))
+
+    @patch("coralnpu_test_utils.sim_backends.fpga_test_fixture.FtdiSpiMaster")
+    @patch(
+        "coralnpu_test_utils.sim_backends.fpga_test_fixture.get_elf_dtcm_origin"
+    )
+    @patch(
+        "coralnpu_test_utils.sim_backends.fpga_test_fixture.parse_elf_symbols"
+    )
+    @patch("os.path.exists", return_value=True)
+    def test_load_elf_layout_match_succeeds(
+        self, mock_exists, mock_parse, mock_dtcm, mock_ftdi_cls
+    ):
+        highmem_fixture = FpgaTestFixture(
+            usb_serial="Nexus-FTDI-12",
+            highmem=True,
+            auto_recovery=False,
+        )
+        mock_dtcm.return_value = 0x00100000  # Highmem DTCM base
+        mock_parse.return_value = (0x0, {"lhs": 0x00100000}, {"lhs": 64})
+
+        syms = highmem_fixture.load_elf_and_lookup_symbols(
+            "rvv_matmul_highmem.elf"
+        )
+        self.assertIn("lhs", syms)
+        highmem_fixture.spi_master.load_elf.assert_called_once()
 
 
 if __name__ == "__main__":

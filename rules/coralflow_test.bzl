@@ -73,7 +73,8 @@ def coralflow_test(
             data = fpga_data,
             env = {
                 "CORALFLOW_TARGET": "nexus_fpga",
-                "CORALFLOW_HIGHMEM": highmem_env,
+                # Physical Nexus FPGA bitstream (chip_nexus.bin) is Highmem by default.
+                "CORALFLOW_HIGHMEM": "1",
             },
             deps = base_deps + [
                 "//coralnpu_test_utils/sim_backends:fpga_test_fixture",

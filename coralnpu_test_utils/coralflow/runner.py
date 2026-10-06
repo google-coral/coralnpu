@@ -71,12 +71,14 @@ def get_target_environment() -> str:
 
 
 def _parse_fpga_cli_args(argv: list[str] | None = None) -> dict[str, Any]:
-    """Parses optional FPGA CLI flags (--usb-serial, --highmem, --verify)."""
+    """Parses optional FPGA CLI flags (--usb-serial, --highmem, --lowmem, --verify)."""
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
         "--usb-serial", "--usb_serial", dest="usb_serial", default=None
     )
-    parser.add_argument("--highmem", action="store_true", default=None)
+    mem_group = parser.add_mutually_exclusive_group()
+    mem_group.add_argument("--highmem", action="store_true", default=None)
+    mem_group.add_argument("--lowmem", action="store_true", default=None)
     parser.add_argument("--verify", action="store_true", default=None)
     ns, _ = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
     cli_kwargs: dict[str, Any] = {}
@@ -84,6 +86,8 @@ def _parse_fpga_cli_args(argv: list[str] | None = None) -> dict[str, Any]:
         cli_kwargs["usb_serial"] = ns.usb_serial
     if ns.highmem:
         cli_kwargs["highmem"] = True
+    elif ns.lowmem:
+        cli_kwargs["highmem"] = False
     if ns.verify:
         cli_kwargs["verify"] = True
     return cli_kwargs
@@ -100,19 +104,23 @@ async def _create_fixture(target: str, **kwargs: Any) -> Any:
         for k, v in _parse_fpga_cli_args().items():
             kwargs.setdefault(k, v)
 
-    if "highmem" not in kwargs and "CORALFLOW_HIGHMEM" in os.environ:
-        if normalized_target in (
-                "npusim",
-                "verilator",
-                "vcs",
-                "rtl",
-                "nexus_fpga",
-        ):
-            kwargs["highmem"] = os.environ["CORALFLOW_HIGHMEM"].strip() in (
-                "1",
-                "true",
-                "True",
-            )
+    if "highmem" not in kwargs:
+        if "CORALFLOW_HIGHMEM" in os.environ:
+            if normalized_target in (
+                    "npusim",
+                    "verilator",
+                    "vcs",
+                    "rtl",
+                    "nexus_fpga",
+            ):
+                kwargs["highmem"] = os.environ["CORALFLOW_HIGHMEM"].strip(
+                ) in (
+                    "1",
+                    "true",
+                    "True",
+                )
+        elif normalized_target == "nexus_fpga":
+            kwargs["highmem"] = True
 
     if normalized_target == "npusim":
         mod = importlib.import_module(

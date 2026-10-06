@@ -25,6 +25,7 @@ from coralnpu_test_utils.ftdi_spi_master import FtdiSpiMaster
 from coralnpu_test_utils.sim_backends.common_utils import (
     BytesResult,
     WordResult,
+    get_elf_dtcm_origin,
     get_runfiles,
     infer_read_size_bytes,
     parse_elf_symbols,
@@ -43,7 +44,7 @@ class FpgaTestFixture:
     def __init__(
         self,
         usb_serial: str,
-        highmem: bool = False,
+        highmem: bool = True,
         ftdi_port: int = 1,
         csr_base_addr: int | None = None,
         auto_recovery: bool = True,
@@ -71,7 +72,7 @@ class FpgaTestFixture:
     def create(
         cls,
         usb_serial: str,
-        highmem: bool = False,
+        highmem: bool = True,
         **kwargs
     ) -> "FpgaTestFixture":
         """Factory method to instantiate the fixture."""
@@ -123,6 +124,7 @@ class FpgaTestFixture:
         optional_symbols: list[str] | None = None,
         verify: bool | None = None,
         verify_memory: bool = False,
+        check_layout: bool = True,
     ) -> dict[str, int]:
         """Loads ELF binary onto FPGA hardware and resolves requested symbol table entries."""
         elf_str = os.fspath(elf_file)
@@ -138,6 +140,28 @@ class FpgaTestFixture:
             resolved_elf = self.resolve_path(elf_file)
         if not os.path.exists(resolved_elf):
             raise FileNotFoundError(f"Could not find ELF file: {elf_file}")
+
+        if check_layout:
+            dtcm_origin = get_elf_dtcm_origin(resolved_elf)
+            if dtcm_origin is not None:
+                if self.highmem and dtcm_origin < 0x00100000:
+                    raise ValueError(
+                        f"[CORALFLOW / FPGA] Memory layout mismatch for '{resolved_elf}':\n"
+                        f"  Binary was compiled for LOWMEM (DTCM at 0x{dtcm_origin:08x} < 0x00100000),\n"
+                        f"  but fixture is configured for HIGHMEM (CSR base 0x{self.csr_base_addr:05x}, 1MB ITCM, 1MB DTCM).\n"
+                        f"  Data at 0x{dtcm_origin:08x} falls inside instruction TCM on Highmem hardware,\n"
+                        f"  which will cause the core to trap or hang.\n"
+                        f"  Fix: compile with highmem parameters (itcm_size_kbytes=1024, dtcm_size_kbytes=1024)\n"
+                        f"       or provide a *_highmem.elf binary.\n"
+                        f"       If running on a custom lowmem FPGA bitstream, pass --lowmem."
+                    )
+                elif not self.highmem and dtcm_origin >= 0x00100000:
+                    raise ValueError(
+                        f"[CORALFLOW / FPGA] Memory layout mismatch for '{resolved_elf}':\n"
+                        f"  Binary was compiled for HIGHMEM (DTCM at 0x{dtcm_origin:08x} >= 0x00100000),\n"
+                        f"  but fixture is configured for LOWMEM (CSR base 0x{self.csr_base_addr:05x}, 8KB ITCM, 32KB DTCM).\n"
+                        f"  Fix: pass --highmem on the command line or configure highmem=True."
+                    )
 
         self.entry_point, self.symbols, self.symbol_sizes = parse_elf_symbols(
             resolved_elf,
