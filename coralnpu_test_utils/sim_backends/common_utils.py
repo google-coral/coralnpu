@@ -59,14 +59,17 @@ def resolve_runfile_path(path: str | os.PathLike) -> str:
     def _try_resolve(p: str) -> str | None:
         if os.path.exists(p):
             return p
-        if r:
+        if r and not os.path.isabs(p):
             for candidate in (
                     p if p.startswith("coralnpu_hw/") else f"coralnpu_hw/{p}",
                     p,
             ):
-                loc = r.Rlocation(candidate)
-                if loc and os.path.exists(loc):
-                    return loc
+                try:
+                    loc = r.Rlocation(candidate)
+                    if loc and os.path.exists(loc):
+                        return loc
+                except (ValueError, TypeError):
+                    continue
         return None
 
     if xlen == "64":
@@ -80,10 +83,18 @@ def resolve_runfile_path(path: str | os.PathLike) -> str:
     if resolved:
         return resolved
 
-    if r:
-        loc = r.Rlocation(path_str)
-        if loc:
-            return loc
+    if r and not os.path.isabs(path_str):
+        for candidate in (
+                path_str if path_str.startswith("coralnpu_hw/") else
+                f"coralnpu_hw/{path_str}",
+                path_str,
+        ):
+            try:
+                loc = r.Rlocation(candidate)
+                if loc:
+                    return loc
+            except (ValueError, TypeError):
+                continue
     return path_str
 
 

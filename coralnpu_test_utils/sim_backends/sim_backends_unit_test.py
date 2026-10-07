@@ -113,6 +113,17 @@ class CommonUtilsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve_symbol_address("missing_required_sym", lazy_syms)
 
+    def test_resolve_runfile_path(self):
+        self.assertEqual(resolve_runfile_path(""), "")
+        self.assertEqual(
+            resolve_runfile_path("/nonexistent/file.elf"),
+            "/nonexistent/file.elf",
+        )
+        elf_path = resolve_runfile_path(
+            "tests/cocotb/rvv/arithmetics/rvv_add_int8_m1.elf"
+        )
+        self.assertTrue(os.path.exists(elf_path))
+
     def test_get_elf_dtcm_origin(self):
         elf_path = resolve_runfile_path(
             "tests/cocotb/rvv/arithmetics/rvv_add_int8_m1.elf"
