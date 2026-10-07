@@ -19,6 +19,28 @@
 #include "hw_sim/coralnpu_simulator.h"
 #include "hw_sim/core_mini_axi_wrapper.h"
 
+namespace {
+
+// The core's CSR block (CoreAxiCSR.scala): the status register (bit 0: halted,
+// bit 1: fault) and the CSR values the core exports (io.csr.out.value in
+// scalar/Csr.scala), one word each.
+constexpr uint32_t kCoreCsrBase   = 0x30000;
+constexpr uint32_t kCoreCsrStatus = kCoreCsrBase + 0x8;
+constexpr uint32_t kCoreCsrValues = kCoreCsrBase + 0x100;
+enum CoreCsrValue : uint32_t {
+  kCoreCsrPc        = 0,
+  kCoreCsrMepc      = 1,
+  kCoreCsrMtval     = 2,
+  kCoreCsrMcause    = 3,
+  kCoreCsrMinstret  = 6,
+  kCoreCsrMinstreth = 7,
+};
+
+// The number of cycles WaitForTermination waits if its timeout isn't positive.
+constexpr int kDefaultTimeoutCycles = 10000;
+
+}  // namespace
+
 class CoreMiniAxiSimulator final : public CoralNPUSimulator {
  public:
   explicit CoreMiniAxiSimulator(const CoralNPUSimulatorOptions &options = {})
@@ -43,6 +65,7 @@ class CoreMiniAxiSimulator final : public CoralNPUSimulator {
   void Run(uint32_t start_addr) final;
   bool WaitForTermination(int timeout) final;
   uint64_t GetCycleCount() const final;
+  bool ReadCoreState(CoralNPUCoreState *state) final;
 
  private:
   VerilatedContext context_;
@@ -50,6 +73,11 @@ class CoreMiniAxiSimulator final : public CoralNPUSimulator {
   std::vector<uint8_t> ddr_memory_;
 
   bool IsDdrAddress(uint32_t addr) { return addr >= 0x80000000 && addr < 0xC0000000; }
+
+  // Reads the word at |addr|.
+  uint32_t ReadWord(uint32_t addr);
+  // Reads CSR value |index| from the core's CSR block.
+  uint32_t ReadCoreCsr(CoreCsrValue index) { return ReadWord(kCoreCsrValues + 4 * index); }
 
   AxiWResp WriteCallback(const AxiAddr &, const AxiWData &);
   AxiRData ReadCallback(const AxiAddr &);
@@ -94,11 +122,42 @@ void CoreMiniAxiSimulator::Run(uint32_t start_addr) {
   wrapper_.WriteWord(0x30000, 0u);
 }
 
-bool CoreMiniAxiSimulator::WaitForTermination(int timeout = 10000) {
-  return wrapper_.WaitForTermination(timeout);
+bool CoreMiniAxiSimulator::WaitForTermination(int timeout) {
+  return wrapper_.WaitForTermination(timeout > 0 ? timeout : kDefaultTimeoutCycles);
 }
 
 uint64_t CoreMiniAxiSimulator::GetCycleCount() const { return wrapper_.cycle_count(); }
+
+uint32_t CoreMiniAxiSimulator::ReadWord(uint32_t addr) {
+  uint32_t word = 0;
+  ReadMem(addr, sizeof(word), reinterpret_cast<char *>(&word));
+  return word;
+}
+
+bool CoreMiniAxiSimulator::ReadCoreState(CoralNPUCoreState *state) {
+  // Word by word: the CSR block registers are one word wide.
+  const uint32_t status = ReadWord(kCoreCsrStatus);
+  state->halted         = (status & 1u) != 0;
+  state->fault          = (status & 2u) != 0;
+  state->pc             = ReadCoreCsr(kCoreCsrPc);
+  state->mepc           = ReadCoreCsr(kCoreCsrMepc);
+  state->mtval          = ReadCoreCsr(kCoreCsrMtval);
+  state->mcause         = ReadCoreCsr(kCoreCsrMcause);
+  // The core may still run (e.g. after a timeout), so read the counter as
+  // high, low, high until the high word is stable.
+  uint32_t high = ReadCoreCsr(kCoreCsrMinstreth);
+  uint32_t low  = 0;
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    low                      = ReadCoreCsr(kCoreCsrMinstret);
+    const uint32_t next_high = ReadCoreCsr(kCoreCsrMinstreth);
+    // The low word didn't wrap while it was read.
+    if (next_high == high)
+      break;
+    high = next_high;
+  }
+  state->minstret = (static_cast<uint64_t>(high) << 32) | low;
+  return true;
+}
 
 AxiWResp CoreMiniAxiSimulator::WriteCallback(const AxiAddr &addr, const AxiWData &data) {
   if (IsDdrAddress(addr.addr_bits_addr)) {
