@@ -188,6 +188,20 @@ class CoralNPUXbar(
           fifo.io.rst_d_i := domainPorts.reset.asBool
           fifo.io.tl_h <> currentIface
           currentIface = fifo.io.tl_d
+        } else if (device.name == "clk_table") {
+          val buf = Module(
+            new TlulFifoSync(
+              commonParams,
+              reqDepth = 2,
+              rspDepth = 2,
+              reqPass = false,
+              rspPass = false
+            )
+          ).suggestName(s"${device.name}_buf")
+          buf.io.spare_req_i := 0.U
+          buf.io.spare_rsp_i := 0.U
+          buf.io.host <> currentIface
+          currentIface = buf.io.device
         }
 
         // Step 2: Width Conversion (if necessary)

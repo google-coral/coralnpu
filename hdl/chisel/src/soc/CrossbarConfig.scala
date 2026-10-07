@@ -166,7 +166,7 @@ class CrossbarConfig(itcmSize: MemorySize, dtcmSize: MemorySize) {
         "ispyocto_ctrl",
         "clk_table"
       ),
-      "spi2tlul" -> Seq("coralnpu_device", "sram", "ddr_ctrl", "ddr_mem"),
+      "spi2tlul" -> Seq("coralnpu_device", "sram", "ddr_ctrl", "ddr_mem", "clk_table"),
       "dma"      -> Seq(
         "sram",
         "coralnpu_device",

@@ -693,9 +693,24 @@ class TestFpgaTestFixture(unittest.TestCase):
         self.assertEqual(self.mock_spi.soft_reset.call_count, 2)
 
     def test_get_core_frequency(self):
+        # 1. Hardware read succeeds with 30 MHz (e.g. matrix highmem bitstream)
         self.mock_spi.read_word.side_effect = (
-            lambda addr: 0x434C4B54 if addr == 0x40001000 else 50
+            lambda addr: 0x434C4B54
+            if addr == 0x40001000 else (30 if addr == 0x40001004 else 0)
         )
+        self.assertEqual(self.fixture.get_core_frequency_mhz(), 30)
+        self.assertEqual(self.fixture.get_core_frequency_hz(), 30_000_000)
+
+        # 2. Hardware read succeeds with 50 MHz (e.g. vector bitstream)
+        self.mock_spi.read_word.side_effect = (
+            lambda addr: 0x434C4B54
+            if addr == 0x40001000 else (50 if addr == 0x40001004 else 0)
+        )
+        self.assertEqual(self.fixture.get_core_frequency_mhz(), 50)
+        self.assertEqual(self.fixture.get_core_frequency_hz(), 50_000_000)
+
+        # 3. Hardware read fails: falls back to default 50 MHz
+        self.mock_spi.read_word.side_effect = RuntimeError("SPI read failed")
         self.assertEqual(self.fixture.get_core_frequency_mhz(), 50)
         self.assertEqual(self.fixture.get_core_frequency_hz(), 50_000_000)
 
