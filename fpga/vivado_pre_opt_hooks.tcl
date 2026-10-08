@@ -23,6 +23,9 @@ source "${script_dir}/pblock_u_isp.tcl"
 # Run DDR4 Pblock configuration
 source "${script_dir}/pblock_u_ddr.tcl"
 
+# Run VME Pblock configuration (co-locate storage and DSPs in SLR0 + SLR1)
+source "${script_dir}/pblock_vme.tcl"
+
 # Fine-Grained Multi-SLR Partitioning (Floorplan Rationalization)
 # SLR1: System Crossbar + System SRAM (128 URAM288 blocks = 40% SLR1 URAMs)
 set sram_slr1 [get_cells -quiet -hierarchical -filter {IS_PRIMITIVE == 0 && (NAME =~ *sram/sram*)}]

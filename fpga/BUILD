@@ -682,6 +682,7 @@ VIVADO_HOOKS = [
     "vivado_post_route_hooks.tcl",
     "pblock_u_isp.tcl",
     "pblock_u_ddr.tcl",
+    "pblock_vme.tcl",
 ]
 
 NEXUS_COMMON_SRCS = CORALNPU_SOC_SRCS_COMMON + [

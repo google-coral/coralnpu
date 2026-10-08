@@ -57,7 +57,7 @@ set_property STEPS.ROUTE_DESIGN.TCL.POST "${workroot}/vivado_post_route_hooks.tc
 
 # Implementation directives for placement, phys_opt, and route (UG949)
 set_property -name {STEPS.OPT_DESIGN.ARGS.MORE OPTIONS} -value {-muxf_remap} -objects [get_runs impl_1]
-set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE SSI_BalanceSLRs [get_runs impl_1]
+set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE SSI_SpreadSLLs [get_runs impl_1]
 set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE ExploreWithAggressiveHoldFix [get_runs impl_1]
 set_property STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE MoreGlobalIterations [get_runs impl_1]
 

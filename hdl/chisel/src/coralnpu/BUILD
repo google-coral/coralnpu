@@ -151,6 +151,7 @@ chisel_library(
         "//hdl/verilog/rvv/design:Zvt/zvt.sv",
         "//hdl/verilog/rvv/design:Zvt/zvt_ctrl.sv",
         "//hdl/verilog/rvv/design:Zvt/zvt_mt.sv",
+        "//hdl/verilog/rvv/design:Zvt/zvt_mt_fpga.sv",
         "//hdl/verilog/rvv/design:Zvt/zvt_mt_reg.sv",
         "//hdl/verilog/rvv/design:Zvt/zvt_pe_adder.sv",
         "//hdl/verilog/rvv/design:Zvt/zvt_pe_adder_fp_lane.sv",

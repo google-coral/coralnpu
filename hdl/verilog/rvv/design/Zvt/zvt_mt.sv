@@ -39,6 +39,9 @@ module zvt_mt (
   input  logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][`SUBTILE_SIZE*8-1:0]      writeData;    
 
 // -------------- code start --------------------    
+`ifdef FPGA_XILINX
+  zvt_mt_fpga u_zvt_mt_fpga (.*);
+`else
   // write data
   logic [`NUM_MT-1:0][`NUM_SUBTILE-1:0][`SUBTILE_SIZE-1:0]   wen;    // byte enable
   logic [`NUM_MT-1:0][`NUM_SUBTILE-1:0][`SUBTILE_SIZE*8-1:0] wdata;
@@ -87,5 +90,6 @@ module zvt_mt (
     .wdata  (wdata),
     .mt     (mt)
   );
+`endif
 
 endmodule

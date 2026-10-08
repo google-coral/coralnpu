@@ -584,6 +584,9 @@ module zvt_ctrl (
   end
 
   // uopRdy
+`ifdef FPGA_XILINX
+  zvt_ctrl_fpga u_ctrl_fpga (.*);
+`else
   always_comb begin
     vmelsuVld     = 'b0;
     resVme2rvvVld = 'b0;
@@ -614,6 +617,7 @@ module zvt_ctrl (
       end
     endcase
   end
+`endif
 
 
   // MT accessing

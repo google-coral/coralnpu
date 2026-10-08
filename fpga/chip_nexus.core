@@ -43,6 +43,7 @@ filesets:
       - vivado_post_route_hooks.tcl: { file_type: user, copyto: vivado_post_route_hooks.tcl }
       - pblock_u_isp.tcl: { file_type: user, copyto: pblock_u_isp.tcl }
       - pblock_u_ddr.tcl: { file_type: user, copyto: pblock_u_ddr.tcl }
+      - pblock_vme.tcl: { file_type: user, copyto: pblock_vme.tcl }
 
 
 parameters:

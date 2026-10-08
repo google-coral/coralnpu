@@ -63,6 +63,7 @@ exports_files(
         "Zvt/zvt.sv",
         "Zvt/zvt_ctrl.sv",
         "Zvt/zvt_mt.sv",
+        "Zvt/zvt_mt_fpga.sv",
         "Zvt/zvt_mt_reg.sv",
         "Zvt/zvt_pe_adder.sv",
         "Zvt/zvt_pe_adder_fp_lane.sv",
