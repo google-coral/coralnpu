@@ -116,10 +116,16 @@ run:synthesis --host_action_env=PATH
 
 # Add config to enable power targets.
 build:power --build_tag_filters="power"
+build:power --action_env=PATH
+build:power --host_action_env=PATH
 test:power --build_tag_filters="power"
 test:power --test_tag_filters="power"
+test:power --action_env=PATH
+test:power --host_action_env=PATH
 run:power --build_tag_filters="power"
 run:power --test_tag_filters="power"
+run:power --action_env=PATH
+run:power --host_action_env=PATH
 
 # Add config to enable spyglass targets.
 build:spyglass --build_tag_filters="spyglass"
