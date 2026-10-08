@@ -130,10 +130,10 @@ module coralnpu_tb_top;
       `DEBUG_RB_TILE_WRITE_DATA(lane, tw)
 
   `define DEBUG_RB_ZVT_PORTS(lane) \
-      `DEBUG_RB_TILE_WRITE(lane, 0) \
-      `DEBUG_RB_TILE_WRITE(lane, 1) \
-      `DEBUG_RB_TILE_WRITE(lane, 2) \
-      `DEBUG_RB_TILE_WRITE(lane, 3) \
+      `DEBUG_RB_TILE_WRITE(lane, 0), \
+      `DEBUG_RB_TILE_WRITE(lane, 1), \
+      `DEBUG_RB_TILE_WRITE(lane, 2), \
+      `DEBUG_RB_TILE_WRITE(lane, 3), \
       .io_debug_rb_inst_``lane``_bits_mtype_valid(), \
       .io_debug_rb_inst_``lane``_bits_mtype_bits(),
 `else
