@@ -173,7 +173,7 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
        case Architecture::kM3:
          return kCoralNPUM3;
        case Architecture::kV2:
-@@ -344,6 +348,131 @@
+@@ -344,6 +348,137 @@
    return 0;
  }
  
@@ -277,28 +277,34 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
 +    LOG(ERROR) << "[DPI] Matrix state is unavailable for this architecture.";
 +    return -4;
 +  }
-+  const uint32_t current_tew = static_cast<uint32_t>(matrix->tile_element_width_bits());
-+  uint32_t required_words = 0;
-+  const int count_status =
-+      mpact_get_matrix_tile_word_count(current_tew, &required_words);
-+  if (count_status != 0) {
-+    LOG(ERROR) << "[DPI] Invalid current matrix TEW: " << current_tew;
++  if (tile >= 16) {
++    LOG(ERROR) << "[DPI] Matrix tile index must be below 16: " << tile;
 +    return -5;
 +  }
-+
-+  // TEW=32 is the largest logical tile representation: TE*TE words.
++  const uint32_t current_tew =
++      static_cast<uint32_t>(matrix->tile_element_width_bits());
++  const uint32_t ptile_bytes =
++      static_cast<uint32_t>(matrix->tile_elements() * matrix->tile_elements());
++  const uint32_t ptile_words = ptile_bytes / sizeof(uint32_t);
 +  const uint32_t max_words =
 +      static_cast<uint32_t>(matrix->tile_elements() * matrix->tile_elements());
 +  for (uint32_t word = 0; word < max_words; ++word) {
 +    value[word].aval = 0;
 +    value[word].bval = 0;
 +  }
-+  const int tile_status =
-+      mpact_get_matrix_tile(tile, current_tew, value, max_words);
-+  if (tile_status != 0) return -6;
++  const uint8_t* raw_bytes = matrix->raw_tile_bytes(static_cast<int>(tile));
++  for (uint32_t word = 0; word < ptile_words; ++word) {
++    uint32_t packed = 0;
++    for (uint32_t byte = 0; byte < sizeof(uint32_t); ++byte) {
++      packed |= static_cast<uint32_t>(raw_bytes[word * sizeof(uint32_t) + byte])
++                << (8 * byte);
++    }
++    value[word].aval = packed;
++    value[word].bval = 0;
++  }
 +
 +  *tew = current_tew;
-+  *valid_word_count = required_words;
++  *valid_word_count = ptile_words;
 +  return 0;
 +}
 +

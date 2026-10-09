@@ -1,0 +1,557 @@
+diff --git a/riscv/riscv_format32.bin_fmt b/riscv/riscv_format32.bin_fmt
+index e3c38bb..59db637 100644
+--- a/riscv/riscv_format32.bin_fmt
++++ b/riscv/riscv_format32.bin_fmt
+@@ -240,6 +240,7 @@ format VConfig[32] : Inst32Format {
+     signed zimm10[10] = top12[9..0];
+     unsigned uimm5[5] = rs1;
+     unsigned rs2[5] = top12[4..0];
++    unsigned subfunc[3] = top12[2..0];
+ };
+ 
+ // Matrix-multiply format (OP-VE). Same field layout as VArith but the rd field
+diff --git a/riscv/riscv_misa.cc b/riscv/riscv_misa.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_misa.cc
++++ b/riscv/riscv_misa.cc
+@@ -75,7 +75,9 @@ bool RiscVMIsa::HasSupervisorMode() {
+   return GetUint32() & *IsaExtension::kSupervisorMode;
+ }
+ 
+-bool RiscVMIsa::HasUserMode() { return true; }
++bool RiscVMIsa::HasUserMode() {
++  return (GetUint32() & *IsaExtension::kUserMode) != 0;
++}
+ 
+ RiscVXlen RiscVMIsa::Xlen() {
+   switch ((GetUint64() >> 62) & 0xb11) {
+diff --git a/riscv/riscv_state.h b/riscv/riscv_state.h
+index 60dffd2..2391259 100644
+--- a/riscv/riscv_state.h
++++ b/riscv/riscv_state.h
+@@ -413,6 +413,10 @@ class RiscVState : public ArchState {
+   RiscVCsrInterface* scause() const { return scause_; }
+   RiscVCsrInterface* sideleg() const { return sideleg_; }
+ 
++  virtual void MarkMatrixDirty() {}
++  virtual void MarkMatrixInitial() {}
++  virtual bool IsMatrixStatusOff() const { return false; }
++
+  protected:
+   RiscVMStatus* mstatus_ = nullptr;
+ 
+diff --git a/riscv/riscv_vector_fp_instructions.cc b/riscv/riscv_vector_fp_instructions.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_vector_fp_instructions.cc
++++ b/riscv/riscv_vector_fp_instructions.cc
+@@ -559,12 +559,25 @@ void Vfnmsac(const Instruction* inst) {
+ // Widening floating point multiply and accumulate vd.
+ void Vfwmacc(const Instruction* inst) {
+-  auto* rv_fp = static_cast<RiscVState*>(inst->state())->rv_fp();
+-  auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  auto* rv_state = static_cast<RiscVState*>(inst->state());
++  auto* rv_fp = rv_state->rv_fp();
++  auto* rv_vector = rv_state->rv_vector();
+   if (!rv_fp->rounding_mode_valid()) {
+     LOG(ERROR) << "Invalid rounding mode";
+     rv_vector->set_vector_exception();
+     return;
+   }
+   int sew = rv_vector->selected_element_width();
++  if (rv_vector->is_vill() || sew != 4 || rv_vector->max_elen() < 64) {
++    uint64_t address = inst->address();
++    auto* db = rv_state->db_factory()->Allocate<uint32_t>(1);
++    rv_state->LoadMemory(inst, address, db, nullptr, nullptr);
++    uint32_t inst_word = db->Get<uint32_t>(0);
++    db->DecRef();
++    if ((inst_word & 0b11) != 0b11) inst_word &= 0xffff;
++    rv_state->Trap(/*is_interrupt=*/false, /*trap_value=*/inst_word,
++                   static_cast<uint64_t>(ExceptionCode::kIllegalInstruction),
++                   /*epc=*/address, inst);
++    return;
++  }
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memory_instructions.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_vector_memory_instructions.cc
++++ b/riscv/riscv_vector_memory_instructions.cc
+@@ -160,6 +160,9 @@ absl::Status WriteBackSegmentLoadData(int vector_register_byte_length,
+ void Vsetvl(bool rd_zero, bool rs1_zero, const Instruction* inst) {
+   auto* rv_state = static_cast<RiscVState*>(inst->state());
+   auto* rv_vector = rv_state->rv_vector();
++  if (auto mtype_csr = rv_state->csr_set()->GetCsr(0xC23); mtype_csr.ok()) {
++    (*mtype_csr)->Set(uint32_t{0});
++  }
+   uint32_t vtype = GetInstructionSource<uint32_t>(inst, 1) & 0b1'1'111'111;
+   // Get previous vtype.
+   uint32_t prev_vtype = rv_vector->vtype();
+diff --git a/riscv/riscv_zvt.bin_fmt b/riscv/riscv_zvt.bin_fmt
+index dde5ca3..b13cb2e 100644
+--- a/riscv/riscv_zvt.bin_fmt
++++ b/riscv/riscv_zvt.bin_fmt
+@@ -23,28 +23,29 @@ instruction group RiscVZvtInst32[32] : Inst32Format {
+   msettn        : VConfig : func7 == 0b100'0010, rs2 == 0b00000, func3 == 0b111, opcode == 0b101'0111;
+   msettm        : VConfig : func7 == 0b100'0010, rs2 == 0b00001, func3 == 0b111, opcode == 0b101'0111;
+   msettk        : VConfig : func7 == 0b100'0010, rs2 == 0b00010, func3 == 0b111, opcode == 0b101'0111;
++  msetmtypei    : VConfig : func7 == 0b100'0010, subfunc == 0b011, func3 == 0b111, opcode == 0b101'0111;
+ 
+   // Tile manipulation (OP-V, func3 == 0b110).
+-  vtmv_v_t      : VArith : func6 == 0b010'000, vs2 == 0b11111, func3 == 0b110, opcode == 0b101'0111;
+-  vtmv_t_v      : VArith : func6 == 0b010'111,                 func3 == 0b110, opcode == 0b101'0111;
+-  vtzero        : VArith : func6 == 0b010'000, vs2 == 0b11110, vs1 == 0b00000, func3 == 0b110, opcode == 0b101'0111;
+-  vtdiscard     : VArith : func6 == 0b010'000, vs2 == 0b11100, vs1 == 0b00000, func3 == 0b110, opcode == 0b101'0111;
++  vtmv_v_t      : VArith : func6 == 0b010'000, vm == 0b1, vs2 == 0b11111, func3 == 0b110, opcode == 0b101'0111;
++  vtmv_t_v      : VArith : func6 == 0b010'111, vm == 0b1,                 func3 == 0b110, vd == 0b00000, opcode == 0b101'0111;
++  vtzero        : VArith : func6 == 0b010'000, vm == 0b1, vs2 == 0b11110, vs1 == 0b00000, func3 == 0b110, opcode == 0b101'0111;
++  vtdiscard     : VArith : func6 == 0b010'000, vm == 0b1, vs2 == 0b11100, vs1 == 0b00000, func3 == 0b110, vd == 0b00000, opcode == 0b101'0111;
+ 
+   // Tile load/store to memory (LOAD-FP / STORE-FP, mew == 1, width == 0b111;
+   // the nf field selects EEW: 0->8, 1->16, 2->32, 3->64).
+-  vtle8         : VMem : nf == 0b000, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b000'0111;
+-  vtle16        : VMem : nf == 0b001, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b000'0111;
+-  vtle32        : VMem : nf == 0b010, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b000'0111;
+-  vtle64        : VMem : nf == 0b011, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b000'0111;
+-  vtse8         : VMem : nf == 0b000, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b010'0111;
+-  vtse16        : VMem : nf == 0b001, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b010'0111;
+-  vtse32        : VMem : nf == 0b010, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b010'0111;
+-  vtse64        : VMem : nf == 0b011, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b010'0111;
++  vtle8         : VMem : nf == 0b000, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, vd == 0b00000, opcode == 0b000'0111;
++  vtle16        : VMem : nf == 0b001, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, vd == 0b00000, opcode == 0b000'0111;
++  vtle32        : VMem : nf == 0b010, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, vd == 0b00000, opcode == 0b000'0111;
++  vtle64        : VMem : nf == 0b011, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, vd == 0b00000, opcode == 0b000'0111;
++  vtse8         : VMem : nf == 0b000, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, vd == 0b00000, opcode == 0b010'0111;
++  vtse16        : VMem : nf == 0b001, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, vd == 0b00000, opcode == 0b010'0111;
++  vtse32        : VMem : nf == 0b010, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, vd == 0b00000, opcode == 0b010'0111;
++  vtse64        : VMem : nf == 0b011, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, vd == 0b00000, opcode == 0b010'0111;
+ 
+   // Matrix multiply (OP-VE, func6 == 0b111100). func3 selects int(000)/fp(001);
+   // the alt bit selects the alternate datatype variant.
+-  vtmmu_tvv     : VMatrix : func6 == 0b111'100, func3 == 0b000, alt == 0b0, opcode == 0b111'0111;
+-  vtmms_tvv     : VMatrix : func6 == 0b111'100, func3 == 0b000, alt == 0b1, opcode == 0b111'0111;
+-  vtfmm_tvv     : VMatrix : func6 == 0b111'100, func3 == 0b001, alt == 0b0, opcode == 0b111'0111;
+-  vtfmm_alt_tvv : VMatrix : func6 == 0b111'100, func3 == 0b001, alt == 0b1, opcode == 0b111'0111;
++  vtmmu_tvv     : VMatrix : func6 == 0b111'100, vm == 0b1, func3 == 0b000, alt == 0b0, opcode == 0b111'0111;
++  vtmms_tvv     : VMatrix : func6 == 0b111'100, vm == 0b1, func3 == 0b000, alt == 0b1, opcode == 0b111'0111;
++  vtfmm_tvv     : VMatrix : func6 == 0b111'100, vm == 0b1, func3 == 0b001, alt == 0b0, opcode == 0b111'0111;
++  vtfmm_alt_tvv : VMatrix : func6 == 0b111'100, vm == 0b1, func3 == 0b001, alt == 0b1, opcode == 0b111'0111;
+ };
+diff --git a/riscv/riscv_zvt.isa b/riscv/riscv_zvt.isa
+index db77d9e..80ff64f 100644
+--- a/riscv/riscv_zvt.isa
++++ b/riscv/riscv_zvt.isa
+@@ -31,6 +31,9 @@ slot riscv_zvt {
+     msettk{: rs1 : rd},
+       disasm: "msettk", "%rd, %rs1",
+       semfunc: "&::mpact::sim::riscv::RiscVZvtMsetTk";
++    msetmtypei{: uimm5, zimm10 : },
++      disasm: "msetmtypei",
++      semfunc: "&::mpact::sim::riscv::RiscVZvtMsetMtypei";
+ 
+     // Tile manipulation.
+     vtzero{: mtd : },
+diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
+index 9a7965b..f7fa184 100644
+--- a/riscv/riscv_zvt_instructions.cc
++++ b/riscv/riscv_zvt_instructions.cc
+@@ -15,6 +15,7 @@
+ #include "riscv/riscv_zvt_instructions.h"
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <cstdint>
+ #include <cstring>
+ 
+@@ -91,6 +92,19 @@ uint64_t LoadTileBits(RiscVZvtMatrixState* matrix_state, int kTile, int row,
+ 
++void TrapIllegalInstruction(RiscVState* state, const Instruction* inst) {
++  uint64_t address = inst->address();
++  auto* db = state->db_factory()->Allocate<uint32_t>(1);
++  state->LoadMemory(inst, address, db, nullptr, nullptr);
++  uint32_t inst_word = db->Get<uint32_t>(0);
++  db->DecRef();
++  if ((inst_word & 0b11) != 0b11) inst_word &= 0xffff;
++  state->Trap(/*is_interrupt=*/false, /*trap_value=*/inst_word,
++              *ExceptionCode::kIllegalInstruction,
++              /*epc=*/address, inst);
++}
++
+ void StoreTileBits(RiscVZvtMatrixState* matrix_state, int kTile, int row,
+                    int col, int tile_element_width, uint64_t value) {
++  matrix_state->MarkDirty();
+   const int kEffectiveTileEdge = tile_element_width < 64
+                                      ? matrix_state->tile_elements()
+                                      : matrix_state->tile_elements() / 2;
+@@ -136,40 +150,53 @@ void RiscVZvtMsetMtype(const Instruction* inst) {
+   // Spec 15.1.1.4: vl = 0; mtype = rs1; then vtype = rs2 as if by vsetvl.
+   vector_state->set_vector_length(0);
+   matrix_state->set_mtype(kRs1);
+-  vector_state->SetVectorType(kRs2);
+-
+   if (matrix_state->mtwiden() == 0) {
+     matrix_state->set_mtype(0);
++    vector_state->SetVectorType(kRs2 & ~0x100u);
+     return;
+   }
+ 
++  // If the matrix unit is configured, force vma/vta = 1 and derive vlmul per
++  // Zvt spec §15.1.1.4: LMUL = min(8/KMAX, 8/TWIDEN, ceil(ETE/EVE)).
++  // For VLEN=128, TE=16: SEW8 -> LMUL1 (0), SEW16 -> LMUL2 (1), SEW32 -> LMUL4 (2).
++  const uint32_t kVsew = (kRs2 >> 3) & 0x7;
++  uint32_t vlmul = 4;  // Reserved if SEW is unsupported.
++  switch (kVsew) {
++    case 0: vlmul = 0; break;  // SEW8 -> LMUL1
++    case 1: vlmul = 1; break;  // SEW16 -> LMUL2
++    case 2: vlmul = 2; break;  // SEW32 -> LMUL4
++    default: vlmul = 4; break;
++  }
++  uint32_t new_vtype =
++      (kRs2 & ~0b1100'0111u) | (1u << 7) | (1u << 6) | vlmul;
++  vector_state->SetVectorType(new_vtype);
++  if (vector_state->is_vill()) {
++    matrix_state->set_mtype(0);
++    return;
++  }
++
+   const int kSewBits = vector_state->selected_element_width() * 8;
+   const int kTwiden = matrix_state->twiden();
+   const int kTileElementWidth = kSewBits * kTwiden;
+   const int kEffectiveTileElements = kTileElementWidth < 64
+                                          ? matrix_state->tile_elements()
+                                          : matrix_state->tile_elements() / 2;
+   const int kmax = RiscVZvtKmax(kSewBits);
+   const int kLmulElements =
+       vector_state->max_vector_length();  // LMUL * (VLEN/SEW).
+ 
+-  // If the matrix unit is configured, force vma/vta = 1.
+-  // TODO: also derive vtype.vlmul per the spec's min() formula; deferred while
+-  // the v0.3 encoding firms up.
+-  vector_state->SetVectorType(vector_state->vtype() | (1u << 6) | (1u << 7));
+-
+   // kVill if the resulting TILE_ELEMENT_WIDTH is unsupported for the kBase
+   // (SEW*TWIDEN > ELEN).
+-  const bool kVill = kTileElementWidth > kElen;
++  const bool kVill = kTileElementWidth > vector_state->max_elen();
+   if (kVill) {
+-    vector_state->set_vector_exception();
++    vector_state->SetVectorType(kVillBitMask);
+     matrix_state->set_mtype(0);
+     return;
+   }
+ 
+   // kTileK = min(kTileK, KMAX); kTileM = min(kTileM, LMUL*EVE,
+   // EFFECTIVE_TILE_EDGE).
+   matrix_state->set_tile_k(std::min(matrix_state->tile_k(), kmax));
+   matrix_state->set_tile_m(std::min(
+       {matrix_state->tile_m(), kLmulElements, kEffectiveTileElements}));
+ }
+@@ -207,33 +234,85 @@ void RiscVZvtMsetTm(const Instruction* inst) {
+     kTileM = std::min<uint32_t>(kRs1, kBound);
+   }
+   matrix_state->set_tile_m(kTileM);
++  vector_state->MarkDirty();
+   WriteScalar(inst, 0, kTileM);
+ }
+ 
+ void RiscVZvtMsetTk(const Instruction* inst) {
+   auto m_result = GetMatrixState(inst);
+   auto* matrix_state = *m_result;
+   auto* vector_state = matrix_state->riscv_state()->rv_vector();
+   const uint32_t kRs1 = GetInstructionSource<uint32_t>(inst, 0);
+ 
+   uint32_t kTileK;
+   if (matrix_state->mtwiden() == 0) {
+     kTileK = 0;
+   } else {
+     const int kSewBits = vector_state->selected_element_width() * 8;
+     kTileK = std::min<uint32_t>(kRs1, RiscVZvtKmax(kSewBits));
+   }
+   matrix_state->set_tile_k(kTileK);
++  vector_state->MarkDirty();
+   WriteScalar(inst, 0, kTileK);
+ }
+ 
++void RiscVZvtMsetMtypei(const Instruction* inst) {
++  auto m_result = GetMatrixState(inst);
++  auto* matrix_state = *m_result;
++  auto* vector_state = matrix_state->riscv_state()->rv_vector();
++  const uint32_t kUimm = GetInstructionSource<uint32_t>(inst, 0);
++  const uint32_t kZimm10 = GetInstructionSource<uint32_t>(inst, 1);
++  const uint32_t kMtwiden = kUimm & 0x3;
++  const uint32_t kVsew = (kZimm10 >> 3) & 0x3;
++
++  vector_state->set_vector_length(0);
++  matrix_state->set_mtype(kMtwiden);
++
++  if (kMtwiden != 0) {
++    uint32_t vlmul = 4;
++    switch (kVsew) {
++      case 0: vlmul = 0; break;  // SEW8 -> LMUL1
++      case 1: vlmul = 1; break;  // SEW16 -> LMUL2
++      case 2: vlmul = 2; break;  // SEW32 -> LMUL4
++      default: vlmul = 4; break;
++    }
++    uint32_t new_vtype = (kVsew << 3) | (1u << 6) | (1u << 7) | vlmul;
++    vector_state->SetVectorType(new_vtype);
++    if (vector_state->is_vill()) {
++      matrix_state->set_mtype(0);
++      return;
++    }
++    const int kSewBits = vector_state->selected_element_width() * 8;
++    const int kTileElementWidth = kSewBits * matrix_state->twiden();
++    if (kTileElementWidth > vector_state->max_elen()) {
++      vector_state->SetVectorType(kVillBitMask);
++      matrix_state->set_mtype(0);
++      return;
++    }
++  } else {
++    matrix_state->set_mtype(0);
++    uint32_t new_vtype = (kVsew << 3);  // LMUL1, ta=0, ma=0
++    vector_state->SetVectorType(new_vtype);
++  }
++}
++
+ // ----------------------------------------------------------------------------
+ // Tile manipulation
+ // ----------------------------------------------------------------------------
+ 
+ void RiscVZvtVtZero(const Instruction* inst) {
+   auto m_result = GetMatrixState(inst);
+   auto* matrix_state = *m_result;
+   auto* vector_state = matrix_state->riscv_state()->rv_vector();
++  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
++    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
++    return;
++  }
++  matrix_state->MarkDirty();
+   const int kTile = GetInstructionSource<uint32_t>(inst, 0);  // mtd
+   const int kTileElementWidth = matrix_state->tile_element_width_bits();
+@@ -250,8 +324,18 @@ void RiscVZvtVtZero(const Instruction* inst) {
+   }
+ }
+ 
+-void RiscVZvtVtDiscard(const Instruction* /*inst*/) {
+-  // Architecturally hints the kTile state is dead. No-op in the ISS.
++void RiscVZvtVtDiscard(const Instruction* inst) {
++  // Architecturally hints the kTile state is dead. Transition to Initial.
++  auto m_result = GetMatrixState(inst);
++  if (!m_result.ok()) return;
++  auto* matrix_state = *m_result;
++  auto* vector_state = matrix_state->riscv_state()->rv_vector();
++  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
++    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
++    return;
++  }
++  matrix_state->MarkInitial();
++  vector_state->MarkDirty();
+ }
+ 
+ // Number of kTile-subset elements processed: min(vl, EFFECTIVE_TILE_EDGE) for
+@@ -271,6 +355,11 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
+   auto m_result = GetMatrixState(inst);
+   auto* matrix_state = *m_result;
+   auto* vector_state = matrix_state->riscv_state()->rv_vector();
++  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
++    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
++    return;
++  }
++  vector_state->MarkDirty();
+   const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 0));
+   const int kSewBytes = vector_state->selected_element_width();
+   const int kTileElementWidth = kSewBytes * 8;
+@@ -305,6 +394,11 @@ void RiscVZvtVtmvTv(const Instruction* inst) {
+   auto m_result = GetMatrixState(inst);
+   auto* matrix_state = *m_result;
+   auto* vector_state = matrix_state->riscv_state()->rv_vector();
++  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
++    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
++    return;
++  }
++  matrix_state->MarkDirty();
+   auto* vs = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
+   const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));
+   const int kSewBytes = vector_state->selected_element_width();
+@@ -335,6 +429,12 @@ void RiscVZvtVtle(int eew_bits, const Instruction* inst) {
+   auto* matrix_state = *m_result;
+   auto* state = matrix_state->riscv_state();
+   auto* vector_state = state->rv_vector();
++  if (eew_bits > vector_state->max_elen() || matrix_state->IsMatrixStatusOff() ||
++      vector_state->is_vill()) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
++  matrix_state->MarkDirty();
+   const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);       // rs1
+   const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));  // rs2
+   const int kElementSize = eew_bits / 8;
+@@ -359,6 +459,12 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+   auto* matrix_state = *m_result;
+   auto* state = matrix_state->riscv_state();
+   auto* vector_state = state->rv_vector();
++  if (eew_bits > vector_state->max_elen() || matrix_state->IsMatrixStatusOff() ||
++      vector_state->is_vill()) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
++  vector_state->MarkDirty();
+   const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);       // rs1
+   const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));  // rs2
+   const int kElementSize = eew_bits / 8;
+@@ -382,7 +488,21 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+   auto m_result = GetMatrixState(inst);
+   auto* matrix_state = *m_result;
++  auto* state = matrix_state->riscv_state();
+   auto* vector_state = matrix_state->riscv_state()->rv_vector();
++  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
++  const bool kIsFp =
++      (kind == RiscVZvtMatmulKind::kFp32 || kind == RiscVZvtMatmulKind::kBf16);
++  matrix_state->MarkDirty();
++  if (kIsFp && state->mstatus() != nullptr &&
++      state->mstatus()->fs() != RiscVMStatus::kStatusOff &&
++      state->mstatus()->fs() != RiscVMStatus::kStatusDirty) {
++    state->mstatus()->set_fs(RiscVMStatus::kStatusDirty);
++    state->mstatus()->Submit();
++  }
+   const int kSewBytes = vector_state->selected_element_width();
+   const int kSewBits = kSewBytes * 8;
+   const int kElementsPerVector =
+@@ -403,6 +523,9 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+   // length).
+   const int kTileN =
+       std::min(vector_state->vector_length(), kEffectiveTileEdge);
++  if (!kIsFp && (kSewBytes != 1 || kTileElementWidth != 32)) {
++    return;
++  }
+ 
+   auto* a = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
+   auto* b = static_cast<RV32VectorSourceOperand*>(inst->Source(1));
+@@ -410,9 +519,6 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+   absl::Span<uint8_t> a_spans[32] = {};
+   absl::Span<uint8_t> b_spans[32] = {};
+ 
+-  const bool kIsFp =
+-      (kind == RiscVZvtMatmulKind::kFp32 || kind == RiscVZvtMatmulKind::kBf16);
+-
+   // Reads element `col` of row `kk` from a vector-group operand.
+   auto read_fp = [&](RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
+                      int kk, int col) -> float {
+@@ -432,33 +538,42 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+     return f;
+   };
++  const bool kVs2Signed = (kind == RiscVZvtMatmulKind::kInt8Signed);
++  const bool kVs1Signed = ((vector_state->vtype() & 0x100) != 0);
+   auto read_int = [&](RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
+-                      int kk, int col) -> int32_t {
++                      int kk, int col, bool is_signed) -> int32_t {
+     const int kReg = kk * kStride + col / kElementsPerVector;
+     const int kE = col % kElementsPerVector;
+     if (spans[kReg].empty()) {
+       spans[kReg] = op->GetRegister(kReg)->data_buffer()->Get<uint8_t>();
+     }
+     absl::Span<uint8_t> span = spans[kReg];
+-    if (kind == RiscVZvtMatmulKind::kInt8Signed) {
++    if (is_signed) {
+       return static_cast<int8_t>(span[kE]);
+     }
+     return static_cast<uint8_t>(span[kE]);
+   };
+ 
+   for (int mm = 0; mm < kTileM; mm++) {
+     for (int nn = 0; nn < kTileN; nn++) {
+       if (kIsFp) {
+         float acc =
+             matrix_state->GetElem<float>(kDestTile, mm, nn, kTileElementWidth);
+         for (int kk = 0; kk < kTileK; kk++) {
+-          acc += read_fp(a, a_spans, kk, mm) * read_fp(b, b_spans, kk, nn);
++          float a_val = read_fp(a, a_spans, kk, mm);
++          float b_val = read_fp(b, b_spans, kk, nn);
++          acc = std::fma(a_val, b_val, acc);
++        }
++        if (std::isnan(acc)) {
++          uint32_t nan_bits = 0x7fc00000;
++          std::memcpy(&acc, &nan_bits, sizeof(float));
+         }
+         matrix_state->SetElem<float>(kDestTile, mm, nn, kTileElementWidth, acc);
+       } else {
+         int32_t acc = matrix_state->GetElem<int32_t>(kDestTile, mm, nn,
+                                                      kTileElementWidth);
+         for (int kk = 0; kk < kTileK; kk++) {
+-          acc += read_int(a, a_spans, kk, mm) * read_int(b, b_spans, kk, nn);
++          acc += read_int(a, a_spans, kk, mm, kVs2Signed) *
++                 read_int(b, b_spans, kk, nn, kVs1Signed);
+         }
+         matrix_state->SetElem<int32_t>(kDestTile, mm, nn, kTileElementWidth,
+                                        acc);
+diff --git a/riscv/riscv_zvt_instructions.h b/riscv/riscv_zvt_instructions.h
+index 94779de..4f79eed 100644
+--- a/riscv/riscv_zvt_instructions.h
++++ b/riscv/riscv_zvt_instructions.h
+@@ -29,7 +29,7 @@ using ::mpact::sim::generic::Instruction;
+ // KMAX (max inner dot-product depth) as a function of SEW in bits.
+ // Per spec 15.1.1.4: KMAX = max(1, 32 / SEW). int8->4, bf16(16)->2, fp32->1.
+ inline int RiscVZvtKmax(int sew_bits) {
+-  return sew_bits >= 32 ? 1 : (32 / sew_bits);
++  return sew_bits <= 0 ? 0 : (sew_bits >= 32 ? 1 : (32 / sew_bits));
+ }
+ 
+ // Matrix configuration instructions (Zvtbase). All write the constrained
+@@ -48,6 +48,7 @@ void RiscVZvtMsetTn(const Instruction* inst);
+ void RiscVZvtMsetTm(const Instruction* inst);
+ //   msettk rd, rs1     : sets mtype.tk. (K is inner dimension)
+ void RiscVZvtMsetTk(const Instruction* inst);
++void RiscVZvtMsetMtypei(const Instruction* inst);
+ 
+ // Tile manipulation instructions (Zvtbase).
+ //   vtzero mtd         : zeroes the tm x tn submatrix of tile mtd.
+diff --git a/riscv/riscv_zvt_state.cc b/riscv/riscv_zvt_state.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_zvt_state.cc
++++ b/riscv/riscv_zvt_state.cc
+@@ -31,6 +31,7 @@ namespace mpact::sim::riscv {
+ 
+ uint32_t RiscVMtypeCsr::AsUint32() { return matrix_state_->mtype(); }
+ uint64_t RiscVMtypeCsr::AsUint64() { return matrix_state_->mtype(); }
++void RiscVMtypeCsr::Set(uint32_t value) { matrix_state_->set_mtype(value); }
+ 
+ absl::StatusOr<std::unique_ptr<RiscVZvtMatrixState>>
+ RiscVZvtMatrixState::Create(
+diff --git a/riscv/riscv_zvt_state.h b/riscv/riscv_zvt_state.h
+index 40a1007..ad43383 100644
+--- a/riscv/riscv_zvt_state.h
++++ b/riscv/riscv_zvt_state.h
+@@ -80,6 +80,10 @@ class RiscVMtypeCsr : public ::mpact::sim::riscv::RiscVSimpleCsr<uint32_t> {
+   // Overrides: read the live value from the matrix state.
+   uint32_t AsUint32() override;
+   uint64_t AsUint64() override;
++  uint32_t GetUint32() override { return AsUint32(); }
++  uint64_t GetUint64() override { return AsUint64(); }
++  void Set(uint32_t value) override;
++  void Set(uint64_t value) override { Set(static_cast<uint32_t>(value)); }
+ 
+   [[nodiscard]] RiscVZvtMatrixState* matrix_state() const {
+     return matrix_state_;
+@@ -110,6 +114,20 @@ class RiscVZvtMatrixState {
+     return state_;
+   }
+ 
++  void MarkDirty() {
++    if (state_ != nullptr) state_->MarkMatrixDirty();
++  }
++  void MarkInitial() {
++    if (state_ != nullptr) state_->MarkMatrixInitial();
++  }
++  bool IsMatrixStatusOff() const {
++    return state_ != nullptr && state_->IsMatrixStatusOff();
++  }
++  const uint8_t* raw_tile_bytes(int ptile) const {
++    auto span = tile_buffer_->Get<uint8_t>();
++    return &span[ptile * tile_elements_ * tile_elements_];
++  }
++
+   // Byte offset into tile_buffer_ for element (tile,row,col) at the given tile
+   // element width `tile_element_width` (in bits: 8/16/32/64). Transcribed
+   // verbatim from the Zvt v0.3 spec (15.1.1.1, "Tile Punning"). `tile` is the

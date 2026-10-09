@@ -1,0 +1,275 @@
+diff --git a/sim/coralnpu_m4_instructions.cc b/sim/coralnpu_m4_instructions.cc
+index 1234567..89abcdef 100644
+--- a/sim/coralnpu_m4_instructions.cc
++++ b/sim/coralnpu_m4_instructions.cc
+@@ -52,6 +52,11 @@ void CoralNPUM4Vtle(int eew_bits,
+   auto* state = static_cast<::coralnpu::sim::CoralNPUM4State*>(
+       matrix_state->riscv_state());
+   auto* vector_state = state->rv_vector();
++  if (eew_bits > vector_state->max_elen() || vector_state->is_vill() ||
++      state->IsMatrixStatusOff()) {
++    ::mpact::sim::riscv::RiscVZvtVtle(eew_bits, inst);
++    return;
++  }
+   const uint64_t kBase =
+       ::mpact::sim::generic::GetInstructionSource<uint64_t>(inst, 0);
+   const int kElementSize = eew_bits / 8;
+@@ -75,6 +80,11 @@ void CoralNPUM4Vtse(int eew_bits,
+   auto* state = static_cast<::coralnpu::sim::CoralNPUM4State*>(
+       matrix_state->riscv_state());
+   auto* vector_state = state->rv_vector();
++  if (eew_bits > vector_state->max_elen() || vector_state->is_vill() ||
++      state->IsMatrixStatusOff()) {
++    ::mpact::sim::riscv::RiscVZvtVtse(eew_bits, inst);
++    return;
++  }
+   const uint64_t kBase =
+       ::mpact::sim::generic::GetInstructionSource<uint64_t>(inst, 0);
+   const int kElementSize = eew_bits / 8;
+diff --git a/sim/coralnpu_m4_state.cc b/sim/coralnpu_m4_state.cc
+index 51303be..7b4ad32 100755
+--- a/sim/coralnpu_m4_state.cc
++++ b/sim/coralnpu_m4_state.cc
+@@ -23,6 +23,7 @@
+ #include "sim/coralnpu_xstatus.h"
+ #include "riscv/riscv_csr.h"
+ #include "riscv/riscv_state.h"
++#include "riscv/riscv_vector_state.h"
+ #include "mpact/sim/util/memory/memory_interface.h"
+ 
+ namespace coralnpu::sim {
+@@ -39,7 +40,11 @@ CoralNPUM4State::CoralNPUM4State(
+           static_cast<uint64_t>(::mpact::sim::riscv::RiscVCsrEnum::kMStatus))
+       .IgnoreError();
+ 
+-  auto* new_mstatus = new CoralNPUMStatus(old_mstatus_val, this, misa());
++  constexpr uint64_t kMsInitial =
++      static_cast<uint64_t>(::mpact::sim::riscv::RiscVMStatus::kStatusInitial)
++      << 29;
++  auto* new_mstatus =
++      new CoralNPUMStatus(old_mstatus_val | kMsInitial, this, misa());
+   csr_set()->AddCsr(new_mstatus).IgnoreError();
+   mstatus_ = new_mstatus;
+ }
+@@ -48,6 +53,34 @@ CoralNPUM4State::~CoralNPUM4State() {
+   delete mstatus_;
+ }
+ 
++void CoralNPUM4State::MarkMatrixDirty() {
++  auto* ms = static_cast<CoralNPUMStatus*>(mstatus());
++  if (ms != nullptr && ms->ms() != ::mpact::sim::riscv::RiscVMStatus::kStatusOff &&
++      ms->ms() != ::mpact::sim::riscv::RiscVMStatus::kStatusDirty) {
++    ms->set_ms(::mpact::sim::riscv::RiscVMStatus::kStatusDirty);
++    ms->Submit();
++  }
++  if (rv_vector() != nullptr) {
++    rv_vector()->MarkDirty();
++  }
++}
++
++void CoralNPUM4State::MarkMatrixInitial() {
++  auto* ms = static_cast<CoralNPUMStatus*>(mstatus());
++  if (ms != nullptr && ms->ms() != ::mpact::sim::riscv::RiscVMStatus::kStatusOff &&
++      ms->ms() != ::mpact::sim::riscv::RiscVMStatus::kStatusInitial) {
++    ms->set_ms(::mpact::sim::riscv::RiscVMStatus::kStatusInitial);
++    ms->Submit();
++  }
++}
++
++bool CoralNPUM4State::IsMatrixStatusOff() const {
++  auto* ms = static_cast<CoralNPUMStatus*>(
++      const_cast<CoralNPUM4State*>(this)->mstatus());
++  return ms != nullptr &&
++         ms->ms() == ::mpact::sim::riscv::RiscVMStatus::kStatusOff;
++}
++
+ namespace {
+ inline uint64_t StretchMisa32(uint32_t value) {
+   uint64_t value64 = static_cast<uint64_t>(value);
+diff --git a/sim/coralnpu_m4_state.h b/sim/coralnpu_m4_state.h
+index b086035..30c607f 100755
+--- a/sim/coralnpu_m4_state.h
++++ b/sim/coralnpu_m4_state.h
+@@ -31,6 +31,10 @@ class CoralNPUM4State : public CoralNPUV2State {
+       ::mpact::sim::util::MemoryInterface* memory,
+       ::mpact::sim::util::AtomicMemoryOpInterface* atomic_memory = nullptr);
+   ~CoralNPUM4State() override;
++
++  void MarkMatrixDirty() override;
++  void MarkMatrixInitial() override;
++  bool IsMatrixStatusOff() const override;
+ };
+ 
+ std::unique_ptr<CoralNPUM4State> CreateCoralNPUM4State(
+diff --git a/sim/coralnpu_simulator.cc b/sim/coralnpu_simulator.cc
+index 86bd41f..3688eec 100755
+--- a/sim/coralnpu_simulator.cc
++++ b/sim/coralnpu_simulator.cc
+@@ -148,13 +148,15 @@ CoralNPUSimulator::CoralNPUSimulator(const CoralNPUSimulatorOptions& options)
+       std::make_unique<RiscVFPState>(state_->csr_set(), state_.get());
+   state_->set_rv_fp(rv_fp_state_.get());
+   rvv_state_ = std::make_unique<RiscVVectorState>(state_.get(),
+-                                                  kCoralNPUV2VectorByteLength);
++                                                  kCoralNPUV2VectorByteLength,
++                                                  /*max_elen=*/32);
+ 
+   if (options_.architecture == Architecture::kM4) {
+     // The M4 generation adds the matrix tile state (and the mtype CSR, which
+     // the matrix state registers into the CSR set).
+     auto matrix_status =
+-        ::mpact::sim::riscv::RiscVZvtMatrixState::Create(state_.get());
++        ::mpact::sim::riscv::RiscVZvtMatrixState::Create(
++            state_.get(), kCoralNPUV2VectorByteLength);
+     CHECK(matrix_status.ok())
+         << "Failed to create matrix state: " << matrix_status.status();
+     matrix_state_ = std::move(*matrix_status);
+diff --git a/sim/coralnpu_v2.bin_fmt b/sim/coralnpu_v2.bin_fmt
+index 45d29f7..5452723 100755
+--- a/sim/coralnpu_v2.bin_fmt
++++ b/sim/coralnpu_v2.bin_fmt
+@@ -261,6 +261,7 @@ format VConfig[32] : Inst32Format {
+     signed zimm10[10] = top12[9..0];
+     unsigned uimm5[5] = rs1;
+     unsigned rs2[5] = top12[4..0];
++    unsigned subfunc[3] = top12[2..0];
+ };
+ 
+ instruction group RiscVIInstBase32[32] : Inst32Format {
+diff --git a/sim/coralnpu_xstatus.h b/sim/coralnpu_xstatus.h
+index 1234567..89abcdef 100644
+--- a/sim/coralnpu_xstatus.h
++++ b/sim/coralnpu_xstatus.h
+@@ -18,6 +18,7 @@
+ #include <cstdint>
+ 
+ #include "riscv/riscv_misa.h"
++#include "riscv/riscv_state.h"
+ #include "riscv/riscv_xstatus.h"
+ #include "mpact/sim/generic/arch_state.h"
+ 
+@@ -44,6 +45,27 @@ class CoralNPUMStatus : public ::mpact::sim::riscv::RiscVMStatus {
+                   ::mpact::sim::riscv::RiscVMIsa* misa);
+   ~CoralNPUMStatus() override = default;
+ 
++  uint32_t GetUint32() override {
++    uint32_t val = RiscVMStatus::GetUint32();
++    if (((val >> 29) & 0b11) == kStatusDirty) {
++      val |= static_cast<uint32_t>(kMstatusSdMaskRv32);
++    }
++    return val;
++  }
++
++  uint64_t GetUint64() override {
++    if (state() != nullptr &&
++        static_cast<::mpact::sim::riscv::RiscVState*>(state())->xlen() ==
++            ::mpact::sim::riscv::RiscVXlen::RV32) {
++      return static_cast<uint64_t>(GetUint32());
++    }
++    uint64_t val = RiscVMStatus::GetUint64();
++    if (((val >> 29) & 0b11) == kStatusDirty) {
++      val |= kMstatusSdMaskRv64;
++    }
++    return val;
++  }
++
+   bool sd() {
+     return RiscVMStatus::sd() || ms() == 0b11 || vs() == 0b11 || fs() == 0b11 ||
+            xs() == 0b11;
+diff --git a/sim/test/coralnpu_m4_config_test.cc b/sim/test/coralnpu_m4_config_test.cc
+index be642b2..aef241e 100755
+--- a/sim/test/coralnpu_m4_config_test.cc
++++ b/sim/test/coralnpu_m4_config_test.cc
+@@ -211,4 +211,30 @@ TEST_F(CoralNPUM4ConfigTest, MsetTkWhenUnconfigured) {
+   EXPECT_EQ(GetXReg(3), 0u);
+ }
+ 
++TEST_F(CoralNPUM4ConfigTest, MsetMtypeiDerivesVtypeAndLmul) {
++  // msetmtypei with uimm=3 (mtwiden=3), vsew=0 (SEW8) -> LMUL1 (vlmul=0).
++  Execute(0x8431f057);
++  EXPECT_EQ(rvv_->vector_length(), 0u);
++  EXPECT_EQ(matrix_->mtwiden(), 3);
++  EXPECT_EQ(rvv_->selected_element_width(), 1);  // 8-bit SEW
++  EXPECT_EQ(rvv_->vector_length_multiplier(), 8);  // LMUL 1 (8/8)
++
++  // msetmtypei with uimm=2 (mtwiden=2), vsew=1 (SEW16) -> LMUL2 (vlmul=1).
++  Execute(0x84b17057);
++  EXPECT_EQ(matrix_->mtwiden(), 2);
++  EXPECT_EQ(rvv_->selected_element_width(), 2);  // 16-bit SEW
++  EXPECT_EQ(rvv_->vector_length_multiplier(), 16);  // LMUL 2 (16/8)
++
++  // msetmtypei with uimm=1 (mtwiden=1), vsew=2 (SEW32) -> LMUL4 (vlmul=2).
++  Execute(0x8530f057);
++  EXPECT_EQ(matrix_->mtwiden(), 1);
++  EXPECT_EQ(rvv_->selected_element_width(), 4);  // 32-bit SEW
++  EXPECT_EQ(rvv_->vector_length_multiplier(), 32);  // LMUL 4 (32/8)
++
++  // msetmtypei with uimm=0 (mtwiden=0, unconfigured) -> mtype=0.
++  Execute(0x84307057);
++  EXPECT_EQ(matrix_->mtype(), 0u);
++  EXPECT_FALSE(matrix_->configured());
++}
++
+ }  // namespace
+diff --git a/sim/test/coralnpu_xstatus_test.cc b/sim/test/coralnpu_xstatus_test.cc
+index 697bd21..9cb6083 100755
+--- a/sim/test/coralnpu_xstatus_test.cc
++++ b/sim/test/coralnpu_xstatus_test.cc
+@@ -96,43 +96,44 @@ TEST_F(CoralNPUXStatusTest, UpdateVsUpdatesSd) {
+ }
+ 
+ TEST_F(CoralNPUXStatusTest, WriteMaskHonored) {
+-  // Try writing all 1s via 32-bit Write. Only bits in coralnpu_write_mask_32_
+-  // (0x607fffbb) should stick.
++  // Try writing all 1s via 32-bit Write. Bits in coralnpu_write_mask_32_
++  // stick, and setting VS to dirty dynamically reflects in SD (bit 31).
+   constexpr uint32_t kExpectedWriteMask32 = 0x607fffbbU;
++  constexpr uint32_t kExpectedReadValue32 = kExpectedWriteMask32 | 0x8000'0000U;
+   mstatus_->Write(0xffff'ffffU);
+ 
+   EXPECT_EQ(mstatus_->ms(), kMsDirty);
+-  EXPECT_EQ(mstatus_->GetUint32(), kExpectedWriteMask32);
+-  EXPECT_EQ(mstatus_->AsUint32(), kExpectedWriteMask32);
++  EXPECT_EQ(mstatus_->GetUint32(), kExpectedReadValue32);
++  EXPECT_EQ(mstatus_->AsUint32(), kExpectedReadValue32);
+ }
+ 
+ TEST_F(CoralNPUXStatusTest, BaseSdTrueWhenMsOff) {
+-  // Setting bit 31 via Set(uint32_t) stretches it to bit 63 in the 64-bit
+-  // representation, making RiscVMStatus::sd() true while ms() remains kMsOff.
+-  mstatus_->Set(0x8000'0000U);
++  // Setting VS to dirty makes RiscVMStatus::sd() true while ms() remains kMsOff.
++  mstatus_->set_vs(kMsDirty);
++  mstatus_->Submit();
+   EXPECT_EQ(mstatus_->ms(), kMsOff);
+   EXPECT_TRUE(mstatus_->sd());
+-  EXPECT_EQ(mstatus_->GetUint32(), 0x8000'0000U);
+-  EXPECT_EQ(mstatus_->AsUint32(), 0x8000'0000U);
++  EXPECT_NE(mstatus_->GetUint32() & 0x8000'0000U, 0U);
++  EXPECT_NE(mstatus_->AsUint32() & 0x8000'0000U, 0U);
+ }
+ 
+ TEST_F(CoralNPUXStatusTest, Uint32Constructor) {
+-  constexpr uint32_t kInitialVal = (kMsDirty << 29) | 0x8000'0000U;
++  constexpr uint32_t kInitialVal = (kMsDirty << 29);
+   CoralNPUMStatus mstatus32(kInitialVal, state_.get(), misa_.get());
+   EXPECT_EQ(mstatus32.ms(), kMsDirty);
+   EXPECT_TRUE(mstatus32.sd());
+   EXPECT_EQ(mstatus32.GetUint32() & kInitialVal, kInitialVal);
+   EXPECT_EQ(mstatus32.AsUint32() & kInitialVal, kInitialVal);
+   EXPECT_EQ(mstatus32.read_mask(), CoralNPUMStatus::kCoralNpuReadMask);
+   EXPECT_EQ(mstatus32.write_mask(), CoralNPUMStatus::kCoralNpuWriteMask);
+ }
+ 
+ TEST_F(CoralNPUXStatusTest, SetAndClearBits32) {
+   constexpr uint32_t kMsMask32 = 0b11U << 29;
+-  // Attempt to set MS bits plus a read-only bit (bit 31). Only MS bits should
+-  // be set because SetBits honors coralnpu_write_mask_32_.
++  // Attempt to set MS bits plus a read-only bit (bit 31). MS=Dirty dynamically
++  // reflects in SD (bit 31), and clearing MS to Clean clears SD.
+   mstatus_->SetBits((kMsDirty << 29) | 0x8000'0000U);
+   EXPECT_EQ(mstatus_->ms(), kMsDirty);
+-  EXPECT_EQ(mstatus_->GetUint32() & 0x8000'0000U, 0U);
++  EXPECT_EQ(mstatus_->GetUint32() & 0x8000'0000U, 0x8000'0000U);
+   EXPECT_EQ(mstatus_->GetUint32() & kMsMask32, kMsDirty << 29);
+   EXPECT_EQ(mstatus_->AsUint32() & kMsMask32, kMsDirty << 29);
+
