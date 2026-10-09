@@ -15,6 +15,7 @@
 package dma
 
 import bus._
+import common._
 
 import chisel3._
 import chisel3.util._
@@ -45,13 +46,8 @@ class DmaDrainEngine(p: TLULParameters) extends Module {
   val allAcked      = status.received === beatsThisPass
   val passEnd       = active.valid && allAcked
 
-  val loaded = Wire(Valid(new DrainDescriptor(p)))
-  loaded.valid := true.B
-  loaded.bits  := io.descriptor.bits
-
-  val cleared = Wire(Valid(new DrainDescriptor(p)))
-  cleared.valid := false.B
-  cleared.bits  := active.bits
+  val loaded  = MakeValid(io.descriptor.bits)
+  val cleared = MakeValid(false.B, active.bits)
 
   // Three ways a job ends:
   // 1. Normal completion : passEnd && lastPass : jobEnd
@@ -61,10 +57,12 @@ class DmaDrainEngine(p: TLULParameters) extends Module {
   val abortIdle = io.abort && active.valid && (status.issued === 0.U) && io.bufIdle
   val clearNow  = jobEnd || (passEnd && io.abort) || abortIdle
 
-  active := Mux(
-    io.descriptor.fire,
-    loaded,
-    Mux(clearNow, cleared, active)
+  active := MuxUpTo1H(
+    active,
+    Seq(
+      io.descriptor.fire -> loaded, // new job
+      clearNow           -> cleared // job ended
+    )
   )
 
   val jobStart = Wire(new DrainStatus(p))
@@ -91,16 +89,17 @@ class DmaDrainEngine(p: TLULParameters) extends Module {
   advanced.passBase      := status.passBase
   advanced.addr          := Mux(io.tl.a.fire, status.addr + active.bits.rowPitch, status.addr)
 
-  status := Mux(io.descriptor.fire, jobStart, Mux(passEnd, nextPass, advanced))
+  status := MuxUpTo1H(
+    advanced,
+    Seq(
+      io.descriptor.fire -> jobStart, // new job
+      passEnd            -> nextPass  // pass boundary
+    )
+  )
 
-  assert(
-    !io.descriptor.fire || ((io.descriptor.bits.stride =/= 0.U) && (io.descriptor.bits.stride <= N.U)),
-    "Stride must be non-zero and less than or equal to N"
-  )
-  assert(
-    !io.descriptor.fire || (io.descriptor.bits.dstAddr(p.z - 1, 0) === 0.U),
-    s"dstAddr must be aligned to $N bytes"
-  )
+  val d = io.descriptor.bits
+  DmaChecks.passGeometry(p, io.descriptor.fire, d.stride, d.passes, d.lastPassBeats)
+  DmaChecks.aligned(p, io.descriptor.fire, d.dstAddr, "dstAddr")
   assert(!io.tl.d.fire || active.valid, "Ack outside a drain")
   assert(
     !io.tl.d.fire || (io.tl.d.bits.opcode === TLULOpcodesD.AccessAck.asUInt),
@@ -109,24 +108,13 @@ class DmaDrainEngine(p: TLULParameters) extends Module {
   assert(status.received <= status.issued, "More acks than Puts issued")
   assert(!io.beat.fire || active.valid, "Beat consumed outside a drain")
 
-  assert(
-    !io.descriptor.fire || (io.descriptor.bits.passes =/= 0.U),
-    "passes must be non-zero"
-  )
-  assert(
-    !io.descriptor.fire || ((io.descriptor.bits.lastPassBeats =/= 0.U) &&
-      (io.descriptor.bits.lastPassBeats <= io.descriptor.bits.stride)),
-    "lastPassBeats must be in 1..stride"
-  )
   // A zero rowPitch makes every beat of a pass overwrite the same address.
   assert(
-    !io.descriptor.fire || ((io.descriptor.bits.rowPitch =/= 0.U) &&
-      (io.descriptor.bits.rowPitch(p.z - 1, 0) === 0.U)),
+    !io.descriptor.fire || ((d.rowPitch =/= 0.U) && (d.rowPitch(p.z - 1, 0) === 0.U)),
     "rowPitch must be non-zero and N-aligned"
   )
   assert(
-    !io.descriptor.fire || ((io.descriptor.bits.passAdvance =/= 0.U) &&
-      (io.descriptor.bits.passAdvance(p.z - 1, 0) === 0.U)),
+    !io.descriptor.fire || ((d.passAdvance =/= 0.U) && (d.passAdvance(p.z - 1, 0) === 0.U)),
     "passAdvance must be non-zero and N-aligned"
   )
 

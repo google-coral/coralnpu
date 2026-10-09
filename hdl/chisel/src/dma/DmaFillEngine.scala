@@ -15,6 +15,7 @@
 package dma
 
 import bus._
+import common._
 
 import chisel3._
 import chisel3.util._
@@ -60,13 +61,8 @@ class DmaFillEngine(p: TLULParameters) extends Module {
   val allReceived = status.received === beatsThisPass
   val passEnd     = issuing && allReceived
 
-  val loaded = Wire(Valid(new FillDescriptor(p)))
-  loaded.valid := true.B
-  loaded.bits  := io.descriptor.bits
-
-  val cleared = Wire(Valid(new FillDescriptor(p)))
-  cleared.valid := false.B
-  cleared.bits  := active.bits
+  val loaded  = MakeValid(io.descriptor.bits)
+  val cleared = MakeValid(false.B, active.bits)
 
   // Three ways a job ends:
   // 1. Normal completion : passEnd && lastPass : jobEnd
@@ -76,10 +72,12 @@ class DmaFillEngine(p: TLULParameters) extends Module {
   val abortConfig = config && io.abort
   val clearNow    = jobEnd || (passEnd && io.abort) || abortConfig
 
-  active := Mux(
-    io.descriptor.fire,
-    loaded,
-    Mux(clearNow, cleared, active)
+  active := MuxUpTo1H(
+    active,
+    Seq(
+      io.descriptor.fire -> loaded, // new job
+      clearNow           -> cleared // job ended
+    )
   )
 
   val jobStart = Wire(new FillStatus(p))
@@ -106,30 +104,22 @@ class DmaFillEngine(p: TLULParameters) extends Module {
   advanced.passRemaining := status.passRemaining
   advanced.srcBase       := status.srcBase
 
-  status := Mux(io.descriptor.fire, jobStart, Mux(passEnd, nextPass, advanced))
-
-  assert(
-    !io.descriptor.fire || ((io.descriptor.bits.stride =/= 0.U) && (io.descriptor.bits.stride <= N.U)),
-    "Stride must be non-zero and less than or equal to N"
+  status := MuxUpTo1H(
+    advanced,
+    Seq(
+      io.descriptor.fire -> jobStart, // new job
+      passEnd            -> nextPass  // pass boundary
+    )
   )
+
+  val d = io.descriptor.bits
+  DmaChecks.passGeometry(p, io.descriptor.fire, d.stride, d.passes, d.lastPassBeats)
+  DmaChecks.aligned(p, io.descriptor.fire, d.srcAddr, "srcAddr")
   assert(
-    !io.descriptor.fire || (io.descriptor.bits.logElemSize <= eMax.U),
+    !io.descriptor.fire || (d.logElemSize <= eMax.U),
     s"logElemSize must be less than or equal to $eMax"
   )
-  assert(
-    !io.descriptor.fire || (io.descriptor.bits.srcAddr(p.z - 1, 0) === 0.U),
-    s"srcAddr must be aligned to $N bytes"
-  )
   assert(!io.tl.d.fire || issuing, "Response outside a fill")
-  assert(
-    !io.descriptor.fire || (io.descriptor.bits.passes =/= 0.U),
-    "passes must be non-zero"
-  )
-  assert(
-    !io.descriptor.fire || ((io.descriptor.bits.lastPassBeats =/= 0.U) &&
-      (io.descriptor.bits.lastPassBeats <= io.descriptor.bits.stride)),
-    "lastPassBeats must be in 1..stride"
-  )
 
   io.descriptor.ready     := idle && io.cfg.ready
   io.busy                 := active.valid

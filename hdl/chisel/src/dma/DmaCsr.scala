@@ -15,6 +15,7 @@
 package dma
 
 import bus._
+import common._
 
 import chisel3._
 import chisel3.util._
@@ -88,8 +89,8 @@ class DmaCsr(p: TLULParameters) extends Module {
   val enableReg   = RegInit(false.B)
   val srcAddrReg  = RegInit(0.U(p.a.W))
   val dstAddrReg  = RegInit(0.U(p.a.W))
-  val lenFlagsReg = RegInit(0.U(32.W))
-  val xferCfgReg  = RegInit(1.U(32.W))                  // n_areas = 1 (memcopy) out of reset
+  val lenFlagsReg = RegInit(0.U.asTypeOf(new DmaLenFlags))
+  val xferCfgReg  = RegInit(1.U.asTypeOf(new XferCfg))  // n_areas = 1 (memcopy) out of reset
   val areaSizeReg = RegInit(0.U(DmaGeometry.lenBits.W)) // software-written; strided only
 
   val doneReg     = RegInit(false.B)
@@ -114,11 +115,9 @@ class DmaCsr(p: TLULParameters) extends Module {
   // ==========================================
   // DERIVED GEOMETRY
   // ==========================================
-  val lenFlags  = lenFlagsReg.asTypeOf(new DmaLenFlags)
-  val len       = lenFlags.xfer_len
-  val xferCfg   = xferCfgReg.asTypeOf(new XferCfg)
-  val nAreas    = xferCfg.n_areas
-  val xferWidth = lenFlags.xfer_width
+  val len       = lenFlagsReg.xfer_len
+  val nAreas    = xferCfgReg.n_areas
+  val xferWidth = lenFlagsReg.xfer_width
   val strided   = nAreas > 1.U
   val fullMask  = Fill(N, 1.U)
 
@@ -140,37 +139,42 @@ class DmaCsr(p: TLULParameters) extends Module {
   // ==========================================
   // MODE TABLE — one whole descriptor per mode
   // ==========================================
+  // Pass geometry is common to the fill and drain descriptors of each mode.
+  val mcPasses        = ((totalBeats +& (N - 1).U) >> gMax).asUInt
+  val mcLastPassBeats = (totalBeats - ((mcPasses - 1.U) << gMax))(sWidth - 1, 0)
+  val mcPassBytes     = (N * N).U // memcopy pass = N beats x N bytes
+  val stStride        = nAreas(sWidth - 1, 0)
+
   val fillMc = Wire(new FillDescriptor(p))
   fillMc.srcAddr       := srcAddrReg
   fillMc.stride        := N.U
-  fillMc.passes        := (totalBeats +& (N - 1).U) >> gMax
-  fillMc.lastPassBeats := (totalBeats - ((fillMc.passes - 1.U) << gMax))(sWidth - 1, 0)
+  fillMc.passes        := mcPasses
+  fillMc.lastPassBeats := mcLastPassBeats
   // Forced, not taken from software: a smaller xfer_width would transpose and scramble the copy.
   fillMc.logElemSize := gMax.U
 
   val fillSt = Wire(new FillDescriptor(p))
   fillSt.srcAddr       := srcAddrReg
-  fillSt.stride        := nAreas(sWidth - 1, 0)
+  fillSt.stride        := stStride
   fillSt.passes        := beatsPerArea
-  fillSt.lastPassBeats := nAreas(sWidth - 1, 0)
+  fillSt.lastPassBeats := stStride
   fillSt.logElemSize   := xferWidth
 
-  // stride / passes / lastPassBeats are shared with fill; reuse, don't recompute.
   val drainMc = Wire(new DrainDescriptor(p))
   drainMc.dstAddr       := dstAddrReg
-  drainMc.stride        := fillMc.stride
-  drainMc.passes        := fillMc.passes
-  drainMc.lastPassBeats := fillMc.lastPassBeats
+  drainMc.stride        := N.U
+  drainMc.passes        := mcPasses
+  drainMc.lastPassBeats := mcLastPassBeats
   drainMc.rowPitch      := N.U
-  drainMc.passAdvance   := (N * N).U
+  drainMc.passAdvance   := mcPassBytes
   drainMc.lastMask      := lastMask
   drainMc.maskAll       := false.B
 
   val drainSt = Wire(new DrainDescriptor(p))
   drainSt.dstAddr       := dstAddrReg
-  drainSt.stride        := fillSt.stride
-  drainSt.passes        := fillSt.passes
-  drainSt.lastPassBeats := fillSt.lastPassBeats
+  drainSt.stride        := stStride
+  drainSt.passes        := beatsPerArea
+  drainSt.lastPassBeats := stStride
   // Planes are padded to a whole number of beats so every plane starts N-aligned;
   // maskAll keeps the tail from writing into the gap before the next plane.
   drainSt.rowPitch    := beatsPerArea << gMax
@@ -183,11 +187,11 @@ class DmaCsr(p: TLULParameters) extends Module {
 
   val alignError = (srcAddrReg(gMax - 1, 0) =/= 0.U) || (dstAddrReg(gMax - 1, 0) =/= 0.U)
   // No peripheral-FIFO modes; areas must be non-empty and fit the buffer.
-  val cfgError = (xferWidth > gMax.U) ||
-    lenFlags.src_fixed || lenFlags.dst_fixed || lenFlags.poll_en ||
-    (len === 0.U) ||
-    (nAreas === 0.U) || (nAreas > N.U) ||
-    (strided && (areaSizeReg === 0.U))
+  val badMode     = lenFlagsReg.src_fixed || lenFlagsReg.dst_fixed || lenFlagsReg.poll_en
+  val badElemSize = xferWidth > gMax.U
+  val badLength   = (len === 0.U) || (strided && (areaSizeReg === 0.U))
+  val badAreas    = (nAreas === 0.U) || (nAreas > N.U)
+  val cfgError    = badMode || badElemSize || badLength || badAreas
 
   val startReq = startWrite && enableEff && idle
   // Accounts for a clear in the same CTRL write, like enableEff does for enable.
@@ -217,11 +221,11 @@ class DmaCsr(p: TLULParameters) extends Module {
   val allDone = running && fillDescIssued && drainDescIssued &&
     !io.fillBusy && !io.drainBusy
 
-  state := MuxCase(
+  state := MuxUpTo1H(
     state,
     Seq(
-      (idle && startOk) -> CsrState.sRunning,
-      allDone           -> CsrState.sIdle
+      (idle && startOk) -> CsrState.sRunning, // start accepted
+      allDone           -> CsrState.sIdle     // both engines finished
     )
   )
 
@@ -231,8 +235,12 @@ class DmaCsr(p: TLULParameters) extends Module {
   // directly, and an engine may take its descriptor several cycles after start.
   srcAddrReg  := Mux(hits(SRC_ADDR) && idle, wdata(SRC_ADDR), srcAddrReg)
   dstAddrReg  := Mux(hits(DST_ADDR) && idle, wdata(DST_ADDR), dstAddrReg)
-  lenFlagsReg := Mux(hits(LEN_FLAGS) && idle, wdata(LEN_FLAGS), lenFlagsReg)
-  xferCfgReg  := Mux(hits(XFER_CFG) && idle, wdata(XFER_CFG), xferCfgReg)
+  lenFlagsReg := Mux(
+    hits(LEN_FLAGS) && idle,
+    wdata(LEN_FLAGS).asTypeOf(new DmaLenFlags),
+    lenFlagsReg
+  )
+  xferCfgReg  := Mux(hits(XFER_CFG) && idle, wdata(XFER_CFG).asTypeOf(new XferCfg), xferCfgReg)
   areaSizeReg := Mux(
     hits(AREA_SIZE) && idle,
     wdata(AREA_SIZE)(DmaGeometry.lenBits - 1, 0),
@@ -257,15 +265,12 @@ class DmaCsr(p: TLULParameters) extends Module {
 
   // Geometry checks guard on fire: that is when the engine actually takes the
   // descriptor, and config is frozen from start until then.
-  assert(!io.fillDesc.fire || (fillDesc.passes =/= 0.U), "Zero passes")
-  assert(
-    !io.fillDesc.fire || ((fillDesc.stride =/= 0.U) && (fillDesc.stride <= N.U)),
-    "stride must be in 1..N"
-  )
-  assert(
-    !io.fillDesc.fire || ((fillDesc.lastPassBeats =/= 0.U) &&
-      (fillDesc.lastPassBeats <= fillDesc.stride)),
-    "lastPassBeats must be in 1..stride"
+  DmaChecks.passGeometry(
+    p,
+    io.fillDesc.fire,
+    fillDesc.stride,
+    fillDesc.passes,
+    fillDesc.lastPassBeats
   )
 
   // ==========================================
@@ -287,8 +292,8 @@ class DmaCsr(p: TLULParameters) extends Module {
     STATUS    -> statusVal,
     SRC_ADDR  -> srcAddrReg,
     DST_ADDR  -> dstAddrReg,
-    LEN_FLAGS -> lenFlagsReg,
-    XFER_CFG  -> xferCfgReg,
+    LEN_FLAGS -> lenFlagsReg.asUInt,
+    XFER_CFG  -> xferCfgReg.asUInt,
     AREA_SIZE -> areaSizeReg.pad(regWidth),
     PASS_REM  -> io.passRemaining.pad(regWidth)
   )

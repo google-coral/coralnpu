@@ -29,6 +29,26 @@ object DmaGeometry {
   def pWidth(p: TLULParameters) = lenBits - gMax(p) + 1
 }
 
+object DmaChecks {
+  def passGeometry(
+    p: TLULParameters,
+    fire: Bool,
+    stride: UInt,
+    passes: UInt,
+    lastPassBeats: UInt
+  ): Unit = {
+    assert(!fire || ((stride =/= 0.U) && (stride <= p.w.U)), "stride must be in 1..N")
+    assert(!fire || (passes =/= 0.U), "passes must be non-zero")
+    assert(
+      !fire || ((lastPassBeats =/= 0.U) && (lastPassBeats <= stride)),
+      "lastPassBeats must be in 1..stride"
+    )
+  }
+
+  def aligned(p: TLULParameters, fire: Bool, addr: UInt, name: String): Unit =
+    assert(!fire || (addr(p.z - 1, 0) === 0.U), s"$name must be aligned to ${p.w} bytes")
+}
+
 class FillDescriptor(val p: TLULParameters) extends Bundle {
   val srcAddr = UInt(p.a.W)
   // Beats the buffer takes per pass: N in memcopy, nAreas in strided.
