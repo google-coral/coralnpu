@@ -397,9 +397,28 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   val debugTileWrites = Option.when(!mini && p.enableVme && p.enableVerification)(
     Wire(Vec(bufferSize, Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p)))))
   )
+  val tileAccValid = Option.when(!mini && p.enableVme && p.enableVerification)(
+    Wire(Vec(bufferSize, Bool()))
+  )
   if (!mini && p.enableVme && p.enableVerification) {
-    tileAccumulatorNext.get := tileWriteAccumulator.get
-    debugTileWrites.get     := tileWriteAccumulator.get
+    val tilePort = io.writeDataTile.get
+    for (x <- 0 until bufferSize) {
+      val tileTagMatch =
+        tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === x.U)
+      val nextTileEntry = Wire(Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p))))
+      for (k <- 0 until p.vmeMaxTileWrites) {
+        val hit      = tileTagMatch && tilePort.bits.mask(k)
+        val hitEntry = Wire(Valid(new TileWrite(p)))
+        hitEntry.valid     := true.B
+        hitEntry.bits.idx  := tilePort.bits.idx + k.U
+        hitEntry.bits.data := tilePort.bits.data.get(k)
+
+        nextTileEntry(k) := Mux(hit, hitEntry, tileWriteAccumulator.get(x)(k))
+      }
+      tileAccumulatorNext.get(x) := nextTileEntry
+      debugTileWrites.get(x)     := nextTileEntry
+      tileAccValid.get(x)        := tileWriteAccumulator.get(x).map(_.valid).reduce(_ || _)
+    }
   }
 
   // Compute update based on register writeback.
@@ -507,31 +526,6 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         .get(pIdx) := Mux(validBufferEntry, nextEntry, vectorWriteAccumulator.get(pIdx))
     }
 
-    if (!mini && p.enableVme && p.enableVerification) {
-      val nextTileEntry = Wire(Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p))))
-      val tilePort      = io.writeDataTile.get
-      val tileTagMatch  =
-        tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === pIdx)
-      for (k <- 0 until p.vmeMaxTileWrites) {
-        val hit = tileTagMatch && tilePort.bits.mask(k)
-        nextTileEntry(k).valid    := Mux(hit, true.B, tileWriteAccumulator.get(pIdx)(k).valid)
-        nextTileEntry(k).bits.idx := Mux(
-          hit,
-          tilePort.bits.idx + k.U,
-          tileWriteAccumulator.get(pIdx)(k).bits.idx
-        )
-        nextTileEntry(k).bits.data := Mux(
-          hit,
-          tilePort.bits.data.get(k),
-          tileWriteAccumulator.get(pIdx)(k).bits.data
-        )
-      }
-      tileAccumulatorNext
-        .get(pIdx) := Mux(validBufferEntry, nextTileEntry, tileWriteAccumulator.get(pIdx))
-      debugTileWrites
-        .get(pIdx) := Mux(validBufferEntry, nextTileEntry, tileWriteAccumulator.get(pIdx))
-    }
-
     val tileDe2RtMatch = if (p.enableVme) {
       io.writeDataVector
         .map(y =>
@@ -548,7 +542,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       val tileTagMatch =
         tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === pIdx)
       val tileAcc = if (!mini && p.enableVerification) {
-        tileWriteAccumulator.get(pIdx).map(_.valid).reduce(_ || _)
+        tileAccValid.get(pIdx)
       } else {
         false.B
       }
