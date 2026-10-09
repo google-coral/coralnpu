@@ -14,6 +14,7 @@
 
 """CoralFlow: Unified multi-backend Bazel test macro for CoralNPU."""
 
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//rules:coco_tb.bzl", "verilator_cocotb_test")
 
 def coralflow_test(
@@ -37,6 +38,7 @@ def coralflow_test(
     - :{name}_verilator: Cycle-accurate discrete-event RTL simulation (verilator_cocotb_test).
     - :{name}_uvm: Autonomous UVM co-simulation with Spike lock-step verification (py_test, manual).
     - :{name}_nexus_fpga: Hardware runner (py_binary, manual).
+    - :{name}_nexus_fpga_pkg: Self-contained tarball (.tar) with run.sh for lab host execution (pkg_tar, manual).
     """
     common_data = data + [elf]
     base_deps = deps + [
@@ -63,7 +65,7 @@ def coralflow_test(
             **kwargs
         )
 
-    # 2. Nexus FPGA Target (Hardware execution)
+    # 2. Nexus FPGA Target (Hardware execution & standalone lab-host tarball)
     if "nexus_fpga" in targets:
         fpga_data = common_data + ([highmem_elf] if highmem_elf else [])
         native.py_binary(
@@ -81,6 +83,36 @@ def coralflow_test(
             ],
             tags = ["nexus_fpga", "manual"] + tags,
             **kwargs
+        )
+
+        pkg_tar(
+            name = name + "_nexus_fpga_files",
+            srcs = srcs + fpga_data + [
+                "//sw/utils/nexus_loader:nexus_loader",
+                "//coralnpu_test_utils:ftdi_spi_master.py",
+                "//coralnpu_test_utils:spi_constants.py",
+                "//coralnpu_test_utils/coralflow:base_fixture.py",
+                "//coralnpu_test_utils/coralflow:runner.py",
+                "//coralnpu_test_utils/sim_backends:common_utils.py",
+                "//coralnpu_test_utils/sim_backends:fpga_test_fixture.py",
+            ],
+            mode = "0644",
+            modes = {
+                "sw/utils/nexus_loader/nexus_loader": "0755",
+            },
+            strip_prefix = "/",
+            tags = ["nexus_fpga", "manual"] + tags,
+        )
+
+        pkg_tar(
+            name = name + "_nexus_fpga_pkg",
+            srcs = ["//coralnpu_test_utils/coralflow:run_fpga_pkg.sh"],
+            deps = [":" + name + "_nexus_fpga_files"],
+            mode = "0755",
+            remap_paths = {
+                "/run_fpga_pkg.sh": "run.sh",
+            },
+            tags = ["nexus_fpga", "manual"] + tags,
         )
 
     # 3. Verilator Target (Cycle-accurate RTL simulation)

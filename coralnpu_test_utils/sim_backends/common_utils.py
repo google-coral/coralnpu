@@ -18,7 +18,10 @@ from __future__ import annotations
 import os
 import struct
 from typing import Any
-from bazel_tools.tools.python.runfiles import runfiles
+try:
+    from bazel_tools.tools.python.runfiles import runfiles
+except ImportError:
+    runfiles = None
 from elftools.common.exceptions import ELFError
 from elftools.elf.constants import P_FLAGS
 from elftools.elf.elffile import ELFFile
@@ -40,7 +43,7 @@ _RUNFILES_INSTANCE = None
 def get_runfiles():
     """Returns a cached Bazel runfiles instance if available."""
     global _RUNFILES_INSTANCE
-    if _RUNFILES_INSTANCE is None:
+    if _RUNFILES_INSTANCE is None and runfiles is not None:
         try:
             _RUNFILES_INSTANCE = runfiles.Create()
         except Exception:  # noqa: BLE001

@@ -197,7 +197,11 @@ py_library(
     ],
 )
 
-exports_files(["dispatch.vlt.tpl"])
+exports_files([
+    "dispatch.vlt.tpl",
+    "ftdi_spi_master.py",
+    "spi_constants.py",
+])
 
 py_library(
     name = "dispatch_verifier",

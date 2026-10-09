@@ -29,3 +29,9 @@ py_library(
         requirement("numpy"),
     ],
 )
+
+exports_files([
+    "base_fixture.py",
+    "run_fpga_pkg.sh",
+    "runner.py",
+])

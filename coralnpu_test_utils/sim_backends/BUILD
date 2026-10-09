@@ -95,3 +95,8 @@ alias(
     name = "uvm_test_fixture_test",
     actual = ":sim_backends_unit_test",
 )
+
+exports_files([
+    "common_utils.py",
+    "fpga_test_fixture.py",
+])
