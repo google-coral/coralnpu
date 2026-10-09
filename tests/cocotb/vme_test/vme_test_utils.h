@@ -144,4 +144,25 @@ static constexpr uint32_t kMstatusMsDirty   = 3u << 29;
 static constexpr uint32_t kMstatusMsMask    = 3u << 29;
 static constexpr uint32_t kMstatusSdMask    = 1u << 31;
 
+// -----------------------------------------------------------------------------
+// Subtest auto-registration for dual Cocotb / standalone UVM execution
+//
+// Subtests defined with VME_SUBTEST(name) export their symbol for Cocotb
+// lookup/dispatch via `test_fn` while automatically registering a function
+// pointer in the `vme_subtests` linker section so standalone UVM runs can
+// iterate `[__start_vme_subtests, __stop_vme_subtests)` without maintaining a
+// manual list in main().
+// -----------------------------------------------------------------------------
+extern "C" {
+typedef void (*test_func_t)(void);
+extern test_func_t __start_vme_subtests[];
+extern test_func_t __stop_vme_subtests[];
+}
+
+#define VME_SUBTEST(name)                                                        \
+  __attribute__((used, retain)) void name(void);                                 \
+  static test_func_t __vme_subtest_##name                                        \
+      __attribute__((used, retain, no_reorder, section("vme_subtests"))) = name; \
+  __attribute__((used, retain)) void name(void)
+
 #endif  // TESTS_COCOTB_VME_TEST_VME_TEST_UTILS_H_

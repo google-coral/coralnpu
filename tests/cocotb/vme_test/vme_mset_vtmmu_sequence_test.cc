@@ -32,44 +32,51 @@ extern "C" {
 
 __attribute__((noinline)) void run_mset_vtmmu_sequence(void) {
   asm volatile(
-      // Setup operands for msetmtype
-      // x6 (mtype): tm=16 (bit 14=1), tk=2 (bit 6:5=2), mtwiden=2 (bit 1:0=2) => 0x4042
-      // x9 (vtype): altfmt=1 (bit 8=1), SEW=16 (bits 5:3=1), LMUL=1 (bits 2:0=0) => 0x108
+      // Part 1: Integer vtmmu.tvv sequence (Zvt §15.1.1.8: SEW=8, TWIDEN=4, KMAX=4)
+      // x6 (mtype): tm=16 (bit 14=1), tk=2 (bits 6:5=2), mtwiden=3 (bits 1:0=3) => 0x4043
+      // x9 (vtype): altfmt=0, SEW=8 (bits 5:3=0), LMUL=1 (bits 2:0=0) => 0x000
       "lui   x6, 0x4 \n"
-      "addi  x6, x6, 0x42 \n"     // x6 = 0x00004042
-      "addi  x9, zero, 0x108 \n"  // x9 = 0x00000108
+      "addi  x6, x6, 0x43 \n"     // x6 = 0x00004043 (tm=16, tk=2, mtwiden=3)
+      "addi  x9, zero, 0x000 \n"  // x9 = 0x00000000 (SEW=8)
       ".word 0x82937057 \n"       // msetmtype x6, x9
 
-      // Set tn/vl = 4
+      // Set tn/vl = 4, tm = 4, tk = 2
       "addi  x10, zero, 4 \n"
       ".word 0x840575D7 \n"  // msettn x11, x10
-
-      // Set tm = 4
       "addi  x14, zero, 4 \n"
       ".word 0x841776D7 \n"  // msettm x13, x14
-
-      // Set tk = 2
       "addi  x16, zero, 2 \n"
       ".word 0x842877D7 \n"  // msettk x15, x16
 
       // vtzero mt0
       ".word 0x43E06057 \n"  // vtzero mt0
 
-      // Vector operand setup
+      // Vector operand setup for SEW=8, KMAX=4 (row spacing = 8/KMAX = 2):
+      // A rows in v0, v2; B rows in v8, v10 (vs1 % 8 = 0 < 8/KMAX = 2).
       ".word 0x5E00B057 \n"  // vmv.v.i v0, 1
-      ".word 0x5E00B257 \n"  // vmv.v.i v4, 1
-      ".word 0x5E0FB157 \n"  // vmv.v.i v2, -1
-      ".word 0x5E0FB357 \n"  // vmv.v.i v6, -1
+      ".word 0x5E00B157 \n"  // vmv.v.i v2, 1
+      ".word 0x5E013457 \n"  // vmv.v.i v8, 2
+      ".word 0x5E01B557 \n"  // vmv.v.i v10, 3
 
-      // First matrix multiply
-      ".word 0xF2010077 \n"  // vtmmu.tvv mt0, v0, v2
+      // First matrix multiply: vtmmu.tvv mt0, v0, v8 (vs2=v0, vs1=v8)
+      ".word 0xF2040077 \n"  // vtmmu.tvv mt0, v0, v8
 
       // Second vector operand update
       ".word 0x5E013057 \n"  // vmv.v.i v0, 2
-      ".word 0x5E01B257 \n"  // vmv.v.i v4, 3
+      ".word 0x5E01B157 \n"  // vmv.v.i v2, 3
 
-      // Second matrix multiply
-      ".word 0xF2010077 \n"  // vtmmu.tvv mt0, v0, v2
+      // Second matrix multiply: vtmmu.tvv mt0, v0, v8
+      ".word 0xF2040077 \n"  // vtmmu.tvv mt0, v0, v8
+
+      // Read back row 0 of mt0 into v4..v7 (SEW=32, LMUL=4, mtwiden=1)
+      "lui   x6, 0x4 \n"
+      "addi  x6, x6, 0x21 \n"     // x6 = 0x00004021 (tm=16, tk=1, mtwiden=1)
+      "addi  x9, zero, 0x0D2 \n"  // x9 = SEW32, LMUL4, ta, ma
+      ".word 0x82937057 \n"       // msetmtype x6, x9
+      "addi  x10, zero, 4 \n"
+      ".word 0x840575D7 \n"  // msettn x11, x10
+      "addi  x10, zero, 0 \n"
+      ".word 0x43FA6257 \n"  // vtmv.v.t v4, a0 (row 0 of mt0)
 
       // Complete
       ".word 0x08000073 \n"  // mpause

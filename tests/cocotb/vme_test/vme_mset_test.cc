@@ -50,10 +50,21 @@ struct VmeMsetResult {
   uint32_t mtype_after_msettk;
 };
 
-// Volatile so the compiler does not constant-fold the zero initializer back
-// in (the cocotb harness writes these slots before execute_from).
-volatile uint32_t vme_num_cases __attribute__((section(".data")))                = 0;
-volatile VmeMsetCase vme_inputs[VME_MAX_CASES] __attribute__((section(".data"))) = {};
+// Volatile so the compiler does not constant-fold the initializer back
+// in (the cocotb harness overwrites these slots before execute_from).
+// Default-initialized with the mset* and clamping cases so standalone UVM
+// co-simulation exercises all cases without requiring a cocotb host.
+volatile uint32_t vme_num_cases __attribute__((section(".data")))                = 8;
+volatile VmeMsetCase vme_inputs[VME_MAX_CASES] __attribute__((section(".data"))) = {
+    {MtypeValue(1, 1, 1), 0x00, 16, 5, 2},         // SEW8/LMUL1 basic
+    {MtypeValue(3, 2, 2), 0x08, 100, 0x3FFF, 10},  // SEW16/mtwiden=2 derives LMUL2 + clamps
+    {0x2021, 0x10, 8, 8, 1},                       // SEW32/mtwiden=1 derives LMUL4, avl=8
+    {0x2021, 0x10, 100, 8, 1},                     // SEW32/mtwiden=1 derives LMUL4, avl=100->16
+    {0x0000, 0x10, 100, 0, 0},                     // Unconfigured mtwiden=0 -> mtype=0, vlmax=4
+    {0x4083, 0x00, 16, 16, 4},                     // SEW8/mtwiden=3, msettk(4)->4
+    {0x4083, 0x00, 16, 16, 7},                     // SEW8/mtwiden=3, msettk(7)->clamped to 4
+    {0x4083, 0x00, 16, 32, 4},                     // SEW8/mtwiden=3, msettm(32)->clamped to 16
+};
 
 VmeMsetResult vme_results[VME_MAX_CASES] __attribute__((section(".data"))) = {};
 uint32_t vme_msetmtypei_result __attribute__((section(".data")))           = 0;

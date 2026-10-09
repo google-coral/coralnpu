@@ -13,7 +13,7 @@
 # limitations under the License.
 """Smoke test for the VME (Zvt) non-tile state and mset* instructions.
 
-The companion ELF (`vme_test_program.cc`) iterates over an input table written
+The companion ELF (`vme_mset_test.cc`) iterates over an input table written
 into memory by this harness, executes msetmtype/msettn/msettm/msettk on each
 row, and records the resulting mtype CSR value and rd writebacks into a
 matching result table. This bench writes the input table, runs the program,
@@ -186,7 +186,7 @@ async def vme_mset_csr_test(dut):
 
     r = runfiles.Create()
     elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/vme_test/vme_test_program.elf"
+        "coralnpu_hw/tests/cocotb/vme_test/vme_mset_test.elf"
     )
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
@@ -265,7 +265,7 @@ async def vme_mset_csr_test(dut):
 # -----------------------------------------------------------------------------
 # Matrix arithmetic tests (vtmmu/vtmms/vtfmm + vtzero + vtmv moves).
 #
-# The companion ELF (`vme_matmul_test_program.cc`) runs one case per
+# The companion ELF (`vme_matmul_test.cc`) runs one case per
 # run_to_halt: it initializes an accumulator tile (vtzero, or a preload of
 # `mm_c_init` through vtmv.t.v), loads A/B operand rows into vector registers
 # with ordinary vle, executes one matmul, and reads the 16x16 tile back into
@@ -296,7 +296,7 @@ async def _load_matmul_fixture(dut):
     fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/vme_test/vme_matmul_test_program.elf"
+        "coralnpu_hw/tests/cocotb/vme_test/vme_matmul_test.elf"
     )
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
@@ -804,7 +804,7 @@ async def vme_msettk_clamp_test(dut):
 
     r = runfiles.Create()
     elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/vme_test/vme_test_program.elf"
+        "coralnpu_hw/tests/cocotb/vme_test/vme_mset_test.elf"
     )
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
@@ -925,7 +925,7 @@ async def vme_msettm_clamp_test(dut):
 
     r = runfiles.Create()
     elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/vme_test/vme_test_program.elf"
+        "coralnpu_hw/tests/cocotb/vme_test/vme_mset_test.elf"
     )
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
@@ -1064,7 +1064,7 @@ async def vme_altfmt_test(dut):
 
     r = runfiles.Create()
     elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/vme_test/vme_altfmt_test_program.elf"
+        "coralnpu_hw/tests/cocotb/vme_test/vme_altfmt_test.elf"
     )
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
@@ -1190,7 +1190,7 @@ async def vme_vset_mtype_reset_test(dut):
 
     r = runfiles.Create()
     elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/vme_test/vme_vset_mtype_reset_test_program.elf"
+        "coralnpu_hw/tests/cocotb/vme_test/vme_vset_mtype_reset_test.elf"
     )
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")

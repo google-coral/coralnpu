@@ -16,9 +16,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-extern "C" {
+#include "vme_test_utils.h"
 
-typedef void (*test_func_t)(void);
+extern "C" {
 
 alignas(16) int8_t in_buf[1024] __attribute__((section(".data")));
 alignas(16) int8_t out_buf[1024] __attribute__((section(".data")));
@@ -55,11 +55,8 @@ static inline void vme_configure(uint32_t mtwiden, uint32_t sew_code, uint32_t l
 // -----------------------------------------------------------------------------
 
 // Load 16 rows from in_buf into Tile 0, store 16 cols from Tile 0 to out_buf
-__attribute__((used, retain)) void test_transpose_e8_row_to_col(void) {
+VME_SUBTEST(test_transpose_e8_row_to_col) {
   vme_configure(3, 0, 0);
-  uint32_t vl_discard;
-  asm volatile("vsetvli %[vl_discard], zero, e8, m1, ta, ma"
-               : [vl_discard] "=&r"(vl_discard)::"vl", "vtype");
   for (uint32_t i = 0; i < 16; ++i) {
     uint32_t tss      = i;  // pattern = 0 (row), tile = 0, slice = i
     const int8_t *ptr = in_buf + i * 16;
@@ -77,11 +74,8 @@ __attribute__((used, retain)) void test_transpose_e8_row_to_col(void) {
 }
 
 // Load 16 cols from in_buf into Tile 0, store 16 rows from Tile 0 to out_buf
-__attribute__((used, retain)) void test_transpose_e8_col_to_row(void) {
+VME_SUBTEST(test_transpose_e8_col_to_row) {
   vme_configure(3, 0, 0);
-  uint32_t vl_discard;
-  asm volatile("vsetvli %[vl_discard], zero, e8, m1, ta, ma"
-               : [vl_discard] "=&r"(vl_discard)::"vl", "vtype");
   for (uint32_t i = 0; i < 16; ++i) {
     uint32_t tss      = (1 << 24) | i;  // pattern = 1 (col), tile = 0, slice = i
     const int8_t *ptr = in_buf + i * 16;
@@ -103,11 +97,8 @@ __attribute__((used, retain)) void test_transpose_e8_col_to_row(void) {
 // -----------------------------------------------------------------------------
 
 // Load 16 rows from in_buf into Tile 0, store 16 cols from Tile 0 to out_buf
-__attribute__((used, retain)) void test_transpose_e16_row_to_col(void) {
+VME_SUBTEST(test_transpose_e16_row_to_col) {
   vme_configure(2, 1, 1);
-  uint32_t vl_discard;
-  asm volatile("vsetvli %[vl_discard], zero, e16, m2, ta, ma"
-               : [vl_discard] "=&r"(vl_discard)::"vl", "vtype");
   for (uint32_t i = 0; i < 16; ++i) {
     uint32_t tss       = i;  // pattern = 0 (row), tile = 0, slice = i
     const int16_t *ptr = reinterpret_cast<const int16_t *>(in_buf) + i * 16;
@@ -125,11 +116,8 @@ __attribute__((used, retain)) void test_transpose_e16_row_to_col(void) {
 }
 
 // Load 16 cols from in_buf into Tile 0, store 16 rows from Tile 0 to out_buf
-__attribute__((used, retain)) void test_transpose_e16_col_to_row(void) {
+VME_SUBTEST(test_transpose_e16_col_to_row) {
   vme_configure(2, 1, 1);
-  uint32_t vl_discard;
-  asm volatile("vsetvli %[vl_discard], zero, e16, m2, ta, ma"
-               : [vl_discard] "=&r"(vl_discard)::"vl", "vtype");
   for (uint32_t i = 0; i < 16; ++i) {
     uint32_t tss       = (1 << 24) | i;  // pattern = 1 (col), tile = 0, slice = i
     const int16_t *ptr = reinterpret_cast<const int16_t *>(in_buf) + i * 16;
@@ -151,11 +139,8 @@ __attribute__((used, retain)) void test_transpose_e16_col_to_row(void) {
 // -----------------------------------------------------------------------------
 
 // Load 16 rows from in_buf into Tile 0, store 16 cols from Tile 0 to out_buf
-__attribute__((used, retain)) void test_transpose_e32_row_to_col(void) {
+VME_SUBTEST(test_transpose_e32_row_to_col) {
   vme_configure(1, 2, 2);
-  uint32_t vl_discard;
-  asm volatile("vsetvli %[vl_discard], zero, e32, m4, ta, ma"
-               : [vl_discard] "=&r"(vl_discard)::"vl", "vtype");
   for (uint32_t i = 0; i < 16; ++i) {
     uint32_t tss       = i;  // pattern = 0 (row), tile = 0, slice = i
     const int32_t *ptr = reinterpret_cast<const int32_t *>(in_buf) + i * 16;
@@ -173,11 +158,8 @@ __attribute__((used, retain)) void test_transpose_e32_row_to_col(void) {
 }
 
 // Load 16 cols from in_buf into Tile 0, store 16 rows from Tile 0 to out_buf
-__attribute__((used, retain)) void test_transpose_e32_col_to_row(void) {
+VME_SUBTEST(test_transpose_e32_col_to_row) {
   vme_configure(1, 2, 2);
-  uint32_t vl_discard;
-  asm volatile("vsetvli %[vl_discard], zero, e32, m4, ta, ma"
-               : [vl_discard] "=&r"(vl_discard)::"vl", "vtype");
   for (uint32_t i = 0; i < 16; ++i) {
     uint32_t tss       = (1 << 24) | i;  // pattern = 1 (col), tile = 0, slice = i
     const int32_t *ptr = reinterpret_cast<const int32_t *>(in_buf) + i * 16;
@@ -194,7 +176,22 @@ __attribute__((used, retain)) void test_transpose_e32_col_to_row(void) {
   }
 }
 
-test_func_t test_fn = test_transpose_e8_row_to_col;
+volatile test_func_t test_fn __attribute__((section(".data"))) = nullptr;
+
+static void run_and_verify_transpose(test_func_t fn) {
+  for (uint32_t i = 0; i < 1024; i++) {
+    out_buf[i] = 0;
+  }
+  fn();
+  // Load all 1024 bytes of out_buf into v4..v7 so RVVI lockstep verifies the
+  // entire 16x16 transposed matrix stored by vtse*.
+  size_t vl = __riscv_vsetvl_e32m4(16);
+  for (uint32_t offset = 0; offset < 1024; offset += 64) {
+    vint32m4_t v_chk =
+        __riscv_vle32_v_i32m4(reinterpret_cast<const int32_t *>(out_buf + offset), vl);
+    asm volatile("" : : "vr"(v_chk) : "memory");
+  }
+}
 
 int main(int argc, char **argv) {
   asm volatile("csrw mtvec, %[isr]" ::[isr] "r"((uint32_t)(&isr_handler)));
@@ -204,6 +201,13 @@ int main(int argc, char **argv) {
 
   if (test_fn != nullptr) {
     test_fn();
+  } else {
+    for (uint32_t i = 0; i < 1024; i++) {
+      in_buf[i] = static_cast<int8_t>((i * 41 + 19) ^ (i >> 3));
+    }
+    for (const test_func_t *fn = __start_vme_subtests; fn < __stop_vme_subtests; ++fn) {
+      run_and_verify_transpose(*fn);
+    }
   }
 
   return 0;

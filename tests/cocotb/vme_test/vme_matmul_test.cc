@@ -105,38 +105,36 @@ static inline __attribute__((always_inline)) void ConfigureTileMoves() {
 }
 
 // Initialize accumulator tile: vtzero or per-row preload from mm_c_init.
+__attribute__((noinline)) static void PreloadAccumulator(uint32_t tile) {
+  for (uint32_t i = 0; i < TE; i++) {
+    const uint32_t *row = &mm_c_init[i * TE];
+    asm volatile("vle32.v v4, (%0)" : : "r"(row) : "v4", "v5", "v6", "v7", "memory");
+    VtmvTV(Tss(tile, i));
+  }
+}
+
 template <uint32_t TILE>
 static void InitAccumulator() {
   ConfigureTileMoves();
   if (mm_init_mode == 0) {
     Vtzero<TILE>();
   } else {
-    for (uint32_t i = 0; i < TE; i++) {
-      const uint32_t *row = &mm_c_init[i * TE];
-      asm volatile("vle32.v v4, (%0)" : : "r"(row) : "v4", "v5", "v6", "v7", "memory");
-      VtmvTV(Tss(TILE, i));
-    }
+    PreloadAccumulator(TILE);
   }
 }
 
 // Read the accumulator tile back into mm_out, one row per vtmv.v.t.
-template <uint32_t TILE>
-static void ReadbackTile() {
+__attribute__((noinline)) static void ReadbackTile(uint32_t tile) {
   ConfigureTileMoves();
   for (uint32_t i = 0; i < TE; i++) {
     uint32_t *row = &mm_out[i * TE];
-    VtmvVT(Tss(TILE, i));
+    VtmvVT(Tss(tile, i));
     asm volatile("vse32.v v4, (%0)" : : "r"(row) : "memory");
   }
 }
 
-template <uint32_t TILE, bool SIGNED_A>
-static void RunIntCase() {
-  InitAccumulator<TILE>();
-
-  // int8 matmul shape: SEW8/LMUL1, mtwiden=3 (TWIDEN=4). Load all four
-  // A/B row slots with vl=16; rows >= tk are masked off by the hardware.
-  vme_msetmtype(MtypeValue(/*tm=*/TE, mm_tk, /*mtwiden=*/3), kVtypeSew8Lmul1);
+__attribute__((noinline)) static void LoadIntOperands(uint32_t vtype) {
+  vme_msetmtype(MtypeValue(/*tm=*/TE, mm_tk, /*mtwiden=*/3), vtype);
   (void)vme_msettm(mm_tm);
   (void)vme_msettn(TE);
   asm volatile(
@@ -156,10 +154,14 @@ static void RunIntCase() {
       : "r"(&mm_b[0]), "r"(&mm_b[TE]), "r"(&mm_b[2 * TE]), "r"(&mm_b[3 * TE])
       : "v16", "v18", "v20", "v22", "memory");
   (void)vme_msettn(mm_tn);
+}
 
+template <uint32_t TILE, bool SIGNED_A>
+static void RunIntCase(uint32_t vtype = kVtypeSew8Lmul1) {
+  InitAccumulator<TILE>();
+  LoadIntOperands(vtype);
   asm volatile(".word %0" : : "i"(ZvtMatmulIntWord(TILE, SIGNED_A)) : "memory");
-
-  ReadbackTile<TILE>();
+  ReadbackTile(TILE);
 }
 
 template <uint32_t TILE>
@@ -187,7 +189,7 @@ static void RunBf16Case() {
 
   asm volatile(".word %0" : : "i"(ZvtMatmulFpWord(TILE, /*alt=*/true)) : "memory");
 
-  ReadbackTile<TILE>();
+  ReadbackTile(TILE);
 }
 
 template <uint32_t TILE>
@@ -208,7 +210,7 @@ static void RunFpCase() {
 
   asm volatile(".word %0" : : "i"(ZvtMatmulFpWord(TILE)) : "memory");
 
-  ReadbackTile<TILE>();
+  ReadbackTile(TILE);
 }
 
 extern "C" {
@@ -221,10 +223,106 @@ __attribute__((used, retain)) void vtfmm_mt0() { RunFpCase<0>(); }
 __attribute__((used, retain)) void vtfmm_mt8() { RunFpCase<8>(); }
 }
 
-// Case selector, overwritten by the harness before each run.
-void (*mm_impl)() __attribute__((section(".data"))) = vtmmu_mt0;
+// Case selector, overwritten by the cocotb harness before each run.
+// When null (standalone UVM co-simulation), main() executes the full suite.
+void (*volatile mm_impl)() __attribute__((section(".data"))) = nullptr;
+
+__attribute__((noinline, optimize("Os"))) static void RunStandaloneSuite() {
+  // 1. Int8 matmul inputs (includes values >= 128 to exercise signed vs unsigned).
+  for (uint32_t i = 0; i < 4 * TE; i++) {
+    mm_a[i] = static_cast<uint8_t>((i * 29 + 0x83) & 0xFF);
+    mm_b[i] = static_cast<uint8_t>((i * 43 + 0x95) & 0xFF);
+  }
+  for (uint32_t i = 0; i < TE * TE; i++) {
+    mm_c_init[i] = 1000u + i * 7u;
+  }
+
+  // 1a. vtmmu_mt0 with full tile and tk=4 (KMAX=4).
+  mm_init_mode = 0;
+  mm_tm        = TE;
+  mm_tn        = TE;
+  mm_tk        = 4;
+  vtmmu_mt0();
+
+  // 1b. vtmmu_mt4 with preload (vtmv.t.v) and tk=2.
+  mm_init_mode = 1;
+  mm_tm        = TE;
+  mm_tn        = TE;
+  mm_tk        = 2;
+  vtmmu_mt4();
+
+  // 1c. vtmms_mt0 with preload, signed A, and partial tail (tm=5, tn=7, tk=3).
+  mm_init_mode = 1;
+  mm_tm        = 5;
+  mm_tn        = 7;
+  mm_tk        = 3;
+  vtmms_mt0();
+
+  // 1d. vtmmu and vtmms with altfmt=1 (uint8 x int8 and int8 x int8).
+  mm_init_mode = 1;
+  mm_tm        = 12;
+  mm_tn        = 10;
+  mm_tk        = 4;
+  RunIntCase<0, false>(kVtypeSew8Lmul1 | 0x100u);
+  RunIntCase<4, true>(kVtypeSew8Lmul1 | 0x100u);
+
+  // 2. BF16 matmul inputs: exact normal BF16 values with positive/negative signs.
+  uint16_t *a_bf16 = reinterpret_cast<uint16_t *>(mm_a);
+  uint16_t *b_bf16 = reinterpret_cast<uint16_t *>(mm_b);
+  for (uint32_t i = 0; i < 2 * TE; i++) {
+    uint16_t sign_a = (i & 1u) ? 0x8000u : 0x0000u;
+    uint16_t sign_b = (i & 2u) ? 0x8000u : 0x0000u;
+    a_bf16[i]       = static_cast<uint16_t>(sign_a | 0x3F80u | ((i & 7u) << 4));
+    b_bf16[i]       = static_cast<uint16_t>(sign_b | 0x3F80u | (((i * 3u) & 7u) << 4));
+  }
+  for (uint32_t i = 0; i < TE * TE; i++) {
+    mm_c_init[i] = 0x40000000u | ((i & 15u) << 19);
+  }
+
+  // 2a. vtfmm_bf16_mt0 full tile, tk=2.
+  mm_init_mode = 0;
+  mm_tm        = TE;
+  mm_tn        = TE;
+  mm_tk        = 2;
+  vtfmm_bf16_mt0();
+
+  // 2b. vtfmm_bf16_mt8 with preload and partial tail (tm=9, tn=11, tk=1).
+  mm_init_mode = 1;
+  mm_tm        = 9;
+  mm_tn        = 11;
+  mm_tk        = 1;
+  vtfmm_bf16_mt8();
+
+  // 3. FP32 matmul inputs: exact normal FP32 values with positive/negative signs.
+  uint32_t *a_f32 = reinterpret_cast<uint32_t *>(mm_a);
+  uint32_t *b_f32 = reinterpret_cast<uint32_t *>(mm_b);
+  for (uint32_t i = 0; i < TE; i++) {
+    uint32_t sign_a = (i & 2u) ? 0x80000000u : 0x00000000u;
+    uint32_t sign_b = (i & 1u) ? 0x80000000u : 0x00000000u;
+    a_f32[i]        = sign_a | 0x3F800000u | ((i & 7u) << 20);
+    b_f32[i]        = sign_b | 0x3F800000u | (((i * 5u) & 7u) << 20);
+  }
+
+  // 3a. vtfmm_mt0 full tile.
+  mm_init_mode = 0;
+  mm_tm        = TE;
+  mm_tn        = TE;
+  mm_tk        = 1;
+  vtfmm_mt0();
+
+  // 3b. vtfmm_mt8 with preload and partial tail (tm=9, tn=11).
+  mm_init_mode = 1;
+  mm_tm        = 9;
+  mm_tn        = 11;
+  mm_tk        = 1;
+  vtfmm_mt8();
+}
 
 int main(int argc, char **argv) {
-  mm_impl();
+  if (mm_impl != nullptr) {
+    mm_impl();
+  } else {
+    RunStandaloneSuite();
+  }
   return 0;
 }

@@ -35,10 +35,8 @@ class RunUvmRegressionTest(unittest.TestCase):
                 for pattern in denylist
             )
         )
-        self.assertIn("//tests/cocotb/vme_test:vme_test_program", denylist)
-        self.assertIn(
-            "//tests/cocotb/vme_test:vme_matmul_test_program", denylist
-        )
+        self.assertIn("//tests/cocotb/vme_test:vme_mset_test", denylist)
+        self.assertIn("//tests/cocotb/vme_test:vme_matmul_test", denylist)
         self.assertTrue(
             any(
                 fnmatch.fnmatch(
@@ -50,15 +48,15 @@ class RunUvmRegressionTest(unittest.TestCase):
         self.assertTrue(
             any(
                 fnmatch.
-                fnmatch("//tests/cocotb/vme_test:vme_test_program", pattern)
+                fnmatch("//tests/cocotb/vme_test:vme_mset_test", pattern)
                 for pattern in denylist
             )
         )
         self.assertTrue(
             any(
-                fnmatch.fnmatch(
-                    "//tests/cocotb/vme_test:vme_matmul_test_program", pattern
-                ) for pattern in denylist
+                fnmatch.
+                fnmatch("//tests/cocotb/vme_test:vme_matmul_test", pattern)
+                for pattern in denylist
             )
         )
 

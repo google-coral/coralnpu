@@ -14,13 +14,15 @@
 
 #include <cstdint>
 
-extern "C" {
+#include "vme_test_utils.h"
 
-typedef void (*test_func_t)(void);
+extern "C" {
 
 uint32_t trap_count  = 0;
 uint32_t last_mcause = 0;
 uint32_t last_mtval  = 0;
+
+extern volatile test_func_t test_fn;
 
 __attribute__((interrupt)) void isr_handler(void) {
   uint32_t mcause;
@@ -32,11 +34,17 @@ __attribute__((interrupt)) void isr_handler(void) {
   if (mcause == 2) {
     trap_count++;
   }
-  asm volatile(".word 0x08000073");  // mpause (halt)
+  if (test_fn != nullptr) {
+    asm volatile(".word 0x08000073");  // mpause (halt in cocotb mode)
+  }
+  uint32_t mepc_val;
+  asm volatile("csrr %0, mepc" : "=r"(mepc_val));
+  mepc_val += 4;
+  asm volatile("csrw mepc, %0" : : "r"(mepc_val));
 }
 
 // vtle64 (nf=0b011: e64 cleanly rejected on 32-bit core)
-__attribute__((used, retain)) void vtle64(void) {
+VME_SUBTEST(vtle64) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -49,7 +57,7 @@ __attribute__((used, retain)) void vtle64(void) {
 }
 
 // vtse64 (nf=0b011: e64 cleanly rejected on 32-bit core)
-__attribute__((used, retain)) void vtse64(void) {
+VME_SUBTEST(vtse64) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -62,7 +70,7 @@ __attribute__((used, retain)) void vtse64(void) {
 }
 
 // vtle with invalid nf=0b100
-__attribute__((used, retain)) void vtle_invalid_nf100(void) {
+VME_SUBTEST(vtle_invalid_nf100) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -75,7 +83,7 @@ __attribute__((used, retain)) void vtle_invalid_nf100(void) {
 }
 
 // vtse with invalid nf=0b100
-__attribute__((used, retain)) void vtse_invalid_nf100(void) {
+VME_SUBTEST(vtse_invalid_nf100) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -88,7 +96,7 @@ __attribute__((used, retain)) void vtse_invalid_nf100(void) {
 }
 
 // vtle with invalid nf=0b111
-__attribute__((used, retain)) void vtle_invalid_nf111(void) {
+VME_SUBTEST(vtle_invalid_nf111) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -101,7 +109,7 @@ __attribute__((used, retain)) void vtle_invalid_nf111(void) {
 }
 
 // vtse with invalid nf=0b111
-__attribute__((used, retain)) void vtse_invalid_nf111(void) {
+VME_SUBTEST(vtse_invalid_nf111) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -114,7 +122,7 @@ __attribute__((used, retain)) void vtse_invalid_nf111(void) {
 }
 
 // vtle8 with vm=0 (masked tile load is illegal)
-__attribute__((used, retain)) void vtle8_masked_vm0(void) {
+VME_SUBTEST(vtle8_masked_vm0) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -127,7 +135,7 @@ __attribute__((used, retain)) void vtle8_masked_vm0(void) {
 }
 
 // vtse8 with vm=0 (masked tile store is illegal)
-__attribute__((used, retain)) void vtse8_masked_vm0(void) {
+VME_SUBTEST(vtse8_masked_vm0) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -140,7 +148,7 @@ __attribute__((used, retain)) void vtse8_masked_vm0(void) {
 }
 
 // vtle8 with non-zero vd/vs3 field (bits [11:7] must be zero)
-__attribute__((used, retain)) void vtle8_nonzero_vd_vs3(void) {
+VME_SUBTEST(vtle8_nonzero_vd_vs3) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -153,7 +161,7 @@ __attribute__((used, retain)) void vtle8_nonzero_vd_vs3(void) {
 }
 
 // vtse8 with non-zero vd/vs3 field (bits [11:7] must be zero)
-__attribute__((used, retain)) void vtse8_nonzero_vd_vs3(void) {
+VME_SUBTEST(vtse8_nonzero_vd_vs3) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -166,7 +174,7 @@ __attribute__((used, retain)) void vtse8_nonzero_vd_vs3(void) {
 }
 
 // vtle8 with non-zero mop=0b10 (mop must be 0b00 for tile operations)
-__attribute__((used, retain)) void vtle8_nonzero_mop10(void) {
+VME_SUBTEST(vtle8_nonzero_mop10) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -179,7 +187,7 @@ __attribute__((used, retain)) void vtle8_nonzero_mop10(void) {
 }
 
 // vtse8 with non-zero mop=0b01 (mop must be 0b00 for tile operations)
-__attribute__((used, retain)) void vtse8_nonzero_mop01(void) {
+VME_SUBTEST(vtse8_nonzero_mop01) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -192,7 +200,7 @@ __attribute__((used, retain)) void vtse8_nonzero_mop01(void) {
 }
 
 // mew=0 with width=111 (reserved vector encoding for load)
-__attribute__((used, retain)) void mew0_width7_load(void) {
+VME_SUBTEST(mew0_width7_load) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -205,7 +213,7 @@ __attribute__((used, retain)) void mew0_width7_load(void) {
 }
 
 // mew=0 with width=111 (reserved vector encoding for store)
-__attribute__((used, retain)) void mew0_width7_store(void) {
+VME_SUBTEST(mew0_width7_store) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -218,7 +226,7 @@ __attribute__((used, retain)) void mew0_width7_store(void) {
 }
 
 // vill=1 (executing vtle8 when vector configuration is invalid)
-__attribute__((used, retain)) void vill1_load(void) {
+VME_SUBTEST(vill1_load) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -231,7 +239,7 @@ __attribute__((used, retain)) void vill1_load(void) {
 }
 
 // vill=1 (executing vtse8 when vector configuration is invalid)
-__attribute__((used, retain)) void vill1_store(void) {
+VME_SUBTEST(vill1_store) {
   uint32_t addr = 0x1000;
   uint32_t tss  = 0;
   uint32_t vl_discard;
@@ -245,7 +253,7 @@ __attribute__((used, retain)) void vill1_store(void) {
 
 // Test sequence: configure mtype/vtype, tn, tm, tk, then execute vtzero.
 // Frontend configuration instructions must not be dispatched to backend.
-__attribute__((used, retain)) void mset_dimension_config(void) {
+VME_SUBTEST(mset_dimension_config) {
   asm volatile(
       "li x6, 0x4042 \n"
       "li x9, 0x008 \n"
@@ -262,14 +270,14 @@ __attribute__((used, retain)) void mset_dimension_config(void) {
 }
 
 // OP-VE (0x77) with reserved funct3=0b010 (must trap as illegal instruction)
-__attribute__((used, retain)) void opve_invalid_funct3(void) {
+VME_SUBTEST(opve_invalid_funct3) {
   // Emit custom opcode 0x77 with funct6=111100, funct3=010 (reserved), vm=1
   asm volatile(".word 0xF8002077 \n");
 }
 
 // Standard RVV vfwmacc.vv (0x57, funct6=111100, funct3=001) under vill=1.
 // Tests that mtval reconstructs opcode 0x57 faithfully without being corrupted to 0x77.
-__attribute__((used, retain)) void vfwmacc_vv_vill(void) {
+VME_SUBTEST(vfwmacc_vv_vill) {
   uint32_t vl_discard;
   asm volatile(
       "vsetvli %[vl_discard], zero, e64, m1, ta, ma \n"  // Set vill=1
@@ -279,7 +287,7 @@ __attribute__((used, retain)) void vfwmacc_vv_vill(void) {
       : "vl", "vtype");
 }
 
-test_func_t test_fn = vtle64;
+volatile test_func_t test_fn __attribute__((section(".data"))) = nullptr;
 
 int main(int argc, char **argv) {
   asm volatile("csrw mtvec, %[isr]" ::[isr] "r"((uint32_t)(&isr_handler)));
@@ -289,6 +297,10 @@ int main(int argc, char **argv) {
 
   if (test_fn != nullptr) {
     test_fn();
+  } else {
+    for (const test_func_t *fn = __start_vme_subtests; fn < __stop_vme_subtests; ++fn) {
+      (*fn)();
+    }
   }
 
   return 0;

@@ -28,9 +28,13 @@ struct VmeAltfmtResult {
   uint32_t vtype_readback;
 };
 
-volatile uint32_t vme_altfmt_num_cases __attribute__((section(".data"))) = 0;
-volatile VmeAltfmtCase vme_altfmt_inputs[VME_MAX_ALTFMT_CASES]
-    __attribute__((section(".data")))                                                      = {};
+volatile uint32_t vme_altfmt_num_cases __attribute__((section(".data"))) = 4;
+volatile VmeAltfmtCase vme_altfmt_inputs[VME_MAX_ALTFMT_CASES] __attribute__((section(".data"))) = {
+    {0x4042, 0x108},  // altfmt=1 with valid mtwiden=2 (sew=16) -> mtype=0x4042, vtype=0x1C9
+    {0x4042, 0x008},  // altfmt=0 with valid mtwiden=2 (sew=16) -> mtype=0x4042, vtype=0x0C9
+    {0x4083, 0x108},  // vill=1 (sew=16, mtwiden=3 -> TEW=64>32) -> mtype=0, vtype=0x80000000
+    {0x0000, 0x108},  // unconfigured (mtwiden=0) clears altfmt -> mtype=0, vtype=0x008
+};
 VmeAltfmtResult vme_altfmt_results[VME_MAX_ALTFMT_CASES] __attribute__((section(".data"))) = {};
 
 int main(int argc, char **argv) {

@@ -49,8 +49,8 @@ DENYLIST = [
     # 2) UVM testbench lacks mechanism to initialize input/scale/zp data in external memory.
     "//internal/kernels:*",
     "//internal/kernels/*",
-    "//tests/cocotb/vme_test:vme_matmul_test_program",
-    "//tests/cocotb/vme_test:vme_test_program",
+    "//tests/cocotb/vme_test:vme_matmul_test",
+    "//tests/cocotb/vme_test:vme_mset_test",
 ]
 
 # List of targets to exclude from Spike co-simulation (e.g. tests requiring external IRQs)

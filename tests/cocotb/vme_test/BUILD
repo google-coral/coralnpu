@@ -60,13 +60,13 @@ cocotb_test_suite(
             "@bazel_tools//tools/python/runfiles",
         ],
         "data": [
-            ":vme_altfmt_test_program",
-            ":vme_matmul_test_program",
-            ":vme_test_program",
+            ":vme_altfmt_test",
+            ":vme_matmul_test",
+            ":vme_mset_test",
             ":vme_decode_test",
             ":vme_load_store_test",
             ":vme_transpose_test",
-            ":vme_vset_mtype_reset_test_program",
+            ":vme_vset_mtype_reset_test",
             ":vme_mset_vtmmu_sequence_test",
             ":vme_mstatus_ms_test",
         ],
@@ -74,13 +74,13 @@ cocotb_test_suite(
     },
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [
-        ":vme_altfmt_test_program",
-        ":vme_matmul_test_program",
-        ":vme_test_program",
+        ":vme_altfmt_test",
+        ":vme_matmul_test",
+        ":vme_mset_test",
         ":vme_decode_test",
         ":vme_load_store_test",
         ":vme_transpose_test",
-        ":vme_vset_mtype_reset_test_program",
+        ":vme_vset_mtype_reset_test",
         ":vme_mset_vtmmu_sequence_test",
         ":vme_mstatus_ms_test",
         "//tests/cocotb:coverage_exclude.cfg",
@@ -99,41 +99,44 @@ cocotb_test_suite(
 )
 
 coralnpu_v2_binary(
-    name = "vme_altfmt_test_program",
-    srcs = ["vme_altfmt_test_program.cc"],
+    name = "vme_altfmt_test",
+    srcs = ["vme_altfmt_test.cc"],
     hdrs = ["vme_test_utils.h"],
 )
 
 coralnpu_v2_binary(
-    name = "vme_test_program",
-    srcs = ["vme_test_program.cc"],
+    name = "vme_mset_test",
+    srcs = ["vme_mset_test.cc"],
     hdrs = ["vme_test_utils.h"],
 )
 
 coralnpu_v2_binary(
-    name = "vme_matmul_test_program",
-    srcs = ["vme_matmul_test_program.cc"],
+    name = "vme_matmul_test",
+    srcs = ["vme_matmul_test.cc"],
     hdrs = ["vme_test_utils.h"],
 )
 
 coralnpu_v2_binary(
     name = "vme_decode_test",
     srcs = ["vme_decode_test.cc"],
+    hdrs = ["vme_test_utils.h"],
 )
 
 coralnpu_v2_binary(
     name = "vme_load_store_test",
     srcs = ["vme_load_store_test.cc"],
+    hdrs = ["vme_test_utils.h"],
 )
 
 coralnpu_v2_binary(
     name = "vme_transpose_test",
     srcs = ["vme_transpose_test.cc"],
+    hdrs = ["vme_test_utils.h"],
 )
 
 coralnpu_v2_binary(
-    name = "vme_vset_mtype_reset_test_program",
-    srcs = ["vme_vset_mtype_reset_test_program.cc"],
+    name = "vme_vset_mtype_reset_test",
+    srcs = ["vme_vset_mtype_reset_test.cc"],
     hdrs = ["vme_test_utils.h"],
 )
 
