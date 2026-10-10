@@ -29,7 +29,7 @@ int main() {
   wrapper.Reset();
 
   // Load elf
-  auto file_name = "../tests/cocotb/wfi_slot_0.elf";
+  auto file_name = "tests/cocotb/wfi_slot_0.elf";
   int fd = open(file_name, 0);
   if (fd < 0) {
     return -1;
