@@ -56,7 +56,7 @@ class CircularBufferMulti[T <: Data](t: T, n: Int, capacity: Int) extends Module
       (j.U < io.enqValid) && isTargetSlot
     })
     val writeEnable = matches.asUInt.orR
-    val writeData   = Mux1H(matches, io.enqData)
+    val writeData   = suppressEnumCastWarning { Mux1H(matches, io.enqData) }
     buffer(i) := Mux(writeEnable, writeData, buffer(i))
   }
 

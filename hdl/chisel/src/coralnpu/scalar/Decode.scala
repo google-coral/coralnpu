@@ -689,7 +689,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
     // -------------------------------------------------------------------------
     // Alu
-    val alu = SafeMuxUpTo1H(
+    val alu = MuxUpTo1H(
       MakeValid(false.B, AluOp.ADD),
       Seq(
         // RV32IM
@@ -735,8 +735,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
         (d.slliw || d.sllw) -> MakeValid(true.B, AluOp.SLLW),
         (d.srliw || d.srlw) -> MakeValid(true.B, AluOp.SRLW),
         (d.sraiw || d.sraw) -> MakeValid(true.B, AluOp.SRAW)
-      ),
-      AluOp
+      )
     )
     io.alu(i).valid     := tryDispatch && alu.valid
     io.alu(i).bits.addr := rdAddr(i)
@@ -744,7 +743,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
     // -------------------------------------------------------------------------
     // Bru
-    val bru = SafeMuxUpTo1H(
+    val bru = MuxUpTo1H(
       MakeValid(false.B, BruOp.JAL),
       Seq(
         d.jal    -> MakeValid(true.B, BruOp.JAL),
@@ -760,8 +759,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
         d.mpause -> MakeValid(true.B, BruOp.MPAUSE),
         d.mret   -> MakeValid(true.B, BruOp.MRET),
         d.wfi    -> MakeValid(true.B, BruOp.WFI)
-      ),
-      BruOp
+      )
     )
     val bru_target = io.inst(i).bits.addr + Mux(io.inst(i).bits.inst(2), d.immjal, d.immbr)
     io.bru(i).bits.fwd    := io.inst(i).bits.brchFwd
@@ -787,7 +785,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
     // -------------------------------------------------------------------------
     // Mlu
-    val mlu = SafeMuxUpTo1H(
+    val mlu = MuxUpTo1H(
       MakeValid(false.B, MluOp.MUL),
       Seq(
         d.mul    -> MakeValid(true.B, MluOp.MUL),
@@ -795,8 +793,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
         d.mulhsu -> MakeValid(true.B, MluOp.MULHSU),
         d.mulhu  -> MakeValid(true.B, MluOp.MULHU),
         d.mulw   -> MakeValid(true.B, MluOp.MULW)
-      ),
-      MluOp
+      )
     )
     io.mlu(i).valid     := tryDispatch && mlu.valid
     io.mlu(i).bits.addr := rdAddr(i)
@@ -804,7 +801,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
     // -------------------------------------------------------------------------
     // Dvu
-    val dvu = SafeMuxUpTo1H(
+    val dvu = MuxUpTo1H(
       MakeValid(false.B, DvuOp.DIV),
       Seq(
         d.div   -> MakeValid(true.B, DvuOp.DIV),
@@ -815,8 +812,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
         d.divuw -> MakeValid(true.B, DvuOp.DIVUW),
         d.remw  -> MakeValid(true.B, DvuOp.REMW),
         d.remuw -> MakeValid(true.B, DvuOp.REMUW)
-      ),
-      DvuOp
+      )
     )
     io.dvu(i).valid     := tryDispatch && dvu.valid
     io.dvu(i).bits.addr := rdAddr(i)
@@ -824,7 +820,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
     // -------------------------------------------------------------------------
     // Lsu
-    val lsu = SafeMuxUpTo1H(
+    val lsu = MuxUpTo1H(
       MakeValid(false.B, LsuOp.LB),
       Seq(
         d.lb     -> MakeValid(true.B, LsuOp.LB),
@@ -912,8 +908,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
             )
           )
         }
-        .getOrElse(Seq()),
-      LsuOp
+        .getOrElse(Seq())
     )
     io.lsu(i).valid      := tryDispatch && lsu.valid
     io.lsu(i).bits.store := io.inst(i).bits.inst(5)
@@ -931,14 +926,13 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     // -------------------------------------------------------------------------
     // Csr
     if (i == 0) {
-      val csr = SafeMuxUpTo1H(
+      val csr = MuxUpTo1H(
         MakeValid(false.B, CsrOp.CSRRW),
         Seq(
           d.csrrw -> MakeValid(true.B, CsrOp.CSRRW),
           d.csrrs -> MakeValid(true.B, CsrOp.CSRRS),
           d.csrrc -> MakeValid(true.B, CsrOp.CSRRC)
-        ),
-        CsrOp
+        )
       )
       val csr_bits_index                   = io.inst(0).bits.inst(31, 20)
       val (csr_address, csr_address_valid) = CsrAddress.safe(csr_bits_index)
