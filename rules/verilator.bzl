@@ -54,6 +54,71 @@ for entry in os.scandir(raw):
 ' "$RAW_DIR" "$1" "$2"
 """
 
+_UVM_VERILATOR_COMPILE_SCRIPT = """
+set -e
+RAW_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'verilator_raw')"
+trap 'rm -rf "$RAW_DIR"' EXIT
+mkdir -p "$1" "$2" "$3"
+VERILATOR_ROOT="$4" "$5" "${@:6}" -Mdir "$RAW_DIR"
+python3 -c '
+import glob, os, re, shutil, sys
+raw, cpp_fast, cpp_slow, hdr = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+
+# 1. Inline #include "foo.cpp" inside Verilator --output-groups *_vm_*.cpp files
+vm_files = sorted(glob.glob(os.path.join(raw, "*_vm_*.cpp")))
+included_files = set()
+for vf in vm_files:
+    out_lines = []
+    with open(vf, "r", encoding="utf-8") as fp:
+        for line in fp:
+            m = re.match(r"^#include\\s+\\"([^\\"]+\\.cpp)\\"", line.strip())
+            if m:
+                inc_name = m.group(1)
+                inc_path = os.path.join(raw, inc_name)
+                if os.path.exists(inc_path):
+                    included_files.add(inc_name)
+                    with open(inc_path, "r", encoding="utf-8") as inc_fp:
+                        out_lines.append(inc_fp.read())
+                    continue
+            out_lines.append(line)
+    with open(vf, "w", encoding="utf-8") as fp:
+        fp.writelines(out_lines)
+
+for inc_name in included_files:
+    inc_path = os.path.join(raw, inc_name)
+    if os.path.exists(inc_path):
+        os.remove(inc_path)
+
+# 2. Group remaining ungrouped *Slow.cpp files into batches of 4
+leftover_slow = sorted([
+    f for f in os.listdir(raw)
+    if f.endswith("Slow.cpp") and "_vm_" not in f
+])
+batch_size = 4
+for idx in range(0, len(leftover_slow), batch_size):
+    batch = leftover_slow[idx:idx + batch_size]
+    if len(batch) > 1:
+        merged_path = os.path.join(raw, f"Vtop_vm_extra_Slow_{idx // batch_size}.cpp")
+        with open(merged_path, "w", encoding="utf-8") as out_fp:
+            for fname in batch:
+                fpath = os.path.join(raw, fname)
+                with open(fpath, "r", encoding="utf-8") as in_fp:
+                    out_fp.write(in_fp.read() + "\\n")
+                os.remove(fpath)
+
+# 3. Distribute fast .cpp, slow .cpp, and .h files
+for entry in os.scandir(raw):
+    if entry.is_file():
+        if entry.name.endswith((".cpp", ".cc", ".cxx")):
+            if "Slow" in entry.name:
+                shutil.move(entry.path, os.path.join(cpp_slow, entry.name))
+            else:
+                shutil.move(entry.path, os.path.join(cpp_fast, entry.name))
+        elif entry.name.endswith((".h", ".hh", ".hpp")):
+            shutil.move(entry.path, os.path.join(hdr, entry.name))
+' "$RAW_DIR" "$1" "$2" "$3"
+"""
+
 def _uvm_verilator_cc_library_impl(ctx):
     hdl_toplevel = ctx.attr.hdl_toplevel
 
@@ -102,17 +167,14 @@ def _uvm_verilator_cc_library_impl(ctx):
     )
     add_input(vlt_file)
 
-    # 2. Collect CcInfo dependencies & include paths for PCH
+    # 2. Collect CcInfo dependencies
     all_cc_deps = [dep for dep in ctx.attr.deps if CcInfo in dep]
     if ctx.attr._verilator_runtime and CcInfo in ctx.attr._verilator_runtime:
         all_cc_deps.append(ctx.attr._verilator_runtime)
 
-    cc_headers = []
-    for dep in all_cc_deps:
-        cc_headers.extend(dep[CcInfo].compilation_context.headers.to_list())
-
-    # 3. Codegen Action: Run Verilator to generate C++ code into cpp_dir and hdr_dir
-    cpp_dir = ctx.actions.declare_directory(ctx.label.name + "_cpp")
+    # 3. Codegen Action: Run Verilator to generate C++ code into cpp_fast_dir, cpp_slow_dir, and hdr_dir
+    cpp_fast_dir = ctx.actions.declare_directory(ctx.label.name + "_cpp_fast")
+    cpp_slow_dir = ctx.actions.declare_directory(ctx.label.name + "_cpp_slow")
     hdr_dir = ctx.actions.declare_directory(ctx.label.name + "_h")
 
     verilator_canonical = ctx.executable._verilator_bin.owner.workspace_name
@@ -142,23 +204,31 @@ def _uvm_verilator_cc_library_impl(ctx):
         for arg in flag.split(" "):
             if arg:
                 verilator_flags.append(arg)
-    verilator_flags.extend(["--output-groups", str(min(verilator_make_parallelism, 32))])
+    verilator_flags.extend([
+        "--output-split",
+        "20000",
+        "--output-split-cfuncs",
+        "2000",
+        "--output-groups",
+        str(min(verilator_make_parallelism, 32)),
+    ])
     verilator_flags.append(vlt_file.path)
     verilator_flags.extend(verilog_paths)
 
     ctx.actions.run_shell(
-        outputs = [cpp_dir, hdr_dir],
+        outputs = [cpp_fast_dir, cpp_slow_dir, hdr_dir],
         tools = [ctx.executable._verilator_bin],
         inputs = depset(
-            verilog_inputs + cc_headers,
+            verilog_inputs,
             transitive = [
                 depset(ctx.files._verilator),
                 depset(ctx.files._uvm_lib),
             ],
         ),
-        command = _VERILATOR_COMPILE_SCRIPT,
+        command = _UVM_VERILATOR_COMPILE_SCRIPT,
         arguments = [
-            cpp_dir.path,
+            cpp_fast_dir.path,
+            cpp_slow_dir.path,
             hdr_dir.path,
             verilator_root,
             ctx.executable._verilator_bin.path,
@@ -168,44 +238,62 @@ def _uvm_verilator_cc_library_impl(ctx):
         resource_set = verilator_resource_estimator,
     )
 
-    # 4. Compile generated C++ files using Bazel C++ toolchain
-    compilation_context, compilation_outputs = cc_common.compile(
-        name = ctx.label.name,
+    common_compile_flags = [
+        "-std=c++20",
+        "-DVERILATOR=1",
+        "-DVL_TIME_CONTEXT",
+        "-DVM_TIMING=1",
+        "-DVM_VPI=1",
+        "-DVM_COVERAGE=0",
+        "-DVM_SC=0",
+        "-DVM_TRACE=0",
+        "-DVM_TRACE_FST=0",
+        "-DVM_TRACE_VCD=0",
+        "-DVM_TRACE_SAIF=0",
+        "-faligned-new",
+        "-Wno-bool-operation",
+        "-Wno-c++11-narrowing",
+        "-Wno-overloaded-virtual",
+        "-Wno-parentheses-equality",
+        "-Wno-shadow",
+        "-Wno-sign-compare",
+        "-Wno-tautological-compare",
+        "-Wno-uninitialized",
+        "-Wno-unused-but-set-parameter",
+        "-Wno-unused-but-set-variable",
+        "-Wno-unused-parameter",
+        "-Wno-unused-variable",
+        "-Wno-vla-cxx-extension",
+    ] + ctx.attr.copts
+
+    # 4a. Compile fast generated C++ files with opt_fast (-O2)
+    compilation_context, fast_compilation_outputs = cc_common.compile(
+        name = ctx.label.name + "_fast",
         actions = ctx.actions,
         feature_configuration = feature_configuration,
         cc_toolchain = cc_toolchain,
-        srcs = [cpp_dir],
+        srcs = [cpp_fast_dir],
         public_hdrs = [hdr_dir],
         quote_includes = [hdr_dir.path],
-        user_compile_flags = [
-            ctx.attr.opt_fast,
-            "-std=c++20",
-            "-DVERILATOR=1",
-            "-DVL_TIME_CONTEXT",
-            "-DVM_TIMING=1",
-            "-DVM_VPI=1",
-            "-DVM_COVERAGE=0",
-            "-DVM_SC=0",
-            "-DVM_TRACE=0",
-            "-DVM_TRACE_FST=0",
-            "-DVM_TRACE_VCD=0",
-            "-DVM_TRACE_SAIF=0",
-            "-faligned-new",
-            "-Wno-bool-operation",
-            "-Wno-c++11-narrowing",
-            "-Wno-overloaded-virtual",
-            "-Wno-parentheses-equality",
-            "-Wno-shadow",
-            "-Wno-sign-compare",
-            "-Wno-tautological-compare",
-            "-Wno-uninitialized",
-            "-Wno-unused-but-set-parameter",
-            "-Wno-unused-but-set-variable",
-            "-Wno-unused-parameter",
-            "-Wno-unused-variable",
-            "-Wno-vla-cxx-extension",
-        ] + ctx.attr.copts,
+        user_compile_flags = [ctx.attr.opt_fast] + common_compile_flags,
         compilation_contexts = [dep[CcInfo].compilation_context for dep in all_cc_deps],
+    )
+
+    # 4b. Compile slow/cold generated C++ files with -O0
+    _, slow_compilation_outputs = cc_common.compile(
+        name = ctx.label.name + "_slow",
+        actions = ctx.actions,
+        feature_configuration = feature_configuration,
+        cc_toolchain = cc_toolchain,
+        srcs = [cpp_slow_dir],
+        public_hdrs = [hdr_dir],
+        quote_includes = [hdr_dir.path],
+        user_compile_flags = common_compile_flags + ["-O0"],
+        compilation_contexts = [dep[CcInfo].compilation_context for dep in all_cc_deps],
+    )
+
+    compilation_outputs = cc_common.merge_compilation_outputs(
+        compilation_outputs = [fast_compilation_outputs, slow_compilation_outputs],
     )
 
     # 5. Create linking context (static library) with alwayslink = True
