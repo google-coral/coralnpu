@@ -12,28 +12,46 @@ set -e
 RAW_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'verilator_raw')"
 trap 'rm -rf "$RAW_DIR"' EXIT
 mkdir -p "$1" "$2"
-VERILATOR_ROOT="$3" "$4" "${@:7}" -Mdir "$RAW_DIR"
+VERILATOR_ROOT="$3" "$4" "${@:5}" -Mdir "$RAW_DIR"
 python3 -c '
 import os, shutil, sys
-raw, cpp, hdr = sys.argv[1], sys.argv[2], sys.argv[3]
-for entry in os.scandir(raw):
-    if entry.is_file():
-        if entry.name.endswith((".cpp", ".cc", ".cxx")):
-            shutil.move(entry.path, os.path.join(cpp, entry.name))
-        elif entry.name.endswith((".h", ".hh", ".hpp")):
-            shutil.move(entry.path, os.path.join(hdr, entry.name))
-' "$RAW_DIR" "$1" "$2"
 
-COMPILER="$5"
-PCH_INCS="$6"
-if [ -n "$COMPILER" ] && [ -f "$2/Vtop__pch.h" ]; then
-    "$COMPILER" -x c++-header -std=c++20 -O2 \
-        -DVERILATOR=1 -DVL_TIME_CONTEXT -DVM_TIMING=1 -DVM_VPI=1 \
-        -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -DVM_TRACE_SAIF=0 \
-        -faligned-new -fPIC \
-        -I"$2" $PCH_INCS \
-        "$2/Vtop__pch.h" -o "$2/Vtop__pch.h.gch" 2>/dev/null || true
-fi
+raw, cpp, hdr = sys.argv[1], sys.argv[2], sys.argv[3]
+active_compilation_units = set()
+target_prefixes = ("VM_CLASSES_", "VM_SUPPORT_", "VM_GLOBAL_")
+
+for entry in os.scandir(raw):
+    if entry.is_file() and entry.name.endswith("_classes.mk"):
+        with open(entry.path, "r", errors="replace") as f:
+            in_target = False
+            for line in f:
+                line = line.strip()
+                if "#" in line:
+                    line = line[:line.index("#")].strip()
+                if not line:
+                    continue
+                if "=" in line:
+                    in_target = any(line.startswith(p) for p in target_prefixes)
+                    line = line.split("=", 1)[1].strip()
+                if in_target:
+                    for tok in line.replace(chr(92), " ").split():
+                        tok = tok.strip()
+                        if tok and tok != chr(92):
+                            active_compilation_units.add(tok)
+
+for entry in os.scandir(raw):
+    if not entry.is_file():
+        continue
+    name = entry.name
+    if name.endswith((".h", ".hh", ".hpp")):
+        shutil.move(entry.path, os.path.join(hdr, name))
+    elif name.endswith((".cpp", ".cc", ".cxx")):
+        base = name.rsplit(".", 1)[0]
+        if not active_compilation_units or base in active_compilation_units:
+            shutil.move(entry.path, os.path.join(cpp, name))
+        else:
+            shutil.move(entry.path, os.path.join(hdr, name))
+' "$RAW_DIR" "$1" "$2"
 """
 
 def _uvm_verilator_cc_library_impl(ctx):
@@ -89,17 +107,9 @@ def _uvm_verilator_cc_library_impl(ctx):
     if ctx.attr._verilator_runtime and CcInfo in ctx.attr._verilator_runtime:
         all_cc_deps.append(ctx.attr._verilator_runtime)
 
-    pch_includes = []
     cc_headers = []
     for dep in all_cc_deps:
-        cc_info = dep[CcInfo]
-        for inc in cc_info.compilation_context.includes.to_list():
-            pch_includes.append("-I" + inc)
-        for inc in cc_info.compilation_context.quote_includes.to_list():
-            pch_includes.append("-I" + inc)
-        for inc in cc_info.compilation_context.system_includes.to_list():
-            pch_includes.append("-isystem " + inc)
-        cc_headers.extend(cc_info.compilation_context.headers.to_list())
+        cc_headers.extend(dep[CcInfo].compilation_context.headers.to_list())
 
     # 3. Codegen Action: Run Verilator to generate C++ code into cpp_dir and hdr_dir
     cpp_dir = ctx.actions.declare_directory(ctx.label.name + "_cpp")
@@ -132,7 +142,7 @@ def _uvm_verilator_cc_library_impl(ctx):
         for arg in flag.split(" "):
             if arg:
                 verilator_flags.append(arg)
-    verilator_flags.extend(["--output-groups", "0"])
+    verilator_flags.extend(["--output-groups", str(min(verilator_make_parallelism, 32))])
     verilator_flags.append(vlt_file.path)
     verilator_flags.extend(verilog_paths)
 
@@ -152,8 +162,6 @@ def _uvm_verilator_cc_library_impl(ctx):
             hdr_dir.path,
             verilator_root,
             ctx.executable._verilator_bin.path,
-            cc_toolchain.compiler_executable,
-            " ".join(pch_includes),
         ] + verilator_flags,
         mnemonic = "VerilatorCodegen",
         progress_message = "Verilating SystemVerilog to C++ for %s" % ctx.label,
@@ -309,7 +317,7 @@ def _verilator_cc_library_impl(ctx):
         str(verilator_make_parallelism),
         "--no-std",
         "--output-groups",
-        "0",
+        str(min(verilator_make_parallelism, 32)),
     ]
     if ctx.attr.systemc:
         verilator_flags.append("--sc")
