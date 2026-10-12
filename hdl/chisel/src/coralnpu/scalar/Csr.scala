@@ -232,7 +232,8 @@ class Csr(p: Parameters) extends Module {
     val float_dirty  = Option.when(p.enableFloat)(Input(Bool()))
     val rvv_dirty    = Option.when(p.enableRvv)(Input(Bool()))
     val vme_discard  = Option.when(p.enableVme)(Input(Bool()))
-    val vme_dirty    = Option.when(p.enableVme)(Input(Bool()))
+    val vme_ms_dirty = Option.when(p.enableVme)(Input(Bool()))
+    val vme_vs_dirty = Option.when(p.enableVme)(Input(Bool()))
     val vme_fp_dirty = Option.when(p.enableVme && p.enableFloat)(Input(Bool()))
     val mstatus_ms   = Option.when(p.enableVme)(Output(UInt(2.W)))
 
@@ -353,12 +354,9 @@ class Csr(p: Parameters) extends Module {
   val vs = Option.when(p.enableRvv)(RegInit(1.U(2.W)))
   val ms = Option.when(p.enableVme)(RegInit(1.U(2.W)))
 
-  val fs_val = fs.getOrElse(0.U(2.W))
-  val vs_val = vs.getOrElse(0.U(2.W))
-  val ms_val = ms.getOrElse(0.U(2.W))
-  if (p.enableVme) {
-    io.mstatus_ms.get := ms_val
-  }
+  val fs_val     = fs.getOrElse(0.U(2.W))
+  val vs_val     = vs.getOrElse(0.U(2.W))
+  val ms_val     = ms.getOrElse(0.U(2.W))
   val mstatus_sd = (fs_val === 3.U) || (vs_val === 3.U) || (ms_val === 3.U)
 
   // Decode the Index.
@@ -606,7 +604,7 @@ class Csr(p: Parameters) extends Module {
     (is_csr_write && (vstartEn.get || vxrmEn.get || vxsatEn.get || vlEn.get || vtypeEn.get)) ||
     io.rvv.get.fflags.valid ||
     io.rvv_dirty.get ||
-    (if (p.enableVme) io.vme_dirty.get else false.B)
+    (if (p.enableVme) io.vme_vs_dirty.get else false.B)
   }
 
   if (p.enableFloat) {
@@ -623,11 +621,18 @@ class Csr(p: Parameters) extends Module {
 
   if (p.enableVme) {
     val mstatus_write_ms = is_csr_write && mstatusEn
-    val w_ms             = wdata(30, 29)
-    val ms_post_write    = Mux(mstatus_write_ms, w_ms, ms.get)
-    val ms_post_discard  = Mux(io.vme_discard.get, 1.U(2.W), ms_post_write)
-    val ms_post_dirty    = ms_post_discard | Fill(2, io.vme_dirty.get)
-    ms.get := ms_post_dirty
+    val w_ms             = MuxLookup(req.bits.op, 0.U(2.W))(
+      Seq(
+        CsrOp.CSRRW -> rs1(30, 29),
+        CsrOp.CSRRS -> (ms.get | rs1(30, 29)),
+        CsrOp.CSRRC -> (ms.get & ~rs1(30, 29))
+      )
+    )
+    val ms_post_write   = Mux(mstatus_write_ms, w_ms, ms.get)
+    val ms_post_discard = Mux(io.vme_discard.get, 1.U(2.W), ms_post_write)
+    val ms_post_dirty   = ms_post_discard | Fill(2, io.vme_ms_dirty.get)
+    ms.get            := ms_post_dirty
+    io.mstatus_ms.get := ms_post_write
   }
 
   val fflags_base = WireDefault(fflags)
@@ -873,7 +878,7 @@ class Csr(p: Parameters) extends Module {
     if (p.enableRvv) (legalizeFsVs(wdata(10, 9)) | Fill(2, rvv_dirty_event.get)) else 0.U(2.W)
   val next_ms =
     if (p.enableVme)
-      (Mux(io.vme_discard.get, 1.U(2.W), wdata(30, 29)) | Fill(2, io.vme_dirty.get))
+      (Mux(io.vme_discard.get, 1.U(2.W), wdata(30, 29)) | Fill(2, io.vme_ms_dirty.get))
     else 0.U(2.W)
   val next_sd = (next_fs === 3.U) || (next_vs === 3.U) || (next_ms === 3.U)
 

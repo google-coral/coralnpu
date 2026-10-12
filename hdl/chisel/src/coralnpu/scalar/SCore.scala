@@ -100,10 +100,12 @@ class SCore(p: Parameters) extends Module {
       rob_io.mtype.get         := io.rvvcore.get.nextConfigMtype
         .getOrElse(io.rvvcore.get.configState.bits.mtype.get)
       dispatch.io.mstatusMs.get := csr.io.mstatus_ms.get
-      csr.io.vme_discard.get    := dispatch.io.vmeDiscard.get
-      csr.io.vme_dirty.get      := dispatch.io.vmeDirty.get
+      val vmeEventValid = !(rob_io.trapRetired || rvvFlushReg.get || io.rvvcore.get.trap.valid)
+      csr.io.vme_discard.get  := RegNext(dispatch.io.vmeDiscard.get, false.B) && vmeEventValid
+      csr.io.vme_ms_dirty.get := RegNext(dispatch.io.vmeMsDirty.get, false.B) && vmeEventValid
+      csr.io.vme_vs_dirty.get := RegNext(dispatch.io.vmeVsDirty.get, false.B) && vmeEventValid
       if (p.enableFloat) {
-        csr.io.vme_fp_dirty.get := dispatch.io.vmeFpDirty.get
+        csr.io.vme_fp_dirty.get := RegNext(dispatch.io.vmeFpDirty.get, false.B) && vmeEventValid
       }
     }
 

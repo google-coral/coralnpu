@@ -1310,8 +1310,18 @@ async def vme_mstatus_ms_test(dut):
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
         [
-            "test_fn", "trap_count", "last_mcause", "last_mtval",
-            "mstatus_val", "mstatus_ms_transitions", "ms_off_mset_allowed"
+            "test_fn",
+            "trap_count",
+            "last_mcause",
+            "last_mtval",
+            "last_mstatus",
+            "mstatus_val",
+            "mstatus_ms_transitions",
+            "mstatus_ms_csr_to_tile_back_to_back",
+            "ms_off_mset_allowed",
+            "squashed_vtdiscard_on_lsu_fault",
+            "squashed_vtdiscard_on_vec_store_fault",
+            "squashed_vtdiscard_on_tile_store_fault",
         ] + ms_off_trap_tests,
     )
 
@@ -1343,7 +1353,7 @@ async def vme_mstatus_ms_test(dut):
     ), "[ms_off_mset_allowed] Core faulted unexpectedly"
     assert trap_count_val == 0, f"[ms_off_mset_allowed] Expected 0 traps, got {trap_count_val}"
 
-    # 2. Verify mstatus.MS state transitions
+    # 2. Verify mstatus.MS state transitions and back-to-back CSR-to-tile sequences
     await fixture.write_ptr("test_fn", "mstatus_ms_transitions")
     await fixture.run_to_halt()
 
@@ -1354,14 +1364,30 @@ async def vme_mstatus_ms_test(dut):
     assert not fixture.fault(), "Core faulted unexpectedly"
     assert trap_count_val == 0, f"Expected 0 traps, got {trap_count_val}"
 
-    # Read the 6 recorded mstatus values (6 * 4 = 24 bytes)
-    raw_bytes = (await fixture.read("mstatus_val", 24)).tobytes()
+    raw_bytes_0_5 = (await fixture.read("mstatus_val", 24)).tobytes()
+
+    # 3. Verify back-to-back CSR mstatus writes immediately followed by tile instructions
+    await fixture.write_ptr("test_fn", "mstatus_ms_csr_to_tile_back_to_back")
+    await fixture.run_to_halt()
+
+    trap_count_val = int.from_bytes(
+        (await fixture.read_word("trap_count")).tobytes(),
+        "little",
+    )
+    assert not fixture.fault(), "Core faulted unexpectedly"
+    assert trap_count_val == 0, f"Expected 0 traps, got {trap_count_val}"
+
+    raw_bytes_all = (await fixture.read("mstatus_val", 176)).tobytes()
+    raw_bytes = raw_bytes_0_5 + raw_bytes_all[24:176]
+
+    # Combine all 44 recorded mstatus values (6 from transitions + 38 from all 19 Zvt instructions)
     mstatus_words = [
         int.from_bytes(raw_bytes[i * 4:(i + 1) * 4], "little")
-        for i in range(6)
+        for i in range(44)
     ]
 
-    for idx, w in enumerate(mstatus_words):
+    for idx in range(6):
+        w = mstatus_words[idx]
         cocotb.log.info(
             f"mstatus_words[{idx}] = 0x{w:08x} (SD={w>>31}, MS={(w>>29)&3}, FS={(w>>13)&3}, VS={(w>>9)&3})"
         )
@@ -1392,11 +1418,17 @@ async def vme_mstatus_ms_test(dut):
     assert vs_step2 == 1, f"Step 2: Expected VS=1 (Initial), got {vs_step2}"
     assert sd_step2 == 0, f"Step 2: Expected SD=0, got {sd_step2}"
 
-    # Step 3: After vtdiscard: MS = 2'b01 (Initial), SD = 0
+    # Step 3: After vtdiscard: MS = 2'b01 (Initial), VS = 2'b11 (Dirty), FS = 2'b01 (Initial), SD = 1
+    # Per Zvt v0.3 spec: "For the purposes of the mstatus.VS and vsstatus.VS fields,
+    # all Zvt instructions (including configuration instructions) are considered to modify vector state."
     ms_step3 = (mstatus_words[3] >> 29) & 0x3
     sd_step3 = (mstatus_words[3] >> 31) & 0x1
+    vs_step3 = (mstatus_words[3] >> 9) & 0x3
+    fs_step3 = (mstatus_words[3] >> 13) & 0x3
     assert ms_step3 == 1, f"Step 3: Expected MS=1 (Initial), got {ms_step3}"
-    assert sd_step3 == 0, f"Step 3: Expected SD=0, got {sd_step3}"
+    assert vs_step3 == 3, f"Step 3: Expected VS=3 (Dirty), got {vs_step3}"
+    assert fs_step3 == 1, f"Step 3: Expected FS=1 (Initial), got {fs_step3}"
+    assert sd_step3 == 1, f"Step 3: Expected SD=1, got {sd_step3}"
 
     # Step 4: After write MS=Off (2'b00): MS = 2'b00 (Off), SD = 0
     ms_step4 = (mstatus_words[4] >> 29) & 0x3
@@ -1413,6 +1445,108 @@ async def vme_mstatus_ms_test(dut):
     assert vs_step5 == 3, f"Step 5: Expected VS=3 (Dirty), got {vs_step5}"
     assert fs_step5 == 3, f"Step 5: Expected FS=3 (Dirty), got {fs_step5}"
     assert sd_step5 == 1, f"Step 5: Expected SD=1, got {sd_step5}"
+
+    # All 19 Zvt instructions preceded immediately by csrw mstatus (MS=2 Clean, FS=1 Initial, VS=1 Initial)
+    # Expected (MS, FS, VS, SD) per Zvt v0.3 specification:
+    # - All Zvt instructions modify vector state -> VS = 3 (Dirty), SD = 1
+    # - Tile-writing instructions modify matrix state -> MS = 3 (Dirty)
+    # - vtdiscard discards matrix state -> MS = 1 (Initial)
+    # - Non-tile-writing instructions (mset*, vtmv.v.t, vtse*) preserve MS -> MS = 2 (Clean)
+    # - Floating-point matmul (vtfmm.tvv, vtfmm.alt.tvv) implicitly accesses fcsr -> FS = 3 (Dirty)
+    zvt_cases = [
+        (6, "msetmtype", (2, 1, 3, 1)),
+        (8, "msetmtypei", (2, 1, 3, 1)),
+        (10, "msettn", (2, 1, 3, 1)),
+        (12, "msettm", (2, 1, 3, 1)),
+        (14, "msettk", (2, 1, 3, 1)),
+        (16, "vtdiscard", (1, 1, 3, 1)),
+        (18, "vtzero", (3, 1, 3, 1)),
+        (20, "vtmv.t.v", (3, 1, 3, 1)),
+        (22, "vtmv.v.t", (2, 1, 3, 1)),
+        (24, "vtle8", (3, 1, 3, 1)),
+        (26, "vtle16", (3, 1, 3, 1)),
+        (28, "vtle32", (3, 1, 3, 1)),
+        (30, "vtmmu.tvv", (3, 1, 3, 1)),
+        (32, "vtmms.tvv", (3, 1, 3, 1)),
+        (34, "vtfmm.tvv", (3, 3, 3, 1)),
+        (36, "vtfmm.alt.tvv", (3, 3, 3, 1)),
+        (38, "vtse8", (2, 1, 3, 1)),
+        (40, "vtse16", (2, 1, 3, 1)),
+        (42, "vtse32", (2, 1, 3, 1)),
+    ]
+
+    failures = []
+    for base_idx, name, expected in zvt_cases:
+        w_imm = mstatus_words[base_idx]
+        w_settle = mstatus_words[base_idx + 1]
+        got_imm = (
+            (w_imm >> 29) & 3,
+            (w_imm >> 13) & 3,
+            (w_imm >> 9) & 3,
+            (w_imm >> 31) & 1,
+        )
+        got_settle = (
+            (w_settle >> 29) & 3,
+            (w_settle >> 13) & 3,
+            (w_settle >> 9) & 3,
+            (w_settle >> 31) & 1,
+        )
+        status_str = "PASS" if (
+            got_imm == expected and got_settle == expected
+        ) else "FAIL"
+        cocotb.log.info(
+            f"[{status_str}] {name:14s} | +0 NOPs: 0x{w_imm:08x} (MS={got_imm[0]}, FS={got_imm[1]}, VS={got_imm[2]}, SD={got_imm[3]}) "
+            f"| +4 NOPs: 0x{w_settle:08x} (MS={got_settle[0]}, FS={got_settle[1]}, VS={got_settle[2]}, SD={got_settle[3]}) "
+            f"| Expected: (MS={expected[0]}, FS={expected[1]}, VS={expected[2]}, SD={expected[3]})"
+        )
+        if got_imm != expected or got_settle != expected:
+            failures.append(
+                f"{name}: expected (MS,FS,VS,SD)={expected}, got +0_NOPs={got_imm}, +4_NOPs={got_settle}"
+            )
+
+    assert not failures, "Zvt mstatus state update failures:\n  " + "\n  ".join(
+        failures
+    )
+
+    # 4. Verify squashed vtdiscard (due to older LSU fault or older RVV backend trap)
+    # does NOT destructively downgrade mstatus.MS from Dirty (3) to Initial (1).
+    squashed_cases = [
+        ("squashed_vtdiscard_on_lsu_fault", 7),
+        ("squashed_vtdiscard_on_vec_store_fault", 7),
+        ("squashed_vtdiscard_on_tile_store_fault", 7),
+    ]
+    squashed_failures = []
+    for name, expected_mcause in squashed_cases:
+        await fixture.write_ptr("test_fn", name)
+        await fixture.run_to_halt()
+
+        trap_count_val = int.from_bytes(
+            (await fixture.read_word("trap_count")).tobytes(), "little"
+        )
+        last_mcause_val = int.from_bytes(
+            (await fixture.read_word("last_mcause")).tobytes(), "little"
+        )
+        last_mstatus_val = int.from_bytes(
+            (await fixture.read_word("last_mstatus")).tobytes(), "little"
+        )
+        ms_on_trap = (last_mstatus_val >> 29) & 0x3
+        cocotb.log.info(
+            f"[{name}] trap_count={trap_count_val}, mcause={last_mcause_val} (expected {expected_mcause}), "
+            f"mstatus=0x{last_mstatus_val:08x} (MS={ms_on_trap}, expected 3=Dirty)"
+        )
+        assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
+        assert trap_count_val == 1, f"[{name}] Expected 1 trap, got {trap_count_val}"
+        assert last_mcause_val == expected_mcause, (
+            f"[{name}] Expected mcause={expected_mcause}, got {last_mcause_val}"
+        )
+        if ms_on_trap != 3:
+            squashed_failures.append(
+                f"{name}: mstatus.MS was destructively downgraded to {ms_on_trap} (expected 3=Dirty)"
+            )
+
+    assert not squashed_failures, "Squashed vtdiscard failures:\n  " + "\n  ".join(
+        squashed_failures
+    )
 
     cocotb.log.info(
         "✓ mstatus.MS, VS, and FS transitions verified successfully"

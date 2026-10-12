@@ -891,13 +891,6 @@ package coralnpu_cosim_checker_pkg;
         // Interrupt pending bits reflect asynchronous external signals (PLIC/timer)
         12'h344: return 32'h0000_0000;
 
-`ifdef ZVT_ON
-        // mstatus (0x300):
-        // CoralNPU hardware implements mstatus.MS (Matrix Status bits [30:29]) and factors them into SD (bit 31).
-        // Mask bits [30:29] during Zvt co-simulation until MPACT models mstatus.MS state.
-        12'h300: return ~(32'b11 << 29);
-`endif
-
         // Default: Exact bit-for-bit check on all standard architectural CSRs
         // (mstatus, mscratch, mepc, mcause, mtval, misa, fflags, frm, fcsr, vstart, vxrm, vxsat, tdata1/2, etc.)
         default: return 32'hffff_ffff;

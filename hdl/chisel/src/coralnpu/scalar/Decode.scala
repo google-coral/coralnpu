@@ -193,7 +193,7 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   // Instructions that should dispatch out of slot 0, with no other instructions
   // dispatched on the same cycle.
   def forceSlot0Only(): Bool = {
-    isFency() || isCsr() || isFloat() || rvvReadsFloatRs1() || rvvWritesFrd()
+    isFency() || isCsr() || isFloat() || rvvReadsFloatRs1() || rvvWritesFrd() || isVtdiscard()
   }
 
   // Checks if an instruction is a jump or changes context switch. Instructions
@@ -373,7 +373,8 @@ class Dispatch(p: Parameters) extends Module {
     val rvvQueueCapacity = Option.when(p.enableRvv)(Input(UInt(4.W)))
     val mstatusMs        = Option.when(p.enableVme)(Input(UInt(2.W)))
     val vmeDiscard       = Option.when(p.enableVme)(Output(Bool()))
-    val vmeDirty         = Option.when(p.enableVme)(Output(Bool()))
+    val vmeMsDirty       = Option.when(p.enableVme)(Output(Bool()))
+    val vmeVsDirty       = Option.when(p.enableVme)(Output(Bool()))
     val vmeFpDirty       = Option.when(p.enableVme && p.enableFloat)(Output(Bool()))
 
     // Float interface
@@ -586,8 +587,9 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   val vmeDiscardVillInterlock = if (p.enableVme) {
     (0 until p.instructionLanes).map(i => {
       val isDiscard = decodedInsts(i).isVtdiscard()
-      val vill = configInvalid(i) || io.rvvState.map(s => s.valid && s.bits.vill).getOrElse(false.B)
-      !(isDiscard && vill)
+      val vill      = configInvalid(i) || io.rvvState.get.bits.vill
+      val inFlight  = !io.retirement_buffer_empty || !io.rvvIdle.getOrElse(true.B) || io.lsuActive
+      !(isDiscard && (vill || inFlight))
     })
   } else {
     Seq.fill(p.instructionLanes)(true.B)
@@ -1116,8 +1118,11 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     io.vmeDiscard.get := (0 until p.instructionLanes)
       .map(i => io.inst(i).fire && decodedInsts(i).isVtdiscard())
       .reduce(_ || _)
-    io.vmeDirty.get := (0 until p.instructionLanes)
+    io.vmeMsDirty.get := (0 until p.instructionLanes)
       .map(i => io.inst(i).fire && decodedInsts(i).writesTile())
+      .reduce(_ || _)
+    io.vmeVsDirty.get := (0 until p.instructionLanes)
+      .map(i => io.inst(i).fire && (decodedInsts(i).accessesTile() || decodedInsts(i).isVmeMset()))
       .reduce(_ || _)
     if (p.enableFloat) {
       io.vmeFpDirty.get := (0 until p.instructionLanes)

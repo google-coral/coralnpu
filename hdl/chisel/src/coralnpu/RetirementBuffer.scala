@@ -532,11 +532,11 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         .get(pIdx) := Mux(validBufferEntry, nextTileEntry, tileWriteAccumulator.get(pIdx))
     }
 
-    val tileReady = if (!mini && p.enableVme) {
+    val tileReady = if (p.enableVme) {
       val tilePort     = io.writeDataTile.get
       val tileTagMatch =
         tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === pIdx)
-      val tileAcc = if (p.enableVerification) {
+      val tileAcc = if (!mini && p.enableVerification) {
         tileWriteAccumulator.get(pIdx).map(_.valid).reduce(_ || _)
       } else {
         false.B
