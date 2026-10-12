@@ -464,6 +464,7 @@ cocotb_test_suite(
         ],
         "data": [
             "//tests/cocotb/rvv/arithmetics:rvv_add_int32_m1.elf",
+            "//tests/cocotb:spi_exec_test.elf",
             "//tests/cocotb:timer_interrupt_test.elf",
             "//tests/cocotb:ddr_test.elf",
             "//tests/cocotb:software_interrupt_test.elf",
@@ -476,6 +477,7 @@ cocotb_test_suite(
     vcs_data = [
         "//hdl/verilog:dpi_files",
         "//tests/cocotb/rvv/arithmetics:rvv_add_int32_m1.elf",
+        "//tests/cocotb:spi_exec_test.elf",
         "//tests/cocotb:timer_interrupt_test.elf",
         "//tests/cocotb:ddr_test.elf",
         "//tests/cocotb:software_interrupt_test.elf",

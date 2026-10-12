@@ -31,6 +31,7 @@ package(default_visibility = ["//visibility:public"])
 COCOTB_TEST_BINARY_TARGETS = glob(["**/*.elf"]) + glob(["**/*.o"]) + [
     ":align_test.elf",
     ":csr_illegal_write_test.elf",
+    ":spi_exec_test.elf",
     ":fcsr_frm_hazard_test.elf",
     ":rvv_frm_hazard_test.elf",
     ":frm_test.elf",
@@ -661,6 +662,15 @@ coralnpu_v2_binary(
     name = "csr_illegal_write_test",
     srcs = [
         "csr_illegal_write_test.S",
+    ],
+    crt = "",
+    linkopts = ["-nostartfiles"],
+)
+
+coralnpu_v2_binary(
+    name = "spi_exec_test",
+    srcs = [
+        "spi_exec_test.S",
     ],
     crt = "",
     linkopts = ["-nostartfiles"],

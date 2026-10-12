@@ -15,7 +15,6 @@
 """Convenience wrapper for Verilator driven cocotb."""
 
 load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
-load("@coralnpu_hw//rules:sram_backdoor.bzl", "SRAM_BACKDOOR_TOPLEVELS")
 load("@coralnpu_hw//rules:verilog.bzl", "VerilogInfo", "collect_verilog_files")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
@@ -68,7 +67,17 @@ def _verilator_cocotb_model_impl(ctx):
             dpi_files_dict[f.path] = f
 
     # We need to collect CC sources transitively
-    for dep in ctx.attr.deps:
+    all_deps = list(ctx.attr.deps)
+    if ctx.attr._sram_backdoor:
+        has_sram_backdoor = False
+        for d in all_deps:
+            if d.label == ctx.attr._sram_backdoor.label:
+                has_sram_backdoor = True
+                break
+        if not has_sram_backdoor:
+            all_deps.append(ctx.attr._sram_backdoor)
+
+    for dep in all_deps:
         if CcInfo in dep:
             cc_info = dep[CcInfo]
 
@@ -173,7 +182,7 @@ def _verilator_cocotb_model_impl(ctx):
             --vpi \
             --prefix Vtop \
             -o {hdl_toplevel} \
-            -LDFLAGS "-Wl,-rpath {cocotb_lib_path} -L{cocotb_lib_path} -lcocotbvpi_verilator" \
+            -LDFLAGS "-rdynamic -Wl,-rpath {cocotb_lib_path} -L{cocotb_lib_path} -lcocotbvpi_verilator" \
             {trace} \
             {cflags} \
             -I. -Ihdl/verilog {dpi_includes} \
@@ -260,6 +269,10 @@ def _vcs_cocotb_model_impl(ctx):
 
     # Expand location in build_args
     expanded_build_args = [ctx.expand_location(arg, ctx.attr.data) for arg in ctx.attr.build_args]
+    if "-I../hdl/verilog" not in expanded_build_args:
+        expanded_build_args.extend(["-CFLAGS", "-I../hdl/verilog"])
+    if "../hdl/verilog/sram_backdoor.cc" not in expanded_build_args:
+        expanded_build_args.append("../hdl/verilog/sram_backdoor.cc")
 
     # We need absolute paths for files we pass explicitly (sources, includes, libs)
     # because we will CD into a subdirectory.
@@ -302,7 +315,7 @@ def _vcs_cocotb_model_impl(ctx):
         },
     )
 
-    inputs = verilog_files + ctx.files._vcs_libs + ctx.files.data + [wrapper]
+    inputs = verilog_files + ctx.files._vcs_libs + ctx.files.data + ctx.files._sram_backdoor_files + [wrapper]
 
     # Note: VCS compilation (VcsCompile) requires access to cell libraries on autofs
     # mounts when building netlist models. On host machines, sandboxed actions
@@ -360,6 +373,10 @@ vcs_cocotb_model = rule(
             default = Label("@coralnpu_hw//rules:vcs_model_wrapper.sh.template"),
             allow_single_file = True,
         ),
+        "_sram_backdoor_files": attr.label(
+            default = Label("//hdl/verilog:dpi_files"),
+            allow_files = True,
+        ),
     },
     executable = True,
 )
@@ -408,6 +425,9 @@ verilator_cocotb_model = rule(
         "_cocotb_verilator_cpp": attr.label(
             default = "@coralnpu_pip_deps_cocotb//:verilator_srcs",
             allow_files = True,
+        ),
+        "_sram_backdoor": attr.label(
+            default = Label("//hdl/verilog:sram_backdoor"),
         ),
     },
     executable = True,
@@ -1565,27 +1585,6 @@ def cocotb_test_suite(name, testcases, simulators = ["verilator"], coverage = Fa
             verilog_sources = sim_kwargs.pop("verilog_sources", [])
             if not verilog_sources:
                 fail("vcs_verilog_sources must be specified for vcs tests")
-
-            # CoreMiniAxi and Chisel Subsystem tests require sram_backdoor compilation
-            hdl_toplevel = sim_tests_kwargs.get("hdl_toplevel", sim_kwargs.get("hdl_toplevel", ""))
-            if hdl_toplevel in SRAM_BACKDOOR_TOPLEVELS:
-                build_args = list(sim_kwargs.pop("build_args", []))
-                if "-I../hdl/verilog" not in build_args:
-                    build_args.extend(["-CFLAGS", "-I../hdl/verilog"])
-
-                if "../hdl/verilog/sram_backdoor.cc" not in build_args:
-                    build_args.append("../hdl/verilog/sram_backdoor.cc")
-                sim_kwargs["build_args"] = build_args
-
-                data = list(sim_kwargs.pop("data", []))
-                has_dpi_files = False
-                for item in data:
-                    if str(item).endswith("hdl/verilog:dpi_files"):
-                        has_dpi_files = True
-                        break
-                if not has_dpi_files:
-                    data.append("@coralnpu_hw//hdl/verilog:dpi_files")
-                sim_kwargs["data"] = data
 
             _vcs_cocotb_test_suite(
                 name = "{}_{}".format(sim, name),

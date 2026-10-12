@@ -260,6 +260,14 @@ async def write_line_via_spi(spi_master, address, data):
     await spi_master.write_line(address, data)
 
 
+async def read_word_via_spi(spi_master, address):
+    """Reads a 32-bit value from a specific address using the SPI bridge."""
+    line_addr = (address // BUS_WIDTH_BYTES) * BUS_WIDTH_BYTES
+    offset = address % BUS_WIDTH_BYTES
+    line_data = await read_line_via_spi(spi_master, line_addr)
+    return (line_data >> (offset * 8)) & 0xFFFFFFFF
+
+
 async def write_word_via_spi(spi_master, address, data):
     """Writes a 32-bit value to a specific address using the SPI bridge.
 
@@ -383,9 +391,7 @@ async def test_program_execution_via_host(dut):
 
     # Find and load the ELF file
     r = runfiles.Create()
-    elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/rvv/arithmetics/rvv_add_int32_m1.elf"
-    )
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/spi_exec_test.elf")
     assert elf_path, "Could not find ELF file"
 
     with open(elf_path, "rb") as f:
@@ -447,6 +453,22 @@ async def test_program_execution_via_host(dut):
     dut._log.info("Program halted.")
     assert dut.io_external_ports_fault.value == 0, "Program halted with fault!"
 
+    # Verify the program computed and stored the expected value to DTCM (0x00010004)
+    output_val_addr = 0x00010004
+    read_txn = create_a_channel_req(
+        address=output_val_addr,
+        width=host_if.width,
+        is_read=True,
+    )
+    await host_if.host_put(read_txn)
+    resp = await host_if.host_get_response()
+    assert resp["error"
+                ] == 0, f"Error reading output at 0x{output_val_addr:08x}"
+    result = int(resp["data"])
+    expected_result = 0x12345679
+    dut._log.info(f"Read 0x{result:08x} (expected 0x{expected_result:08x})")
+    assert result == expected_result, f"Expected 0x{expected_result:08x}, got 0x{result:08x}"
+
 
 @cocotb.test()
 async def test_program_execution_via_spi(dut):
@@ -465,9 +487,7 @@ async def test_program_execution_via_spi(dut):
 
     # Find and load the ELF file
     r = runfiles.Create()
-    elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/rvv/arithmetics/rvv_add_int32_m1.elf"
-    )
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/spi_exec_test.elf")
     assert elf_path, "Could not find ELF file"
 
     with open(elf_path, "rb") as f:
@@ -505,6 +525,14 @@ async def test_program_execution_via_spi(dut):
 
     dut._log.info("Program halted.")
     assert dut.io_external_ports_fault.value == 0, "Program halted with fault!"
+
+    # Verify the program computed and stored the expected value to DTCM (0x00010004)
+    output_val_addr = 0x00010004
+    dut._log.info(f"Verifying result via SPI at 0x{output_val_addr:08x}...")
+    result = await read_word_via_spi(spi_master, output_val_addr)
+    expected_result = 0x12345679
+    dut._log.info(f"Read 0x{result:08x} (expected 0x{expected_result:08x})")
+    assert result == expected_result, f"Expected 0x{expected_result:08x}, got 0x{result:08x}"
 
 
 @cocotb.test()
