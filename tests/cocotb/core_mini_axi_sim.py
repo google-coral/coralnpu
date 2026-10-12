@@ -221,9 +221,6 @@ async def core_mini_axi_riscv_tests(dut):
     with tqdm.tqdm(riscv_test_elfs) as t:
         for elf in t:
             t.set_postfix({"binary": os.path.basename(elf)})
-            if 'fence_i' in elf:
-                # This one likes to jump into DTCM. Can probably patch the ASM
-                continue
             with open(elf, "rb") as f:
                 await core_mini_axi.reset()
                 entry_point = await core_mini_axi.load_elf(f)

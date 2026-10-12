@@ -28,9 +28,6 @@ DENYLIST = [
     "//tests/cocotb/exceptions:vfwadd_trap",
     "//tests/cocotb/exceptions:vfwsub_trap",
     "//tests/cocotb/exceptions:vfwmul_trap",
-    # Jump to dtcm (disabled on both RTL and MPACT)
-    "//third_party/riscv-tests:rv32ui-p-fence_i",
-    "//third_party/riscv-tests:rv32ui-v-fence_i",
     # Runs code in DDR (not supported by MPACT atm)
     "//tests/cocotb:fencei_test",
     # Requires custom testbench / delayed external memory
