@@ -1,2 +1,17 @@
 #!/bin/bash
-exec dwp "$@"
+# Self-recursion guard: if this wrapper directory is prepended to PATH by
+# Bazel or the execution environment, resolve the real binary from PATH
+# without recursing into ourselves.
+self="${BASH_SOURCE[0]}"
+prog="${self##*/}"
+
+IFS=':' read -ra dirs <<< "$PATH"
+for dir in "${dirs[@]}"; do
+    candidate="${dir:-.}/$prog"
+    if [[ -x "$candidate" && ! "$candidate" -ef "$self" ]]; then
+        exec "$candidate" "$@"
+    fi
+done
+
+echo "$prog: command not found in PATH (excluding $self)" >&2
+exit 127

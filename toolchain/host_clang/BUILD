@@ -48,6 +48,9 @@ cc_toolchain_config(
     # The compiler itself finds headers via its own discovery — we just
     # need to cover the roots that host GCC / Clang actually use.
     cxx_builtin_include_directories = [
+        "/include",
+        "/lib",
+        "/lib64",
         "/usr/include",
         "/usr/local/include",
         "/usr/lib",
