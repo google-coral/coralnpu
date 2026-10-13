@@ -12,53 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//rules:coco_tb.bzl", "cocotb_test_suite")
-load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
-load(
-    "//tests/cocotb:build_defs.bzl",
-    "VCS_BUILD_ARGS",
-    "VCS_DEFINES",
-    "VCS_TEST_ARGS",
-)
+load("//rules:coralflow_test.bzl", "coralflow_test")
+load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 
 CSR_TEST_TESTCASES = [
     "csr_read_write_test",
 ]
 
-cocotb_test_suite(
+coralflow_test(
     name = "csr_test",
-    simulators = [
+    size = "medium",
+    srcs = ["csr_test_bench.py"],
+    elf = ":csr_test_program.elf",
+    hdl_toplevel = "CoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
+        "uvm",
     ],
     testcases = CSR_TEST_TESTCASES,
-    testcases_vname = "CSR_TEST_TESTCASES",
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "CoreMiniAxi",
-        "seed": "42",
-        "test_module": ["csr_test_bench.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":csr_test_program",
-        ],
-        "size": "medium",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [
-        ":csr_test_program",
-        "//tests/cocotb:coverage_exclude.cfg",
-        "//hdl/verilog:dpi_files",
+    deps = [
+        "@bazel_tools//tools/python/runfiles",
     ],
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = [
-        "//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_verilog",
-    ],
-    verilator_model = "//tests/cocotb:core_mini_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -66,5 +41,3 @@ coralnpu_v2_binary(
     srcs = ["csr_test_program.cc"],
     visibility = ["//visibility:public"],
 )
-
-collect_coralnpu_elfs()

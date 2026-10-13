@@ -12,26 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
-import numpy as np
-
-from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.core_mini_axi_interface import CoreMiniAxiInterface
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 
 
-@cocotb.test()
-async def core_mini_axi_tutorial(dut):
+@coralflow_test
+async def core_mini_axi_tutorial(fixture):
     """Testbench to run your CoralNPU program."""
-    # Test bench setup
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    _ = fixture
 
-    # TODO: Load your program into ITCM with "load_elf"
+    # TODO: Load your program into ITCM with "fixture.load_elf_and_lookup_symbols"
 
-    # TODO: Write your program inputs
+    # TODO: Write your program inputs with "fixture.write"
 
-    # TODO: Run your program and wait for halted
+    # TODO: Run your program and wait for halted with "fixture.run_to_halt"
 
-    # TODO: Read your program outputs and print the result
+    # TODO: Read your program outputs and print the result with "fixture.read"
+
+
+if __name__ == "__main__":
+    coralflow_main()

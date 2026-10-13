@@ -12,16 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import cocotb
+import logging
 import ml_dtypes
 import numpy as np
-from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 
-# 512KB memory map shifts CSRs to 0x200000
-CSR_BASE = 0x200000
 ELF = "coralnpu_hw/tests/cocotb/rvv/ml_ops/bf16_activations/sigmoid_bf16_test.elf"
 CANARY = np.uint16(0xBEEF)
 MAX_ULPS = 3
@@ -72,25 +69,19 @@ async def run(fixture, x, kernel_id=0, alias=0, repeat=1):
         "sigmoid_out", np.full(n + pad, CANARY, dtype=np.uint16)
     )
 
-    sim_cycles = await fixture.run_to_halt(timeout_cycles=10_000_000)
+    await fixture.run_to_halt(timeout_cycles=10_000_000)
+    sim_cycles = fixture.get_cycle_count() or 0
     out = (await fixture.read("sigmoid_out", (n + pad) * 2)).view(np.uint16)
     if repeat >= 1:
         np.testing.assert_array_equal(out[n:], np.full(pad, CANARY, np.uint16))
-    # cyc = int((await fixture.read("cycle_count", 4)).view(np.float32)[0])
     xq = bf16_to_fp32(f32_to_bf16(x)).astype(np.float64)
     golden = 1.0 / (1.0 + np.exp(-xq))
-    # golden = 1.0 / (1.0 + np.exp(-x.astype(np.float64)))
     return out[:n], golden, sim_cycles
 
 
-async def _setup(dut):
-    r = runfiles.Create()
-    fixture = await VerilatorTestFixture.Create(dut, csr_base_addr=CSR_BASE)
-    elf_path = r.Rlocation(ELF)
-    if not elf_path or not os.path.exists(elf_path):
-        raise FileNotFoundError(f"Could not find ELF at {elf_path}")
+async def _setup(fixture: BaseCoralNPUFixture):
     await fixture.load_elf_and_lookup_symbols(
-        elf_path,
+        ELF,
         [
             "sigmoid_in",
             "sigmoid_out",
@@ -101,15 +92,14 @@ async def _setup(dut):
             "cycle_count",
         ],
     )
-    await fixture.core_mini_axi.reset()
     return fixture
 
 
-@cocotb.test()
-async def sigmoid_bf16_corr_test(dut):
-    fixture = await _setup(dut)
+@coralflow_test(highmem=True)
+async def sigmoid_bf16_corr_test(fixture: BaseCoralNPUFixture):
+    await _setup(fixture)
     rng = np.random.default_rng(seed=7)
-    log = dut._log
+    log = logging.getLogger(__name__)
 
     outs = {}
     for kid, name in VARIANTS:
@@ -143,11 +133,11 @@ async def sigmoid_bf16_corr_test(dut):
         )
 
 
-@cocotb.test()
-async def sigmoid_bf16_perf_test(dut):
-    fixture = await _setup(dut)
+@coralflow_test(highmem=True)
+async def sigmoid_bf16_perf_test(fixture: BaseCoralNPUFixture):
+    await _setup(fixture)
     rng = np.random.default_rng(seed=7)
-    log = dut._log
+    log = logging.getLogger(__name__)
 
     nbig = 4096
     xb = rng.uniform(-12.0, 12.0, nbig).astype(np.float32)
@@ -157,9 +147,13 @@ async def sigmoid_bf16_perf_test(dut):
     for kid, name in VARIANTS:
         out, golden, cyc = await run(fixture, xb, kid)
         w = check(out, golden, name)
-        pc = cyc - startup
+        pc = max(1, cyc - startup)
         base = base or pc
         log.info(
             f"  {name:11s}: raw {cyc} cyc | per-call {pc} cyc "
             f"({pc / nbig:.2f} cyc/elem, {base / pc:.3f}x, worst {w} ULP"
         )
+
+
+if __name__ == "__main__":
+    coralflow_main()

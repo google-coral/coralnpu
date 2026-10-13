@@ -13,12 +13,11 @@
 # limitations under the License.
 """Unified Test suite for FP32 & BFloat16 RVV Gemma TanhGELU x Up Mul Kernels using Cocotb."""
 
-import os
-import cocotb
-import numpy as np
+import logging
 from bazel_tools.tools.python.runfiles import runfiles
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+import numpy as np
 
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_vector_metrics
 
 
@@ -31,29 +30,24 @@ def golden_tanh_gelu_mul(gate_fp32, up_fp32):
     return gelu * up_fp32
 
 
-@cocotb.test()
-async def core_mini_rvv_tanh_gelu_mul_test(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def core_mini_rvv_tanh_gelu_mul_test(fixture):
     """FP32 TanhGELU x Up Mul Test."""
     r = runfiles.Create()
-
-    fixture = await VerilatorTestFixture.Create(
-        dut,
-        highmem=True,
-        ext_mem_base_addr=0x80000000,
-        ext_mem_size=32 * 1024 * 1024
-    )
 
     elf_name = "rvv_tanh_gelu_mul.elf"
     elf_path = r.Rlocation(
         f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
     )
 
-    dut._log.info(f"Loading ELF: {elf_path}")
+    logging.info(f"Loading ELF: {elf_path}")
     await fixture.load_elf_and_lookup_symbols(
         elf_path, ["Gate", "Up", "Output", "active_elements", "cycle_count"]
     )
-
-    await fixture.core_mini_axi.reset()
 
     test_shapes = [
         (11, 640),
@@ -66,7 +60,7 @@ async def core_mini_rvv_tanh_gelu_mul_test(dut):
     rng = np.random.default_rng(seed=42)
 
     for token_count, hidden_size in test_shapes:
-        dut._log.info(
+        logging.info(
             f"\nRunning FP32 TanhGELU x Up Mul shape: [{token_count}, {hidden_size}]"
         )
         total_elements = token_count * hidden_size
@@ -85,7 +79,7 @@ async def core_mini_rvv_tanh_gelu_mul_test(dut):
         await fixture.write('Up', Up_data.flatten())
         await fixture.write('Output', np.zeros_like(expected_output).flatten())
 
-        sim_cycles = await fixture.run_to_halt(timeout_cycles=30000000)
+        await fixture.run_to_halt(timeout_cycles=30000000)
         npu_cycles = int((await fixture.read('cycle_count',
                                              4)).view(dtype=np.uint32)[0])
 
@@ -99,35 +93,32 @@ async def core_mini_rvv_tanh_gelu_mul_test(dut):
         )
 
         log_vector_metrics(
-            dut, f"FP32 Tanh-GELU Mul Shape: [{token_count}, {hidden_size}]",
+            fixture,
+            f"FP32 Tanh-GELU Mul Shape: [{token_count}, {hidden_size}]",
             npu_cycles, total_elements
         )
 
 
-@cocotb.test()
-async def core_mini_rvv_bf16_tanh_gelu_mul_test(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def core_mini_rvv_bf16_tanh_gelu_mul_test(fixture):
     """BFloat16 TanhGELU x Up Mul Test using ml_dtypes."""
     import ml_dtypes
 
     r = runfiles.Create()
-    fixture = await VerilatorTestFixture.Create(
-        dut,
-        highmem=True,
-        ext_mem_base_addr=0x80000000,
-        ext_mem_size=32 * 1024 * 1024
-    )
 
     elf_name = "rvv_bf16_tanh_gelu_mul.elf"
     elf_path = r.Rlocation(
         f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
     )
 
-    dut._log.info(f"Loading ELF: {elf_path}")
+    logging.info(f"Loading ELF: {elf_path}")
     await fixture.load_elf_and_lookup_symbols(
         elf_path, ["Gate", "Up", "Output", "active_elements", "cycle_count"]
     )
-
-    await fixture.core_mini_axi.reset()
 
     test_shapes = [
         (11, 640),
@@ -141,7 +132,7 @@ async def core_mini_rvv_bf16_tanh_gelu_mul_test(dut):
 
     for seq_len, hidden_size in test_shapes:
         total_elements = seq_len * hidden_size
-        dut._log.info(
+        logging.info(
             f"\nRunning BF16 TanhGELU x Up Mul shape: {seq_len}x{hidden_size} ({total_elements} elements)"
         )
 
@@ -183,6 +174,10 @@ async def core_mini_rvv_bf16_tanh_gelu_mul_test(dut):
         )
 
         log_vector_metrics(
-            dut, f"BF16 TanhGELU x Up Mul Shape: {seq_len}x{hidden_size}",
+            fixture, f"BF16 TanhGELU x Up Mul Shape: {seq_len}x{hidden_size}",
             npu_cycles, total_elements
         )
+
+
+if __name__ == "__main__":
+    coralflow_main()

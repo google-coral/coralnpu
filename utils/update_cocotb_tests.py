@@ -19,7 +19,10 @@ import re
 def find_cocotb_tests(filename):
     with open(filename, "r") as f:
         source = f.read()
-    return re.findall(r"@cocotb\.test\(.*\)\s+async def\s+(\w+)", source)
+    return re.findall(
+        r"@(?:cocotb\.test|coralflow_test)(?:\([^)]*\))?\s+async def\s+(\w+)",
+        source,
+    )
 
 
 def update_build_file(build_file, test_file, variable_name, name):

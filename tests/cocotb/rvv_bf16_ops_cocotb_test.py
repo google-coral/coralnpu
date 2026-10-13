@@ -12,16 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
+import logging
+
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 import ml_dtypes
 import numpy as np
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 
 
-async def run_bfloat16_ops_test_case(dut, op_name, lmul, num_elements=64):
-    """Executes a high-coverage BFloat16 operation test case on Verilator simulator."""
-    fixture = await VerilatorTestFixture.Create(dut)
+async def run_bfloat16_ops_test_case(fixture, op_name, lmul, num_elements=64):
+    """Executes a high-coverage BFloat16 operation test case."""
     r = runfiles.Create()
     elf_name = f"rvv_bf16_{op_name}_{lmul}.elf"
     elf_path = r.Rlocation(
@@ -49,56 +49,44 @@ async def run_bfloat16_ops_test_case(dut, op_name, lmul, num_elements=64):
     op2_floats = op2_bf16.astype(np.float32)
 
     # Load input buffers
-    await fixture.core_mini_axi.write(
-        fixture.symbols['in_buf_1'], op1_bf16_u16.view(np.uint8)
-    )
-    await fixture.core_mini_axi.write(
-        fixture.symbols['in_buf_2'], op2_bf16_u16.view(np.uint8)
-    )
+    await fixture.write('in_buf_1', op1_bf16_u16.view(np.uint8))
+    await fixture.write('in_buf_2', op2_bf16_u16.view(np.uint8))
 
     # Indices for gather/scatter test (stride 2 byte offset = 4 bytes per element)
     if op_name == "indexed":
         indices = (np.arange(num_elements, dtype=np.uint16) * 4)
-        await fixture.core_mini_axi.write(
-            fixture.symbols['in_indices'], indices.view(np.uint8)
-        )
+        await fixture.write('in_indices', indices.view(np.uint8))
 
     # Clear accumulator/outputs
     if op_name in ["mac_vv", "mac_vf"]:
-        await fixture.core_mini_axi.write(
-            fixture.symbols['out_buf_f32'],
-            np.zeros(num_elements * 4, dtype=np.uint8)
+        await fixture.write(
+            'out_buf_f32', np.zeros(num_elements * 4, dtype=np.uint8)
         )
 
-    cycles = await fixture.run_to_halt(timeout_cycles=200000)
-    dut._log.info(
+    await fixture.run_to_halt(timeout_cycles=200000)
+    cycles = fixture.get_cycle_count()
+    logging.info(
         f"Test case rvv_bf16_{op_name}_{lmul} completed in {cycles} cycles."
     )
 
     # Calculate expected values and perform vectorized verification
     if op_name == "mac_vv":
         expected = op1_floats[:num_elements] * op2_floats[:num_elements]
-        raw_bytes = await fixture.core_mini_axi.read(
-            fixture.symbols['out_buf_f32'], num_elements * 4
-        )
+        raw_bytes = bytes(await fixture.read('out_buf_f32', num_elements * 4))
         actual = np.frombuffer(raw_bytes, dtype=np.float32)
         np.testing.assert_allclose(actual, expected, rtol=1e-2, atol=1e-2)
 
     elif op_name == "mac_vf":
         scalar = op2_floats[0]
         expected = op1_floats[:num_elements] * scalar
-        raw_bytes = await fixture.core_mini_axi.read(
-            fixture.symbols['out_buf_f32'], num_elements * 4
-        )
+        raw_bytes = bytes(await fixture.read('out_buf_f32', num_elements * 4))
         actual = np.frombuffer(raw_bytes, dtype=np.float32)
         np.testing.assert_allclose(actual, expected, rtol=1e-2, atol=1e-2)
 
     elif op_name == "pipeline":
         expected = (op1_floats[:num_elements] *
                     op2_floats[:num_elements]) + op1_floats[:num_elements]
-        raw_bytes = await fixture.core_mini_axi.read(
-            fixture.symbols['out_buf'], num_elements * 2
-        )
+        raw_bytes = bytes(await fixture.read('out_buf', num_elements * 2))
         actual = (
             np.frombuffer(raw_bytes,
                           dtype=np.uint16).view(ml_dtypes.bfloat16
@@ -109,9 +97,7 @@ async def run_bfloat16_ops_test_case(dut, op_name, lmul, num_elements=64):
     elif op_name == "strided":
         expected = op1_floats[::2][:num_elements] * op2_floats[::2
                                                                ][:num_elements]
-        raw_bytes = await fixture.core_mini_axi.read(
-            fixture.symbols['out_buf'], num_elements * 2 * 2
-        )
+        raw_bytes = bytes(await fixture.read('out_buf', num_elements * 2 * 2))
         actual = (
             np.frombuffer(raw_bytes,
                           dtype=np.uint16)[::2].view(ml_dtypes.bfloat16
@@ -122,9 +108,7 @@ async def run_bfloat16_ops_test_case(dut, op_name, lmul, num_elements=64):
     elif op_name == "indexed":
         expected = op1_floats[::2][:num_elements] * op2_floats[::2
                                                                ][:num_elements]
-        raw_bytes = await fixture.core_mini_axi.read(
-            fixture.symbols['out_buf'], num_elements * 2 * 2
-        )
+        raw_bytes = bytes(await fixture.read('out_buf', num_elements * 2 * 2))
         actual = (
             np.frombuffer(raw_bytes,
                           dtype=np.uint16)[::2].view(ml_dtypes.bfloat16
@@ -132,12 +116,24 @@ async def run_bfloat16_ops_test_case(dut, op_name, lmul, num_elements=64):
         )
         np.testing.assert_allclose(actual, expected, rtol=1e-2, atol=1e-2)
 
-    dut._log.info(f"SUCCESS: rvv_bf16_{op_name}_{lmul} passed!")
+    logging.info(f"SUCCESS: rvv_bf16_{op_name}_{lmul} passed!")
 
 
-@cocotb.test()
-async def rvv_bf16_ops_test(dut):
-    """Executes BFloat16 operation test suite across operations and LMULs."""
-    for op in ["mac_vv", "mac_vf", "pipeline", "strided", "indexed"]:
-        for lmul in ["mf2", "m1", "m2", "m4"]:
-            await run_bfloat16_ops_test_case(dut, op, lmul)
+def _make_bf16_op_test(op_name: str, lmul: str):
+
+    async def _test(fixture):
+        await run_bfloat16_ops_test_case(fixture, op_name, lmul)
+
+    _test.__name__ = f"rvv_bf16_{op_name}_{lmul}_test"
+    _test.__qualname__ = _test.__name__
+    return coralflow_test(_test)
+
+
+for _op in ["mac_vv", "mac_vf", "pipeline", "strided", "indexed"]:
+    for _lmul in ["mf2", "m1", "m2", "m4"]:
+        globals()[f"rvv_bf16_{_op}_{_lmul}_test"] = _make_bf16_op_test(
+            _op, _lmul
+        )
+
+if __name__ == "__main__":
+    coralflow_main()

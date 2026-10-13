@@ -12,14 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//rules:coco_tb.bzl", "cocotb_test_suite")
+load("//rules:coralflow_test.bzl", "coralflow_test")
 load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
-load(
-    "//tests/cocotb:build_defs.bzl",
-    "VCS_BUILD_ARGS",
-    "VCS_DEFINES",
-    "VCS_TEST_ARGS",
-)
 load("//third_party/python:requirements.bzl", "requirement")
 
 package(default_visibility = ["//visibility:public"])
@@ -68,108 +62,66 @@ coralnpu_v2_binary(
 
 RVV_MATH_TESTCASES = ["rvv_math_test"]
 
-cocotb_test_suite(
+coralflow_test(
     name = "rvv_math_cocotb_test",
-    simulators = [
+    size = "enormous",
+    srcs = ["rvv_math_cocotb_test.py"],
+    elf = ":rvv_math_test.elf",
+    highmem = True,
+    tags = ["manual"],
+    targets = [
         "verilator",
         "vcs",
+        "nexus_fpga",
     ],
     testcases = RVV_MATH_TESTCASES,
-    testcases_vname = "RVV_MATH_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "waves": False,
-        "seed": "42",
-        "tags": ["manual"],
-        "test_module": ["rvv_math_cocotb_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-            requirement("ml_dtypes"),
-        ],
-        "data": [":rvv_math_test.elf"],
-        "size": "enormous",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [
-        ":rvv_math_test.elf",
-        "//tests/cocotb:xprop.cfg",
-        "@coralnpu_hw//hdl/verilog:dpi_files",
+    deps = [
+        requirement("ml_dtypes"),
     ],
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
 
-SIGMOID_BF16_TESTCASES = ["sigmoid_bf16_test"]
+SIGMOID_BF16_TESTCASES = [
+    "sigmoid_bf16_corr_test",
+    "sigmoid_bf16_perf_test",
+]
 
-cocotb_test_suite(
+coralflow_test(
     name = "sigmoid_bf16_cocotb_test",
-    simulators = [
+    size = "enormous",
+    srcs = ["sigmoid_bf16_cocotb_test.py"],
+    elf = ":sigmoid_bf16_test.elf",
+    highmem = True,
+    tags = ["manual"],
+    targets = [
         "verilator",
         "vcs",
+        "nexus_fpga",
     ],
     testcases = SIGMOID_BF16_TESTCASES,
-    testcases_vname = "SIGMOID_BF16_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "waves": False,
-        "seed": "42",
-        "tags": ["manual"],
-        "test_module": ["sigmoid_bf16_cocotb_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-            requirement("ml_dtypes"),
-        ],
-        "data": [":sigmoid_bf16_test.elf"],
-        "size": "enormous",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [
-        ":sigmoid_bf16_test.elf",
-        "//tests/cocotb:xprop.cfg",
-        "@coralnpu_hw//hdl/verilog:dpi_files",
+    deps = [
+        requirement("ml_dtypes"),
     ],
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
 
-SOFTMAX_BF16_TESTCASES = ["softmax_bf16_test"]
+SOFTMAX_BF16_TESTCASES = [
+    "softmax_bf16_corr_test",
+    "softmax_bf16_perf_test",
+]
 
-cocotb_test_suite(
+coralflow_test(
     name = "softmax_bf16_cocotb_test",
-    simulators = [
+    size = "enormous",
+    srcs = ["softmax_bf16_cocotb_test.py"],
+    elf = ":softmax_bf16_test.elf",
+    highmem = True,
+    tags = ["manual"],
+    targets = [
         "verilator",
         "vcs",
+        "nexus_fpga",
     ],
     testcases = SOFTMAX_BF16_TESTCASES,
-    testcases_vname = "SOFTMAX_BF16_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "waves": False,
-        "seed": "42",
-        "tags": ["manual"],
-        "test_module": ["softmax_bf16_cocotb_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-            requirement("ml_dtypes"),
-        ],
-        "data": [":softmax_bf16_test.elf"],
-        "size": "enormous",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [
-        ":softmax_bf16_test.elf",
-        "//tests/cocotb:xprop.cfg",
-        "@coralnpu_hw//hdl/verilog:dpi_files",
+    deps = [
+        requirement("ml_dtypes"),
     ],
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )

@@ -1,44 +1,39 @@
 # Copyright 2026 Google LLC
-import asyncio
 import os
 import sys
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_backends.mpact_npusim_test_fixture import MpactNpuSimTestFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+
+_CONV_SYMBOLS = [
+    "input_dims",
+    "input_data",
+    "filter_dims",
+    "filter_data",
+    "bias_dims",
+    "bias_data",
+    "output_dims",
+    "output_data",
+    "output_data_ref",
+    "params_stride_width",
+    "params_stride_height",
+    "params_padding_width",
+    "params_padding_height",
+    "params_input_offset",
+    "params_output_offset",
+    "params_activation_min",
+    "params_activation_max",
+    "per_channel_multiplier",
+    "per_channel_shift",
+    "ref_cycles",
+    "opt_cycles",
+    "heartbeat",
+]
 
 
 async def run_test_case(
-    elf_file, input_shape, filter_shape, stride, padding_type="VALID"
+    fixture, input_shape, filter_shape, stride, padding_type="VALID"
 ):
-    # Symbols to resolve
-    symbols = [
-        "input_dims",
-        "input_data",
-        "filter_dims",
-        "filter_data",
-        "bias_dims",
-        "bias_data",
-        "output_dims",
-        "output_data",
-        "output_data_ref",
-        "params_stride_width",
-        "params_stride_height",
-        "params_padding_width",
-        "params_padding_height",
-        "params_input_offset",
-        "params_output_offset",
-        "params_activation_min",
-        "params_activation_max",
-        "per_channel_multiplier",
-        "per_channel_shift",
-        "ref_cycles",
-        "opt_cycles",
-        "heartbeat",
-    ]
-
-    fixture = await MpactNpuSimTestFixture.Create(highmem=True)
-    await fixture.load_elf_and_lookup_symbols(elf_file, symbols)
-
     # Parameters
     filter_height = filter_shape[1]
     filter_width = filter_shape[2]
@@ -97,22 +92,14 @@ async def run_test_case(
     await fixture.write("bias_data", bias_data)
     await fixture.write("output_dims", np.array(output_shape, dtype=np.int32))
 
-    await fixture.write_word("params_stride_width", stride_width, signed=True)
-    await fixture.write_word(
-        "params_stride_height", stride_height, signed=True
-    )
-    await fixture.write_word("params_padding_width", pad_w, signed=True)
-    await fixture.write_word("params_padding_height", pad_h, signed=True)
-    await fixture.write_word("params_input_offset", input_offset, signed=True)
-    await fixture.write_word(
-        "params_output_offset", output_offset, signed=True
-    )
-    await fixture.write_word(
-        "params_activation_min", activation_min, signed=True
-    )
-    await fixture.write_word(
-        "params_activation_max", activation_max, signed=True
-    )
+    await fixture.write_word("params_stride_width", stride_width)
+    await fixture.write_word("params_stride_height", stride_height)
+    await fixture.write_word("params_padding_width", pad_w)
+    await fixture.write_word("params_padding_height", pad_h)
+    await fixture.write_word("params_input_offset", input_offset)
+    await fixture.write_word("params_output_offset", output_offset)
+    await fixture.write_word("params_activation_min", activation_min)
+    await fixture.write_word("params_activation_max", activation_max)
     await fixture.write("per_channel_multiplier", per_channel_multiplier)
     await fixture.write("per_channel_shift", per_channel_shift)
 
@@ -153,7 +140,8 @@ async def run_test_case(
         print("  SUCCESS: Outputs match.", flush=True)
 
 
-async def run_conv_sim_test():
+@coralflow_test(highmem=True)
+async def run_conv_sim_test(fixture):
     r = runfiles.Create()
     elf_file = r.Rlocation(
         "coralnpu_hw/sw/opt/litert-micro/test/conv_test.elf"
@@ -161,6 +149,8 @@ async def run_conv_sim_test():
 
     if not os.path.exists(elf_file):
         raise FileNotFoundError(f"ELF file not found: {elf_file}")
+
+    await fixture.load_elf_and_lookup_symbols(elf_file, _CONV_SYMBOLS)
 
     test_cases = [
         # 1. Conv_4_4_16_StrideN (ic <= 16)
@@ -216,8 +206,8 @@ async def run_conv_sim_test():
     ]
 
     for tc in test_cases:
-        await run_test_case(elf_file, tc["input"], tc["filter"], tc["stride"])
+        await run_test_case(fixture, tc["input"], tc["filter"], tc["stride"])
 
 
 if __name__ == "__main__":
-    asyncio.run(run_conv_sim_test())
+    coralflow_main()

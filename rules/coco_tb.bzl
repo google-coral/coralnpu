@@ -42,6 +42,13 @@ def verilator_resource_estimator(os, input_size):
     # to use more threads if the scheduler hands them over.
     return {"cpu": min(verilator_make_parallelism, 4), "memory": 4096}
 
+def vcs_resource_estimator(os, input_size):
+    # VCS elaboration with -kdb and +acc+3 on full CoralNPU SoC/RVV/VME
+    # designs peaks at 6-10 GB RAM per action. Reserve 8 GB and 2 CPUs so
+    # Bazel's local scheduler bounds concurrent VCS compilations instead of
+    # assuming the 250 MB / 1 CPU default and OOM-killing CI containers.
+    return {"cpu": min(verilator_make_parallelism, 2), "memory": 8192}
+
 def _verilator_cocotb_model_impl(ctx):
     hdl_toplevel = ctx.attr.hdl_toplevel
     outdir_name = hdl_toplevel + "_build"
@@ -273,6 +280,11 @@ def _vcs_cocotb_model_impl(ctx):
         expanded_build_args.extend(["-CFLAGS", "-I../hdl/verilog"])
     if "../hdl/verilog/sram_backdoor.cc" not in expanded_build_args:
         expanded_build_args.append("../hdl/verilog/sram_backdoor.cc")
+    if not any([arg.startswith("-debug_access") for arg in expanded_build_args]):
+        # Cocotb VPI requires read/write/force/value-change-callback access;
+        # +vpi+1 without -debug_access+...+cbk disables VPI callbacks and hangs
+        # signal edge triggers (RisingEdge/FallingEdge) in VCS.
+        expanded_build_args.append("-debug_access+r+w+wn+f+fn+cbk")
 
     # We need absolute paths for files we pass explicitly (sources, includes, libs)
     # because we will CD into a subdirectory.
@@ -342,6 +354,7 @@ def _vcs_cocotb_model_impl(ctx):
         inputs = depset(inputs),
         command = "bash {}".format(wrapper.path),
         mnemonic = "VcsCompile",
+        resource_set = vcs_resource_estimator,
         use_default_shell_env = True,
     )
 
@@ -513,6 +526,7 @@ def _collect_transitive_runfiles(ctx):
         [dep.default_runfiles for dep in ctx.attr.deps] +
         [dep.default_runfiles for dep in ctx.attr.sim] +
         [dep.default_runfiles for dep in ctx.attr.data] +
+        ([ctx.attr.model[DefaultInfo].default_runfiles] if ctx.attr.model else []) +
         [ctx.attr.cocotb_wrapper[DefaultInfo].default_runfiles],
     )
 
@@ -1297,8 +1311,10 @@ def vcs_cocotb_test(
     kwargs["build_args"] = build_args
 
     if model:
+        # Pass model only via the `model` attribute (cfg = "exec"). Adding it
+        # to `data` (cfg = "target") forces Bazel to compile every Chisel RTL
+        # target and VCS model twice across both configurations.
         kwargs["model"] = model
-        data = data + [model]
         kwargs.pop("verilog_sources", None)
 
     cocotb_test(

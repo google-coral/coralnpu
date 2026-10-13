@@ -23,6 +23,7 @@ py_library(
         "common_utils.py",
     ],
     deps = [
+        "//coralnpu_test_utils/coralflow",
         requirement("numpy"),
         requirement("pyelftools"),
         "@bazel_tools//tools/python/runfiles",

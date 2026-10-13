@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@coralnpu_hw//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
+load("@coralnpu_hw//rules:coralflow_test.bzl", "coralflow_test")
+load("@coralnpu_hw//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -42,28 +42,34 @@ coralnpu_v2_binary(
     ],
 )
 
-py_test(
+coralflow_test(
     name = "max_pool_sim_test",
     srcs = ["max_pool_test.py"],
-    data = [":max_pool_test"],
+    elf = ":max_pool_test.elf",
+    highmem = True,
     main = "max_pool_test.py",
+    targets = [
+        "npusim",
+        "nexus_fpga",
+    ],
     deps = [
-        "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
         requirement("numpy"),
     ],
 )
 
-py_test(
+coralflow_test(
     name = "conv_sim_test",
     srcs = ["conv_test.py"],
-    data = [":conv_test"],
+    elf = ":conv_test.elf",
+    highmem = True,
     main = "conv_test.py",
+    targets = [
+        "npusim",
+        "nexus_fpga",
+    ],
     deps = [
-        "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
         requirement("numpy"),
     ],
 )
-
-collect_coralnpu_elfs()

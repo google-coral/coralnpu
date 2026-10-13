@@ -21,25 +21,19 @@ from typing import Optional, Tuple, Union
 
 import numpy as np
 
+from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
 from coralnpu_test_utils.ftdi_spi_master import FtdiSpiMaster
 from coralnpu_test_utils.sim_backends.common_utils import (
-    BytesResult,
-    WordResult,
     get_elf_dtcm_origin,
-    get_runfiles,
     infer_read_size_bytes,
     parse_elf_symbols,
     reconstruct_read_data,
     resolve_runfile_path,
-    resolve_symbol_address,
 )
 
 
-class FpgaTestFixture:
-    """Unified Test Fixture for CoralNPU FPGA Hardware (mirrors verilator_test_fixture.VerilatorTestFixture)."""
-
-    get_runfiles = staticmethod(get_runfiles)
-    resolve_path = staticmethod(resolve_runfile_path)
+class FpgaTestFixture(BaseCoralNPUFixture):
+    """Unified Test Fixture for CoralNPU FPGA Hardware."""
 
     def __init__(
         self,
@@ -49,7 +43,9 @@ class FpgaTestFixture:
         csr_base_addr: int | None = None,
         auto_recovery: bool = True,
         verify: bool = False,
+        **_kwargs,
     ):
+        super().__init__()
         self.usb_serial = usb_serial
         self.highmem = highmem
         self.ftdi_port = ftdi_port
@@ -64,17 +60,14 @@ class FpgaTestFixture:
             ftdi_port=ftdi_port,
             csr_base_addr=self.csr_base_addr,
         )
-        self.entry_point: int | None = None
-        self.symbols: dict[str, int] = {}
-        self.symbol_sizes: dict[str, int] = {}
 
     @classmethod
     def create(
         cls,
         usb_serial: str,
         highmem: bool = True,
-        **kwargs
-    ) -> "FpgaTestFixture":
+        **kwargs,
+    ) -> FpgaTestFixture:
         """Factory method to instantiate the fixture."""
         return cls(usb_serial=usb_serial, highmem=highmem, **kwargs)
 
@@ -83,17 +76,6 @@ class FpgaTestFixture:
     def close(self) -> None:
         if hasattr(self.spi_master, "close"):
             self.spi_master.close()
-
-    def has_symbol(self, symbol: str) -> bool:
-        return symbol in self.symbols
-
-    def resolve_address(
-        self, addr_or_symbol: Union[int, str], offset: int = 0
-    ) -> int:
-        """Resolves an integer address or symbol name to an address."""
-        return resolve_symbol_address(
-            addr_or_symbol, self.symbols, offset=offset
-        )
 
     def check_memory_accessible(
         self,
@@ -131,13 +113,13 @@ class FpgaTestFixture:
         resolved_elf = ""
         if (self.highmem and elf_str.endswith(".elf")
                 and not elf_str.endswith("_highmem.elf")):
-            highmem_candidate = self.resolve_path(
+            highmem_candidate = resolve_runfile_path(
                 elf_str[:-4] + "_highmem.elf"
             )
             if os.path.exists(highmem_candidate):
                 resolved_elf = highmem_candidate
         if not resolved_elf:
-            resolved_elf = self.resolve_path(elf_file)
+            resolved_elf = resolve_runfile_path(elf_file)
         if not os.path.exists(resolved_elf):
             raise FileNotFoundError(f"Could not find ELF file: {elf_file}")
 
@@ -249,10 +231,8 @@ class FpgaTestFixture:
         addr_or_symbol: Union[int, str],
         value: Union[int, np.integer],
         offset: int = 0,
-        signed: bool = False,
     ):
         """Writes a single 32-bit word to memory."""
-        del signed
         self.spi_master.write_word(
             self.resolve_address(addr_or_symbol, offset=offset),
             int(value) & 0xFFFFFFFF,
@@ -267,13 +247,12 @@ class FpgaTestFixture:
     def read(
         self,
         addr_or_symbol: Union[int, str],
-        size_bytes: Optional[int] = None,
+        size: Optional[int] = None,
         offset: int = 0,
         dtype: Optional[np.dtype] = None,
         shape: Optional[Tuple[int, ...]] = None,
         timeout: Optional[float] = None,
-        size: Optional[int] = None,
-    ) -> Union[bytes, np.ndarray]:
+    ) -> np.ndarray:
         """Reads data from memory or a resolved symbol with automatic dtype/shape reconstruction."""
         addr = self.resolve_address(addr_or_symbol, offset=offset)
         try:
@@ -281,7 +260,6 @@ class FpgaTestFixture:
                 addr_or_symbol,
                 self.symbol_sizes,
                 size=size,
-                size_bytes=size_bytes,
                 dtype=dtype,
                 shape=shape,
             )
@@ -293,32 +271,36 @@ class FpgaTestFixture:
             if timeout is not None else self.calculate_read_timeout(nbytes)
         )
         raw_bytes = self.spi_master.read_data(addr, nbytes, timeout=to)
-        if dtype is not None:
-            return reconstruct_read_data(raw_bytes, dtype=dtype, shape=shape)
-        return BytesResult(raw_bytes)
+        return reconstruct_read_data(raw_bytes, dtype=dtype, shape=shape)
 
     def read_word(
         self, addr_or_symbol: Union[int, str], offset: int = 0
-    ) -> WordResult:
+    ) -> int:
         """Reads a single 32-bit word from memory."""
-        val = self.spi_master.read_word(
-            self.resolve_address(addr_or_symbol, offset=offset)
+        return int(
+            self.spi_master.read_word(
+                self.resolve_address(addr_or_symbol, offset=offset)
+            )
         )
-        return WordResult(val)
 
     def run_to_halt(
         self,
         timeout_sec: float = 60.0,
-        timeout_cycles: Optional[int] = None
+        timeout_cycles: Optional[int] = None,
     ) -> bool:
         """Starts core execution from entry point and polls for halt status."""
+        del timeout_cycles
         if self.entry_point is None:
             raise ValueError(
                 "Entry point is not set. Load an ELF binary first."
             )
         self.spi_master.set_entry_point(self.entry_point)
         self.spi_master.start_core()
-        return self.spi_master.poll_for_halt(timeout=timeout_sec)
+        if not self.spi_master.poll_for_halt(timeout=timeout_sec):
+            raise TimeoutError(
+                f"FPGA core did not halt within {timeout_sec}s timeout."
+            )
+        return True
 
     def soft_reset(self):
         """Performs a non-destructive soft reset of the CoralNPU core."""

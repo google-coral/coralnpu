@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@coralnpu_hw//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
+load("@coralnpu_hw//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary")
 
@@ -49,5 +49,3 @@ coralnpu_v2_binary(
         "@tflite_micro//tensorflow/lite/micro:system_setup",
     ],
 )
-
-collect_coralnpu_elfs()

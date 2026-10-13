@@ -12,30 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
-import glob
-import numpy as np
-import os
-import tqdm
-import random
-
-from coralnpu_test_utils.core_mini_axi_interface import AxiBurst, AxiResp, CoreMiniAxiInterface
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+import numpy as np
+import tqdm
 
 
-@cocotb.test()
-async def core_mini_axi_run_wfi_in_all_slots_itcm512kb_dtcm512kb(dut):
+@coralflow_test(csr_base_addr=0x200000)
+async def core_mini_axi_run_wfi_in_all_slots_itcm512kb_dtcm512kb(fixture):
     """Tests the WFI instruction in each of the 4 issue slots with custom memory."""
-    # Note: 'highmem' usage in Fixture might need adjustment if it strictly implies 1024KB.
-    # Checking Fixture usage: it likely sets up the memory map.
-    # If standard map supports 512KB without overlap issues, this might be fine.
-    # Assuming VerilatorTestFixture.Create(dut, highmem=True) is safe or we use default if 512KB doesn't need highmem flag.
-    # However, 512KB might not need the "highmem" flag in Fixture if that flag is only for 1024KB specific overlaps.
-    # But usually custom sizes might need some flag. Let's assume highmem=False (default) or check if we need a new flag.
-    # Given the user context, Highmem usually meant 1024KB. 512KB might fit in standard map or explicit map.
-    # For now, I will use highmem=False as 512KB is not "Highmem" (1024KB).
-    fixture = await VerilatorTestFixture.Create(dut, csr_base_addr=0x200000)
     core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
@@ -52,8 +37,8 @@ async def core_mini_axi_run_wfi_in_all_slots_itcm512kb_dtcm512kb(dut):
             await core_mini_axi.wait_for_halted()
 
 
-@cocotb.test()
-async def core_mini_rvv_matmul_test(dut):
+@coralflow_test(csr_base_addr=0x200000)
+async def core_mini_rvv_matmul_test(fixture):
     """Testbench to test matmul with rvv intrinsics using custom memory.
 
     This test performs matmul in M1 4x64 M2 64x4 matrices.
@@ -64,7 +49,6 @@ async def core_mini_rvv_matmul_test(dut):
     RHS_COLS = 4
     INNER = 64
 
-    fixture = await VerilatorTestFixture.Create(dut, csr_base_addr=0x200000)
     r = runfiles.Create()
     elf_files = [
         'rvv_matmul_itcm512kb_dtcm512kb.elf',
@@ -104,13 +88,10 @@ async def core_mini_rvv_matmul_test(dut):
         assert ((result_data == output_matmul_result).all())
 
 
-@cocotb.test()
-async def core_mini_axi_basic_write_read_memory(dut):
+@coralflow_test(csr_base_addr=0x200000)
+async def core_mini_axi_basic_write_read_memory(fixture):
     """Basic test to check if TCM memory can be written and read back."""
-    core_mini_axi = CoreMiniAxiInterface(dut, csr_base_addr=0x200000)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
 
     # Test reading/writing words
     await core_mini_axi.write_word(0x100, 0x42)
@@ -176,3 +157,7 @@ async def core_mini_axi_basic_write_read_memory(dut):
                 0x180000 - 1024 + (i * txn_bytes), txn_bytes
             )
             assert (rdata == wdata).all()
+
+
+if __name__ == "__main__":
+    coralflow_main()

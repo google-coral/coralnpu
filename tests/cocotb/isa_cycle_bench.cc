@@ -9,6 +9,12 @@
 // state, no dispatch overhead from a surrounding loop) and lets the host
 // checkpoint results to disk after every single run.
 //
+// For subprocess-per-run backends like UVM (especially VCS UVM on EDACloud,
+// where each `simv` cold start and license checkout takes ~45-50s), setting
+// `g_selected_bench = BENCH_RUN_ALL` executes all `BENCH_COUNT` benchmarks in a
+// single invocation and writes their cycle deltas to `g_results[]`, avoiding
+// 45 sequential simulator startups that would exceed the 3600s Bazel timeout.
+//
 // Each benchmark brackets 32 back-to-back (data-dependent, so this measures
 // latency rather than best-case throughput) instances of one instruction
 // with `mcycle` reads. `BENCH_NOP` measures the fixed overhead of the two
@@ -17,7 +23,7 @@
 #include <stdint.h>
 
 // clang-format off
-enum BenchId {
+enum BenchId : uint32_t {
   BENCH_NOP = 0,
   BENCH_ADD,
   BENCH_SUB,
@@ -63,12 +69,14 @@ enum BenchId {
   BENCH_VREDSUM_VS,
   BENCH_VFADD_VV,
   BENCH_VFMUL_VV,
-  BENCH_COUNT
+  BENCH_COUNT,
+  BENCH_RUN_ALL = 0xFFFFFFFEu,
 };
 // clang-format on
 
 volatile uint32_t g_selected_bench = 0xFFFFFFFFu;
 volatile uint32_t g_result         = 0xFFFFFFFFu;
+__attribute__((aligned(16), used)) volatile uint32_t g_results[BENCH_COUNT];
 
 __attribute__((aligned(16), used)) uint32_t g_scratch[4]  = {0, 0, 0, 0};
 __attribute__((aligned(16), used)) uint32_t g_vscratch[4] = {1, 2, 3, 4};
@@ -202,148 +210,112 @@ static uint32_t bench_jal(void) {
   return end - start;
 }
 
-int main(void) {
-  uint32_t result = 0xFFFFFFFFu;
-  switch (g_selected_bench) {
+static uint32_t run_bench(uint32_t bench_id) {
+  switch (bench_id) {
     case BENCH_NOP:
-      result = bench_nop();
-      break;
+      return bench_nop();
     case BENCH_ADD:
-      result = bench_add();
-      break;
+      return bench_add();
     case BENCH_SUB:
-      result = bench_sub();
-      break;
+      return bench_sub();
     case BENCH_AND:
-      result = bench_and();
-      break;
+      return bench_and();
     case BENCH_OR:
-      result = bench_or();
-      break;
+      return bench_or();
     case BENCH_XOR:
-      result = bench_xor();
-      break;
+      return bench_xor();
     case BENCH_SLL:
-      result = bench_sll();
-      break;
+      return bench_sll();
     case BENCH_SRL:
-      result = bench_srl();
-      break;
+      return bench_srl();
     case BENCH_SRA:
-      result = bench_sra();
-      break;
+      return bench_sra();
     case BENCH_SLT:
-      result = bench_slt();
-      break;
+      return bench_slt();
     case BENCH_ADDI:
-      result = bench_addi();
-      break;
+      return bench_addi();
     case BENCH_SLTI:
-      result = bench_slti();
-      break;
+      return bench_slti();
     case BENCH_SLTIU:
-      result = bench_sltiu();
-      break;
+      return bench_sltiu();
     case BENCH_ANDI:
-      result = bench_andi();
-      break;
+      return bench_andi();
     case BENCH_ORI:
-      result = bench_ori();
-      break;
+      return bench_ori();
     case BENCH_XORI:
-      result = bench_xori();
-      break;
+      return bench_xori();
     case BENCH_SLLI:
-      result = bench_slli();
-      break;
+      return bench_slli();
     case BENCH_SRLI:
-      result = bench_srli();
-      break;
+      return bench_srli();
     case BENCH_SRAI:
-      result = bench_srai();
-      break;
+      return bench_srai();
     case BENCH_LW:
-      result = bench_lw();
-      break;
+      return bench_lw();
     case BENCH_SW:
-      result = bench_sw();
-      break;
+      return bench_sw();
     case BENCH_LB:
-      result = bench_lb();
-      break;
+      return bench_lb();
     case BENCH_SB:
-      result = bench_sb();
-      break;
+      return bench_sb();
     case BENCH_BEQ_TAKEN:
-      result = bench_beq_taken();
-      break;
+      return bench_beq_taken();
     case BENCH_BEQ_NOT_TAKEN:
-      result = bench_beq_not_taken();
-      break;
+      return bench_beq_not_taken();
     case BENCH_JAL:
-      result = bench_jal();
-      break;
+      return bench_jal();
     case BENCH_MUL:
-      result = bench_mul();
-      break;
+      return bench_mul();
     case BENCH_MULH:
-      result = bench_mulh();
-      break;
+      return bench_mulh();
     case BENCH_DIV:
-      result = bench_div();
-      break;
+      return bench_div();
     case BENCH_DIVU:
-      result = bench_divu();
-      break;
+      return bench_divu();
     case BENCH_REM:
-      result = bench_rem();
-      break;
+      return bench_rem();
     case BENCH_FADD_S:
-      result = bench_fadd_s();
-      break;
+      return bench_fadd_s();
     case BENCH_FMUL_S:
-      result = bench_fmul_s();
-      break;
+      return bench_fmul_s();
     case BENCH_FDIV_S:
-      result = bench_fdiv_s();
-      break;
+      return bench_fdiv_s();
     case BENCH_FSQRT_S:
-      result = bench_fsqrt_s();
-      break;
+      return bench_fsqrt_s();
     case BENCH_FMADD_S:
-      result = bench_fmadd_s();
-      break;
+      return bench_fmadd_s();
     case BENCH_VADD_VV:
-      result = bench_vadd_vv();
-      break;
+      return bench_vadd_vv();
     case BENCH_VSUB_VV:
-      result = bench_vsub_vv();
-      break;
+      return bench_vsub_vv();
     case BENCH_VAND_VV:
-      result = bench_vand_vv();
-      break;
+      return bench_vand_vv();
     case BENCH_VMUL_VV:
-      result = bench_vmul_vv();
-      break;
+      return bench_vmul_vv();
     case BENCH_VLE32_V:
-      result = bench_vle32_v();
-      break;
+      return bench_vle32_v();
     case BENCH_VSE32_V:
-      result = bench_vse32_v();
-      break;
+      return bench_vse32_v();
     case BENCH_VREDSUM_VS:
-      result = bench_vredsum_vs();
-      break;
+      return bench_vredsum_vs();
     case BENCH_VFADD_VV:
-      result = bench_vfadd_vv();
-      break;
+      return bench_vfadd_vv();
     case BENCH_VFMUL_VV:
-      result = bench_vfmul_vv();
-      break;
+      return bench_vfmul_vv();
     default:
-      result = 0xFFFFFFFFu;
-      break;
+      return 0xFFFFFFFFu;
   }
-  g_result = result;
+}
+
+int main(void) {
+  const uint32_t selected = g_selected_bench;
+  if (selected == BENCH_RUN_ALL) {
+    for (uint32_t i = 0; i < BENCH_COUNT; ++i) {
+      g_results[i] = run_bench(i);
+    }
+    return 0;
+  }
+
+  g_result = run_bench(selected);
   return 0;
 }

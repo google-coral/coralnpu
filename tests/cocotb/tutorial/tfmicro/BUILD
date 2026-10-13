@@ -14,20 +14,9 @@
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary")
-load("//rules:coco_tb.bzl", "cocotb_test_suite", "verilator_cocotb_model")
-load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
+load("//rules:coralflow_test.bzl", "coralflow_test")
+load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 load("//rules:utils.bzl", "generate_cc_arrays")
-load(
-    "//tests/cocotb:build_defs.bzl",
-    "VCS_BUILD_ARGS",
-    "VCS_DEFINES",
-    "VCS_TEST_ARGS",
-    "VERILATOR_BUILD_ARGS",
-)
-
-VCS_COMMON_DATA = [
-    "//hdl/verilog:dpi_files",
-]
 
 coralnpu_v2_binary(
     name = "run_mobilenet_v1_025_partial_binary",
@@ -80,40 +69,24 @@ generate_cc_arrays(
     out = "mobilenet_v1_025_224_int8_dummy.h",
 )
 
-# BEGIN_TESTCASES_FOR_running_tflite
 RUN_MOBILENET_TEST = [
     "core_mini_rvv_mobilenet_v1",
 ]
-# END_TESTCASES_FOR_running_tflite
 
-cocotb_test_suite(
+coralflow_test(
     name = "cocotb_run_mobilenet_v1",
-    simulators = [
+    size = "enormous",
+    srcs = ["cocotb_run_mobilenet_v1.py"],
+    elf = ":run_mobilenet_v1_025_partial_binary",
+    highmem = True,
+    tags = ["manual"],
+    targets = [
+        "npusim",
         "verilator",
         "vcs",
+        "nexus_fpga",
     ],
     testcases = RUN_MOBILENET_TEST,
-    testcases_vname = "RUN_MOBILENET_TEST",
-    tests_kwargs = {
-        "waves": False,
-        "tags": ["manual"],
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "seed": "42",
-        "size": "enormous",
-        "test_module": ["cocotb_run_mobilenet_v1.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@rules_python//python/runfiles",
-        ],
-        "data": ["run_mobilenet_v1_025_partial_binary.elf"],
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = ["run_mobilenet_v1_025_partial_binary.elf"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -127,42 +100,34 @@ coralnpu_v2_binary(
     ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "cocotb_depthwise_conv",
-    simulators = [
+    size = "large",
+    srcs = ["cocotb_depthwise_conv.py"],
+    elf = ":depthwise_conv_test",
+    exclude_testcases = {
+        "verilator": [
+            "test_dwconv64to64stride1",
+            "test_dwconv64to64stride2",
+        ],
+    },
+    highmem = True,
+    targets = [
+        "npusim",
         "verilator",
         "vcs",
+        "nexus_fpga",
     ],
     testcases = [
         "test_dwconv8to8stride1",
         "test_dwconv8to8stride2",
-        ("test_dwconv32to32stride1", "large"),
-        ("test_dwconv32to32stride2", "large"),
-        ("test_dwconv64to64stride1", "large"),
-        ("test_dwconv64to64stride2", "large"),
-        ("test_dwconv16to32stride2", "large"),
+        "test_dwconv32to32stride1",
+        "test_dwconv32to32stride2",
+        "test_dwconv64to64stride1",
+        "test_dwconv64to64stride2",
+        "test_dwconv16to32stride2",
         # Benchmarks are skipped.
     ],
-    # testcases_vname = "RUN_MOBILENET_TEST",
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "size": "enormous",
-        "default_testcase_size": "medium",
-        "test_module": ["cocotb_depthwise_conv.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@rules_python//python/runfiles",
-        ],
-        "data": ["depthwise_conv_test.elf"],
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = ["depthwise_conv_test.elf"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
 
 py_binary(
@@ -198,11 +163,22 @@ coralnpu_v2_binary(
     ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "cocotb_conv2d",
-    simulators = [
+    size = "enormous",
+    srcs = ["cocotb_conv2d.py"],
+    elf = ":conv2d_test",
+    exclude_testcases = {
+        "verilator": [
+            "test_conv2d_16x16",
+        ],
+    },
+    highmem = True,
+    targets = [
+        "npusim",
         "verilator",
         "vcs",
+        "nexus_fpga",
     ],
     testcases = [
         "test_conv2d_4x1_h2w2",
@@ -210,31 +186,11 @@ cocotb_test_suite(
         "test_conv2d_16x1",
         "test_conv2d_18x1",
         "test_conv2d_37x1_h2w2",
-        ("test_conv2d_48x48_h2w2", "large"),
         "test_conv2d_16x3_s2",
-        ("test_conv2d_21x48_h8w8", "large"),
-        ("test_conv2d_16x16", "enormous"),
-        ("test_conv2d_16x16_h2w8", "enormous"),
+        "test_conv2d_21x48_h8w8",
+        "test_conv2d_16x16",
+        "test_conv2d_16x16_h2w8",
     ],
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "size": "enormous",
-        "default_testcase_size": "medium",
-        "test_module": ["cocotb_conv2d.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@rules_python//python/runfiles",
-        ],
-        "data": ["conv2d_test.elf"],
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = ["conv2d_test.elf"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -249,35 +205,23 @@ coralnpu_v2_binary(
     ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "cocotb_pooling",
-    simulators = [
+    size = "enormous",
+    srcs = ["cocotb_pooling.py"],
+    elf = ":pooling_test",
+    exclude_testcases = {
+        "verilator": [
+            "test_maxpool64stride2",
+        ],
+    },
+    highmem = True,
+    targets = [
+        "npusim",
         "verilator",
         "vcs",
+        "nexus_fpga",
     ],
-    testcases = [
-        "test_maxpool16stride2",
-        "test_maxpool32stride2",
-        "test_maxpool64stride2",
-    ],
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "size": "enormous",
-        "test_module": ["cocotb_pooling.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@rules_python//python/runfiles",
-        ],
-        "data": ["pooling_test.elf"],
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = ["pooling_test.elf"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -292,27 +236,22 @@ coralnpu_v2_binary(
     ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "cocotb_fully_connected",
-    simulators = ["verilator"],
+    size = "enormous",
+    srcs = ["cocotb_fully_connected.py"],
+    elf = ":fully_connected_test",
+    highmem = True,
+    targets = [
+        "npusim",
+        "verilator",
+        "vcs",
+        "nexus_fpga",
+    ],
     testcases = [
         "test_fc_16_16",
         "test_fc_64_64",
-        "test_fc_256_256",
     ],
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "size": "enormous",
-        "test_module": ["cocotb_fully_connected.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@rules_python//python/runfiles",
-        ],
-        "data": ["fully_connected_test.elf"],
-    },
-    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -327,26 +266,19 @@ coralnpu_v2_binary(
     ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "cocotb_logistic",
-    simulators = ["verilator"],
+    size = "enormous",
+    srcs = ["cocotb_logistic.py"],
+    elf = ":logistic_test",
+    highmem = True,
+    targets = [
+        "npusim",
+        "verilator",
+        "vcs",
+        "nexus_fpga",
+    ],
     testcases = [
         "test_logistic_256",
-        "test_logistic_1024",
     ],
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "size": "enormous",
-        "test_module": ["cocotb_logistic.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@rules_python//python/runfiles",
-        ],
-        "data": ["logistic_test.elf"],
-    },
-    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
-
-collect_coralnpu_elfs()

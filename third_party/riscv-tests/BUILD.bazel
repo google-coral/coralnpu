@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@coralnpu_hw//rules:coralnpu_v2.bzl", "collect_coralnpu_riscv_tests")
 load("@coralnpu_hw//rules:utils.bzl", "template_rule")
 load("@coralnpu_hw//third_party/riscv-tests:defs.bzl", "OUT_BINARIES_RV32UF", "OUT_BINARIES_RV32UI", "OUT_BINARIES_RV32UM", "OUT_BINARIES_RV32UZBB")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
@@ -157,5 +156,3 @@ genrule(
       done
     """,
 )
-
-collect_coralnpu_riscv_tests(binaries = ALL_BINS)

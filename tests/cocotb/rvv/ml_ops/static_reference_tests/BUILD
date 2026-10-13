@@ -12,22 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//rules:coco_tb.bzl", "cocotb_test_suite")
-load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
-load(
-    "//tests/cocotb:build_defs.bzl",
-    "VCS_BUILD_ARGS",
-    "VCS_DEFINES",
-    "VCS_TEST_ARGS",
-)
+load("//rules:coralflow_test.bzl", "coralflow_test")
+load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 
 package(default_visibility = ["//visibility:public"])
-
-VCS_COMMON_DATA = [
-    "//tests/cocotb:coverage_exclude.cfg",
-    "//tests/cocotb:xprop.cfg",
-    "//hdl/verilog:dpi_files",
-]
 
 # Float matmul 16x48x16 static binary
 coralnpu_v2_binary(
@@ -58,77 +46,42 @@ exports_files([
 ])
 
 # Float static netlist test suite
-cocotb_test_suite(
+coralflow_test(
     name = "float_matmul_16x48x16_test_suite",
-    simulators = [
+    size = "enormous",
+    srcs = ["static_reference_tests.py"],
+    elf = ":float_matmul_16x48x16.elf",
+    targets = [
         "verilator",
         "vcs",
+        "uvm",
+        "nexus_fpga",
     ],
     testcases = [
         "float_matmul_16x48x16_test",
     ],
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": [
-            "static_reference_tests.py",
-        ],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "//sw/utils:metrics",
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":float_matmul_16x48x16.elf",
-        ],
-        "size": "enormous",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [
-        ":float_matmul_16x48x16.elf",
-    ] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_axi_model",
+    deps = [
+        "//sw/utils:metrics",
+    ],
 )
 
 # Integer static netlist test suite
-cocotb_test_suite(
+coralflow_test(
     name = "int_matmul_16x48x16_test_suite",
-    simulators = [
+    size = "enormous",
+    srcs = ["static_reference_tests.py"],
+    elf = ":int_matmul_16x48x16.elf",
+    targets = [
+        "npusim",
         "verilator",
         "vcs",
+        "uvm",
+        "nexus_fpga",
     ],
     testcases = [
         "int_matmul_16x48x16_test",
     ],
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": [
-            "static_reference_tests.py",
-        ],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "//sw/utils:metrics",
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":int_matmul_16x48x16.elf",
-        ],
-        "size": "enormous",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [
-        ":int_matmul_16x48x16.elf",
-    ] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_axi_model",
+    deps = [
+        "//sw/utils:metrics",
+    ],
 )
-
-collect_coralnpu_elfs()

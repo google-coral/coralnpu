@@ -90,10 +90,8 @@ class DdrDiagnosticRunner:
 
         # 2. Read back from DDR
         start_r = time.time()
-        read_bytes = self.fixture.read(target_addr, size_bytes=size)
+        result_data = self.fixture.read(target_addr, size=size)
         read_duration = time.time() - start_r
-
-        result_data = np.frombuffer(read_bytes, dtype=np.uint8)
 
         # 3. Bit-exact verification
         if np.array_equal(golden_data, result_data):

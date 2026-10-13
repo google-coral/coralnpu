@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 load("//rules:utils.bzl", "template_rule")
 load("//tests/cocotb/rvv/arithmetics:rvv_arithmetic.bzl", "bfloat16_arithmetic_test", "bfloat16_ops_test", "rvv_arithmetic_test", "rvv_reduction_test", "rvv_widen_arithmetic_test")
 
@@ -1511,5 +1511,3 @@ filegroup(
         ":rvv_same_type_binary_vx_cases",
     ],
 )
-
-collect_coralnpu_elfs()

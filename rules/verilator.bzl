@@ -1,10 +1,8 @@
 """Bazel functions for Verilator."""
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@coralnpu_hw//rules:coco_tb.bzl", "verilator_make_parallelism", "verilator_resource_estimator")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-load("//rules:uvm_denylist.bzl", "SPIKE_DENYLIST")
 load("//rules:verilog.bzl", "VerilogInfo")
 
 _VERILATOR_COMPILE_SCRIPT = """
@@ -626,75 +624,3 @@ def verilator_model(
         linkopts = kwargs.get("linkopts", []) + ["-lpthread", "-latomic", "-ldl", "-lstdc++", "-lm"],
         **binary_kwargs
     )
-
-def _rlocation_path(ws, f):
-    if f.short_path.startswith("../"):
-        return f.short_path[len("../"):]
-    return ws + "/" + f.short_path
-
-def _verilator_batch_uvm_impl(ctx):
-    runfiles = []
-    run_spike_flag = ctx.attr.run_spike[BuildSettingInfo].value
-
-    model_binary = None
-    for f in ctx.files.model:
-        if not f.path.endswith(".log"):
-            model_binary = f
-            break
-
-    if not model_binary:
-        fail("Model binary could not be found")
-
-    ws = ctx.workspace_name
-    runner = ctx.actions.declare_file(ctx.label.name)
-    runfiles.extend(ctx.files.coralnpu_tests + [model_binary])
-
-    ctx.actions.symlink(output = runner, target_file = ctx.executable._runner, is_executable = True)
-
-    coralnpu_elfs_fmt = []
-    for file, label, timeout in zip(ctx.files.coralnpu_tests, ctx.attr.labels, ctx.attr.timeouts):
-        enable_spike = run_spike_flag
-        if enable_spike and label in SPIKE_DENYLIST:
-            print("Warning: skipping spike cosim for {}, because it is listed in SPIKE_DENYLIST".format(label))
-            enable_spike = False
-        coralnpu_elfs_fmt.append("{}\t{}\t{}\t{}".format(_rlocation_path(ws, file), label, timeout, enable_spike))
-
-    model_default_runfiles = ctx.attr.model[DefaultInfo].default_runfiles if ctx.attr.model[DefaultInfo].default_runfiles else ctx.runfiles()
-
-    return [
-        DefaultInfo(
-            executable = runner,
-            runfiles = ctx.runfiles(
-                files = runfiles,
-                collect_default = True,
-            ).merge(ctx.attr._runner[DefaultInfo].default_runfiles).merge(model_default_runfiles),
-        ),
-        RunEnvironmentInfo(
-            environment = {
-                "UVM_MODEL_RLOCATION": _rlocation_path(ws, model_binary),
-                "UVM_CORALNPU_ELFS": "\n".join(coralnpu_elfs_fmt),
-                "UVM_SPIKE_RLOCATION": "SPIKE" if run_spike_flag else "",
-                "UVM_ENABLE_SPIKE": "1" if run_spike_flag else "0",
-            },
-        ),
-    ]
-
-verilator_batch_uvm_test = rule(
-    doc = """Performs batch testing of the UVM Verilator model.""",
-    implementation = _verilator_batch_uvm_impl,
-    attrs = {
-        "model": attr.label(allow_files = True),
-        "coralnpu_tests": attr.label_list(allow_files = True),
-        "timeouts": attr.int_list(mandatory = True),
-        "labels": attr.string_list(mandatory = True),
-        "run_spike": attr.label(
-            providers = [BuildSettingInfo],
-        ),
-        "_runner": attr.label(
-            default = Label("//utils:uvm_batch_runner"),
-            executable = True,
-            cfg = "target",
-        ),
-    },
-    test = True,
-)

@@ -29,25 +29,20 @@ import tempfile
 
 import numpy as np
 
+from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
 from coralnpu_test_utils.sim_backends.common_utils import (
-    BytesResult,
-    WordResult,
-    get_runfiles,
     infer_read_size_bytes,
     parse_elf_symbols,
     reconstruct_read_data,
     resolve_runfile_path,
-    resolve_symbol_address,
+    to_uint8_array,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class UvmTestFixture:
+class UvmTestFixture(BaseCoralNPUFixture):
     """Orchestrates UVM batch simulation via a subprocess."""
-
-    get_runfiles = staticmethod(get_runfiles)
-    resolve_path = staticmethod(resolve_runfile_path)
 
     def __init__(
         self,
@@ -55,19 +50,16 @@ class UvmTestFixture:
         enable_spike_cosim: bool = True,
         sim_binary_path: str | None = None,
     ):
+        super().__init__()
         self.simulator = simulator
         self.enable_spike_cosim = enable_spike_cosim
         self.sim_binary_path = sim_binary_path
 
         self.elf_path: str | None = None
-        self.symbols: dict[str, int] = {}
-        self.symbol_sizes: dict[str, int] = {}
         self.entry_point: int = 0
         self.tohost_addr: int = 0
         self.staged_memory: dict[int, bytes] = {}
         self.dumped_memory: list[tuple[int, bytes]] = []
-
-        self.cycle_count: int | None = None
         self.test_passed: bool = False
 
     @classmethod
@@ -76,18 +68,10 @@ class UvmTestFixture:
         simulator: str = "verilator",
         enable_spike_cosim: bool = True,
         sim_binary_path: str | None = None,
-        **kwargs,
+        **_kwargs,
     ) -> UvmTestFixture:
         """Factory method to instantiate the fixture."""
         return cls(simulator, enable_spike_cosim, sim_binary_path)
-
-    def has_symbol(self, symbol: str) -> bool:
-        return symbol in self.symbols
-
-    def resolve_address(self, symbol: str | int, offset: int = 0) -> int:
-        return resolve_symbol_address(symbol, self.symbols, offset=offset)
-
-    _resolve_address = resolve_address
 
     async def load_elf_and_lookup_symbols(
         self,
@@ -97,7 +81,7 @@ class UvmTestFixture:
         optional_symbols: list[str] | None = None,
     ) -> dict[str, int]:
         """Parses the ELF binary, resets state, and resolves symbol addresses."""
-        resolved = self.resolve_path(elf_path)
+        resolved = resolve_runfile_path(elf_path)
         if not os.path.exists(resolved):
             raise FileNotFoundError(
                 f"ELF file not found: {elf_path} (resolved: {resolved})"
@@ -167,29 +151,15 @@ class UvmTestFixture:
     ):
         """Stages data (scalar integer, NumPy array, or bytes) in host memory to be patched into the ELF before simulation."""
         addr = self.resolve_address(symbol, offset=offset)
-
-        if isinstance(data, np.integer):
-            byte_data = np.ascontiguousarray(data).tobytes()
-        elif isinstance(data, int) and not isinstance(data, bool):
-            byte_data = struct.pack("<I", int(data) & 0xFFFFFFFF)
-        elif isinstance(data, np.ndarray):
-            byte_data = data.tobytes()
-        elif isinstance(data, (bytes, bytearray)):
-            byte_data = bytes(data)
-        else:
-            raise TypeError(f"Unsupported data type for write: {type(data)}")
-
-        self._stage_bytes(addr, byte_data)
+        self._stage_bytes(addr, to_uint8_array(data).tobytes())
 
     async def write_word(
         self,
         symbol: str | int,
         data: int | np.integer,
         offset: int = 0,
-        signed: bool = False,
     ):
         """Stages a single 32-bit scalar word."""
-        del signed
         addr = self.resolve_address(symbol, offset=offset)
         self._stage_bytes(addr, struct.pack("<I", int(data) & 0xFFFFFFFF))
 
@@ -202,8 +172,12 @@ class UvmTestFixture:
         )
 
     def _read_bytes_from_dump(self, addr: int, size: int) -> bytes:
-        """Reads a byte sequence from dumped memory blocks."""
+        """Reads a byte sequence from dumped memory blocks (or staged memory pre-halt)."""
         for base, data in self.dumped_memory:
+            if base <= addr and addr + size <= base + len(data):
+                offset = addr - base
+                return bytes(data[offset:offset + size])
+        for base, data in self.staged_memory.items():
             if base <= addr and addr + size <= base + len(data):
                 offset = addr - base
                 return bytes(data[offset:offset + size])
@@ -219,25 +193,20 @@ class UvmTestFixture:
         offset: int = 0,
         dtype: np.dtype | None = None,
         shape: tuple | None = None,
-        size_bytes: int | None = None,
-    ) -> BytesResult | np.ndarray:
+    ) -> np.ndarray:
         """Reads memory post-simulation from the SRAM memory dump."""
         addr = self.resolve_address(symbol, offset=offset)
         actual_size = infer_read_size_bytes(
-            symbol, self.symbol_sizes, size, size_bytes, dtype, shape
+            symbol, self.symbol_sizes, size=size, dtype=dtype, shape=shape
         )
         raw_bytes = self._read_bytes_from_dump(addr, actual_size)
-        if dtype is not None:
-            return reconstruct_read_data(raw_bytes, dtype=dtype, shape=shape)
-        return BytesResult(raw_bytes)
+        return reconstruct_read_data(raw_bytes, dtype=dtype, shape=shape)
 
-    async def read_word(
-        self, symbol: str | int, offset: int = 0
-    ) -> WordResult:
+    async def read_word(self, symbol: str | int, offset: int = 0) -> int:
         """Reads a single 32-bit scalar word from dumped memory."""
         addr = self.resolve_address(symbol, offset=offset)
         raw_bytes = self._read_bytes_from_dump(addr, 4)
-        return WordResult(struct.unpack("<I", raw_bytes)[0])
+        return struct.unpack("<I", raw_bytes)[0]
 
     def _create_patch_file(self) -> str | None:
         """Serializes staged memory into a binary patch file (uint64_t addr, uint32_t len, bytes)."""
@@ -277,19 +246,26 @@ class UvmTestFixture:
 
     def _get_simulator_binary(self) -> str:
         if self.sim_binary_path:
-            return self.resolve_path(self.sim_binary_path)
-        for suffix in ("_vme", ""):
-            candidate = self.resolve_path(
-                f"tests/uvm/uvm_sim_{self.simulator}{suffix}"
-            )
-            if os.path.exists(candidate):
-                return candidate
-        return self.resolve_path(f"tests/uvm/uvm_sim_{self.simulator}_vme")
+            return resolve_runfile_path(self.sim_binary_path)
+        env_sim = os.environ.get("CORALFLOW_UVM_SIMULATOR", "").strip()
+        if env_sim:
+            return resolve_runfile_path(f"tests/uvm/uvm_sim_{env_sim}")
+        alt_sim = "vcs" if self.simulator == "verilator" else "verilator"
+        for candidate in (
+                f"tests/uvm/uvm_sim_{self.simulator}_vme",
+                f"tests/uvm/uvm_sim_{self.simulator}",
+                f"tests/uvm/uvm_sim_{alt_sim}_vme",
+                f"tests/uvm/uvm_sim_{alt_sim}",
+        ):
+            resolved = resolve_runfile_path(candidate)
+            if os.path.exists(resolved):
+                return resolved
+        return resolve_runfile_path(f"tests/uvm/uvm_sim_{self.simulator}_vme")
 
     async def run_to_halt(
         self,
-        timeout_sec: float = 60.0,
-        timeout_cycles: int | None = None
+        timeout_sec: float = 300.0,
+        timeout_cycles: int | None = None,
     ) -> bool:
         """Launches simulator, applies patch, dumps memory on halt, and verifies results."""
         if not self.elf_path:
@@ -316,6 +292,10 @@ class UvmTestFixture:
                 "+UVM_TESTNAME=coralnpu_base_test",
                 f"+MEM_DUMP={dump_file}",
             ]
+            if timeout_cycles is not None and int(timeout_cycles
+                                                  ) * 10 > 20_000_000:
+                cmd.append(f"+TEST_TIMEOUT={int(timeout_cycles) * 10}")
+                timeout_sec = max(timeout_sec, 300.0)
             if patch_file:
                 cmd.append(f"+MEM_PATCH={patch_file}")
             if self.enable_spike_cosim:
@@ -457,30 +437,12 @@ class UvmTestFixture:
                 )
             )
 
-        # 4. Extract simulated cycle count (explicit banner or UVM sim timestamp converted by 10ns ClkPeriod)
+        # 4. Extract explicit cycle count banner if emitted
         cycle_match = re.search(
             r"(?:cycle count|cycles)\s*[:=]\s*(\d+)", log_output, re.IGNORECASE
         )
         if cycle_match:
             self.cycle_count = int(cycle_match.group(1))
-        else:
-            uvm_time_matches = re.findall(
-                r"@\s*(\d+)(?:\.\d+)?\s*(fs|ps|ns|us|ms|s)?\s*:", log_output
-            )
-            if uvm_time_matches:
-                raw_val_str, unit = uvm_time_matches[-1]
-                raw_val = int(raw_val_str)
-                if raw_val > 0:
-                    unit = (unit or "").lower()
-                    if unit == "fs":
-                        cycles = raw_val // 10_000_000
-                    elif unit == "ps" or (not unit and raw_val >= 10_000):
-                        cycles = raw_val // 10_000
-                    elif unit == "ns":
-                        cycles = raw_val // 10
-                    else:
-                        cycles = raw_val
-                    self.cycle_count = max(1, cycles)
 
     def get_cycle_count(self) -> int | None:
         """Returns the simulated cycle count if available."""

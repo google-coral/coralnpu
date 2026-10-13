@@ -1,3 +1,4 @@
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 # Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,24 +15,21 @@
 
 import cocotb
 import glob
+import logging
 import numpy as np
 import os
 import tqdm
 import random
 
 from coralnpu_test_utils.core_mini_axi_interface import AxiBurst, AxiResp, CoreMiniAxiInterface
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 from cocotb.triggers import ClockCycles
 
 
-@cocotb.test()
-async def core_mini_axi_basic_write_read_memory(dut):
+@coralflow_test
+async def core_mini_axi_basic_write_read_memory(fixture):
     """Basic test to check if TCM memory can be written and read back."""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
 
     # Test reading/writing words
     await core_mini_axi.write_word(0x100, 0x42)
@@ -72,13 +70,10 @@ async def core_mini_axi_basic_write_read_memory(dut):
             assert (rdata == wdata).all()
 
 
-@cocotb.test()
-async def core_mini_axi_run_wfi_in_all_slots(dut):
+@coralflow_test
+async def core_mini_axi_run_wfi_in_all_slots(fixture):
     """Tests the WFI instruction in each of the 4 issue slots."""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     for slot in range(0, 4):
@@ -93,13 +88,10 @@ async def core_mini_axi_run_wfi_in_all_slots(dut):
             await core_mini_axi.wait_for_halted()
 
 
-@cocotb.test()
-async def core_mini_axi_slow_bready(dut):
+@coralflow_test
+async def core_mini_axi_slow_bready(fixture):
     """Test that BVALID stays high until BREADY is presented"""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
 
     wdata = np.arange(16, dtype=np.uint8)
     for i in tqdm.trange(100):
@@ -111,13 +103,10 @@ async def core_mini_axi_slow_bready(dut):
         assert (wdata == rdata).all()
 
 
-@cocotb.test()
-async def core_mini_axi_write_read_memory_stress_test(dut):
+@coralflow_test
+async def core_mini_axi_write_read_memory_stress_test(fixture):
     """Stress test reading/writing from DTCM."""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/stress_test.elf"),
@@ -158,13 +147,10 @@ async def core_mini_axi_write_read_memory_stress_test(dut):
         await core_mini_axi.halt()
 
 
-@cocotb.test()
-async def core_mini_axi_master_write_alignment(dut):
+@coralflow_test
+async def core_mini_axi_master_write_alignment(fixture):
     """Test data alignment during AXI master writes"""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/align_test.elf"),
@@ -176,12 +162,9 @@ async def core_mini_axi_master_write_alignment(dut):
         assert core_mini_axi.dut.io_fault.value == 0
 
 
-@cocotb.test()
-async def core_mini_axi_finish_txn_before_halt_test(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_finish_txn_before_halt_test(fixture):
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     with open(
@@ -198,12 +181,9 @@ async def core_mini_axi_finish_txn_before_halt_test(dut):
                 core_mini_axi.master_bfifo.qsize()) == 0
 
 
-@cocotb.test()
-async def core_mini_axi_riscv_tests(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_riscv_tests(fixture):
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     riscv_test_path_template = "coralnpu_hw/third_party/riscv-tests/copy_riscv_tests_rv32{suffix}/riscv_tests_rv32{suffix}/isa"
@@ -229,12 +209,9 @@ async def core_mini_axi_riscv_tests(dut):
                 assert core_mini_axi.dut.io_fault.value == 0
 
 
-@cocotb.test()
-async def core_mini_axi_riscv_dv(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_riscv_dv(fixture):
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     riscv_dv_path = r.Rlocation("coralnpu_hw/tests/cocotb/riscv-dv")
@@ -253,13 +230,10 @@ async def core_mini_axi_riscv_dv(dut):
                 await core_mini_axi.wait_for_halted_semihost(f)
 
 
-@cocotb.test()
-async def core_mini_axi_csr_test(dut):
+@coralflow_test
+async def core_mini_axi_csr_test(fixture):
     """Exercises the CoreAxiCSR module."""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
 
     for _ in tqdm.tqdm(range(10000)):
         reset_csr_wdata = np.random.randint(0, 255, 4, dtype=np.uint8)
@@ -299,12 +273,9 @@ async def core_mini_axi_csr_test(dut):
         )
 
 
-@cocotb.test()
-async def core_mini_axi_exceptions_test(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_exceptions_test(fixture):
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     exceptions_path = r.Rlocation("coralnpu_hw/tests/cocotb/exceptions")
@@ -324,16 +295,13 @@ async def core_mini_axi_exceptions_test(dut):
                 assert core_mini_axi.dut.io_fault.value == 0
 
 
-@cocotb.test()
-async def rvv_exceptions_test(dut):
+@coralflow_test
+async def rvv_exceptions_test(fixture):
+    core_mini_axi = fixture.core_mini_axi
+    dut = core_mini_axi.dut
     if "Rvv" not in dut._name:
-        dut._log.info("Skipping rvv_exceptions_test on non-RVV core")
+        logging.info("Skipping rvv_exceptions_test on non-RVV core")
         return
-
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
     r = runfiles.Create()
 
     elf = r.Rlocation("coralnpu_hw/tests/cocotb/vector_store_fault.elf")
@@ -345,12 +313,9 @@ async def rvv_exceptions_test(dut):
         assert core_mini_axi.dut.io_fault.value == 0
 
 
-@cocotb.test()
-async def core_mini_axi_coralnpu_isa_test(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_coralnpu_isa_test(fixture):
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     coralnpu_isa_path = r.Rlocation("coralnpu_hw/tests/cocotb/coralnpu_isa")
@@ -368,12 +333,9 @@ async def core_mini_axi_coralnpu_isa_test(dut):
             assert core_mini_axi.dut.io_fault.value == 0
 
 
-@cocotb.test()
-async def core_mini_axi_rand_instr_test(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_rand_instr_test(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     # Zero out memory to avoid xprop issues on jump instructions.
     await core_mini_axi.write(0, np.ones(0x2000, dtype=np.uint8))
@@ -394,12 +356,9 @@ async def core_mini_axi_rand_instr_test(dut):
             await core_mini_axi.halt()
 
 
-@cocotb.test()
-async def core_mini_axi_burst_types_test(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_burst_types_test(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     # AxiBurst.FIXED
     for _ in tqdm.trange(1000):
@@ -432,12 +391,9 @@ async def core_mini_axi_burst_types_test(dut):
         assert (expected_read == rdata).all()
 
 
-@cocotb.test()
-async def core_mini_axi_float_csr_test(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_float_csr_test(fixture):
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     with open(r.Rlocation(
@@ -450,12 +406,9 @@ async def core_mini_axi_float_csr_test(dut):
         assert core_mini_axi.dut.io_fault.value == 0
 
 
-@cocotb.test()
-async def core_mini_axi_float_hazard_test(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_float_hazard_test(fixture):
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/float_hazard_tests.elf"),
@@ -467,9 +420,8 @@ async def core_mini_axi_float_hazard_test(dut):
         assert core_mini_axi.dut.io_fault.value == 0
 
 
-@cocotb.test()
-async def unreachable_prefetch_fault(dut):
-    fixture = await VerilatorTestFixture.Create(dut)
+@coralflow_test
+async def unreachable_prefetch_fault(fixture):
     r = runfiles.Create()
     cases = [
         ('mpause', 0),
@@ -494,7 +446,7 @@ async def unreachable_prefetch_fault(dut):
     for c, expected_exceptions in tqdm.tqdm(cases):
         await fixture.write_ptr('impl', c)
         await fixture.run_to_halt()
-        iaf_count = (await fixture.read_word('iaf_count')).view(np.int32)[0]
+        iaf_count = await fixture.read_word('iaf_count')
         other_count = await fixture.read_word('other_count')
         assert iaf_count == 0
         assert other_count == expected_exceptions
@@ -503,16 +455,15 @@ async def unreachable_prefetch_fault(dut):
         await fixture.write_ptr('impl', c)
         await fixture.core_mini_axi.execute_from(fixture.entry_point)
         await fixture.core_mini_axi.wait_for_wfi()
-        iaf_count = (await fixture.read_word('iaf_count')).view(np.int32)[0]
+        iaf_count = await fixture.read_word('iaf_count')
         other_count = await fixture.read_word('other_count')
         assert iaf_count == 0
         assert other_count == 0
 
 
-@cocotb.test()
-async def core_mini_axi_frm_test(dut):
+@coralflow_test
+async def core_mini_axi_frm_test(fixture):
     """Tests the FRM CSR with valid and invalid values."""
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -532,13 +483,11 @@ async def core_mini_axi_frm_test(dut):
             assert (mcause == 0x2)
 
 
-@cocotb.test()
-async def core_mini_axi_backdoor_load_test(dut):
+@coralflow_test
+async def core_mini_axi_backdoor_load_test(fixture):
     """Compares front-door AXI load vs backdoor load for the same ELF."""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
+    dut = core_mini_axi.dut
     r = runfiles.Create()
 
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/math.elf")
@@ -580,13 +529,12 @@ async def core_mini_axi_backdoor_load_test(dut):
     await core_mini_axi.execute_from(entry_point)
     await core_mini_axi.wait_for_halted()
     assert core_mini_axi.dut.io_fault.value == 0
-    dut._log.info("Backdoor load comparison test passed!")
+    logging.info("Backdoor load comparison test passed!")
 
 
-@cocotb.test()
-async def core_mini_axi_minstret_test(dut):
+@coralflow_test
+async def core_mini_axi_minstret_test(fixture):
     """Runs minstret_test.elf and verifies the value of minstret_val."""
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/minstret_test.elf")
 
@@ -597,19 +545,17 @@ async def core_mini_axi_minstret_test(dut):
     # Run the test to halt (mpause)
     await fixture.run_to_halt()
     # Read minstret_val from memory
-    minstret_val_bytes = await fixture.read_word('minstret_val')
-    minstret_val = int.from_bytes(minstret_val_bytes, byteorder='little')
+    minstret_val = await fixture.read_word('minstret_val')
 
-    dut._log.info(f"minstret_val read from memory: {minstret_val}")
+    logging.info(f"minstret_val read from memory: {minstret_val}")
 
     # We assert strictly equal to 118 (master behavior) to catch timing-fix changes that violate architectural contract.
     assert minstret_val == 118
 
 
-@cocotb.test()
-async def core_mini_axi_fcsr_frm_hazard_test(dut):
+@coralflow_test
+async def core_mini_axi_fcsr_frm_hazard_test(fixture):
     """Tests the FCSR write to FRM RAW hazard for scalar float."""
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -620,19 +566,18 @@ async def core_mini_axi_fcsr_frm_hazard_test(dut):
     await fixture.run_to_halt()
     faulted = (await fixture.read('faulted', 4)).view(np.uint32)[0]
     result = (await fixture.read('result', 4)).view(np.uint32)[0]
-    dut._log.info(f"FCSR Hazard Test: faulted={faulted}, result={hex(result)}")
+    logging.info(f"FCSR Hazard Test: faulted={faulted}, result={hex(result)}")
     assert faulted == 0, f"Test faulted with mcause={hex((await fixture.read('mcause', 4)).view(np.uint32)[0])}"
     assert result == 0x3f800003, f"Expected 0x3f800003 (RUP), got {hex(result)}"
 
 
-@cocotb.test()
-async def rvv_frm_hazard_test(dut):
+@coralflow_test
+async def rvv_frm_hazard_test(fixture):
     """Tests the FRM/FCSR write to FRM RAW hazard for vector float."""
+    dut = fixture.core_mini_axi.dut
     if "Rvv" not in dut._name:
-        dut._log.info("Skipping rvv_frm_hazard_test on non-RVV core")
+        logging.info("Skipping rvv_frm_hazard_test on non-RVV core")
         return
-
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -644,9 +589,9 @@ async def rvv_frm_hazard_test(dut):
     faulted = (await fixture.read('faulted', 4)).view(np.uint32)[0]
     result_frm = (await fixture.read('result_frm', 16)).view(np.uint32)
     result_fcsr = (await fixture.read('result_fcsr', 16)).view(np.uint32)
-    dut._log.info(f"RVV Hazard Test: faulted={faulted}")
-    dut._log.info(f"result_frm: {[hex(x) for x in result_frm]}")
-    dut._log.info(f"result_fcsr: {[hex(x) for x in result_fcsr]}")
+    logging.info(f"RVV Hazard Test: faulted={faulted}")
+    logging.info(f"result_frm: {[hex(x) for x in result_frm]}")
+    logging.info(f"result_fcsr: {[hex(x) for x in result_fcsr]}")
     assert faulted == 0, f"Test faulted with mcause={hex((await fixture.read('mcause', 4)).view(np.uint32)[0])}"
 
     # Expected result: all entries should be 0x3f800003 (RUP)
@@ -660,10 +605,9 @@ async def rvv_frm_hazard_test(dut):
         ] == 0x3f800003, f"result_fcsr[{i}] expected 0x3f800003 (RUP), got {hex(result_fcsr[i])}"
 
 
-@cocotb.test()
-async def fencei_test(dut):
+@coralflow_test
+async def fencei_test(fixture):
     """Tests the FENCE.I instruction by modifying code in external memory."""
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
@@ -675,7 +619,7 @@ async def fencei_test(dut):
     result_smc = (await fixture.read("result_smc", 4)).view(np.uint32)[0]
     result1 = (await fixture.read("result1", 4)).view(np.uint32)[0]
     result2 = (await fixture.read("result2", 4)).view(np.uint32)[0]
-    dut._log.info(
+    logging.info(
         f"fencei_test: result_smc={result_smc}, result1={result1}, result2={result2}"
     )
     assert result_smc == 30, f"Expected result_smc=30, got {result_smc}"
@@ -744,10 +688,10 @@ def check_misa_value(misa_val: int, is_rvv: bool, has_float: bool = True):
     assert misa_val == expected, f"Expected MISA=0x{expected:08x}, got 0x{misa_val:08x}"
 
 
-@cocotb.test()
-async def core_mini_axi_misa_test(dut):
+@coralflow_test
+async def core_mini_axi_misa_test(fixture):
     """Validates MISA CSR contents and WARL read/write behavior on CoreMiniAxi."""
-    fixture = await VerilatorTestFixture.Create(dut)
+    dut = fixture.core_mini_axi.dut
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/misa_test.elf")
 
@@ -774,8 +718,8 @@ async def core_mini_axi_misa_test(dut):
     mcause = int(results[15])
     mtval = int(results[16])
 
-    dut._log.info(f"Initial MISA: 0x{initial_misa:08x}")
-    dut._log.info(
+    logging.info(f"Initial MISA: 0x{initial_misa:08x}")
+    logging.info(
         f"Faulted: {faulted}, mcause: 0x{mcause:08x}, mtval: 0x{mtval:08x}"
     )
 
@@ -799,17 +743,16 @@ async def core_mini_axi_misa_test(dut):
     assert csrrs_set_all_read == initial_misa, f"WARL violation: CSRRS changed MISA to 0x{csrrs_set_all_read:08x}"
     assert csrrc_clear_all_read == initial_misa, f"WARL violation: CSRRC changed MISA to 0x{csrrc_clear_all_read:08x}"
 
-    dut._log.info("CoreMiniAxi MISA contents and WARL test passed!")
+    logging.info("CoreMiniAxi MISA contents and WARL test passed!")
 
 
-@cocotb.test()
-async def rvv_misa_test(dut):
+@coralflow_test
+async def rvv_misa_test(fixture):
     """Validates MISA CSR contents and WARL read/write behavior on RvvCoreMiniAxi."""
+    dut = fixture.core_mini_axi.dut
     if "Rvv" not in dut._name:
-        dut._log.info("Skipping rvv_misa_test on non-RVV core")
+        logging.info("Skipping rvv_misa_test on non-RVV core")
         return
-
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/misa_test.elf")
 
@@ -836,8 +779,8 @@ async def rvv_misa_test(dut):
     mcause = int(results[15])
     mtval = int(results[16])
 
-    dut._log.info(f"RvvCoreMiniAxi Initial MISA: 0x{initial_misa:08x}")
-    dut._log.info(
+    logging.info(f"RvvCoreMiniAxi Initial MISA: 0x{initial_misa:08x}")
+    logging.info(
         f"Faulted: {faulted}, mcause: 0x{mcause:08x}, mtval: 0x{mtval:08x}"
     )
 
@@ -858,16 +801,13 @@ async def rvv_misa_test(dut):
     assert csrrs_set_all_read == initial_misa, f"WARL violation: CSRRS changed MISA to 0x{csrrs_set_all_read:08x}"
     assert csrrc_clear_all_read == initial_misa, f"WARL violation: CSRRC changed MISA to 0x{csrrc_clear_all_read:08x}"
 
-    dut._log.info("RvvCoreMiniAxi MISA contents and WARL test passed!")
+    logging.info("RvvCoreMiniAxi MISA contents and WARL test passed!")
 
 
-@cocotb.test()
-async def core_mini_axi_retire_buffer_full_illegal_inst_test(dut):
+@coralflow_test(read_delay_cycles=50)
+async def core_mini_axi_retire_buffer_full_illegal_inst_test(fixture):
     """Verifies that an illegal instruction does not push into a full RetirementBuffer."""
-    core_mini_axi = CoreMiniAxiInterface(dut, read_delay_cycles=50)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     elf_path = r.Rlocation(
@@ -892,7 +832,7 @@ async def core_mini_axi_retire_buffer_full_illegal_inst_test(dut):
     trap_info = (await core_mini_axi.read(trap_info_addr, 16)).view(np.uint32)
     mcause, mepc, mtval, trap_count = trap_info
 
-    dut._log.info(
+    logging.info(
         f"TRAP INFO: mcause={mcause}, mepc={hex(mepc)}, mtval={hex(mtval)}, trap_count={trap_count}"
     )
 
@@ -901,17 +841,14 @@ async def core_mini_axi_retire_buffer_full_illegal_inst_test(dut):
     assert mepc == illegal_inst_addr, f"Expected mepc={hex(illegal_inst_addr)}, got {hex(mepc)}"
 
 
-@cocotb.test()
-async def core_mini_axi_cf_fault_retire_test(dut):
+@coralflow_test
+async def core_mini_axi_cf_fault_retire_test(fixture):
     """Verifies that control flow instructions (jal, jalr, branch) retire cleanly
 
     with trap=0 and link register writeback when targeting or preceding a decode fault,
     and that the decode fault instruction retires independently at slot 0 with trap=1.
     """
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/cf_fault_retire_test.elf")
@@ -949,7 +886,7 @@ async def core_mini_axi_cf_fault_retire_test(dut):
 
     # Trap 0: JAL
     mcause0, mepc0, mtval0, ra0 = records[0:4]
-    dut._log.info(
+    logging.info(
         f"TRAP 0 (JAL): mcause={mcause0}, mepc={hex(mepc0)}, mtval={hex(mtval0)}, ra={hex(ra0)}"
     )
     assert mcause0 == 2, f"Expected mcause=2, got {mcause0}"
@@ -959,7 +896,7 @@ async def core_mini_axi_cf_fault_retire_test(dut):
 
     # Trap 1: JALR
     mcause1, mepc1, mtval1, ra1 = records[4:8]
-    dut._log.info(
+    logging.info(
         f"TRAP 1 (JALR): mcause={mcause1}, mepc={hex(mepc1)}, mtval={hex(mtval1)}, ra={hex(ra1)}"
     )
     assert mcause1 == 2, f"Expected mcause=2, got {mcause1}"
@@ -969,7 +906,7 @@ async def core_mini_axi_cf_fault_retire_test(dut):
 
     # Trap 2: Branch
     mcause2, mepc2, mtval2, _ = records[8:12]
-    dut._log.info(
+    logging.info(
         f"TRAP 2 (BNE): mcause={mcause2}, mepc={hex(mepc2)}, mtval={hex(mtval2)}"
     )
     assert mcause2 == 2, f"Expected mcause=2, got {mcause2}"
@@ -977,13 +914,10 @@ async def core_mini_axi_cf_fault_retire_test(dut):
     assert mtval2 == 0x7B, f"Expected mtval=0x7b, got {hex(mtval2)}"
 
 
-@cocotb.test()
-async def core_mini_axi_wrap_burst_test(dut):
+@coralflow_test
+async def core_mini_axi_wrap_burst_test(fixture):
     """Test for AXI slave WRAP boundary calculation."""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
 
     # DTCM in default memory map is 0x00010000..0x00017FFF.
     # Use 0x00017210 (wrap boundary 0x00017200 for 32-byte window: AWSIZE=4, AWLEN=1).
@@ -1021,13 +955,11 @@ async def core_mini_axi_wrap_burst_test(dut):
     assert (rdata_wrap == wdata).all()
 
 
-@cocotb.test()
-async def core_mini_axi_csr_illegal_write_test(dut):
+@coralflow_test
+async def core_mini_axi_csr_illegal_write_test(fixture):
     """Verifies that writes to read-only CSRs (vl, vlenb, vtype) raise illegal-instruction exceptions."""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
+    dut = core_mini_axi.dut
     r = runfiles.Create()
 
     elf_path = r.Rlocation(
@@ -1046,7 +978,7 @@ async def core_mini_axi_csr_illegal_write_test(dut):
         int(x) for x in trap_info
     ]
 
-    dut._log.info(
+    logging.info(
         f"CSR illegal write test: trap_count={trap_count}, "
         f"last_mcause=0x{last_mcause:x}, last_mtval=0x{last_mtval:08x}, "
         f"vl={vl_val}, vlenb={vlenb_val}, vtype=0x{vtype_val:08x}"
@@ -1071,13 +1003,10 @@ async def core_mini_axi_csr_illegal_write_test(dut):
         )
 
 
-@cocotb.test()
-async def core_mini_axi_csr_behavior_test(dut):
+@coralflow_test
+async def core_mini_axi_csr_behavior_test(fixture):
     """Tests verify misc CSR behaviors (e.g. MIE fields)."""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/csr_behavior.elf"),
@@ -1090,3 +1019,7 @@ async def core_mini_axi_csr_behavior_test(dut):
         mie_val = (await core_mini_axi.read(0x10000, 4)).view(np.uint32)[0]
         # We expect 0x888 (MEIE | MTIE | MSIE).
         assert mie_val == 0x888, f"MIE register incorrect! Expecting 0x888, got Read value: {hex(mie_val)}"
+
+
+if __name__ == "__main__":
+    coralflow_main()

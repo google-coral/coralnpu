@@ -12,15 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//rules:coco_tb.bzl", "cocotb_test_suite")
-load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
+load("//rules:coralflow_test.bzl", "coralflow_test")
+load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 load("//rules:utils.bzl", "generate_cc_arrays")
-load(
-    "//tests/cocotb:build_defs.bzl",
-    "VCS_BUILD_ARGS",
-    "VCS_DEFINES",
-    "VCS_TEST_ARGS",
-)
 
 # BEGIN_TESTCASES_FOR_tutorial
 TUTORIAL_TESTCASES = [
@@ -34,66 +28,39 @@ HELLO_WORLD_TESTCASES = [
 ]
 # END_TESTCASES_FOR_hello_world_float_core_mini_axi
 
-cocotb_test_suite(
+coralflow_test(
     name = "tutorial",
-    simulators = [
+    size = "medium",
+    srcs = ["tutorial.py"],
+    data = [":coralnpu_v2_program"],
+    hdl_toplevel = "CoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
+        "uvm",
     ],
     testcases = TUTORIAL_TESTCASES,
-    testcases_vname = "TUTORIAL_TESTCASES",
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "CoreMiniAxi",
-        "seed": "42",
-        "test_module": ["tutorial.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "@rules_python//python/runfiles",
-        ],
-        "data": [":coralnpu_v2_program"],
-        "size": "medium",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [
-        ":coralnpu_v2_program",
-        "//hdl/verilog:dpi_files",
+    deps = [
+        "@rules_python//python/runfiles",
     ],
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:core_mini_axi_model",
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "hello_world_float_core_mini_axi",
-    simulators = [
+    size = "medium",
+    srcs = ["hello_world_float_core_mini_axi.py"],
+    elf = "//examples:coralnpu_v2_hello_world_add_floats.elf",
+    hdl_toplevel = "CoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
+        "uvm",
+        "nexus_fpga",
     ],
     testcases = HELLO_WORLD_TESTCASES,
-    testcases_vname = "HELLO_WORLD_TESTCASES",
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "CoreMiniAxi",
-        "seed": "42",
-        "test_module": ["hello_world_float_core_mini_axi.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": ["//examples:coralnpu_v2_hello_world_add_floats.elf"],
-        "size": "medium",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [
-        "//examples:coralnpu_v2_hello_world_add_floats.elf",
-        "//hdl/verilog:dpi_files",
+    deps = [
+        "@bazel_tools//tools/python/runfiles",
     ],
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:core_mini_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -131,5 +98,3 @@ generate_cc_arrays(
     src = "@tflite_micro//tensorflow/lite/micro/examples/hello_world/models:hello_world_int8.tflite",
     out = "hello_world_tflite.h",
 )
-
-collect_coralnpu_elfs()

@@ -1,15 +1,21 @@
 # Copyright 2026 Antmicro
 #
 
-import os
 import json
+import logging
+import os
 
-import cocotb
 from bazel_tools.tools.python.runfiles import runfiles
+import numpy as np
 
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+from coralnpu_test_utils.coralflow.runner import (
+    coralflow_main,
+    coralflow_test,
+    get_target_environment,
+)
 
 REPS = 32
+BENCH_RUN_ALL = 0xFFFFFFFE
 
 # (BenchId enum name in isa_cycle_bench.cc, display mnemonic, category).
 # Order must match the BenchId enum in isa_cycle_bench.cc.
@@ -69,10 +75,9 @@ def _compute_output_path(filename):
     return os.path.join(out_dir, filename)
 
 
-@cocotb.test()
-async def isa_cycle_bench_test(dut):
+@coralflow_test
+async def isa_cycle_bench_test(fixture):
     """Benchmarks each instruction in BENCHMARKS on RTL and reports its cycle cost."""
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/isa_cycle_bench.elf")
 
@@ -84,7 +89,7 @@ async def isa_cycle_bench_test(dut):
         # cocotb's log formatter chokes on a fully empty message, so give it
         # a harmless placeholder while still writing a real blank line to
         # the markdown file.
-        dut._log.info(line if line else " ")
+        logging.info(line if line else " ")
         if md_file:
             md_file.write(line + "\n")
             md_file.flush()
@@ -95,33 +100,56 @@ async def isa_cycle_bench_test(dut):
     )
     emit("|---|---|---:|---:|---:|")
 
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path, ["g_selected_bench", "g_result", "g_results"]
+    )
     rows = []
-    for bench_index, (bench_id, mnemonic, category) in enumerate(BENCHMARKS):
-        await fixture.load_elf_and_lookup_symbols(
-            elf_path, ["g_selected_bench", "g_result"]
-        )
-        await fixture.write_word("g_selected_bench", bench_index)
-        await fixture.run_to_halt(timeout_cycles=100000)
-        raw_delta = int.from_bytes(
-            bytes(await fixture.read_word("g_result")), "little"
-        )
-        assert raw_delta != 0xFFFFFFFF, f"benchmark {mnemonic} did not run"
 
-        # raw_data include 2 additional cycles needed for reading cycles counter, we need to subtract it
+    def record_row(mnemonic, category, raw_delta):
+        assert raw_delta != 0xFFFFFFFF, f"benchmark {mnemonic} did not run"
+        # raw_delta includes 2 additional cycles needed for reading mcycle.
         raw_data_normalized = raw_delta - 2
         cycles_per_instr = raw_data_normalized / REPS
-
         rows.append((
-            mnemonic, category, raw_delta, raw_data_normalized,
-            cycles_per_instr
+            mnemonic,
+            category,
+            raw_delta,
+            raw_data_normalized,
+            cycles_per_instr,
         ))
         emit(
             f"| `{mnemonic}` | {category} | {raw_delta} | {raw_data_normalized} | {cycles_per_instr:.2f} |"
         )
 
+    # UvmTestFixture spawns a fresh simulator subprocess on every run_to_halt()
+    # call. On EDACloud VCS UVM, each `simv` cold start and FlexLM license
+    # checkout takes ~45-50s, so 45 sequential run_to_halt() calls (~2,160s+
+    # plus license contention) exceed Bazel's 3600s test timeout. Execute all
+    # 45 benchmarks in a single UVM invocation via BENCH_RUN_ALL, while keeping
+    # isolated per-benchmark soft-resets on persistent Cocotb/FPGA backends.
+    if get_target_environment() == "uvm":
+        await fixture.write_word("g_selected_bench", BENCH_RUN_ALL)
+        await fixture.write(
+            "g_results",
+            np.full(len(BENCHMARKS), 0xFFFFFFFF, dtype=np.uint32),
+        )
+        await fixture.run_to_halt(timeout_cycles=500000)
+        raw_deltas = await fixture.read(
+            "g_results", dtype=np.uint32, shape=(len(BENCHMARKS), )
+        )
+        for (_, mnemonic, category), raw_delta in zip(BENCHMARKS, raw_deltas):
+            record_row(mnemonic, category, int(raw_delta))
+    else:
+        for bench_index, (_, mnemonic, category) in enumerate(BENCHMARKS):
+            await fixture.write_word("g_selected_bench", bench_index)
+            await fixture.write_word("g_result", 0xFFFFFFFF)
+            await fixture.run_to_halt(timeout_cycles=100000)
+            raw_delta = await fixture.read_word("g_result")
+            record_row(mnemonic, category, int(raw_delta))
+
     if md_file:
         md_file.close()
-        dut._log.info(f"Wrote {md_path}")
+        logging.info(f"Wrote {md_path}")
 
     if stats_path:
         with open(stats_path, "w") as stats_file:
@@ -137,3 +165,7 @@ async def isa_cycle_bench_test(dut):
             json.dump(stats, stats_file, indent=2)
 
     assert len(rows) == len(BENCHMARKS)
+
+
+if __name__ == "__main__":
+    coralflow_main()

@@ -14,6 +14,11 @@ load("//rules/cc_static_library:cc_static_libarary.bzl", "cc_static_library")
 
 package(default_visibility = ["//visibility:public"])
 
+config_setting(
+    name = "use_vcs_uvm",
+    define_values = {"uvm_simulator": "vcs"},
+)
+
 exports_files(glob(include = [
     "common/**/*",
     "env/**/*",

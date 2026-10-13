@@ -24,10 +24,9 @@ immediates, so it can't be parameterized from memory. The program runs a
 single hard-coded variant and the harness verifies the readback separately.
 """
 
-import cocotb
+import logging
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 import numpy as np
-from coralnpu_test_utils.core_mini_axi_interface import CoreMiniAxiInterface
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from bazel_tools.tools.python.runfiles import runfiles
 from tqdm import tqdm
 
@@ -175,15 +174,9 @@ def _build_cases():
     ]
 
 
-@cocotb.test()
-async def vme_mset_csr_test(dut):
+@coralflow_test
+async def vme_mset_csr_test(fixture):
     """Drive a table of mset* operands and check the per-row CSR/rd snapshots."""
-
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
-
     r = runfiles.Create()
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_mset_test.elf"
@@ -191,28 +184,19 @@ async def vme_mset_csr_test(dut):
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
 
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-
-    with open(elf_path, "rb") as f:
-        num_cases_addr = core_mini_axi.lookup_symbol(f, "vme_num_cases")
-        inputs_addr = core_mini_axi.lookup_symbol(f, "vme_inputs")
-        results_addr = core_mini_axi.lookup_symbol(f, "vme_results")
-        msetmtypei_addr = core_mini_axi.lookup_symbol(
-            f, "vme_msetmtypei_result"
-        )
-        msetmtypei_vtype_addr = core_mini_axi.lookup_symbol(
-            f, "vme_msetmtypei_vtype_result"
-        )
-        msetmtypei_altfmt1_addr = core_mini_axi.lookup_symbol(
-            f, "vme_msetmtypei_altfmt1_result"
-        )
-        msetmtypei_altfmt1_vtype_addr = core_mini_axi.lookup_symbol(
-            f, "vme_msetmtypei_altfmt1_vtype_result"
-        )
-        vsetvl_mtype_addr = core_mini_axi.lookup_symbol(
-            f, "vme_vsetvl_mtype_result"
-        )
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        [
+            "vme_num_cases",
+            "vme_inputs",
+            "vme_results",
+            "vme_msetmtypei_result",
+            "vme_msetmtypei_vtype_result",
+            "vme_msetmtypei_altfmt1_result",
+            "vme_msetmtypei_altfmt1_vtype_result",
+            "vme_vsetvl_mtype_result",
+        ],
+    )
 
     cases = _build_cases()
     num_cases = len(cases)
@@ -220,16 +204,15 @@ async def vme_mset_csr_test(dut):
     # Pack inputs and push them into the program's input table.
     inputs_packed = np.array([c["inputs"] for c in cases],
                              dtype=np.uint32).flatten()
-    await core_mini_axi.write(inputs_addr, inputs_packed)
-    await core_mini_axi.write(
-        num_cases_addr, np.array([num_cases], dtype=np.uint32)
+    await fixture.write("vme_inputs", inputs_packed)
+    await fixture.write(
+        "vme_num_cases", np.array([num_cases], dtype=np.uint32)
     )
 
-    await core_mini_axi.execute_from(entry_point)
-    await core_mini_axi.wait_for_halted()
+    await fixture.run_to_halt()
 
     # Pull results back: num_cases rows of RESULT_WORDS uint32 each.
-    raw = await core_mini_axi.read(results_addr, num_cases * RESULT_WORDS * 4)
+    raw = await fixture.read("vme_results", num_cases * RESULT_WORDS * 4)
     results = np.frombuffer(
         raw, dtype=np.uint32
     ).reshape(num_cases, RESULT_WORDS)
@@ -245,9 +228,9 @@ async def vme_mset_csr_test(dut):
     for i, case in enumerate(cases):
         expected = case["expected"]
         actual = [int(x) for x in results[i]]
-        cocotb.log.info(f"[VME case {i}] inputs={case['inputs']}")
+        logging.info(f"[VME case {i}] inputs={case['inputs']}")
         for name, exp, act in zip(field_names, expected, actual):
-            cocotb.log.info(
+            logging.info(
                 f"  {name:<22s} expected=0x{exp:08x} actual=0x{act:08x}"
             )
         for name, exp, act in zip(field_names, expected, actual):
@@ -257,10 +240,9 @@ async def vme_mset_csr_test(dut):
             )
 
     # msetmtypei with altfmt=0
-    raw = await core_mini_axi.read(msetmtypei_addr, 4)
-    msetmtypei_result = int(np.frombuffer(raw, dtype=np.uint32)[0])
+    msetmtypei_result = await fixture.read_word("vme_msetmtypei_result")
     EXPECTED_MTYPE_AFTER_MSETMTYPEI = 3  # mtwiden=3, tk=0, tm=0
-    cocotb.log.info(
+    logging.info(
         f"[VME msetmtypei altfmt0] mtype: expected=0x{EXPECTED_MTYPE_AFTER_MSETMTYPEI:08x} "
         f"actual=0x{msetmtypei_result:08x}"
     )
@@ -269,36 +251,36 @@ async def vme_mset_csr_test(dut):
         f"expected 0x{EXPECTED_MTYPE_AFTER_MSETMTYPEI:08x}"
     )
 
-    raw = await core_mini_axi.read(msetmtypei_vtype_addr, 4)
-    msetmtypei_vtype = int(np.frombuffer(raw, dtype=np.uint32)[0])
+    msetmtypei_vtype = await fixture.read_word("vme_msetmtypei_vtype_result")
     altfmt0_bit = (msetmtypei_vtype >> 8) & 1
-    cocotb.log.info(
+    logging.info(
         f"[VME msetmtypei altfmt0] vtype=0x{msetmtypei_vtype:08x}, altfmt={altfmt0_bit}"
     )
     assert altfmt0_bit == 0, f"msetmtypei altfmt bit mismatch: expected 0, got {altfmt0_bit}"
 
     # msetmtypei with altfmt=1
-    raw = await core_mini_axi.read(msetmtypei_altfmt1_addr, 4)
-    msetmtypei_altfmt1_result = int(np.frombuffer(raw, dtype=np.uint32)[0])
+    msetmtypei_altfmt1_result = await fixture.read_word(
+        "vme_msetmtypei_altfmt1_result"
+    )
     assert msetmtypei_altfmt1_result == EXPECTED_MTYPE_AFTER_MSETMTYPEI
 
-    raw = await core_mini_axi.read(msetmtypei_altfmt1_vtype_addr, 4)
-    msetmtypei_altfmt1_vtype = int(np.frombuffer(raw, dtype=np.uint32)[0])
+    msetmtypei_altfmt1_vtype = await fixture.read_word(
+        "vme_msetmtypei_altfmt1_vtype_result"
+    )
     altfmt1_bit = (msetmtypei_altfmt1_vtype >> 8) & 1
-    cocotb.log.info(
+    logging.info(
         f"[VME msetmtypei altfmt1] vtype=0x{msetmtypei_altfmt1_vtype:08x}, altfmt={altfmt1_bit}"
     )
     assert altfmt1_bit == 1, f"msetmtypei altfmt bit mismatch: expected 1, got {altfmt1_bit}"
 
     # vsetvl clears mtype
-    raw = await core_mini_axi.read(vsetvl_mtype_addr, 4)
-    vsetvl_mtype_result = int(np.frombuffer(raw, dtype=np.uint32)[0])
-    cocotb.log.info(
+    vsetvl_mtype_result = await fixture.read_word("vme_vsetvl_mtype_result")
+    logging.info(
         f"[VME vsetvl clears mtype] mtype=0x{vsetvl_mtype_result:08x}"
     )
     assert vsetvl_mtype_result == 0, f"vsetvl did not clear mtype: got 0x{vsetvl_mtype_result:08x}"
 
-    cocotb.log.info(
+    logging.info(
         f"[VME] ✓ All {num_cases} parameterized cases + msetmtypei (altfmt0/1) + vsetvl clears mtype passed"
     )
 
@@ -333,8 +315,7 @@ _MM_SYMBOLS = [
 ] + _MM_IMPLS
 
 
-async def _load_matmul_fixture(dut):
-    fixture = await VerilatorTestFixture.Create(dut)
+async def _load_matmul_fixture(fixture):
     r = runfiles.Create()
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_matmul_test.elf"
@@ -373,7 +354,7 @@ def _check_matmul_result(name, case, actual, expected):
             f"{name} case {case}: {len(mism)} mismatching tile elements "
             f"(first {min(len(mism), 16)}):\n{rows}"
         )
-    cocotb.log.info(f"[VME matmul] ✓ {name} {case}")
+    logging.info(f"[VME matmul] ✓ {name} {case}")
 
 
 def _int_matmul_ref(a, b, c_init, tm, tn, tk, signed_a):
@@ -399,10 +380,10 @@ def _fp_matmul_ref(a, b, c_init, tm, tn, tk=1):
     return ref.view(np.uint32)
 
 
-@cocotb.test()
-async def vme_matmul_int8_test(dut):
+@coralflow_test
+async def vme_matmul_int8_test(fixture):
     """vtmmu/vtmms int8 outer-product accumulate into an int32 tile."""
-    fixture = await _load_matmul_fixture(dut)
+    await _load_matmul_fixture(fixture)
     rng = np.random.default_rng(42)
 
     cases = [
@@ -437,10 +418,10 @@ async def vme_matmul_int8_test(dut):
         _check_matmul_result("int8", case, actual, expected)
 
 
-@cocotb.test()
-async def vme_matmul_bf16_test(dut):
+@coralflow_test
+async def vme_matmul_bf16_test(fixture):
     """vtfmm.alt.tvv bf16 outer-product accumulate into an fp32 tile."""
-    fixture = await _load_matmul_fixture(dut)
+    await _load_matmul_fixture(fixture)
     rng = np.random.default_rng(2026)
 
     cases = [
@@ -478,10 +459,10 @@ async def vme_matmul_bf16_test(dut):
         _check_matmul_result("bf16", case, actual, expected)
 
 
-@cocotb.test()
-async def vme_matmul_fp32_test(dut):
+@coralflow_test
+async def vme_matmul_fp32_test(fixture):
     """vtfmm fp32 outer-product accumulate into an fp32 tile."""
-    fixture = await _load_matmul_fixture(dut)
+    await _load_matmul_fixture(fixture)
     rng = np.random.default_rng(1234)
 
     cases = [
@@ -510,8 +491,8 @@ async def vme_matmul_fp32_test(dut):
         _check_matmul_result("fp32", case, actual, expected)
 
 
-@cocotb.test()
-async def vme_decode_test(dut):
+@coralflow_test
+async def vme_decode_test(fixture):
     """Load and run vme_decode_test to verify illegal instruction trap behavior."""
     test_names = [
         "vtle64",
@@ -544,7 +525,6 @@ async def vme_decode_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_decode_test.elf"
     )
-    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
         ["test_fn", "trap_count", "last_mcause", "last_mtval"] + test_names,
@@ -554,18 +534,9 @@ async def vme_decode_test(dut):
         await fixture.write_ptr("test_fn", name)
         await fixture.run_to_halt()
 
-        trap_count_val = int.from_bytes(
-            (await fixture.read_word("trap_count")).tobytes(),
-            "little",
-        )
-        last_mcause_val = int.from_bytes(
-            (await fixture.read_word("last_mcause")).tobytes(),
-            "little",
-        )
-        last_mtval_val = int.from_bytes(
-            (await fixture.read_word("last_mtval")).tobytes(),
-            "little",
-        )
+        trap_count_val = await fixture.read_word("trap_count")
+        last_mcause_val = await fixture.read_word("last_mcause")
+        last_mtval_val = await fixture.read_word("last_mtval")
         assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
         assert trap_count_val == 1, f"[{name}] Expected 1 trap, got {trap_count_val}"
         assert last_mcause_val == 2, f"[{name}] Expected mcause=2 (illegal), got {last_mcause_val}"
@@ -583,8 +554,8 @@ async def vme_decode_test(dut):
             )
 
 
-@cocotb.test()
-async def vme_load_store_test(dut):
+@coralflow_test
+async def vme_load_store_test(fixture):
     """Load and run valid vtle and vtse instructions, verifying memory."""
     vlen = 128
     vl = vlen // 8  # Assuming TE = VLEN / 8 = 16 elements
@@ -714,7 +685,6 @@ async def vme_load_store_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_load_store_test.elf"
     )
-    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
         ["test_fn", "trap_count", "last_mcause", "in_buf", "out_buf"] +
@@ -740,10 +710,7 @@ async def vme_load_store_test(dut):
         await fixture.write_ptr("test_fn", name)
         await fixture.run_to_halt()
 
-        trap_count_val = int.from_bytes(
-            (await fixture.read_word("trap_count")).tobytes(),
-            "little",
-        )
+        trap_count_val = await fixture.read_word("trap_count")
         assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
         assert trap_count_val == 0, f"[{name}] Expected no traps, got {trap_count_val}"
 
@@ -763,8 +730,8 @@ async def vme_load_store_test(dut):
             )
 
 
-@cocotb.test()
-async def vme_transpose_test(dut):
+@coralflow_test
+async def vme_transpose_test(fixture):
     """Verify 16x16 matrix transposition across EEW8, EEW16, EEW32."""
     test_cases = [
         # EEW8
@@ -802,7 +769,6 @@ async def vme_transpose_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_transpose_test.elf"
     )
-    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
         ["test_fn", "trap_count", "last_mcause", "in_buf", "out_buf"] +
@@ -827,10 +793,7 @@ async def vme_transpose_test(dut):
         await fixture.write_ptr("test_fn", name)
         await fixture.run_to_halt(timeout_cycles=3000)
 
-        trap_count_val = int.from_bytes(
-            (await fixture.read_word("trap_count")).tobytes(),
-            "little",
-        )
+        trap_count_val = await fixture.read_word("trap_count")
         assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
         assert trap_count_val == 0, f"[{name}] Expected no traps, got {trap_count_val}"
 
@@ -846,8 +809,8 @@ async def vme_transpose_test(dut):
         )
 
 
-@cocotb.test()
-async def vme_msettk_clamp_test(dut):
+@coralflow_test
+async def vme_msettk_clamp_test(fixture):
     """Test msettk clamping and msetmtype tk unpack.
 
     msettk should set rd and mtype.tk to min(rs1, KMAX).
@@ -856,11 +819,6 @@ async def vme_msettk_clamp_test(dut):
       msettk(7) must clamp to KMAX=4.
     Also tests msetmtype unpack of tk (bits [7:5]).
     """
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
-
     r = runfiles.Create()
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_mset_test.elf"
@@ -868,13 +826,9 @@ async def vme_msettk_clamp_test(dut):
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
 
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-
-    with open(elf_path, "rb") as f:
-        num_cases_addr = core_mini_axi.lookup_symbol(f, "vme_num_cases")
-        inputs_addr = core_mini_axi.lookup_symbol(f, "vme_inputs")
-        results_addr = core_mini_axi.lookup_symbol(f, "vme_results")
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path, ["vme_num_cases", "vme_inputs", "vme_results"]
+    )
 
     # Test sequence:
     #   li   x6, 0x4083
@@ -927,15 +881,14 @@ async def vme_msettk_clamp_test(dut):
     num_cases = len(cases)
     inputs_packed = np.array([c["inputs"] for c in cases],
                              dtype=np.uint32).flatten()
-    await core_mini_axi.write(inputs_addr, inputs_packed)
-    await core_mini_axi.write(
-        num_cases_addr, np.array([num_cases], dtype=np.uint32)
+    await fixture.write("vme_inputs", inputs_packed)
+    await fixture.write(
+        "vme_num_cases", np.array([num_cases], dtype=np.uint32)
     )
 
-    await core_mini_axi.execute_from(entry_point)
-    await core_mini_axi.wait_for_halted()
+    await fixture.run_to_halt()
 
-    raw = await core_mini_axi.read(results_addr, num_cases * RESULT_WORDS * 4)
+    raw = await fixture.read("vme_results", num_cases * RESULT_WORDS * 4)
     results = np.frombuffer(
         raw, dtype=np.uint32
     ).reshape(num_cases, RESULT_WORDS)
@@ -951,9 +904,9 @@ async def vme_msettk_clamp_test(dut):
     for i, case in enumerate(cases):
         expected = case["expected"]
         actual = [int(x) for x in results[i]]
-        cocotb.log.info(f"[msettk_clamp case {i}] inputs={case['inputs']}")
+        logging.info(f"[msettk_clamp case {i}] inputs={case['inputs']}")
         for name, exp, act in zip(field_names, expected, actual):
-            cocotb.log.info(
+            logging.info(
                 f"  {name:<22s} expected=0x{exp:08x} actual=0x{act:08x}"
             )
         for name, exp, act in zip(field_names, expected, actual):
@@ -962,11 +915,11 @@ async def vme_msettk_clamp_test(dut):
                 f"got 0x{act:08x}, expected 0x{exp:08x}"
             )
 
-    cocotb.log.info(f"[msettk_clamp] ✓ All {num_cases} test cases passed")
+    logging.info(f"[msettk_clamp] ✓ All {num_cases} test cases passed")
 
 
-@cocotb.test()
-async def vme_msettm_clamp_test(dut):
+@coralflow_test
+async def vme_msettm_clamp_test(fixture):
     """Directed tests for msettm clamping behavior:
 
     1. Clamping check:
@@ -977,11 +930,6 @@ async def vme_msettm_clamp_test(dut):
     2. Tile dimension bounds:
        Ensures tm is clamped within hardware tile bounds (TE=16).
     """
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
-
     r = runfiles.Create()
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_mset_test.elf"
@@ -989,13 +937,9 @@ async def vme_msettm_clamp_test(dut):
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
 
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-
-    with open(elf_path, "rb") as f:
-        num_cases_addr = core_mini_axi.lookup_symbol(f, "vme_num_cases")
-        inputs_addr = core_mini_axi.lookup_symbol(f, "vme_inputs")
-        results_addr = core_mini_axi.lookup_symbol(f, "vme_results")
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path, ["vme_num_cases", "vme_inputs", "vme_results"]
+    )
 
     # We test:
     # Case 0: msettm(32) -> Should clamp to 16 (just like msetmtype does).
@@ -1042,15 +986,14 @@ async def vme_msettm_clamp_test(dut):
     num_cases = len(cases)
     inputs_packed = np.array([c["inputs"] for c in cases],
                              dtype=np.uint32).flatten()
-    await core_mini_axi.write(inputs_addr, inputs_packed)
-    await core_mini_axi.write(
-        num_cases_addr, np.array([num_cases], dtype=np.uint32)
+    await fixture.write("vme_inputs", inputs_packed)
+    await fixture.write(
+        "vme_num_cases", np.array([num_cases], dtype=np.uint32)
     )
 
-    await core_mini_axi.execute_from(entry_point)
-    await core_mini_axi.wait_for_halted()
+    await fixture.run_to_halt()
 
-    raw = await core_mini_axi.read(results_addr, num_cases * RESULT_WORDS * 4)
+    raw = await fixture.read("vme_results", num_cases * RESULT_WORDS * 4)
     results = np.frombuffer(
         raw, dtype=np.uint32
     ).reshape(num_cases, RESULT_WORDS)
@@ -1066,9 +1009,9 @@ async def vme_msettm_clamp_test(dut):
     for i, case in enumerate(cases):
         expected = case["expected"]
         actual = [int(x) for x in results[i]]
-        cocotb.log.info(f"[{case['desc']}]")
+        logging.info(f"[{case['desc']}]")
         for name, exp, act in zip(field_names, expected, actual):
-            cocotb.log.info(
+            logging.info(
                 f"  {name:<22s} expected=0x{exp:08x} actual=0x{act:08x}"
             )
         for name, exp, act in zip(field_names, expected, actual):
@@ -1078,14 +1021,14 @@ async def vme_msettm_clamp_test(dut):
             )
 
 
-@cocotb.test()
-async def vme_msettm_matmul_test(dut):
+@coralflow_test
+async def vme_msettm_matmul_test(fixture):
     """Verifies Matmul execution with msettm.
 
     When msettm(32) is invoked, M=32 saturates to the hardware maximum
     tile height TE=16, computing a full 16x16 tile update.
     """
-    fixture = await _load_matmul_fixture(dut)
+    await _load_matmul_fixture(fixture)
     rng = np.random.default_rng(42)
 
     a = rng.integers(1, 10, MM_ROWS * MM_DIM, dtype=np.uint8)
@@ -1107,20 +1050,13 @@ async def vme_msettm_matmul_test(dut):
 
     actual = await _run_matmul_case(fixture, case, a, b, c_init)
 
-    cocotb.log.info(
-        "Checking whether msettm(32) updated the tile accumulator..."
-    )
+    logging.info("Checking whether msettm(32) updated the tile accumulator...")
     _check_matmul_result("int8", case, actual, expected)
 
 
-@cocotb.test()
-async def vme_altfmt_test(dut):
+@coralflow_test
+async def vme_altfmt_test(fixture):
     """Test VME altfmt configuration via msetmtype, vtype CSR, and vill/mtwiden=0 handling."""
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
-
     r = runfiles.Create()
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_altfmt_test.elf"
@@ -1128,13 +1064,10 @@ async def vme_altfmt_test(dut):
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
 
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-
-    with open(elf_path, "rb") as f:
-        num_cases_addr = core_mini_axi.lookup_symbol(f, "vme_altfmt_num_cases")
-        inputs_addr = core_mini_axi.lookup_symbol(f, "vme_altfmt_inputs")
-        results_addr = core_mini_axi.lookup_symbol(f, "vme_altfmt_results")
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        ["vme_altfmt_num_cases", "vme_altfmt_inputs", "vme_altfmt_results"],
+    )
 
     # struct VmeAltfmtCase { uint32_t mtype_value; uint32_t vtype_value; };
     # struct VmeAltfmtResult { uint32_t mtype_readback; uint32_t vtype_readback; };
@@ -1308,21 +1241,20 @@ async def vme_altfmt_test(dut):
     num_cases = len(cases)
     inputs_packed = np.array([[c["mtype"], c["vtype"]] for c in cases],
                              dtype=np.uint32).flatten()
-    await core_mini_axi.write(inputs_addr, inputs_packed)
-    await core_mini_axi.write(
-        num_cases_addr, np.array([num_cases], dtype=np.uint32)
+    await fixture.write("vme_altfmt_inputs", inputs_packed)
+    await fixture.write(
+        "vme_altfmt_num_cases", np.array([num_cases], dtype=np.uint32)
     )
 
-    await core_mini_axi.execute_from(entry_point)
-    await core_mini_axi.wait_for_halted()
+    await fixture.run_to_halt()
 
-    raw = await core_mini_axi.read(results_addr, num_cases * 2 * 4)
+    raw = await fixture.read("vme_altfmt_results", num_cases * 2 * 4)
     results = np.frombuffer(raw, dtype=np.uint32).reshape(num_cases, 2)
 
     for i, case in enumerate(cases):
         actual_mtype = int(results[i][0])
         actual_vtype = int(results[i][1])
-        cocotb.log.info(
+        logging.info(
             f"[altfmt case {i}: {case['desc']}]\n"
             f"  mtype expected=0x{case['expected_mtype']:08x} actual=0x{actual_mtype:08x}\n"
             f"  vtype expected=0x{case['expected_vtype']:08x} actual=0x{actual_vtype:08x}"
@@ -1340,18 +1272,12 @@ async def vme_altfmt_test(dut):
             f"got 0x{actual_vtype:08x}, expected 0x{case['expected_vtype']:08x}"
         )
 
-    cocotb.log.info(f"[altfmt] ✓ All {num_cases} test cases passed")
+    logging.info(f"[altfmt] ✓ All {num_cases} test cases passed")
 
 
-@cocotb.test()
-async def vme_vset_mtype_reset_test(dut):
+@coralflow_test
+async def vme_vset_mtype_reset_test(fixture):
     """Verify vsetvli, vsetivli, and vsetvl instructions clear mtype CSR to zero."""
-
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
-
     r = runfiles.Create()
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_vset_mtype_reset_test.elf"
@@ -1359,20 +1285,14 @@ async def vme_vset_mtype_reset_test(dut):
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
 
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-
-    with open(elf_path, "rb") as f:
-        results_addr = core_mini_axi.lookup_symbol(f, "vme_vset_results")
-
-    await core_mini_axi.execute_from(entry_point)
-    await core_mini_axi.wait_for_halted()
+    await fixture.load_elf_and_lookup_symbols(elf_path, ["vme_vset_results"])
+    await fixture.run_to_halt()
 
     # struct VmeResetMtypeResult: 4 x uint32 per case (configured, mtype, vtype, vl)
     num_cases = 3
     words_per_case = 4
-    raw = await core_mini_axi.read(
-        results_addr, num_cases * words_per_case * 4
+    raw = await fixture.read(
+        "vme_vset_results", num_cases * words_per_case * 4
     )
     results = np.frombuffer(
         raw, dtype=np.uint32
@@ -1384,7 +1304,7 @@ async def vme_vset_mtype_reset_test(dut):
         actual_mtype = int(results[i][1])
         actual_vtype = int(results[i][2])
         actual_vl = int(results[i][3])
-        cocotb.log.info(
+        logging.info(
             f"[{name}] configured_mtype=0x{configured_mtype:08x}, "
             f"mtype_after=0x{actual_mtype:08x}, vtype=0x{actual_vtype:08x}, vl={actual_vl}"
         )
@@ -1393,13 +1313,11 @@ async def vme_vset_mtype_reset_test(dut):
             f"{name} failed to reset mtype to 0: got 0x{actual_mtype:08x}"
         )
 
-    cocotb.log.info(
-        "✓ All vset instructions successfully cleared mtype to zero"
-    )
+    logging.info("✓ All vset instructions successfully cleared mtype to zero")
 
 
-@cocotb.test()
-async def vme_mset_retire_test(dut):
+@coralflow_test
+async def vme_mset_retire_test(fixture):
     """Verify msettm and msettk are handled solely in frontend and not sent to backend.
 
     Configuration instructions msettm and msettk only update matrix dimension
@@ -1411,7 +1329,6 @@ async def vme_mset_retire_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_decode_test.elf"
     )
-    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
         ["test_fn", "trap_count", "last_mcause", "mset_dimension_config"],
@@ -1420,20 +1337,14 @@ async def vme_mset_retire_test(dut):
     await fixture.write_ptr("test_fn", "mset_dimension_config")
     await fixture.run_to_halt()
 
-    trap_count_val = int.from_bytes(
-        (await fixture.read_word("trap_count")).tobytes(),
-        "little",
-    )
-    last_mcause_val = int.from_bytes(
-        (await fixture.read_word("last_mcause")).tobytes(),
-        "little",
-    )
+    trap_count_val = await fixture.read_word("trap_count")
+    last_mcause_val = await fixture.read_word("last_mcause")
     assert not fixture.fault(), "Core faulted unexpectedly"
     assert trap_count_val == 0, f"Expected 0 traps, got {trap_count_val} (last_mcause={last_mcause_val})"
 
 
-@cocotb.test()
-async def vme_mset_vtmmu_sequence_test(dut):
+@coralflow_test
+async def vme_mset_vtmmu_sequence_test(fixture):
     """Verify execution of mset configuration, vtzero, and vtmmu sequence.
 
     Tests sequence: msetmtype (SEW16, altfmt=1), msettn, msettm, msettk, vtzero,
@@ -1444,21 +1355,19 @@ async def vme_mset_vtmmu_sequence_test(dut):
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_mset_vtmmu_sequence_test.elf"
     )
-    fixture = await VerilatorTestFixture.Create(dut)
     await fixture.load_elf_and_lookup_symbols(elf_path, [])
     await fixture.run_to_halt()
 
     assert not fixture.fault(), "Core faulted unexpectedly"
 
 
-@cocotb.test()
-async def vme_mstatus_ms_test(dut):
+@coralflow_test
+async def vme_mstatus_ms_test(fixture):
     """Verify mstatus.MS state transitions, SD calculation, and MS==Off trap gating."""
     r = runfiles.Create()
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/vme_test/vme_mstatus_ms_test.elf"
     )
-    fixture = await VerilatorTestFixture.Create(dut)
 
     ms_off_trap_tests = [
         "ms_off_vtle",
@@ -1494,14 +1403,8 @@ async def vme_mstatus_ms_test(dut):
         await fixture.write_ptr("test_fn", name)
         await fixture.run_to_halt()
 
-        trap_count_val = int.from_bytes(
-            (await fixture.read_word("trap_count")).tobytes(),
-            "little",
-        )
-        last_mcause_val = int.from_bytes(
-            (await fixture.read_word("last_mcause")).tobytes(),
-            "little",
-        )
+        trap_count_val = await fixture.read_word("trap_count")
+        last_mcause_val = await fixture.read_word("last_mcause")
         assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
         assert trap_count_val == 1, f"[{name}] Expected 1 trap, got {trap_count_val}"
         assert last_mcause_val == 2, f"[{name}] Expected mcause=2 (illegal), got {last_mcause_val}"
@@ -1509,10 +1412,7 @@ async def vme_mstatus_ms_test(dut):
     # Also verify that non-tile instructions (mset*) do NOT trap when MS == Off
     await fixture.write_ptr("test_fn", "ms_off_mset_allowed")
     await fixture.run_to_halt()
-    trap_count_val = int.from_bytes(
-        (await fixture.read_word("trap_count")).tobytes(),
-        "little",
-    )
+    trap_count_val = await fixture.read_word("trap_count")
     assert not fixture.fault(
     ), "[ms_off_mset_allowed] Core faulted unexpectedly"
     assert trap_count_val == 0, f"[ms_off_mset_allowed] Expected 0 traps, got {trap_count_val}"
@@ -1521,10 +1421,7 @@ async def vme_mstatus_ms_test(dut):
     await fixture.write_ptr("test_fn", "mstatus_ms_transitions")
     await fixture.run_to_halt()
 
-    trap_count_val = int.from_bytes(
-        (await fixture.read_word("trap_count")).tobytes(),
-        "little",
-    )
+    trap_count_val = await fixture.read_word("trap_count")
     assert not fixture.fault(), "Core faulted unexpectedly"
     assert trap_count_val == 0, f"Expected 0 traps, got {trap_count_val}"
 
@@ -1534,10 +1431,7 @@ async def vme_mstatus_ms_test(dut):
     await fixture.write_ptr("test_fn", "mstatus_ms_csr_to_tile_back_to_back")
     await fixture.run_to_halt()
 
-    trap_count_val = int.from_bytes(
-        (await fixture.read_word("trap_count")).tobytes(),
-        "little",
-    )
+    trap_count_val = await fixture.read_word("trap_count")
     assert not fixture.fault(), "Core faulted unexpectedly"
     assert trap_count_val == 0, f"Expected 0 traps, got {trap_count_val}"
 
@@ -1552,7 +1446,7 @@ async def vme_mstatus_ms_test(dut):
 
     for idx in range(6):
         w = mstatus_words[idx]
-        cocotb.log.info(
+        logging.info(
             f"mstatus_words[{idx}] = 0x{w:08x} (SD={w>>31}, MS={(w>>29)&3}, FS={(w>>13)&3}, VS={(w>>9)&3})"
         )
 
@@ -1658,7 +1552,7 @@ async def vme_mstatus_ms_test(dut):
         status_str = "PASS" if (
             got_imm == expected and got_settle == expected
         ) else "FAIL"
-        cocotb.log.info(
+        logging.info(
             f"[{status_str}] {name:14s} | +0 NOPs: 0x{w_imm:08x} (MS={got_imm[0]}, FS={got_imm[1]}, VS={got_imm[2]}, SD={got_imm[3]}) "
             f"| +4 NOPs: 0x{w_settle:08x} (MS={got_settle[0]}, FS={got_settle[1]}, VS={got_settle[2]}, SD={got_settle[3]}) "
             f"| Expected: (MS={expected[0]}, FS={expected[1]}, VS={expected[2]}, SD={expected[3]})"
@@ -1684,17 +1578,11 @@ async def vme_mstatus_ms_test(dut):
         await fixture.write_ptr("test_fn", name)
         await fixture.run_to_halt()
 
-        trap_count_val = int.from_bytes(
-            (await fixture.read_word("trap_count")).tobytes(), "little"
-        )
-        last_mcause_val = int.from_bytes(
-            (await fixture.read_word("last_mcause")).tobytes(), "little"
-        )
-        last_mstatus_val = int.from_bytes(
-            (await fixture.read_word("last_mstatus")).tobytes(), "little"
-        )
+        trap_count_val = await fixture.read_word("trap_count")
+        last_mcause_val = await fixture.read_word("last_mcause")
+        last_mstatus_val = await fixture.read_word("last_mstatus")
         ms_on_trap = (last_mstatus_val >> 29) & 0x3
-        cocotb.log.info(
+        logging.info(
             f"[{name}] trap_count={trap_count_val}, mcause={last_mcause_val} (expected {expected_mcause}), "
             f"mstatus=0x{last_mstatus_val:08x} (MS={ms_on_trap}, expected 3=Dirty)"
         )
@@ -1712,6 +1600,8 @@ async def vme_mstatus_ms_test(dut):
         squashed_failures
     )
 
-    cocotb.log.info(
-        "✓ mstatus.MS, VS, and FS transitions verified successfully"
-    )
+    logging.info("✓ mstatus.MS, VS, and FS transitions verified successfully")
+
+
+if __name__ == "__main__":
+    coralflow_main()

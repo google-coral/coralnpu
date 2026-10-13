@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 import random
 
 from cocotb.triggers import ClockCycles
@@ -21,12 +21,9 @@ from coralnpu_test_utils.core_mini_axi_pyocd_gdbserver import CoreMiniAxiGDBServ
 from bazel_tools.tools.python.runfiles import runfiles
 
 
-@cocotb.test()
-async def core_mini_axi_debug_gdbserver(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_gdbserver(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     gdbserver = CoreMiniAxiGDBServer(core_mini_axi)
     r = runfiles.Create()
@@ -174,12 +171,9 @@ async def core_mini_axi_debug_gdbserver(dut):
         assert await gdbserver.run(f, cmds)
 
 
-@cocotb.test()
-async def core_mini_axi_debug_dmactive(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_dmactive(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     # If we're not active, go ahead and become active
     dmcontrol = await core_mini_axi.dm_read(0x10)
@@ -229,13 +223,10 @@ async def core_mini_axi_debug_dmactive(dut):
     assert (data0_reg == 0)
 
 
-@cocotb.test()
-async def core_mini_axi_debug_probe_impl(dut):
+@coralflow_test
+async def core_mini_axi_debug_probe_impl(fixture):
     # See Debug Spec 3.13 Version Detection
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
 
     dmcontrol = await core_mini_axi.dm_read(0x10)
     dmactive = dmcontrol & (1 << 0)
@@ -270,12 +261,9 @@ async def core_mini_axi_debug_probe_impl(dut):
     assert (dataaddr == 0x7B4)
 
 
-@cocotb.test()
-async def core_mini_axi_debug_ndmreset(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_ndmreset(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     dmcontrol = await core_mini_axi.dm_read(0x10)
     dmcontrol = dmcontrol | (1 << 1)
@@ -298,12 +286,9 @@ async def core_mini_axi_debug_ndmreset(dut):
         await core_mini_axi.wait_for_halted()
 
 
-@cocotb.test()
-async def core_mini_axi_debug_halt_resume(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_halt_resume(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     r = runfiles.Create()
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/noop.elf"), "rb") as f:
@@ -331,13 +316,10 @@ async def core_mini_axi_debug_halt_resume(dut):
         await core_mini_axi.wait_for_halted()
 
 
-@cocotb.test()
-async def core_mini_axi_debug_hartsel(dut):
+@coralflow_test
+async def core_mini_axi_debug_hartsel(fixture):
     # This should be 1
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+    core_mini_axi = fixture.core_mini_axi
 
     # Write all 1s to hartsel, read back to see the real count
     dmcontrol = await core_mini_axi.dm_read(0x10)
@@ -349,12 +331,9 @@ async def core_mini_axi_debug_hartsel(dut):
     assert (hartsel == 1)
 
 
-@cocotb.test()
-async def core_mini_axi_debug_abstract_access_registers(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_abstract_access_registers(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     r = runfiles.Create()
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/noop.elf"), "rb") as f:
@@ -394,12 +373,9 @@ async def core_mini_axi_debug_abstract_access_registers(dut):
             assert (readback == new_val)
 
 
-@cocotb.test()
-async def core_mini_axi_debug_abstract_access_nonexistent_register(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_abstract_access_nonexistent_register(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     r = runfiles.Create()
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/noop.elf"), "rb") as f:
@@ -412,12 +388,9 @@ async def core_mini_axi_debug_abstract_access_nonexistent_register(dut):
         await core_mini_axi.dm_read_reg(0xDEAD, DmRspOp.FAILED)
 
 
-@cocotb.test()
-async def core_mini_axi_debug_single_step(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_single_step(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     r = runfiles.Create()
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/noop.elf"), "rb") as f:
@@ -465,12 +438,9 @@ async def core_mini_axi_debug_single_step(dut):
         await core_mini_axi.wait_for_halted()
 
 
-@cocotb.test()
-async def core_mini_axi_debug_breakpoint(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_breakpoint(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     r = runfiles.Create()
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/noop.elf"), "rb") as f:
@@ -541,12 +511,9 @@ async def core_mini_axi_debug_breakpoint(dut):
         await core_mini_axi.wait_for_halted()
 
 
-@cocotb.test()
-async def core_mini_axi_debug_scalar_registers(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_scalar_registers(fixture):
+    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/registers.elf"),
               "rb") as f:
@@ -581,12 +548,9 @@ async def core_mini_axi_debug_scalar_registers(dut):
         assert core_mini_axi.dut.io_fault.value == 0
 
 
-@cocotb.test()
-async def core_mini_axi_debug_trigger_match(dut):
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
+@coralflow_test
+async def core_mini_axi_debug_trigger_match(fixture):
+    core_mini_axi = fixture.core_mini_axi
 
     r = runfiles.Create()
     with open(r.Rlocation("coralnpu_hw/tests/cocotb/debug_trigger_test.elf"),
@@ -651,3 +615,7 @@ async def core_mini_axi_debug_trigger_match(dut):
         # Verify final x1 is 3 (not 4)
         x1_val_final = await core_mini_axi.dm_read_reg(0x1001)
         assert x1_val_final == 3, f"Expected final x1 to be 3, got {x1_val_final} (Duplicate execution detected!)"
+
+
+if __name__ == "__main__":
+    coralflow_main()

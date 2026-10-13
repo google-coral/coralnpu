@@ -230,6 +230,14 @@ def cocotb_argument_parser():
 
 
 if __name__ == "__main__":
+    shard_status_file = os.environ.get("TEST_SHARD_STATUS_FILE", "").strip()
+    if shard_status_file:
+        parent = os.path.dirname(shard_status_file)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(shard_status_file, "a", encoding="utf-8"):
+            pass
+
     waves_env = os.environ.get("WAVES", "").lower()
     if waves_env in ["0", "false", "no", "off"]:
         os.environ.pop("WAVES", None)
@@ -364,6 +372,9 @@ if __name__ == "__main__":
             test_flags['test_args'].extend([
                 "-cm_dir", os.path.abspath(build_dir)
             ])
+        shard_idx = os.environ.get("TEST_SHARD_INDEX", "").strip()
+        if shard_idx and "-cm_name" not in test_flags['test_args']:
+            test_flags['test_args'].extend(["-cm_name", f"shard_{shard_idx}"])
 
     elif args.sim == "verilator" and args.model:
         main_ws = args.main_workspace or "coralnpu_hw"

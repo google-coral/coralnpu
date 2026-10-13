@@ -13,89 +13,33 @@
 # limitations under the License.
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
-load("//rules:coco_tb.bzl", "cocotb_test_suite")
-load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
-load(
-    "//tests/cocotb:build_defs.bzl",
-    "VCS_BUILD_ARGS",
-    "VCS_DEFINES",
-    "VCS_TEST_ARGS",
-)
+load("//rules:coralflow_test.bzl", "coralflow_test")
+load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 
-VME_TEST_TESTCASES = [
-    "vme_mset_csr_test",
-    "vme_matmul_int8_test",
-    "vme_matmul_bf16_test",
-    "vme_matmul_fp32_test",
-    "vme_decode_test",
-    "vme_load_store_test",
-    "vme_transpose_test",
-    "vme_msettk_clamp_test",
-    "vme_msettm_clamp_test",
-    "vme_msettm_matmul_test",
-    "vme_altfmt_test",
-    "vme_vset_mtype_reset_test",
-    "vme_mset_retire_test",
-    "vme_mset_vtmmu_sequence_test",
-    "vme_mstatus_ms_test",
-]
-
-cocotb_test_suite(
+coralflow_test(
     name = "vme_test",
-    simulators = [
+    size = "large",
+    srcs = ["vme_test_bench.py"],
+    data = [
+        ":vme_altfmt_test",
+        ":vme_decode_test",
+        ":vme_load_store_test",
+        ":vme_matmul_test",
+        ":vme_mset_test",
+        ":vme_mset_vtmmu_sequence_test",
+        ":vme_mstatus_ms_test",
+        ":vme_transpose_test",
+        ":vme_vset_mtype_reset_test",
+    ],
+    hdl_toplevel = "VmeCoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
     ],
-    testcases = VME_TEST_TESTCASES,
-    testcases_vname = "VME_TEST_TESTCASES",
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "VmeCoreMiniAxi",
-        "seed": "42",
-        "test_module": ["vme_test_bench.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            requirement("tqdm"),
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":vme_altfmt_test",
-            ":vme_matmul_test",
-            ":vme_mset_test",
-            ":vme_decode_test",
-            ":vme_load_store_test",
-            ":vme_transpose_test",
-            ":vme_vset_mtype_reset_test",
-            ":vme_mset_vtmmu_sequence_test",
-            ":vme_mstatus_ms_test",
-        ],
-        "size": "medium",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [
-        ":vme_altfmt_test",
-        ":vme_matmul_test",
-        ":vme_mset_test",
-        ":vme_decode_test",
-        ":vme_load_store_test",
-        ":vme_transpose_test",
-        ":vme_vset_mtype_reset_test",
-        ":vme_mset_vtmmu_sequence_test",
-        ":vme_mstatus_ms_test",
-        "//tests/cocotb:coverage_exclude.cfg",
-        "//hdl/verilog:dpi_files",
+    deps = [
+        requirement("tqdm"),
+        "@bazel_tools//tools/python/runfiles",
     ],
-    vcs_defines = dict(
-        VCS_DEFINES,
-        ZVTBF16FMM_ON = "",
-        ZVT_ON = "",
-    ),
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = [
-        "//hdl/chisel/src/coralnpu:vme_core_mini_axi_cc_library_verilog",
-    ],
-    verilator_model = "//tests/cocotb:vme_core_mini_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -151,5 +95,3 @@ coralnpu_v2_binary(
     srcs = ["vme_mstatus_ms_test.cc"],
     hdrs = ["vme_test_utils.h"],
 )
-
-collect_coralnpu_elfs()

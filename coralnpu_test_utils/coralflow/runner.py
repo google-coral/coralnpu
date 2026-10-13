@@ -60,6 +60,11 @@ class _AsyncFixtureWrapper:
 
 def is_cocotb_simulation() -> bool:
     """Returns True if executing inside a Cocotb discrete-event simulation environment."""
+    target = os.environ.get("CORALFLOW_TARGET", "").lower().strip()
+    if target in ("npusim", "uvm", "nexus_fpga"):
+        return False
+    if target in ("verilator", "vcs", "rtl"):
+        return True
     return "COCOTB_SIM" in os.environ or "cocotb" in sys.modules
 
 
@@ -240,6 +245,35 @@ async def _close_fixture(fixture: Any) -> None:
             await res
 
 
+_REGISTERED_TESTS: dict[str, Callable[..., None]] = {}
+_COCOTB_TEST_COUNTS: dict[str, int] = {}
+
+
+def _resolve_shard_config() -> tuple[int, int]:
+    """Resolves Bazel test sharding (shard_index, total_shards) and touches status file."""
+    status_file = os.environ.get("TEST_SHARD_STATUS_FILE", "").strip()
+    if status_file:
+        parent = os.path.dirname(status_file)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(status_file, "a", encoding="utf-8"):
+            pass
+
+    total_str = os.environ.get("TEST_TOTAL_SHARDS", "").strip()
+    index_str = os.environ.get("TEST_SHARD_INDEX", "").strip()
+    if total_str and index_str:
+        total_shards = int(total_str)
+        shard_index = int(index_str)
+        if total_shards > 1:
+            if not (0 <= shard_index < total_shards):
+                raise ValueError(
+                    f"Invalid Bazel shard configuration: TEST_SHARD_INDEX={shard_index}, "
+                    f"TEST_TOTAL_SHARDS={total_shards}"
+                )
+            return shard_index, total_shards
+    return 0, 1
+
+
 def coralflow_test(*args: Any, **fixture_kwargs: Any) -> Any:
     """Decorator enabling an asynchronous test coroutine to run interchangeably across backends.
 
@@ -252,7 +286,26 @@ def coralflow_test(*args: Any, **fixture_kwargs: Any) -> Any:
         if is_cocotb_simulation():
             import cocotb  # Lazy import only inside simulation
 
-            @cocotb.test()
+            shard_index, total_shards = _resolve_shard_config()
+            tc_filter = os.environ.get("CORALFLOW_TESTCASE", "").strip()
+            allowed = {t.strip() for t in tc_filter.split(",") if t.strip()}
+            excl_filter = os.environ.get("CORALFLOW_EXCLUDE_TESTCASE",
+                                         "").strip()
+            excluded = {t.strip() for t in excl_filter.split(",") if t.strip()}
+
+            if (allowed and test_func.__name__
+                    not in allowed) or (test_func.__name__ in excluded):
+                skip_test = True
+            else:
+                mod_key = getattr(test_func, "__module__", "") or "__main__"
+                test_index = _COCOTB_TEST_COUNTS.get(mod_key, 0)
+                _COCOTB_TEST_COUNTS[mod_key] = test_index + 1
+                skip_test = (
+                    total_shards > 1
+                    and (test_index % total_shards) != shard_index
+                )
+
+            @cocotb.test(skip=skip_test)
             @functools.wraps(test_func)
             async def cocotb_wrapper(dut: Any) -> None:
                 target = os.environ.get("CORALFLOW_TARGET",
@@ -325,8 +378,65 @@ def coralflow_test(*args: Any, **fixture_kwargs: Any) -> Any:
 
                 asyncio.run(_run())
 
+            _REGISTERED_TESTS[test_func.__name__] = standalone_wrapper
             return standalone_wrapper
 
     if len(args) == 1 and callable(args[0]):
         return decorator(args[0])
     return decorator
+
+
+def coralflow_main(argv: list[str] | None = None) -> None:
+    """Entrypoint to execute registered @coralflow_test functions in standalone mode.
+
+    Supports filtering a specific testcase via `--testcase <name>`,
+    `CORALFLOW_TESTCASE`, `CORALFLOW_EXCLUDE_TESTCASE`, or Bazel's
+    `TESTBRIDGE_TEST_ONLY` (`--test_filter`), as well as Bazel test sharding
+    (`TEST_TOTAL_SHARDS`, `TEST_SHARD_INDEX`).
+    """
+    if is_cocotb_simulation():
+        return
+
+    shard_index, total_shards = _resolve_shard_config()
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--testcase", default=None)
+    ns, _ = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
+
+    excl_filter = os.environ.get("CORALFLOW_EXCLUDE_TESTCASE", "").strip()
+    excluded = {t.strip() for t in excl_filter.split(",") if t.strip()}
+    available = {
+        name: fn
+        for name, fn in _REGISTERED_TESTS.items()
+        if name not in excluded
+    }
+
+    tc_filter = (
+        ns.testcase or os.environ.get("TESTBRIDGE_TEST_ONLY")
+        or os.environ.get("CORALFLOW_TESTCASE") or ""
+    ).strip()
+
+    if not tc_filter:
+        selected = list(available.values())
+    else:
+        requested = [t.strip() for t in tc_filter.split(",") if t.strip()]
+        selected = []
+        for req in requested:
+            if req in excluded:
+                continue
+            if req in available:
+                selected.append(available[req])
+            else:
+                matches = [fn for name, fn in available.items() if req in name]
+                if not matches:
+                    raise ValueError(
+                        f"No registered @coralflow_test matches testcase '{req}'. "
+                        f"Available: {list(available)}"
+                    )
+                selected.extend(matches)
+
+    if total_shards > 1:
+        selected = selected[shard_index::total_shards]
+
+    for wrapper in selected:
+        wrapper()

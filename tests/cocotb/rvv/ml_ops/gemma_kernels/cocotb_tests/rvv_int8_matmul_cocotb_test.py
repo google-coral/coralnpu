@@ -13,24 +13,18 @@
 # limitations under the License.
 """Test suite for Int8 RVV Gemma MatMul Kernels using Cocotb."""
 
+import logging
 import os
-import cocotb
-import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+import numpy as np
 
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_matmul_metrics
 
 
-async def _impl(dut, shapes, test_label_prefix):
+async def _impl(fixture, shapes, test_label_prefix):
     """Unified test runner for Int8 MatMul & GeMV variants."""
     r = runfiles.Create()
-    fixture = await VerilatorTestFixture.Create(
-        dut,
-        highmem=True,
-        ext_mem_base_addr=0x80000000,
-        ext_mem_size=32 * 1024 * 1024
-    )
 
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/rvv_int8_matmul.elf"
@@ -43,8 +37,6 @@ async def _impl(dut, shapes, test_label_prefix):
         ]
     )
 
-    await fixture.core_mini_axi.reset()
-
     random_seed = os.environ.get("RANDOM_SEED")
     seed = int(random_seed) if random_seed is not None else 42
     rng = np.random.default_rng(seed=seed)
@@ -54,7 +46,7 @@ async def _impl(dut, shapes, test_label_prefix):
         rhs = rng.integers(-127, 128, size=(K, N), dtype=np.int8)
         golden_output = np.matmul(lhs, rhs, dtype=np.int32)
 
-        dut._log.info(f"Running {test_label_prefix}: {M}x{K} x {K}x{N}")
+        logging.info(f"Running {test_label_prefix}: {M}x{K} x {K}x{N}")
 
         await fixture.write_word('active_m', M)
         await fixture.write_word('active_k', K)
@@ -73,15 +65,19 @@ async def _impl(dut, shapes, test_label_prefix):
 
         assert (actual_output == golden_output).all()
         log_matmul_metrics(
-            dut, f"{test_label_prefix}: {M}x{K}x{N}", npu_cycles, M, N, K
+            fixture, f"{test_label_prefix}: {M}x{K}x{N}", npu_cycles, M, N, K
         )
 
 
-@cocotb.test()
-async def gemv(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def gemv(fixture):
     """Unified Test for 1D Int8 GeMV kernels (Decode phase)."""
     await _impl(
-        dut,
+        fixture,
         shapes=[
             # Main loop is 1x4x(e8m4) per iteration
             (1, 64, 64),
@@ -115,11 +111,15 @@ async def gemv(dut):
     )
 
 
-@cocotb.test()
-async def matmul(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def matmul(fixture):
     """Unified Test for 2D BFloat16 MatMul kernels (Prefill phase)."""
     await _impl(
-        dut,
+        fixture,
         shapes=[
             # Main loop is 1x4x(e8m4) per iteration
             (4, 64, 64),
@@ -151,3 +151,7 @@ async def matmul(dut):
         ],
         test_label_prefix="INT8 MatMul 2D"
     )
+
+
+if __name__ == "__main__":
+    coralflow_main()

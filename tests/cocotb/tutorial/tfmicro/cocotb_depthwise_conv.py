@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
-import numpy as np
-
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+import numpy as np
 
 
 def tolerate(target: int, tolerance=1.2) -> int:
@@ -43,8 +41,8 @@ class DepthwiseConvTest:
         )
         self.fixture = None
 
-    async def load_and_populate_input(self, dut):
-        self.fixture = await VerilatorTestFixture.Create(dut, highmem=True)
+    async def load_and_populate_input(self, fixture):
+        self.fixture = fixture
         await self.fixture.load_elf_and_lookup_symbols(
             self.elf_file, [
                 'impl',
@@ -117,52 +115,52 @@ class DepthwiseConvTest:
 # slower than `-c opt` because DCHECKs are enabled.
 
 
-@cocotb.test()
-async def test_dwconv8to8stride1(dut):
+@coralflow_test(highmem=True)
+async def test_dwconv8to8stride1(fixture):
     t = DepthwiseConvTest(in_d=8)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=226_000, opt_target=26_600)
 
 
-@cocotb.test()
-async def test_dwconv8to8stride2(dut):
+@coralflow_test(highmem=True)
+async def test_dwconv8to8stride2(fixture):
     t = DepthwiseConvTest(in_d=8, stride=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=257_000, opt_target=26_400)
 
 
-@cocotb.test()
-async def test_dwconv32to32stride1(dut):
+@coralflow_test(highmem=True)
+async def test_dwconv32to32stride1(fixture):
     t = DepthwiseConvTest(in_d=32)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=899_000, opt_target=30_600)
 
 
-@cocotb.test()
-async def test_dwconv32to32stride2(dut):
+@coralflow_test(highmem=True)
+async def test_dwconv32to32stride2(fixture):
     t = DepthwiseConvTest(in_d=32, stride=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=1_019_000, opt_target=28_500)
 
 
-@cocotb.test()
-async def test_dwconv64to64stride1(dut):
+@coralflow_test(highmem=True)
+async def test_dwconv64to64stride1(fixture):
     t = DepthwiseConvTest(in_d=64)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=1_800_000, opt_target=49_300)
 
 
-@cocotb.test()
-async def test_dwconv64to64stride2(dut):
+@coralflow_test(highmem=True)
+async def test_dwconv64to64stride2(fixture):
     t = DepthwiseConvTest(in_d=64, stride=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=2_040_000, opt_target=45_700)
 
 
-@cocotb.test()
-async def test_dwconv16to32stride2(dut):
+@coralflow_test(highmem=True)
+async def test_dwconv16to32stride2(fixture):
     t = DepthwiseConvTest(in_d=16, dm=2, stride=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=1_010_000, opt_target=41_600)
 
 
@@ -171,37 +169,41 @@ async def test_dwconv16to32stride2(dut):
 # Cycle count targets here come from `-c opt` runs.
 
 
-@cocotb.test(skip=True)
-async def benchmark_dwconv8to8(dut):
+@coralflow_test(highmem=True)
+async def benchmark_dwconv8to8(fixture):
     t = DepthwiseConvTest(in_d=8, out_h=112, out_w=112)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     # TODO(davidgao): update expectation after we get automatic lmul reduction
     await t.benchmark(opt_target=2_600_000)
 
 
-@cocotb.test(skip=True)
-async def benchmark_dwconv32to32(dut):
+@coralflow_test(highmem=True)
+async def benchmark_dwconv32to32(fixture):
     t = DepthwiseConvTest(in_d=32, out_h=56, out_w=56)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.benchmark(opt_target=974_000)
 
 
-@cocotb.test(skip=True)
-async def benchmark_dwconv64to64(dut):
+@coralflow_test(highmem=True)
+async def benchmark_dwconv64to64(fixture):
     t = DepthwiseConvTest(in_d=64, out_h=28, out_w=28)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.benchmark(opt_target=528_000)
 
 
-@cocotb.test(skip=True)
-async def benchmark_dwconv128to128(dut):
+@coralflow_test(highmem=True)
+async def benchmark_dwconv128to128(fixture):
     t = DepthwiseConvTest(in_d=128, out_h=14, out_w=14)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.benchmark(opt_target=301_000)
 
 
-@cocotb.test(skip=True)
-async def benchmark_dwconv256to256(dut):
+@coralflow_test(highmem=True)
+async def benchmark_dwconv256to256(fixture):
     t = DepthwiseConvTest(in_d=256, out_h=7, out_w=7)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.benchmark(opt_target=180_000)
+
+
+if __name__ == '__main__':
+    coralflow_main()

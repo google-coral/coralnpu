@@ -162,11 +162,13 @@ def parse_elf_symbols(
     resolved_addrs: dict[str, int] = {}
     resolved_sizes: dict[str, int] = {}
 
+    optional_set = set(optional_symbols or [])
+
     # Tier 1: Requested workload symbols
     for sym in symbols or []:
         if sym in all_syms:
             resolved_addrs[sym], resolved_sizes[sym] = all_syms[sym]
-        elif strict:
+        elif strict and sym not in optional_set:
             raise ValueError(
                 f"Required symbol '{sym}' not found in {elf_path}. "
                 f"Pass optional=True or optional_symbols=['{sym}'] if simulator-specific."
@@ -217,14 +219,12 @@ def infer_read_size_bytes(
     symbol: int | str,
     symbol_sizes: dict[str, int],
     size: int | None = None,
-    size_bytes: int | None = None,
     dtype: Any = None,
     shape: tuple[int, ...] | None = None,
 ) -> int:
     """Infers byte length to read from explicit size, (dtype, shape), or ELF st_size."""
-    actual = size if size is not None else size_bytes
-    if actual is not None:
-        return int(actual)
+    if size is not None:
+        return int(size)
     if dtype is not None and shape is not None:
         return int(np.prod(shape)) * np.dtype(dtype).itemsize
     if (isinstance(symbol, str) and symbol in symbol_sizes
@@ -233,7 +233,7 @@ def infer_read_size_bytes(
     if dtype is not None:
         return np.dtype(dtype).itemsize
     raise ValueError(
-        f"Cannot infer read size for '{symbol}'. Specify size, size_bytes, or (dtype and shape)."
+        f"Cannot infer read size for '{symbol}'. Specify size or (dtype and shape)."
     )
 
 
@@ -253,26 +253,3 @@ def reconstruct_read_data(
     if shape is not None:
         arr = arr.reshape(shape)
     return arr
-
-
-class WordResult(int):
-    """32-bit unsigned int return type for read_word() that also supports legacy .view() and .tobytes()."""
-
-    def tobytes(self) -> bytes:
-        return struct.pack("<I", int(self) & 0xFFFFFFFF)
-
-    def view(self, dtype: Any = np.uint32) -> np.ndarray:
-        return np.frombuffer(self.tobytes(), dtype=dtype)
-
-    def __bytes__(self) -> bytes:
-        return self.tobytes()
-
-
-class BytesResult(bytes):
-    """Bytes return type for read(dtype=None) that also supports .view() and .tobytes()."""
-
-    def tobytes(self) -> bytes:
-        return bytes(self)
-
-    def view(self, dtype: Any = np.uint8) -> np.ndarray:
-        return np.frombuffer(self, dtype=dtype)

@@ -22,8 +22,8 @@ import numpy as np
 
 from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
 from coralnpu_test_utils.coralflow.runner import (
+    coralflow_main,
     coralflow_test,
-    get_target_environment,
 )
 
 _MATMUL_SYMBOLS = [
@@ -133,13 +133,12 @@ async def rvv_float_matmul_optimized_c_test(
 @coralflow_test
 async def rvv_bf16_matmul_c_test(fixture: BaseCoralNPUFixture) -> None:
     """Test BFloat16 matmul with RVV C intrinsics (Zvfbfwma)."""
+    await fixture.load_elf_and_lookup_symbols(
+        "tests/cocotb/rvv/ml_ops/rvv_bf16_matmul.elf",
+        _MATMUL_SYMBOLS,
+    )
     rng = np.random.default_rng(seed=42)
     for lhs_rows, rhs_cols, inner in [(16, 16, 48), (8, 32, 64)]:
-        await fixture.load_elf_and_lookup_symbols(
-            "tests/cocotb/rvv/ml_ops/rvv_bf16_matmul.elf",
-            _MATMUL_SYMBOLS,
-        )
-
         lhs_bf16 = rng.uniform(
             -4.0, 4.0, size=(lhs_rows, inner)
         ).astype(ml_dtypes.bfloat16)
@@ -168,15 +167,4 @@ async def rvv_bf16_matmul_c_test(fixture: BaseCoralNPUFixture) -> None:
 
 
 if __name__ == "__main__":
-    target = get_target_environment()
-    rvv_matmul_c_test()
-    rvv_matmul_asm_test()
-    # MpactNpuSim (CoralNPUV2Simulator) defaults to kV2 (integer-only RVV)
-    # without Zve32f or Zvfbfwma, and the standard UVM core_mini_axi RTL build
-    # does not enable Zvfbfwma (see rules/uvm_denylist.bzl).
-    if target != "npusim":
-        rvv_float_matmul_c_test()
-        rvv_float_matmul_asm_test()
-        rvv_float_matmul_optimized_c_test()
-    if target not in ("npusim", "uvm"):
-        rvv_bf16_matmul_c_test()
+    coralflow_main()

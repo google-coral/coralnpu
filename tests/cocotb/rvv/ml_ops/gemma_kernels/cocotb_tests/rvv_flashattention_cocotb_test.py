@@ -13,12 +13,12 @@
 # limitations under the License.
 """Test suite for RVV Gemma Kernels using Cocotb."""
 
+import logging
 import os
-import cocotb
-import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+import numpy as np
 
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_matmul_metrics
 
 
@@ -53,7 +53,7 @@ def calculate_cosine_similarity(
 
 def load_real_attention_data(
     q_heads: int, kv_heads: int, q_seq_len: int, kv_seq_len: int, d_model: int,
-    dut, r
+    fixture, r
 ):
     q_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/test_data/gemma_q.npy"
@@ -67,7 +67,7 @@ def load_real_attention_data(
 
     if (q_path and os.path.exists(q_path) and os.path.exists(k_path)
             and os.path.exists(v_path)):
-        dut._log.info(
+        logging.info(
             "SUCCESS: Real Gemma tensors found! Calculating UNMASKED Multi-Head Golden Model..."
         )
 
@@ -93,7 +93,7 @@ def load_real_attention_data(
 
         return q_data, k_data, v_data, expected_output
     else:
-        dut._log.info(
+        logging.info(
             "Real Gemma tensors not found. Generating synthetic data for attention test..."
         )
         np.random.seed(42)
@@ -121,21 +121,19 @@ def load_real_attention_data(
 
 
 async def run_flashattention_test(
-    fixture, dut, r, elf_path, q_heads: int, kv_heads: int, q_seq_len: int,
+    fixture, r, elf_path, q_heads: int, kv_heads: int, q_seq_len: int,
     kv_seq_len: int, dim: int
 ):
-    dut._log.info(
+    logging.info(
         f"========== RUNNING ATTENTION TEST: Q:{q_heads}x{q_seq_len}x{dim}, KV:{kv_heads}x{kv_seq_len}x{dim} =========="
     )
     try:
         q_data, k_data, v_data, expected_output = load_real_attention_data(
-            q_heads, kv_heads, q_seq_len, kv_seq_len, dim, dut, r
+            q_heads, kv_heads, q_seq_len, kv_seq_len, dim, fixture, r
         )
     except FileNotFoundError as e:
-        dut._log.warning(f"Skipping test: {e}")
+        logging.warning(f"Skipping test: {e}")
         return
-
-    await fixture.core_mini_axi.reset()
 
     # Write configuration variables
     await fixture.write(
@@ -163,7 +161,7 @@ async def run_flashattention_test(
 
     total_macs = 2 * q_heads * q_seq_len * kv_seq_len * dim
     log_matmul_metrics(
-        dut,
+        fixture,
         f"core_mini_rvv_flashattention_Q{q_heads}KV{kv_heads}_Sq{q_seq_len}Skv{kv_seq_len}_D{dim}",
         cycle_count,
         macs=total_macs,
@@ -175,24 +173,20 @@ async def run_flashattention_test(
                                        ).reshape(q_heads, q_seq_len, dim)
 
     cos_sim = calculate_cosine_similarity(actual_output, expected_output)
-    dut._log.info(
+    logging.info(
         f"Average Cosine Similarity to Multi-Head Golden Model: {cos_sim:.6f}"
     )
 
     assert cos_sim > 0.999, "Accuracy failure against model!"
 
 
-@cocotb.test()
-async def core_mini_rvv_flashattention_prefill_test(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def core_mini_rvv_flashattention_prefill_test(fixture):
     r = runfiles.Create()
-
-    # Highmem configuration maps CSRs dynamically via highmem flag
-    fixture = await VerilatorTestFixture.Create(
-        dut,
-        highmem=True,
-        ext_mem_base_addr=0x80000000,
-        ext_mem_size=32 * 1024 * 1024
-    )
 
     elf_name = "rvv_flashattention_test.elf"
     elf_path = r.Rlocation(
@@ -209,7 +203,6 @@ async def core_mini_rvv_flashattention_prefill_test(dut):
 
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=2,
@@ -220,7 +213,6 @@ async def core_mini_rvv_flashattention_prefill_test(dut):
     )
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=2,
@@ -231,7 +223,6 @@ async def core_mini_rvv_flashattention_prefill_test(dut):
     )
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=4,
@@ -242,7 +233,6 @@ async def core_mini_rvv_flashattention_prefill_test(dut):
     )
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=4,
@@ -253,17 +243,13 @@ async def core_mini_rvv_flashattention_prefill_test(dut):
     )
 
 
-@cocotb.test()
-async def core_mini_rvv_flashattention_decode_test(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def core_mini_rvv_flashattention_decode_test(fixture):
     r = runfiles.Create()
-
-    # Highmem configuration maps CSRs dynamically via highmem flag
-    fixture = await VerilatorTestFixture.Create(
-        dut,
-        highmem=True,
-        ext_mem_base_addr=0x80000000,
-        ext_mem_size=32 * 1024 * 1024
-    )
 
     elf_name = "rvv_flashattention_test.elf"
     elf_path = r.Rlocation(
@@ -280,7 +266,6 @@ async def core_mini_rvv_flashattention_decode_test(dut):
 
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=2,
@@ -291,7 +276,6 @@ async def core_mini_rvv_flashattention_decode_test(dut):
     )
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=2,
@@ -302,7 +286,6 @@ async def core_mini_rvv_flashattention_decode_test(dut):
     )
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=4,
@@ -313,7 +296,6 @@ async def core_mini_rvv_flashattention_decode_test(dut):
     )
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=4,
@@ -324,7 +306,6 @@ async def core_mini_rvv_flashattention_decode_test(dut):
     )
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=4,
@@ -335,7 +316,6 @@ async def core_mini_rvv_flashattention_decode_test(dut):
     )
     await run_flashattention_test(
         fixture,
-        dut,
         r,
         elf_path,
         q_heads=4,
@@ -374,25 +354,23 @@ def golden_flash_attention_bf16(
     return output.flatten()
 
 
-@cocotb.test()
-async def core_mini_rvv_bf16_flashattention_test(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def core_mini_rvv_bf16_flashattention_test(fixture):
     """BFloat16 FlashAttention MQA Test using ml_dtypes."""
     import ml_dtypes
 
     r = runfiles.Create()
-    fixture = await VerilatorTestFixture.Create(
-        dut,
-        highmem=True,
-        ext_mem_base_addr=0x80000000,
-        ext_mem_size=32 * 1024 * 1024
-    )
 
     elf_name = "rvv_bf16_flashattention.elf"
     elf_path = r.Rlocation(
         f"coralnpu_hw/tests/cocotb/rvv/ml_ops/gemma_kernels/{elf_name}"
     )
 
-    dut._log.info(f"Loading ELF: {elf_path}")
+    logging.info(f"Loading ELF: {elf_path}")
     await fixture.load_elf_and_lookup_symbols(
         elf_path, [
             "q_buf", "k_buf", "v_buf", "o_buf", "active_num_heads",
@@ -400,8 +378,6 @@ async def core_mini_rvv_bf16_flashattention_test(dut):
             "active_dim", "cycle_count"
         ]
     )
-
-    await fixture.core_mini_axi.reset()
 
     # Test configs for Gemma 3 (Prefill and Decode)
     test_configs = [
@@ -445,7 +421,7 @@ async def core_mini_rvv_bf16_flashattention_test(dut):
         q_heads, kv_heads = cfg["q_heads"], cfg["kv_heads"]
         q_seq, kv_seq, dim = cfg["q_seq"], cfg["kv_seq"], cfg["dim"]
 
-        dut._log.info(
+        logging.info(
             f"\nRunning BF16 FlashAttention ({cfg['name']}): Q_heads={q_heads}, KV_heads={kv_heads}, Q_len={q_seq}, KV_len={kv_seq}, Dim={dim}"
         )
 
@@ -499,8 +475,12 @@ async def core_mini_rvv_bf16_flashattention_test(dut):
 
         total_macs = q_heads * q_seq * kv_seq * dim * 2
         log_matmul_metrics(
-            dut,
+            fixture,
             f"BF16 FlashAttention ({cfg['name']})",
             npu_cycles,
             macs=total_macs
         )
+
+
+if __name__ == "__main__":
+    coralflow_main()

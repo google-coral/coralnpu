@@ -12,15 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import cocotb
+import logging
 import ml_dtypes
 import numpy as np
-from bazel_tools.tools.python.runfiles import runfiles
 
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 
-CSR_BASE = 0x200000
 ELF = "coralnpu_hw/tests/cocotb/rvv/ml_ops/bf16_activations/rvv_math_test.elf"
 HALF_ULP = 2.0**-8  # bf16 half-ULP relative spacing (ship line)
 
@@ -87,16 +85,11 @@ def make_narrow_inputs(rng, n):
     return u.view(np.float32)
 
 
-@cocotb.test()
-async def rvv_math_test(dut):
-    log = dut._log
-    r = runfiles.Create()
-    fixture = await VerilatorTestFixture.Create(dut, csr_base_addr=CSR_BASE)
-    elf = r.Rlocation(ELF)
-    if not elf or not os.path.exists(elf):
-        raise FileNotFoundError(f"ELF not found at {elf}")
+@coralflow_test(highmem=True)
+async def rvv_math_test(fixture: BaseCoralNPUFixture):
+    log = logging.getLogger(__name__)
     await fixture.load_elf_and_lookup_symbols(
-        elf,
+        ELF,
         [
             "cvt_in",
             "cvt_out",
@@ -122,7 +115,6 @@ async def rvv_math_test(dut):
             "cycle_count",
         ],
     )
-    await fixture.core_mini_axi.reset()
     rng = np.random.default_rng(42)
 
     for n in [1, 31, 33, 256, 643,
@@ -271,3 +263,7 @@ async def rvv_math_test(dut):
         assert np.all((((no >> np.uint32(23)) & np.uint32(0xFF)) == 0xFF)
                       & ((no & np.uint32(0x7FFFFF)) != 0)
                       ), "widened NaN did not stay NaN"
+
+
+if __name__ == "__main__":
+    coralflow_main()

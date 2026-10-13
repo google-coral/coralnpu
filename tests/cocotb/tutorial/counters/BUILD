@@ -12,15 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//rules:coco_tb.bzl", "cocotb_test_suite", "verilator_cocotb_model")
-load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
-load(
-    "//tests/cocotb:build_defs.bzl",
-    "VCS_BUILD_ARGS",
-    "VCS_DEFINES",
-    "VCS_TEST_ARGS",
-    "VERILATOR_BUILD_ARGS",
-)
+load("//rules:coralflow_test.bzl", "coralflow_test")
+load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -34,35 +27,20 @@ TEST_CASES = [
     "inst_cycle_counter_test",
 ]
 
-cocotb_test_suite(
+coralflow_test(
     name = "cocotb_counter_test",
-    simulators = [
+    size = "medium",
+    srcs = ["cocotb_counter_test.py"],
+    elf = ":inst_cycle_counter_example.elf",
+    hdl_toplevel = "RvvCoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
+        "uvm",
+        "nexus_fpga",
     ],
     testcases = TEST_CASES,
-    testcases_vname = "TEST_CASES",
-    tests_kwargs = {
-        "waves": False,
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "seed": "42",
-        "test_module": ["cocotb_counter_test.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@rules_python//python/runfiles",
-        ],
-        "data": [":inst_cycle_counter_example"],
-        "size": "medium",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [":inst_cycle_counter_example.elf"] + [
-        "//hdl/verilog:dpi_files",
+    deps = [
+        "@rules_python//python/runfiles",
     ],
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_axi_model",
 )
-
-collect_coralnpu_elfs()

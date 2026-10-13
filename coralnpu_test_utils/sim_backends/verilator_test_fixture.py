@@ -21,52 +21,33 @@ import struct
 import cocotb
 import numpy as np
 
+from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
 from coralnpu_test_utils.core_mini_axi_interface import CoreMiniAxiInterface
 from coralnpu_test_utils.sim_backends.common_utils import (
-    WordResult,
-    get_runfiles,
     infer_read_size_bytes,
     parse_elf_symbols,
     reconstruct_read_data,
     resolve_runfile_path,
-    resolve_symbol_address,
     to_uint8_array,
 )
 
 
-class VerilatorTestFixture:
+class VerilatorTestFixture(BaseCoralNPUFixture):
     """Interactive Cocotb RTL/Netlist fixture for Verilator and VCS simulations."""
 
-    get_runfiles = staticmethod(get_runfiles)
-    resolve_path = staticmethod(resolve_runfile_path)
-
     def __init__(self, dut, **kwargs):
+        super().__init__()
         self.core_mini_axi = CoreMiniAxiInterface(dut, **kwargs)
-        self.entry_point: int | None = None
-        self.symbols: dict[str, int] = {}
-        self.symbol_sizes: dict[str, int] = {}
-        self.cycle_count: int | None = None
 
     @classmethod
     async def Create(cls, dut, **kwargs) -> VerilatorTestFixture:
-        if kwargs.get("highmem"):
+        if kwargs.pop("highmem", False):
             kwargs["csr_base_addr"] = 0x200000
-            del kwargs["highmem"]
         inst = cls(dut, **kwargs)
         await inst.core_mini_axi.init()
         await inst.core_mini_axi.reset()
         cocotb.start_soon(inst.core_mini_axi.clock.start())
         return inst
-
-    def has_symbol(self, symbol: str) -> bool:
-        return symbol in self.symbols
-
-    def resolve_address(
-        self, addr_or_symbol: int | str, offset: int = 0
-    ) -> int:
-        return resolve_symbol_address(
-            addr_or_symbol, self.symbols, offset=offset
-        )
 
     async def load_elf_and_lookup_symbols(
         self,
@@ -102,12 +83,10 @@ class VerilatorTestFixture:
         symbol: str | int,
         data: int | np.integer,
         offset: int = 0,
-        signed: bool = False,
     ):
-        del signed
         await self.core_mini_axi.write_word(
             self.resolve_address(symbol, offset=offset),
-            int(data) & 0xFFFFFFFF
+            int(data) & 0xFFFFFFFF,
         )
 
     async def write_ptr(
@@ -125,26 +104,22 @@ class VerilatorTestFixture:
         offset: int = 0,
         dtype: np.dtype | None = None,
         shape: tuple[int, ...] | None = None,
-        size_bytes: int | None = None,
     ) -> np.ndarray:
         addr = self.resolve_address(symbol, offset=offset)
         nbytes = infer_read_size_bytes(
-            symbol, self.symbol_sizes, size, size_bytes, dtype, shape
+            symbol, self.symbol_sizes, size=size, dtype=dtype, shape=shape
         )
         raw_arr = await self.core_mini_axi.read(addr, nbytes)
         return reconstruct_read_data(raw_arr, dtype=dtype, shape=shape)
 
-    async def read_word(
-        self, symbol: str | int, offset: int = 0
-    ) -> WordResult:
+    async def read_word(self, symbol: str | int, offset: int = 0) -> int:
         raw_bytes = await self.core_mini_axi.read_word(
             self.resolve_address(symbol, offset=offset)
         )
-        val = struct.unpack(
+        return struct.unpack(
             "<I",
-            np.asarray(raw_bytes, dtype=np.uint8).tobytes()
+            np.asarray(raw_bytes, dtype=np.uint8).tobytes(),
         )[0]
-        return WordResult(val)
 
     async def run_to_halt(
         self,
@@ -167,9 +142,3 @@ class VerilatorTestFixture:
 
     def fault(self) -> bool:
         return self.core_mini_axi.dut.io_fault.value == 1
-
-    def get_cycle_count(self) -> int | None:
-        return self.cycle_count
-
-
-Fixture = VerilatorTestFixture

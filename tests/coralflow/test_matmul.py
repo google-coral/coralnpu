@@ -16,7 +16,7 @@
 import numpy as np
 
 from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
-from coralnpu_test_utils.coralflow.runner import coralflow_test
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 
 
 @coralflow_test
@@ -69,4 +69,4 @@ async def test_matmul_kernel(fixture: BaseCoralNPUFixture):
 
 
 if __name__ == "__main__":
-    test_matmul_kernel()
+    coralflow_main()

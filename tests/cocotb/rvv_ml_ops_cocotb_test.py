@@ -23,39 +23,42 @@ load the corresponding ELF file onto the simulated core, and verify that the
 hardware execution matches the software reference.
 """
 
+import logging
 import sys
 
 sys.set_int_max_str_digits(100000)
 
-import cocotb
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 import ml_dtypes
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_matmul_metrics
 
+_MATMUL_SYMBOLS = [
+    'lhs_input',
+    'rhs_input',
+    'result_output',
+    'lhs_rows',
+    'rhs_cols',
+    'inner',
+    'csr_cycle_count',
+]
 
-@cocotb.test()
-async def core_mini_rvv_matmul_c_test(dut):
+
+@coralflow_test
+async def core_mini_rvv_matmul_c_test(fixture):
     """Test integer matmul with RVV C intrinsics."""
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_matmul.elf'
-
     await fixture.load_elf_and_lookup_symbols(
-        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file), [
-            'lhs_input', 'rhs_input', 'result_output', 'lhs_rows', 'rhs_cols',
-            'inner', 'csr_cycle_count'
-        ]
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file),
+        _MATMUL_SYMBOLS,
     )
 
     shapes = [(16, 16, 48)]
 
     for LHS_ROWS, RHS_COLS, INNER in shapes:
-        dut._log.info(
-            f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}"
-        )
-        await fixture.core_mini_axi.reset()
+        logging.info(f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}")
         await fixture.write_word('lhs_rows', LHS_ROWS)
         await fixture.write_word('rhs_cols', RHS_COLS)
         await fixture.write_word('inner', INNER)
@@ -78,7 +81,8 @@ async def core_mini_rvv_matmul_c_test(dut):
         await fixture.run_to_halt(timeout_cycles=1000000)
         csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
-            dut, f"core_mini_rvv_matmul_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
+            fixture,
+            f"core_mini_rvv_matmul_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
             csr_cycle_count, LHS_ROWS, RHS_COLS, INNER
         )
         output_matmul_result = (
@@ -88,28 +92,20 @@ async def core_mini_rvv_matmul_c_test(dut):
         assert ((result_data == output_matmul_result).all())
 
 
-@cocotb.test()
-async def core_mini_rvv_matmul_asm_test(dut):
+@coralflow_test
+async def core_mini_rvv_matmul_asm_test(fixture):
     """Test integer matmul with RVV assembly."""
-
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_matmul_assembly.elf'
-
     await fixture.load_elf_and_lookup_symbols(
-        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file), [
-            'lhs_input', 'rhs_input', 'result_output', 'lhs_rows', 'rhs_cols',
-            'inner', 'csr_cycle_count'
-        ]
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file),
+        _MATMUL_SYMBOLS,
     )
 
     shapes = [(16, 16, 48)]
 
     for LHS_ROWS, RHS_COLS, INNER in shapes:
-        dut._log.info(
-            f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}"
-        )
-        await fixture.core_mini_axi.reset()
+        logging.info(f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}")
         await fixture.write_word('lhs_rows', LHS_ROWS)
         await fixture.write_word('rhs_cols', RHS_COLS)
         await fixture.write_word('inner', INNER)
@@ -132,7 +128,7 @@ async def core_mini_rvv_matmul_asm_test(dut):
         await fixture.run_to_halt(timeout_cycles=1000000)
         csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
-            dut,
+            fixture,
             f"core_mini_rvv_matmul_asm_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
             csr_cycle_count, LHS_ROWS, RHS_COLS, INNER
         )
@@ -143,28 +139,20 @@ async def core_mini_rvv_matmul_asm_test(dut):
         assert ((result_data == output_matmul_result).all())
 
 
-@cocotb.test()
-async def core_mini_rvv_float_matmul_c_test(dut):
+@coralflow_test
+async def core_mini_rvv_float_matmul_c_test(fixture):
     """Test FP32 matmul with RVV C intrinsics."""
-
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_float_matmul.elf'
-
     await fixture.load_elf_and_lookup_symbols(
-        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file), [
-            'lhs_input', 'rhs_input', 'result_output', 'lhs_rows', 'rhs_cols',
-            'inner', 'csr_cycle_count'
-        ]
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file),
+        _MATMUL_SYMBOLS,
     )
 
     shapes = [(16, 16, 48)]
 
     for LHS_ROWS, RHS_COLS, INNER in shapes:
-        dut._log.info(
-            f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}"
-        )
-        await fixture.core_mini_axi.reset()
+        logging.info(f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}")
         await fixture.write_word('lhs_rows', LHS_ROWS)
         await fixture.write_word('rhs_cols', RHS_COLS)
         await fixture.write_word('inner', INNER)
@@ -181,7 +169,7 @@ async def core_mini_rvv_float_matmul_c_test(dut):
         await fixture.run_to_halt(timeout_cycles=1000000)
         csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
-            dut,
+            fixture,
             f"core_mini_rvv_float_matmul_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
             csr_cycle_count,
             LHS_ROWS,
@@ -197,28 +185,22 @@ async def core_mini_rvv_float_matmul_c_test(dut):
         )
 
 
-@cocotb.test()
-async def core_mini_rvv_bf16_matmul_c_test(dut):
+@coralflow_test
+async def core_mini_rvv_bf16_matmul_c_test(fixture):
     """Test BFloat16 matmul with RVV C intrinsics (Zvfbfwma)."""
-
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_bf16_matmul.elf'
-
     await fixture.load_elf_and_lookup_symbols(
-        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file), [
-            'lhs_input', 'rhs_input', 'result_output', 'lhs_rows', 'rhs_cols',
-            'inner', 'csr_cycle_count'
-        ]
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file),
+        _MATMUL_SYMBOLS,
     )
 
     shapes = [(16, 16, 48), (8, 32, 64)]
 
     for LHS_ROWS, RHS_COLS, INNER in shapes:
-        dut._log.info(
+        logging.info(
             f"Running BFloat16 MatMul shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}"
         )
-        await fixture.core_mini_axi.reset()
         await fixture.write_word('lhs_rows', LHS_ROWS)
         await fixture.write_word('rhs_cols', RHS_COLS)
         await fixture.write_word('inner', INNER)
@@ -245,7 +227,7 @@ async def core_mini_rvv_bf16_matmul_c_test(dut):
 
         csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
-            dut,
+            fixture,
             f"core_mini_rvv_bf16_matmul_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
             csr_cycle_count,
             LHS_ROWS,
@@ -262,28 +244,20 @@ async def core_mini_rvv_bf16_matmul_c_test(dut):
         )
 
 
-@cocotb.test()
-async def core_mini_rvv_float_matmul_asm_test(dut):
+@coralflow_test
+async def core_mini_rvv_float_matmul_asm_test(fixture):
     """Test FP32 matmul with RVV assembly."""
-
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_float_matmul_assembly.elf'
-
     await fixture.load_elf_and_lookup_symbols(
-        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file), [
-            'lhs_input', 'rhs_input', 'result_output', 'lhs_rows', 'rhs_cols',
-            'inner', 'csr_cycle_count'
-        ]
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file),
+        _MATMUL_SYMBOLS,
     )
 
     shapes = [(16, 16, 48)]
 
     for LHS_ROWS, RHS_COLS, INNER in shapes:
-        dut._log.info(
-            f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}"
-        )
-        await fixture.core_mini_axi.reset()
+        logging.info(f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}")
         await fixture.write_word('lhs_rows', LHS_ROWS)
         await fixture.write_word('rhs_cols', RHS_COLS)
         await fixture.write_word('inner', INNER)
@@ -300,7 +274,7 @@ async def core_mini_rvv_float_matmul_asm_test(dut):
         await fixture.run_to_halt(timeout_cycles=1000000)
         csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
-            dut,
+            fixture,
             f"core_mini_rvv_float_matmul_asm_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
             csr_cycle_count,
             LHS_ROWS,
@@ -316,28 +290,20 @@ async def core_mini_rvv_float_matmul_asm_test(dut):
         )
 
 
-@cocotb.test()
-async def core_mini_rvv_float_matmul_optimized_c_test(dut):
+@coralflow_test
+async def core_mini_rvv_float_matmul_optimized_c_test(fixture):
     """Test FP32 matmul with optimized RVV C intrinsics."""
-
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_float_matmul_optimized.elf'
-
     await fixture.load_elf_and_lookup_symbols(
-        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file), [
-            'lhs_input', 'rhs_input', 'result_output', 'lhs_rows', 'rhs_cols',
-            'inner', 'csr_cycle_count'
-        ]
+        r.Rlocation('coralnpu_hw/tests/cocotb/rvv/ml_ops/' + elf_file),
+        _MATMUL_SYMBOLS,
     )
 
     shapes = [(16, 16, 48)]
 
     for LHS_ROWS, RHS_COLS, INNER in shapes:
-        dut._log.info(
-            f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}"
-        )
-        await fixture.core_mini_axi.reset()
+        logging.info(f"Running shape: {LHS_ROWS}x{INNER} x {INNER}x{RHS_COLS}")
         await fixture.write_word('lhs_rows', LHS_ROWS)
         await fixture.write_word('rhs_cols', RHS_COLS)
         await fixture.write_word('inner', INNER)
@@ -354,7 +320,7 @@ async def core_mini_rvv_float_matmul_optimized_c_test(dut):
         await fixture.run_to_halt(timeout_cycles=1000000)
         csr_cycle_count = await fixture.read_word('csr_cycle_count')
         log_matmul_metrics(
-            dut,
+            fixture,
             f"core_mini_rvv_float_matmul_optimized_c_test_{LHS_ROWS}x{RHS_COLS}x{INNER}",
             csr_cycle_count,
             LHS_ROWS,
@@ -368,3 +334,7 @@ async def core_mini_rvv_float_matmul_optimized_c_test(dut):
         np.testing.assert_allclose(
             result_data, output_matmul_result, rtol=1e-4, atol=1e-4
         )
+
+
+if __name__ == "__main__":
+    coralflow_main()

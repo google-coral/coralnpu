@@ -12,17 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
-import numpy as np
-import os
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 
 
-@cocotb.test()
-async def inst_cycle_counter_test(dut):
+@coralflow_test
+async def inst_cycle_counter_test(fixture):
     r = runfiles.Create()
-    fixture = await VerilatorTestFixture.Create(dut)
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/tutorial/counters/inst_cycle_counter_example.elf"
     )
@@ -31,13 +27,17 @@ async def inst_cycle_counter_test(dut):
         ['cycle_count_lo', 'cycle_count_hi', 'inst_count_lo', 'inst_count_hi'],
     )
     await fixture.run_to_halt()
-    cycle_count_lo = (await fixture.read_word('cycle_count_lo')).view(np.int32)
-    cycle_count_hi = (await fixture.read_word('cycle_count_hi')).view(np.int32)
-    inst_count_lo = (await fixture.read_word('inst_count_lo')).view(np.int32)
-    inst_count_hi = (await fixture.read_word('inst_count_hi')).view(np.int32)
+    cycle_count_lo = await fixture.read_word('cycle_count_lo')
+    cycle_count_hi = await fixture.read_word('cycle_count_hi')
+    inst_count_lo = await fixture.read_word('inst_count_lo')
+    inst_count_hi = await fixture.read_word('inst_count_hi')
     cycle_count = (cycle_count_hi << 32) | cycle_count_lo
     instruction_count = (inst_count_hi << 32) | inst_count_lo
     print(
-        f" {instruction_count[0]} instructions are executed with {cycle_count[0]} compute cycles",
+        f" {instruction_count} instructions are executed with {cycle_count} compute cycles",
         flush=True
     )
+
+
+if __name__ == "__main__":
+    coralflow_main()

@@ -12,22 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
 import numpy as np
 
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
-from bazel_tools.tools.python.runfiles import runfiles
+from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 
 
-@cocotb.test()
-async def core_mini_rvv_memcpy_test(dut):
-
-    fixture = await VerilatorTestFixture.Create(dut)
-    r = runfiles.Create()
+@coralflow_test
+async def rvv_memcpy_test(fixture: BaseCoralNPUFixture):
     await fixture.load_elf_and_lookup_symbols(
-        r.
-        Rlocation('coralnpu_hw/tests/cocotb/rvv/rvv_opt/rvv_memcpy_test.elf'),
-        ['in_buf', 'out_buf', 'size_n']
+        'coralnpu_hw/tests/cocotb/rvv/rvv_opt/rvv_memcpy_test.elf',
+        ['in_buf', 'out_buf', 'size_n'],
     )
     min_value = np.iinfo(np.uint8).min
     max_value = np.iinfo(np.uint8).max + 1
@@ -39,25 +34,19 @@ async def core_mini_rvv_memcpy_test(dut):
         expected_output_buffer = np.zeros(512, dtype=np.uint8)
         await fixture.write('in_buf', input_data)
         await fixture.write('out_buf', np.zeros(512, dtype=np.uint8))
-        await fixture.write('size_n', np.asarray([size_n]))
-        cycle_count = await fixture.run_to_halt(timeout_cycles=10000)
-        result = await fixture.read('out_buf', 512)
+        await fixture.write('size_n', np.asarray([size_n], dtype=np.uint32))
+        await fixture.run_to_halt(timeout_cycles=10000)
+        result = await fixture.read('out_buf', 512, dtype=np.uint8)
         expected_output_buffer[:size_n] = input_data[:size_n]
         assert (expected_output_buffer == result).all()
 
 
-@cocotb.test()
-async def core_mini_rvv_memset_test(dut):
-
-    fixture = await VerilatorTestFixture.Create(dut)
-    r = runfiles.Create()
+@coralflow_test
+async def rvv_memset_test(fixture: BaseCoralNPUFixture):
     await fixture.load_elf_and_lookup_symbols(
-        r.
-        Rlocation('coralnpu_hw/tests/cocotb/rvv/rvv_opt/rvv_memset_test.elf'),
-        ['val_in', 'out_buf', 'size_n']
+        'coralnpu_hw/tests/cocotb/rvv/rvv_opt/rvv_memset_test.elf',
+        ['val_in', 'out_buf', 'size_n'],
     )
-    min_value = np.iinfo(np.uint8).min
-    max_value = np.iinfo(np.uint8).max + 1
     for size_n in [1, 8, 24, 33, 48, 61, 127, 128, 231, 256, 501, 512, 0]:
         for val in [0, 1, 42, 127, 128, 255]:
             val_u8 = np.uint8(val & 0xFF)
@@ -67,7 +56,11 @@ async def core_mini_rvv_memset_test(dut):
             await fixture.write(
                 'size_n', np.asarray([size_n], dtype=np.uint32)
             )
-            cycle_count = await fixture.run_to_halt(timeout_cycles=10000)
-            result = await fixture.read('out_buf', 512)
+            await fixture.run_to_halt(timeout_cycles=10000)
+            result = await fixture.read('out_buf', 512, dtype=np.uint8)
             expected_output_buffer[:size_n] = val_u8
             assert (expected_output_buffer == result).all()
+
+
+if __name__ == '__main__':
+    coralflow_main()

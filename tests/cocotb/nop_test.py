@@ -16,18 +16,18 @@
 # It loads the NOP stress test binary and runs it to provide a baseline
 # power measurement.
 
-import cocotb
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+import logging
+
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 from bazel_tools.tools.python.runfiles import runfiles
 
 
-@cocotb.test()
-async def nop_stress_test(dut):
+@coralflow_test
+async def nop_stress_test(fixture):
     """Test that runs a loop with 512 NOPs unrolled.
 
     Used for baseline vector power analysis.
     """
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'nop_test.elf'
 
@@ -36,5 +36,10 @@ async def nop_stress_test(dut):
         r.Rlocation('coralnpu_hw/tests/cocotb/' + elf_file), []
     )
 
-    cycles = await fixture.run_to_halt(timeout_cycles=1000000)
-    dut._log.info(f"Cycle count: {cycles}")
+    await fixture.run_to_halt(timeout_cycles=1000000)
+    cycles = fixture.get_cycle_count()
+    logging.info(f"Cycle count: {cycles}")
+
+
+if __name__ == "__main__":
+    coralflow_main()

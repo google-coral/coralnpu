@@ -21,21 +21,33 @@ package(default_visibility = ["//visibility:public"])
 
 coralflow_test(
     name = "test_rvv_add",
+    size = "large",
     srcs = ["test_rvv_add.py"],
     elf = "//tests/cocotb/rvv/arithmetics:rvv_add_int8_m1.elf",
 )
 
 coralflow_test(
     name = "test_matmul",
+    size = "large",
     srcs = ["test_matmul.py"],
+    data = ["//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem.elf"],
     elf = "//tests/cocotb/rvv/ml_ops:rvv_matmul.elf",
-    highmem_elf = "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem.elf",
 )
 
 coralflow_test(
     name = "test_rvv_ml_ops",
+    size = "enormous",
     srcs = ["test_rvv_ml_ops.py"],
     elf = "//tests/cocotb/rvv/ml_ops:rvv_mlop_tests",
+    exclude_testcases = {
+        "uvm": ["rvv_bf16_matmul_c_test"],
+    },
+    targets = [
+        "verilator",
+        "vcs",
+        "uvm",
+        "nexus_fpga",
+    ],
     deps = [
         requirement("ml_dtypes"),
     ],

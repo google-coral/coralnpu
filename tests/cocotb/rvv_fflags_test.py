@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+import logging
+
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 from bazel_tools.tools.python.runfiles import runfiles
 
 
-@cocotb.test()
-async def rvv_fflags_test(dut):
+@coralflow_test
+async def rvv_fflags_test(fixture):
     """Test that RVV floating point operations correctly update fflags."""
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'rvv_fflags_test.elf'
 
@@ -40,13 +40,12 @@ async def rvv_fflags_test(dut):
         ]
     )
 
-    cycles = await fixture.run_to_halt(timeout_cycles=1000000)
-    dut._log.info(f"Cycle count: {cycles}")
+    await fixture.run_to_halt(timeout_cycles=1000000)
+    cycles = fixture.get_cycle_count()
+    logging.info(f"Cycle count: {cycles}")
 
     async def read_u32(symbol_name):
-        addr = fixture.symbols[symbol_name]
-        actual_bytes = await fixture.core_mini_axi.read(addr, 4)
-        return int.from_bytes(actual_bytes.tobytes(), 'little')
+        return int(await fixture.read_word(symbol_name))
 
     fflags_initial = await read_u32('fflags_initial')
     fflags_divzero = await read_u32('fflags_divzero')
@@ -59,19 +58,19 @@ async def rvv_fflags_test(dut):
     rmm_fflags = await read_u32('rmm_fflags')
     fflags_cleared = await read_u32('fflags_cleared')
 
-    dut._log.info(f"fflags_initial: {hex(fflags_initial)}")
-    dut._log.info(
+    logging.info(f"fflags_initial: {hex(fflags_initial)}")
+    logging.info(
         f"fflags_divzero: {hex(fflags_divzero)} (fcsr: {hex(fcsr_divzero)})"
     )
-    dut._log.info(f"fflags_invalid: {hex(fflags_invalid)}")
-    dut._log.info(f"fflags_overflow: {hex(fflags_overflow)}")
-    dut._log.info(
+    logging.info(f"fflags_invalid: {hex(fflags_invalid)}")
+    logging.info(f"fflags_overflow: {hex(fflags_overflow)}")
+    logging.info(
         f"fflags_underflow: {hex(fflags_underflow)}, fnmsub_result: {hex(fnmsub_result)}"
     )
-    dut._log.info(
+    logging.info(
         f"rmm_fadd_result: {hex(rmm_fadd_result)}, rmm_fflags: {hex(rmm_fflags)}"
     )
-    dut._log.info(f"fflags_cleared: {hex(fflags_cleared)}")
+    logging.info(f"fflags_cleared: {hex(fflags_cleared)}")
 
     # Check initial fflags is 0
     assert fflags_initial == 0x0, f"Expected fflags_initial=0x0, got {hex(fflags_initial)}"
@@ -100,13 +99,10 @@ async def rvv_fflags_test(dut):
     assert fflags_cleared == 0x0, f"Expected fflags_cleared=0x0, got {hex(fflags_cleared)}"
 
     # Check concurrent CSR write and vector exception hazard cases
-    hazard_addr = fixture.symbols['fflags_hazard']
-    hazard_bytes = await fixture.core_mini_axi.read(hazard_addr, 16 * 4)
+    hazard_bytes = bytes(await fixture.read('fflags_hazard', 16 * 4))
     for i in range(16):
-        val = int.from_bytes(
-            hazard_bytes[i * 4:(i + 1) * 4].tobytes(), 'little'
-        )
-        dut._log.info(f"fflags_hazard[{i}]: {hex(val)}")
+        val = int.from_bytes(hazard_bytes[i * 4:(i + 1) * 4], 'little')
+        logging.info(f"fflags_hazard[{i}]: {hex(val)}")
         # The CSR write of 0x02 (UF) occurs later in program order than vfdiv.vv (NX=0x01).
         # Therefore, the final value must be exactly 0x02 (UF), overwriting the initial 0x10 (NV)
         # and NOT retaining or OR'ing in the earlier vfdiv's 0x01 (NX).
@@ -114,4 +110,8 @@ async def rvv_fflags_test(dut):
             f"Hazard test delay {i}: expected exact fflags=0x02 (UF), got {hex(val)}"
         )
 
-    dut._log.info("All RVV fflags exception tests passed!")
+    logging.info("All RVV fflags exception tests passed!")
+
+
+if __name__ == "__main__":
+    coralflow_main()

@@ -14,10 +14,12 @@
 
 """Bazel functions for VCS."""
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-load("//rules:uvm_denylist.bzl", "SPIKE_DENYLIST")
 load("//rules:verilog.bzl", "VerilogInfo", "collect_verilog_files")
+
+def _vcs_resource_estimator(os, input_size):
+    return {"cpu": min(MAKE_JOBS, 2), "memory": 8192}
 
 def _vcs_testbench_test_impl(ctx):
     all_files = collect_verilog_files(ctx.attr.deps).to_list()
@@ -50,6 +52,8 @@ def _vcs_testbench_test_impl(ctx):
         outputs = [vcs_binary_output, vcs_daidir_output],
         inputs = verilog_files,
         command = " ".join(command),
+        mnemonic = "VcsCompile",
+        resource_set = _vcs_resource_estimator,
         use_default_shell_env = True,
         execution_requirements = {"no-sandbox": "1"},
     )
@@ -228,6 +232,8 @@ def _vcs_binary_impl(ctx):
         inputs = depset(verilog_files + ctx.files.srcs + libs + objects, transitive = [headers_depset]),
         outputs = [vcs_simv_output, vcs_daidir_output],
         executable = script,
+        mnemonic = "VcsCompile",
+        resource_set = _vcs_resource_estimator,
         use_default_shell_env = True,
         execution_requirements = {"no-sandbox": "1"},
         progress_message = "[VCS Link] Linking %s" % ctx.label,
@@ -266,12 +272,6 @@ _vcs_binary = rule(
 
 def vcs_binary(name, tags = [], **kwargs):
     _vcs_binary(name = name, tags = ["vcs"] + tags, **kwargs)
-
-def _rlocation_path(workspace_name, file):
-    if file.short_path.startswith("../"):
-        return file.short_path[3:]
-    else:
-        return workspace_name + "/" + file.short_path
 
 def _vcs_model_impl(ctx):
     all_sources = []
@@ -466,6 +466,8 @@ def _vcs_model_impl(ctx):
         inputs = action_inputs,
         outputs = [vcs_simv_output, vcs_daidir_output],
         executable = script,
+        mnemonic = "VcsCompile",
+        resource_set = _vcs_resource_estimator,
         use_default_shell_env = True,
         execution_requirements = {"no-sandbox": "1"},
         progress_message = "[VCS Compile] Compiling VCS model %s" % ctx.label,
@@ -507,76 +509,3 @@ _vcs_model = rule(
 
 def vcs_model(name, tags = [], **kwargs):
     _vcs_model(name = name, tags = ["vcs"] + tags, **kwargs)
-
-def _vcs_batch_uvm_impl(ctx):
-    runfiles = []
-    run_spike_flag = ctx.attr.run_spike[BuildSettingInfo].value
-
-    model_binary = None
-    for f in ctx.files.model:
-        if not f.path.endswith(".log") and not f.path.endswith(".daidir"):
-            model_binary = f
-            break
-
-    if not model_binary:
-        fail("Model binary could not be found")
-
-    ws = "coralnpu_hw"
-    runner = ctx.actions.declare_file(ctx.label.name)
-    runfiles.extend(ctx.files.coralnpu_tests + [model_binary])
-
-    ctx.actions.symlink(output = runner, target_file = ctx.executable._runner, is_executable = True)
-
-    coralnpu_elfs_fmt = []
-    for file, label, timeout in zip(ctx.files.coralnpu_tests, ctx.attr.labels, ctx.attr.timeouts):
-        enable_spike = run_spike_flag
-        if enable_spike and label in SPIKE_DENYLIST:
-            print("Warning: skipping spike cosim for {}, because it is listed in SPIKE_DENYLIST".format(label))
-            enable_spike = False
-        coralnpu_elfs_fmt.append("{}\t{}\t{}\t{}".format(_rlocation_path(ws, file), label, timeout, enable_spike))
-
-    model_default_runfiles = ctx.attr.model[DefaultInfo].default_runfiles if ctx.attr.model[DefaultInfo].default_runfiles else ctx.runfiles()
-
-    return [
-        DefaultInfo(
-            executable = runner,
-            runfiles = ctx.runfiles(
-                files = runfiles,
-                collect_default = True,
-            ).merge(ctx.attr._runner[DefaultInfo].default_runfiles).merge(model_default_runfiles),
-        ),
-        RunEnvironmentInfo(
-            environment = {
-                "UVM_MODEL_RLOCATION": _rlocation_path(ws, model_binary),
-                "UVM_CORALNPU_ELFS": "\n".join(coralnpu_elfs_fmt),
-                "UVM_SPIKE_RLOCATION": "SPIKE" if run_spike_flag else "",
-            },
-        ),
-    ]
-
-_vcs_batch_uvm_test = rule(
-    doc = """Performs batch testing of the UVM VCS model.""",
-    implementation = _vcs_batch_uvm_impl,
-    attrs = {
-        "model": attr.label(allow_files = True),
-        "coralnpu_tests": attr.label_list(allow_files = True),
-        "timeouts": attr.int_list(mandatory = True),
-        "labels": attr.string_list(mandatory = True),
-        "run_spike": attr.label(
-            providers = [BuildSettingInfo],
-        ),
-        "_spike": attr.label(
-            default = Label("@riscv_isa_sim//:riscv_isa_sim"),
-            allow_files = True,
-        ),
-        "_runner": attr.label(
-            default = Label("//utils:uvm_batch_runner"),
-            executable = True,
-            cfg = "target",
-        ),
-    },
-    test = True,
-)
-
-def vcs_batch_uvm_test(name, tags = [], **kwargs):
-    _vcs_batch_uvm_test(name = name, tags = ["vcs"] + tags, **kwargs)

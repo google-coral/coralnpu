@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
-import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+import numpy as np
 
 
 class LogisticTester:
@@ -28,8 +27,8 @@ class LogisticTester:
         )
         self.fixture = None
 
-    async def setup(self, dut):
-        self.fixture = await VerilatorTestFixture.Create(dut, highmem=True)
+    async def setup(self, fixture):
+        self.fixture = fixture
         await self.fixture.load_elf_and_lookup_symbols(
             self.elf_file,
             [
@@ -51,7 +50,6 @@ class LogisticTester:
             ],
         )
 
-        rng = np.random.default_rng()
         # Cover the whole int8 range to test LUT
         input_data = np.arange(-128, 128, dtype=np.int8)
         if self.input_size > len(input_data):
@@ -110,15 +108,19 @@ class LogisticTester:
         assert (opt_output == ref_output).all()
 
 
-@cocotb.test()
-async def test_logistic_256(dut):
+@coralflow_test(highmem=True)
+async def test_logistic_256(fixture):
     t = LogisticTester(input_size=256)
-    await t.setup(dut)
+    await t.setup(fixture)
     await t.test()
 
 
-@cocotb.test(skip=True)
-async def test_logistic_1024(dut):
+@coralflow_test(highmem=True)
+async def test_logistic_1024(fixture):
     t = LogisticTester(input_size=1024)
-    await t.setup(dut)
+    await t.setup(fixture)
     await t.test()
+
+
+if __name__ == "__main__":
+    coralflow_main()

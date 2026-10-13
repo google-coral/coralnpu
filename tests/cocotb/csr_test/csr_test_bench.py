@@ -12,21 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
-import numpy as np
-from coralnpu_test_utils.core_mini_axi_interface import CoreMiniAxiInterface
 from bazel_tools.tools.python.runfiles import runfiles
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+import numpy as np
 
 
-@cocotb.test()
-async def csr_read_write_test(dut):
+@coralflow_test
+async def csr_read_write_test(fixture):
     """Test CSR read/write operations."""
-
-    core_mini_axi = CoreMiniAxiInterface(dut)
-    await core_mini_axi.init()
-    await core_mini_axi.reset()
-    cocotb.start_soon(core_mini_axi.clock.start())
-
     r = runfiles.Create()
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/csr_test/csr_test_program.elf"
@@ -34,16 +27,10 @@ async def csr_read_write_test(dut):
     if not elf_path:
         raise ValueError("Could not find ELF file. Build the target first.")
 
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
+    await fixture.load_elf_and_lookup_symbols(elf_path, ["csr_results"])
+    await fixture.run_to_halt()
 
-    with open(elf_path, "rb") as f:
-        results_addr = core_mini_axi.lookup_symbol(f, "csr_results")
-
-    await core_mini_axi.execute_from(entry_point)
-    await core_mini_axi.wait_for_halted()
-
-    results_bytes = await core_mini_axi.read(results_addr, 11 * 4)
+    results_bytes = await fixture.read("csr_results", 11 * 4)
     results = results_bytes.view(np.uint32)
 
     test_1_write = int(results[0])
@@ -58,35 +45,23 @@ async def csr_read_write_test(dut):
     test_5_read = int(results[9])
     test_status = int(results[10])
 
-    cocotb.log.info(
-        f"[CSR Test] Test 1 (FCSR): written=0x{test_1_write:08x} read=0x{test_1_read:08x}"
-    )
-    cocotb.log.info(
-        f"[CSR Test] Test 2 (FFLAGS): written=0x{test_2_write:08x} read=0x{test_2_read:08x}"
-    )
-    cocotb.log.info(
-        f"[CSR Test] Test 3 (MSCRATCH): written=0x{test_3_write:08x} read=0x{test_3_read:08x}"
-    )
-    cocotb.log.info(
-        f"[CSR Test] Test 4 (MSTATUSH): written=0x{test_4_write:08x} read=0x{test_4_read:08x}"
-    )
-    cocotb.log.info(
-        f"[CSR Test] Test 5 (MEPC): written=0x{test_5_write:08x} read=0x{test_5_read:08x}"
-    )
-    cocotb.log.info(
-        f"[CSR Test] Overall status: {'PASS' if test_status == 0 else 'FAIL'}"
-    )
-
-    assert (test_1_read & test_1_write) == test_1_write, \
+    assert (test_1_read & test_1_write) == test_1_write, (
         f"Test 1 failed: 0x{test_1_write:08x} != 0x{test_1_read:08x}"
-    assert (test_2_read & test_2_write) == test_2_write, \
+    )
+    assert (test_2_read & test_2_write) == test_2_write, (
         f"Test 2 failed: 0x{test_2_write:08x} != 0x{test_2_read:08x}"
-    assert (test_3_read & test_3_write) == test_3_write, \
+    )
+    assert (test_3_read & test_3_write) == test_3_write, (
         f"Test 3 failed: 0x{test_3_write:08x} != 0x{test_3_read:08x}"
-    assert (test_4_read == 0x00000000), \
+    )
+    assert test_4_read == 0x00000000, (
         f"Test 4 failed: 0x{test_4_write:08x} != 0x{test_4_read:08x}"
-    assert (test_5_read == (test_5_write & ~0x3)), \
+    )
+    assert test_5_read == (test_5_write & ~0x3), (
         f"Test 5 failed: 0x{test_5_write:08x} != 0x{test_5_read:08x}"
+    )
     assert test_status == 0, "CSR test failed in program"
 
-    cocotb.log.info("[CSR Test] ✓ All tests passed!")
+
+if __name__ == "__main__":
+    coralflow_main()

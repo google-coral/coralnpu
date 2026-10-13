@@ -1,35 +1,30 @@
-import asyncio
 import os
 import sys
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_backends.mpact_npusim_test_fixture import MpactNpuSimTestFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+
+_MAX_POOL_SYMBOLS = [
+    "input_dims",
+    "input_data",
+    "output_dims",
+    "output_data",
+    "output_data_ref",
+    "params_stride_width",
+    "params_stride_height",
+    "params_filter_width",
+    "params_filter_height",
+    "params_padding_width",
+    "params_padding_height",
+    "params_activation_min",
+    "params_activation_max",
+    "ref_cycles",
+    "opt_cycles",
+    "heartbeat",
+]
 
 
-async def run_test_case(elf_file, input_shape):
-    # Symbols to resolve
-    symbols = [
-        "input_dims",
-        "input_data",
-        "output_dims",
-        "output_data",
-        "output_data_ref",
-        "params_stride_width",
-        "params_stride_height",
-        "params_filter_width",
-        "params_filter_height",
-        "params_padding_width",
-        "params_padding_height",
-        "params_activation_min",
-        "params_activation_max",
-        "ref_cycles",
-        "opt_cycles",
-        "heartbeat",
-    ]
-
-    fixture = await MpactNpuSimTestFixture.Create(highmem=True)
-    await fixture.load_elf_and_lookup_symbols(elf_file, symbols)
-
+async def run_test_case(fixture, input_shape):
     # Parameters for MaxPool 2x2
     filter_height = 2
     filter_width = 2
@@ -59,22 +54,14 @@ async def run_test_case(elf_file, input_shape):
     await fixture.write("input_data", input_data)
     await fixture.write("output_dims", np.array(output_shape, dtype=np.int32))
 
-    await fixture.write_word("params_stride_width", stride_width, signed=True)
-    await fixture.write_word(
-        "params_stride_height", stride_height, signed=True
-    )
-    await fixture.write_word("params_filter_width", filter_width, signed=True)
-    await fixture.write_word(
-        "params_filter_height", filter_height, signed=True
-    )
-    await fixture.write_word("params_padding_width", pad_w, signed=True)
-    await fixture.write_word("params_padding_height", pad_h, signed=True)
-    await fixture.write_word(
-        "params_activation_min", activation_min, signed=True
-    )
-    await fixture.write_word(
-        "params_activation_max", activation_max, signed=True
-    )
+    await fixture.write_word("params_stride_width", stride_width)
+    await fixture.write_word("params_stride_height", stride_height)
+    await fixture.write_word("params_filter_width", filter_width)
+    await fixture.write_word("params_filter_height", filter_height)
+    await fixture.write_word("params_padding_width", pad_w)
+    await fixture.write_word("params_padding_height", pad_h)
+    await fixture.write_word("params_activation_min", activation_min)
+    await fixture.write_word("params_activation_max", activation_max)
 
     # Run Simulation
     await fixture.run_to_halt(timeout_cycles=100_000_000)
@@ -109,7 +96,8 @@ async def run_test_case(elf_file, input_shape):
         print("  SUCCESS: Outputs match.", flush=True)
 
 
-async def run_max_pool_sim_test():
+@coralflow_test(highmem=True)
+async def run_max_pool_sim_test(fixture):
     r = runfiles.Create()
     elf_file = r.Rlocation(
         "coralnpu_hw/sw/opt/litert-micro/test/max_pool_test.elf"
@@ -118,14 +106,16 @@ async def run_max_pool_sim_test():
     if not os.path.exists(elf_file):
         raise FileNotFoundError(f"ELF file not found: {elf_file}")
 
+    await fixture.load_elf_and_lookup_symbols(elf_file, _MAX_POOL_SYMBOLS)
+
     test_shapes = [
         [1, 100, 100, 16],
         [1, 50, 50, 48],
     ]
 
     for shape in test_shapes:
-        await run_test_case(elf_file, shape)
+        await run_test_case(fixture, shape)
 
 
 if __name__ == "__main__":
-    asyncio.run(run_max_pool_sim_test())
+    coralflow_main()

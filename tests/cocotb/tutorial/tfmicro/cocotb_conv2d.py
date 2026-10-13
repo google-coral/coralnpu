@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
-import numpy as np
-
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+import numpy as np
 
 
 def tolerate(target: int, tolerance=1.2) -> int:
@@ -41,8 +39,8 @@ class Conv2DTest:
         )
         self.fixture = None
 
-    async def load_and_populate_input(self, dut):
-        self.fixture = await VerilatorTestFixture.Create(dut, highmem=True)
+    async def load_and_populate_input(self, fixture):
+        self.fixture = fixture
         await self.fixture.load_elf_and_lookup_symbols(
             self.elf_file, [
                 'impl',
@@ -104,7 +102,7 @@ class Conv2DTest:
         assert (opt_output == ref_output).all()
 
     async def test_opt(self, opt_target):
-        opt_output, opt_cycles = await self.run(
+        _, opt_cycles = await self.run(
             'run_opt', tolerate(opt_target, tolerance=5)
         )
         print(f'opt_cycles={opt_cycles}', flush=True)
@@ -115,96 +113,100 @@ class Conv2DTest:
 # slower than `-c opt` because DCHECKs are enabled.
 
 
-@cocotb.test()
-async def test_conv2d_4x1_h2w2(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_4x1_h2w2(fixture):
     t = Conv2DTest(in_d=4, out_d=1, out_h=2, out_w=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=5200, opt_target=5100)
 
 
-@cocotb.test()
-async def test_conv2d_9x2(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_9x2(fixture):
     t = Conv2DTest(in_d=9, out_d=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=77_959, opt_target=14_000)
 
 
-@cocotb.test()
-async def test_conv2d_16x1(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_16x1(fixture):
     t = Conv2DTest(in_d=16, out_d=1)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=58_600, opt_target=9_700)
 
 
-@cocotb.test()
-async def test_conv2d_16x3_s2(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_16x3_s2(fixture):
     t = Conv2DTest(in_d=16, out_d=3, stride=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=241_454, opt_target=31_600)
 
 
 # A case to fall back.
-@cocotb.test()
-async def test_conv2d_18x1(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_18x1(fixture):
     t = Conv2DTest(in_d=18, out_d=1)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=63_700, opt_target=13_600)
 
 
-@cocotb.test()
-async def test_conv2d_16x16(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_16x16(fixture):
     t = Conv2DTest(in_d=16, out_d=16)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=913_600, opt_target=80_000)
 
 
-@cocotb.test()
-async def test_conv2d_16x16_h2w8(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_16x16_h2w8(fixture):
     t = Conv2DTest(in_d=16, out_d=16, out_h=2, out_w=8)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=747_900, opt_target=63_900)
 
 
-@cocotb.test()
-async def test_conv2d_37x1_h2w2(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_37x1_h2w2(fixture):
     t = Conv2DTest(in_d=37, out_d=1, out_h=2, out_w=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=14_843, opt_target=7_451)
 
 
-@cocotb.test()
-async def test_conv2d_21x48_h8w8(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_21x48_h8w8(fixture):
     t = Conv2DTest(in_d=21, out_d=48, out_h=2, out_w=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=438_440, opt_target=131_568)
 
 
-@cocotb.test()
-async def test_conv2d_48x2(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_48x2(fixture):
     t = Conv2DTest(in_d=48, out_d=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=290_516, opt_target=31_827)
 
 
 # Skipping large tests to reduce over head on pre-submit test :test_coralnpu
 
 
-@cocotb.test(skip=True)
-async def test_conv2d_16x4_h8w8_s2(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_16x4_h8w8_s2(fixture):
     t = Conv2DTest(stride=2, in_d=16, out_d=4, out_h=8, out_w=8)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=3_190_900, opt_target=1_00_000)
 
 
-@cocotb.test(skip=True)
-async def test_conv2d_48x48_h2w2(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_48x48_h2w2(fixture):
     t = Conv2DTest(in_d=48, out_d=48, out_h=2, out_w=2)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test_opt(opt_target=275_700)
 
 
-@cocotb.test(skip=True)
-async def test_conv2d_16x4_h8w8(dut):
+@coralflow_test(highmem=True)
+async def test_conv2d_16x4_h8w8(fixture):
     t = Conv2DTest(in_d=16, out_d=4, out_h=8, out_w=8)
-    await t.load_and_populate_input(dut)
+    await t.load_and_populate_input(fixture)
     await t.test(ref_target=599_081, opt_target=25_009)
+
+
+if __name__ == '__main__':
+    coralflow_main()

@@ -14,6 +14,7 @@
 """Unit tests for CoralFlow runner decorator and fixture dispatch."""
 
 import asyncio
+import logging
 import os
 import sys
 import unittest
@@ -23,7 +24,9 @@ import numpy as np
 from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
 from coralnpu_test_utils.coralflow.runner import (
     _AsyncFixtureWrapper,
+    _REGISTERED_TESTS,
     _create_fixture,
+    coralflow_main,
     coralflow_test,
     get_target_environment,
     is_cocotb_simulation,
@@ -33,10 +36,10 @@ from coralnpu_test_utils.coralflow.runner import (
 class MockFixture(BaseCoralNPUFixture):
 
     def __init__(self):
+        super().__init__()
         self.loaded = False
         self.executed = False
         self.closed = False
-        self.symbols = {}
 
     async def load_elf_and_lookup_symbols(
         self, elf_path, symbols, optional_symbols=None
@@ -115,10 +118,12 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         super().setUp()
         self._orig_env = dict(os.environ)
+        _REGISTERED_TESTS.clear()
 
     def tearDown(self):
         os.environ.clear()
         os.environ.update(self._orig_env)
+        _REGISTERED_TESTS.clear()
         super().tearDown()
 
     def test_is_cocotb_simulation(self):
@@ -131,8 +136,8 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(is_cocotb_simulation())
 
     def test_get_target_environment_default(self):
-        os.environ.pop("CORALFLOW_TARGET", None)
         os.environ.pop("COCOTB_SIM", None)
+        os.environ.pop("CORALFLOW_TARGET", None)
         self.assertEqual(get_target_environment(), "npusim")
 
     def test_get_target_environment_override(self):
@@ -334,10 +339,11 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
         mock_cocotb = mock.MagicMock()
 
         # Mock cocotb.test decorator
-        def mock_test_decorator():
+        def mock_test_decorator(**kwargs):
 
             def wrap(f):
                 f._is_cocotb_test = True
+                f._cocotb_skip = kwargs.get("skip", False)
                 return f
 
             return wrap
@@ -358,10 +364,153 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
                 executed_steps.append("cocotb_ok")
 
             self.assertTrue(getattr(my_cocotb_test, "_is_cocotb_test", False))
+            self.assertFalse(getattr(my_cocotb_test, "_cocotb_skip", True))
             asyncio.run(my_cocotb_test("mock_dut"))
             self.assertEqual(executed_steps, ["cocotb_ok"])
             self.assertTrue(mock_inst.closed)
             mock_create.assert_awaited_once_with("verilator", dut="mock_dut")
+
+    @mock.patch("coralnpu_test_utils.coralflow.runner._create_fixture")
+    def test_coralflow_main_and_filtering(self, mock_create):
+        mock_create.side_effect = lambda *args, **kwargs: MockFixture()
+        ran = []
+
+        @coralflow_test
+        async def core_mini_rvv_memcpy_test(fixture: BaseCoralNPUFixture):
+            await fixture.run_to_halt()
+            ran.append("memcpy")
+
+        @coralflow_test
+        async def rvv_matmul_f32(fixture: BaseCoralNPUFixture):
+            await fixture.run_to_halt()
+            ran.append("f32")
+
+        @coralflow_test
+        async def rvv_matmul_f32_gemv(fixture: BaseCoralNPUFixture):
+            await fixture.run_to_halt()
+            ran.append("f32_gemv")
+
+        # 1. Default run executes all registered tests
+        coralflow_main(argv=[])
+        self.assertEqual(ran, ["memcpy", "f32", "f32_gemv"])
+
+        # 2. Exact match selects only exact test even if it is a prefix of another
+        ran.clear()
+        coralflow_main(argv=["--testcase", "rvv_matmul_f32"])
+        self.assertEqual(ran, ["f32"])
+
+        # 3. Substring fallback matches when exact name is not present (like COCOTB_TEST_FILTER)
+        ran.clear()
+        os.environ["CORALFLOW_TESTCASE"] = "rvv_memcpy_test"
+        coralflow_main(argv=[])
+        self.assertEqual(ran, ["memcpy"])
+        del os.environ["CORALFLOW_TESTCASE"]
+
+        # 4. Unknown testcase raises ValueError
+        with self.assertRaises(ValueError):
+            coralflow_main(argv=["--testcase", "non_existent_test"])
+
+    @mock.patch("coralnpu_test_utils.coralflow.runner._create_fixture")
+    def test_coralflow_main_sharding(self, mock_create):
+        import tempfile
+
+        mock_create.side_effect = lambda *args, **kwargs: MockFixture()
+        ran = []
+
+        for idx in range(4):
+
+            def _make_test(i):
+
+                @coralflow_test
+                async def _test_fn(fixture: BaseCoralNPUFixture):
+                    await fixture.run_to_halt()
+                    ran.append(f"t{i}")
+
+                _test_fn.__name__ = f"test_{i}"
+                _REGISTERED_TESTS[f"test_{i}"] = _REGISTERED_TESTS.pop(
+                    "_test_fn"
+                )
+
+            _make_test(idx)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            status_path = os.path.join(tmpdir, "shard_status")
+            os.environ["TEST_SHARD_STATUS_FILE"] = status_path
+            os.environ["TEST_TOTAL_SHARDS"] = "2"
+
+            os.environ["TEST_SHARD_INDEX"] = "0"
+            coralflow_main(argv=[])
+            self.assertTrue(os.path.exists(status_path))
+            self.assertEqual(ran, ["t0", "t2"])
+
+            ran.clear()
+            os.environ["TEST_SHARD_INDEX"] = "1"
+            coralflow_main(argv=[])
+            self.assertEqual(ran, ["t1", "t3"])
+
+            os.environ["TEST_SHARD_INDEX"] = "5"
+            with self.assertRaises(ValueError):
+                coralflow_main(argv=[])
+
+            # Verify CORALFLOW_EXCLUDE_TESTCASE interaction with sharding
+            ran.clear()
+            os.environ["CORALFLOW_EXCLUDE_TESTCASE"] = "test_0"
+            os.environ["TEST_SHARD_INDEX"] = "0"
+            coralflow_main(argv=[])
+            self.assertEqual(ran, ["t1", "t3"])
+
+            ran.clear()
+            os.environ["TEST_SHARD_INDEX"] = "1"
+            coralflow_main(argv=[])
+            self.assertEqual(ran, ["t2"])
+
+    def test_cocotb_sharding_and_testcase_filtering(self):
+        import coralnpu_test_utils.coralflow.runner as runner_mod
+
+        mock_cocotb = mock.MagicMock()
+
+        def mock_test_decorator(**kwargs):
+
+            def wrap(f):
+                f._cocotb_skip = kwargs.get("skip", False)
+                return f
+
+            return wrap
+
+        mock_cocotb.test = mock_test_decorator
+
+        with mock.patch.dict("sys.modules", {"cocotb": mock_cocotb}), \
+             mock.patch("coralnpu_test_utils.coralflow.runner.is_cocotb_simulation", return_value=True):
+            runner_mod._COCOTB_TEST_COUNTS.clear()
+            os.environ["CORALFLOW_TESTCASE"] = "tc_b,tc_c,tc_d"
+            os.environ["CORALFLOW_EXCLUDE_TESTCASE"] = "tc_c"
+            os.environ["TEST_TOTAL_SHARDS"] = "2"
+            os.environ["TEST_SHARD_INDEX"] = "1"
+
+            @coralflow_test
+            async def tc_a(fixture):
+                pass
+
+            @coralflow_test
+            async def tc_b(fixture):
+                pass
+
+            @coralflow_test
+            async def tc_c(fixture):
+                pass
+
+            @coralflow_test
+            async def tc_d(fixture):
+                pass
+
+            # tc_a is not in CORALFLOW_TESTCASE -> skipped without incrementing shard counter
+            self.assertTrue(tc_a._cocotb_skip)
+            # tc_b is enabled index 0 -> skipped on shard 1
+            self.assertTrue(tc_b._cocotb_skip)
+            # tc_c is in CORALFLOW_EXCLUDE_TESTCASE -> skipped without incrementing shard counter
+            self.assertTrue(tc_c._cocotb_skip)
+            # tc_d is enabled index 1 -> runs on shard 1!
+            self.assertFalse(tc_d._cocotb_skip)
 
 
 if __name__ == "__main__":

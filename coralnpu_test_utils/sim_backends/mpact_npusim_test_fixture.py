@@ -20,23 +20,18 @@ import struct
 import numpy as np
 
 from coralnpu_v2_sim_utils import CoralNPUV2Simulator
+from coralnpu_test_utils.coralflow.base_fixture import BaseCoralNPUFixture
 from coralnpu_test_utils.sim_backends.common_utils import (
-    WordResult,
-    get_runfiles,
     infer_read_size_bytes,
     parse_elf_symbols,
     reconstruct_read_data,
     resolve_runfile_path,
-    resolve_symbol_address,
     to_uint8_array,
 )
 
 
-class MpactNpuSimTestFixture:
+class MpactNpuSimTestFixture(BaseCoralNPUFixture):
     """High-level test fixture wrapping MPACT CoralNPUV2Simulator."""
-
-    get_runfiles = staticmethod(get_runfiles)
-    resolve_path = staticmethod(resolve_runfile_path)
 
     def __init__(
         self,
@@ -45,6 +40,7 @@ class MpactNpuSimTestFixture:
         semihost_htif: bool = True,
         sim: CoralNPUV2Simulator | None = None,
     ):
+        super().__init__()
         self._highmem = highmem
         self._exit_on_ebreak = exit_on_ebreak
         self._semihost_htif = semihost_htif
@@ -55,16 +51,6 @@ class MpactNpuSimTestFixture:
             exit_on_ebreak=exit_on_ebreak,
             semihost_htif=semihost_htif,
         )
-        self.entry_point: int | None = None
-        self.symbols: dict[str, int] = {}
-        self.symbol_sizes: dict[str, int] = {}
-        self._last_cycle_count: int | None = None
-
-    async def __aenter__(self) -> MpactNpuSimTestFixture:
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
 
     @classmethod
     async def Create(
@@ -72,26 +58,12 @@ class MpactNpuSimTestFixture:
         highmem: bool = True,
         exit_on_ebreak: bool = True,
         semihost_htif: bool = True,
-        **kwargs,
+        **_kwargs,
     ) -> MpactNpuSimTestFixture:
-        if "highmem_ld" in kwargs:
-            highmem = kwargs.pop("highmem_ld")
         return cls(
             highmem=highmem,
             exit_on_ebreak=exit_on_ebreak,
             semihost_htif=semihost_htif,
-        )
-
-    setup = Create
-
-    def has_symbol(self, symbol: str) -> bool:
-        return symbol in self.symbols
-
-    def resolve_address(
-        self, addr_or_symbol: int | str, offset: int = 0
-    ) -> int:
-        return resolve_symbol_address(
-            addr_or_symbol, self.symbols, offset=offset
         )
 
     async def load_elf_and_lookup_symbols(
@@ -116,7 +88,7 @@ class MpactNpuSimTestFixture:
         )
         self.sim.load_program(resolved, self.entry_point)
         self._program_loaded = True
-        self._last_cycle_count = None
+        self.cycle_count = None
         return self.symbols
 
     async def write(
@@ -133,9 +105,7 @@ class MpactNpuSimTestFixture:
         symbol: str | int,
         data: int | np.integer,
         offset: int = 0,
-        signed: bool = False,
     ):
-        del signed
         addr = self.resolve_address(symbol, offset=offset)
         self.sim.write_word(addr, np.uint32(int(data) & 0xFFFFFFFF))
 
@@ -154,27 +124,23 @@ class MpactNpuSimTestFixture:
         offset: int = 0,
         dtype: np.dtype | None = None,
         shape: tuple[int, ...] | None = None,
-        size_bytes: int | None = None,
     ) -> np.ndarray:
         addr = self.resolve_address(symbol, offset=offset)
         nbytes = infer_read_size_bytes(
-            symbol, self.symbol_sizes, size, size_bytes, dtype, shape
+            symbol, self.symbol_sizes, size=size, dtype=dtype, shape=shape
         )
         raw_arr = self.sim.read_memory(addr, nbytes)
         return reconstruct_read_data(raw_arr, dtype=dtype, shape=shape)
 
-    async def read_word(
-        self, symbol: str | int, offset: int = 0
-    ) -> WordResult:
+    async def read_word(self, symbol: str | int, offset: int = 0) -> int:
         addr = self.resolve_address(symbol, offset=offset)
         raw_arr = self.sim.read_memory(addr, 4)
-        val = struct.unpack("<I", raw_arr.tobytes())[0]
-        return WordResult(val)
+        return struct.unpack("<I", raw_arr.tobytes())[0]
 
     async def run_to_halt(
         self,
         timeout_sec: float = 60.0,
-        timeout_cycles: int | None = None
+        timeout_cycles: int | None = None,
     ) -> int:
         del timeout_sec
         start_cycles = self.sim.get_cycle_count() or 0
@@ -191,22 +157,18 @@ class MpactNpuSimTestFixture:
                 total_cycles += actual_steps
                 if actual_steps < batch:
                     delta = (self.sim.get_cycle_count() or 0) - start_cycles
-                    self._last_cycle_count = (
-                        delta if delta > 0 else total_cycles
-                    )
-                    return self._last_cycle_count
+                    self.cycle_count = (delta if delta > 0 else total_cycles)
+                    return self.cycle_count
             raise TimeoutError(
                 f"MPACT simulation exceeded timeout of {timeout_cycles} cycles"
             )
         self.sim.run()
         self.sim.wait()
         delta = (self.sim.get_cycle_count() or 0) - start_cycles
-        self._last_cycle_count = (
-            delta if delta > 0 else self.sim.get_cycle_count()
-        )
-        return self._last_cycle_count
+        self.cycle_count = (delta if delta > 0 else self.sim.get_cycle_count())
+        return self.cycle_count
 
     def get_cycle_count(self) -> int | None:
-        if self._last_cycle_count is not None:
-            return self._last_cycle_count
+        if self.cycle_count is not None:
+            return self.cycle_count
         return self.sim.get_cycle_count()

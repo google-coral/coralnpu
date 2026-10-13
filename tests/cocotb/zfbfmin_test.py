@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cocotb
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 from bazel_tools.tools.python.runfiles import runfiles
+import logging
 import numpy as np
 import random
 import struct
@@ -147,10 +147,9 @@ def fmv_roundtrip_expected_with_flags(in_32):
     return expected_bits, 0
 
 
-@cocotb.test()
-async def zfbfmin_test(dut):
+@coralflow_test
+async def zfbfmin_test(fixture):
     """Test that runs Zfbfmin conversion and move instructions with various inputs."""
-    fixture = await VerilatorTestFixture.Create(dut)
     r = runfiles.Create()
     elf_file = 'zfbfmin_test.elf'
 
@@ -161,7 +160,7 @@ async def zfbfmin_test(dut):
         ]
     )
 
-    symbols = fixture.symbols
+    rng = random.Random(42)
 
     # Test cases for fcvt.s.bf16 (BF16 to FP32)
     s_bf16_inputs = [
@@ -175,19 +174,15 @@ async def zfbfmin_test(dut):
         0x0001,  # min subnormal
     ]
     for _ in range(10):
-        s_bf16_inputs.append(random.getrandbits(16))
+        s_bf16_inputs.append(rng.getrandbits(16))
 
+    s_bf16_data = np.zeros((len(s_bf16_inputs), 4), dtype=np.uint32)
     for i, val in enumerate(s_bf16_inputs):
-        await fixture.core_mini_axi.write_word(
-            symbols['fcvt_s_bf16_cases'] + i * 16, 0xFFFF0000 | val
-        )
-        await fixture.core_mini_axi.write_word(
-            symbols['fcvt_s_bf16_cases'] + i * 16 + 4, RNE
-        )
+        s_bf16_data[i, 0] = 0xFFFF0000 | val
+        s_bf16_data[i, 1] = RNE
 
-    await fixture.core_mini_axi.write_word(
-        symbols['num_fcvt_s_bf16_cases'], len(s_bf16_inputs)
-    )
+    await fixture.write('fcvt_s_bf16_cases', s_bf16_data.flatten())
+    await fixture.write_word('num_fcvt_s_bf16_cases', len(s_bf16_inputs))
 
     # Test cases for fcvt.bf16.s (FP32 to BF16)
     bf16_s_inputs = [
@@ -209,21 +204,16 @@ async def zfbfmin_test(dut):
     ]
 
     for _ in range(10):
-        f = random.uniform(-100, 100)
-        bf16_s_inputs.append((f, random.choice([RNE, RTZ, RDN, RUP, RMM])))
+        f = rng.uniform(-100, 100)
+        bf16_s_inputs.append((f, rng.choice([RNE, RTZ, RDN, RUP, RMM])))
 
+    bf16_s_data = np.zeros((len(bf16_s_inputs), 4), dtype=np.uint32)
     for i, (val, rm) in enumerate(bf16_s_inputs):
-        bits = fp32_to_bits(val)
-        await fixture.core_mini_axi.write_word(
-            symbols['fcvt_bf16_s_cases'] + i * 16, bits
-        )
-        await fixture.core_mini_axi.write_word(
-            symbols['fcvt_bf16_s_cases'] + i * 16 + 4, rm
-        )
+        bf16_s_data[i, 0] = fp32_to_bits(val)
+        bf16_s_data[i, 1] = rm
 
-    await fixture.core_mini_axi.write_word(
-        symbols['num_fcvt_bf16_s_cases'], len(bf16_s_inputs)
-    )
+    await fixture.write('fcvt_bf16_s_cases', bf16_s_data.flatten())
+    await fixture.write_word('num_fcvt_bf16_s_cases', len(bf16_s_inputs))
 
     # Combined test cases for FMV instructions (fmv.h.x, fmv.x.h, fmv_roundtrip)
     fmv_inputs = [
@@ -259,28 +249,26 @@ async def zfbfmin_test(dut):
         0xFFFFFFFF,  # All ones
     ]
     for _ in range(10):
-        fmv_inputs.append(random.getrandbits(32))
+        fmv_inputs.append(rng.getrandbits(32))
 
     fmv_data = np.zeros((len(fmv_inputs), 7), dtype=np.uint32)
     for i, val in enumerate(fmv_inputs):
         fmv_data[i, 0] = val
-    await fixture.core_mini_axi.write(symbols['fmv_cases'], fmv_data.flatten())
-    await fixture.core_mini_axi.write_word(
-        symbols['num_fmv_cases'], len(fmv_inputs)
-    )
+    await fixture.write('fmv_cases', fmv_data.flatten())
+    await fixture.write_word('num_fmv_cases', len(fmv_inputs))
 
     # Run the core
     await fixture.run_to_halt(timeout_cycles=1000000)
 
     # Verify fcvt.s.bf16
-    dut._log.info("Verifying fcvt.s.bf16 results...")
+    logging.info("Verifying fcvt.s.bf16 results...")
+    s_bf16_results = (
+        await fixture.read('fcvt_s_bf16_cases',
+                           len(s_bf16_inputs) * 16)
+    ).view(np.uint32).reshape(-1, 4)
     for i, val in enumerate(s_bf16_inputs):
-        addr = symbols['fcvt_s_bf16_cases'] + i * 16 + 8
-        actual_bytes = await fixture.core_mini_axi.read_word(addr)
-        actual_bits = int.from_bytes(actual_bytes.tobytes(), 'little')
-
-        flags_bytes = await fixture.core_mini_axi.read_word(addr + 4)
-        actual_flags = int.from_bytes(flags_bytes.tobytes(), 'little')
+        actual_bits = int(s_bf16_results[i, 2])
+        actual_flags = int(s_bf16_results[i, 3])
 
         expected_bits, expected_flags = bf16_to_fp32_bits_with_flags(val)
 
@@ -297,14 +285,14 @@ async def zfbfmin_test(dut):
         assert actual_flags == expected_flags, f"Case {i}: Input {hex(val)}, Expected flags {hex(expected_flags)}, got {hex(actual_flags)}"
 
     # Verify fcvt.bf16.s
-    dut._log.info("Verifying fcvt.bf16.s results...")
+    logging.info("Verifying fcvt.bf16.s results...")
+    bf16_s_results = (
+        await fixture.read('fcvt_bf16_s_cases',
+                           len(bf16_s_inputs) * 16)
+    ).view(np.uint32).reshape(-1, 4)
     for i, (val, rm) in enumerate(bf16_s_inputs):
-        addr = symbols['fcvt_bf16_s_cases'] + i * 16 + 8
-        actual_bytes = await fixture.core_mini_axi.read_word(addr)
-        actual_bits = int.from_bytes(actual_bytes.tobytes(), 'little')
-
-        flags_bytes = await fixture.core_mini_axi.read_word(addr + 4)
-        actual_flags = int.from_bytes(flags_bytes.tobytes(), 'little')
+        actual_bits = int(bf16_s_results[i, 2])
+        actual_flags = int(bf16_s_results[i, 3])
 
         actual_bf16 = actual_bits & 0xFFFF
         expected_bf16, expected_flags = fp32_to_bf16_bits_with_flags(
@@ -330,12 +318,11 @@ async def zfbfmin_test(dut):
         assert actual_flags == expected_flags, f"Case {i}: Input {val} (RM {rm}), Expected flags {hex(expected_flags)}, got {hex(actual_flags)}"
 
     # Verify fmv instructions
-    dut._log.info("Verifying fmv results...")
-    fmv_results = (
-        await
-        fixture.core_mini_axi.read(symbols['fmv_cases'],
-                                   len(fmv_inputs) * 28)
-    ).view(np.uint32).reshape(-1, 7)
+    logging.info("Verifying fmv results...")
+    fmv_results = (await
+                   fixture.read('fmv_cases',
+                                len(fmv_inputs) * 28)).view(np.uint32
+                                                            ).reshape(-1, 7)
 
     errors = []
 
@@ -388,13 +375,17 @@ async def zfbfmin_test(dut):
             )
 
     if errors:
-        dut._log.error(f"Zfbfmin test encountered {len(errors)} failure(s):")
+        logging.error(f"Zfbfmin test encountered {len(errors)} failure(s):")
         for err in errors:
-            dut._log.error(f"  {err}")
+            logging.error(f"  {err}")
         assert len(
             errors
         ) == 0, f"Zfbfmin test failed with {len(errors)} error(s):\n" + "\n".join(
             errors[:10]
         )
 
-    dut._log.info("All Zfbfmin tests passed!")
+    logging.info("All Zfbfmin tests passed!")
+
+
+if __name__ == "__main__":
+    coralflow_main()

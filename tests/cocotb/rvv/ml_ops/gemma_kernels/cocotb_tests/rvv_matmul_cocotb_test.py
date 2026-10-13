@@ -13,24 +13,18 @@
 # limitations under the License.
 """Test suite for FP32 RVV Gemma MatMul Kernels using Cocotb."""
 
+import logging
 import os
-import cocotb
-import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
+import numpy as np
 
-from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 from sw.utils.metrics import log_matmul_metrics
 
 
-async def _run_f32_matmul_test_impl(dut, shapes, test_label_prefix):
+async def _run_f32_matmul_test_impl(fixture, shapes, test_label_prefix):
     """Unified test runner for FP32 MatMul & GeMV variants."""
     r = runfiles.Create()
-    fixture = await VerilatorTestFixture.Create(
-        dut,
-        highmem=True,
-        ext_mem_base_addr=0x80000000,
-        ext_mem_size=32 * 1024 * 1024
-    )
 
     elf_name = "rvv_matmul.elf"
     elf_path = r.Rlocation(
@@ -47,12 +41,10 @@ async def _run_f32_matmul_test_impl(dut, shapes, test_label_prefix):
         ]
     )
 
-    await fixture.core_mini_axi.reset()
-
     rng = np.random.default_rng(seed=42)
 
     for M, K, N in shapes:
-        dut._log.info(f"Running {test_label_prefix}: {M}x{K} x {K}x{N}")
+        logging.info(f"Running {test_label_prefix}: {M}x{K} x {K}x{N}")
 
         lhs_fp32 = rng.uniform(-2.0, 2.0, (M, K)).astype(np.float32)
         rhs_fp32 = rng.uniform(-2.0, 2.0, (K, N)).astype(np.float32)
@@ -83,7 +75,7 @@ async def _run_f32_matmul_test_impl(dut, shapes, test_label_prefix):
         )
 
         log_matmul_metrics(
-            dut, f"{test_label_prefix}: {M}x{K}x{N}", npu_cycles, M, N, K
+            fixture, f"{test_label_prefix}: {M}x{K}x{N}", npu_cycles, M, N, K
         )
 
 
@@ -97,15 +89,9 @@ def bf16_u16_to_fp32(arr):
     return arr.view(ml_dtypes.bfloat16).astype(np.float32)
 
 
-async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
+async def _run_bf16_matmul_test_impl(fixture, shapes, test_label_prefix):
     """Unified test runner for BFloat16 MatMul & GeMV variants."""
     r = runfiles.Create()
-    fixture = await VerilatorTestFixture.Create(
-        dut,
-        highmem=True,
-        ext_mem_base_addr=0x80000000,
-        ext_mem_size=32 * 1024 * 1024
-    )
 
     elf_name = "rvv_bf16_matmul.elf"
     elf_path = r.Rlocation(
@@ -118,8 +104,6 @@ async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
             "active_n", "cycle_count"
         ]
     )
-
-    await fixture.core_mini_axi.reset()
 
     rng = np.random.default_rng(seed=42)
 
@@ -134,7 +118,7 @@ async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
         rhs_exact = bf16_u16_to_fp32(rhs_u16)
         golden_output = np.matmul(lhs_exact, rhs_exact)
 
-        dut._log.info(f"Running {test_label_prefix}: {M}x{K} x {K}x{N}")
+        logging.info(f"Running {test_label_prefix}: {M}x{K} x {K}x{N}")
 
         await fixture.write('active_m', np.array([M], dtype=np.uint32))
         await fixture.write('active_k', np.array([K], dtype=np.uint32))
@@ -157,25 +141,33 @@ async def _run_bf16_matmul_test_impl(dut, shapes, test_label_prefix):
             golden_output, actual_output, rtol=1e-2, atol=1e-2
         )
         log_matmul_metrics(
-            dut, f"{test_label_prefix}: {M}x{K}x{N}", npu_cycles, M, N, K
+            fixture, f"{test_label_prefix}: {M}x{K}x{N}", npu_cycles, M, N, K
         )
 
 
-@cocotb.test()
-async def core_mini_rvv_bf16_matmul_lhs_1d_test(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def core_mini_rvv_bf16_matmul_lhs_1d_test(fixture):
     """Unified Test for 1D BFloat16 GeMV kernels (Decode phase)."""
     await _run_bf16_matmul_test_impl(
-        dut,
+        fixture,
         shapes=[(1, 64, 64), (1, 1024, 64), (1, 256, 512)],
         test_label_prefix="BF16 GeMV 1D"
     )
 
 
-@cocotb.test()
-async def core_mini_rvv_bf16_matmul_2d_test(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def core_mini_rvv_bf16_matmul_2d_test(fixture):
     """Unified Test for 2D BFloat16 MatMul kernels (Prefill phase)."""
     await _run_bf16_matmul_test_impl(
-        dut,
+        fixture,
         shapes=[
             (16, 48, 16),
             (12, 32, 32),
@@ -185,11 +177,15 @@ async def core_mini_rvv_bf16_matmul_2d_test(dut):
     )
 
 
-@cocotb.test()
-async def core_mini_rvv_matmul_lhs_1d_test(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def core_mini_rvv_matmul_lhs_1d_test(fixture):
     """Test 1D x 2D FP32 GeMV kernel (Decode phase)."""
     await _run_f32_matmul_test_impl(
-        dut,
+        fixture,
         shapes=[
             (1, 64, 64),
             (1, 1024, 64),
@@ -199,11 +195,15 @@ async def core_mini_rvv_matmul_lhs_1d_test(dut):
     )
 
 
-@cocotb.test()
-async def core_mini_rvv_matmul_2d_test(dut):
+@coralflow_test(
+    highmem=True,
+    ext_mem_base_addr=0x80000000,
+    ext_mem_size=32 * 1024 * 1024,
+)
+async def core_mini_rvv_matmul_2d_test(fixture):
     """Test 2D x 2D FP32 Tiled MatMul kernel (Prefill phase)."""
     await _run_f32_matmul_test_impl(
-        dut,
+        fixture,
         shapes=[
             (32, 32, 32),
             (12, 640, 512),
@@ -211,3 +211,7 @@ async def core_mini_rvv_matmul_2d_test(dut):
         ],
         test_label_prefix="FP32 MatMul 2D Shape"
     )
+
+
+if __name__ == "__main__":
+    coralflow_main()

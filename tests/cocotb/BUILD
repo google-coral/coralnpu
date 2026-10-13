@@ -14,14 +14,14 @@
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_pkg//:pkg.bzl", "pkg_zip")
-load("//rules:coco_tb.bzl", "cocotb_test_suite", "vcs_test_macro_smoke_test", "verilator_cocotb_model")
-load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
+load("//rules:coco_tb.bzl", "vcs_cocotb_model", "vcs_test_macro_smoke_test", "verilator_cocotb_model")
+load("//rules:coralflow_test.bzl", "coralflow_test")
+load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 load("//rules:utils.bzl", "template_rule")
 load(
     "//tests/cocotb:build_defs.bzl",
     "VCS_BUILD_ARGS",
     "VCS_DEFINES",
-    "VCS_TEST_ARGS",
     "VERILATOR_BUILD_ARGS",
 )
 load("//tests/cocotb:wfi_targets.bzl", "get_wfi_slot_targets")
@@ -128,12 +128,86 @@ verilator_cocotb_model(
     ],
 )
 
+vcs_cocotb_model(
+    name = "core_mini_axi_vcs_model",
+    build_args = VCS_BUILD_ARGS,
+    data = VCS_COMMON_DATA,
+    defines = VCS_DEFINES,
+    hdl_toplevel = "CoreMiniAxi",
+    tags = [
+        "manual",
+        "rtl",
+        "vcs",
+    ],
+    verilog_sources = ["//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_verilog"],
+)
+
+vcs_cocotb_model(
+    name = "rvv_core_mini_axi_vcs_model",
+    build_args = VCS_BUILD_ARGS,
+    data = VCS_COMMON_DATA,
+    defines = VCS_DEFINES,
+    hdl_toplevel = "RvvCoreMiniAxi",
+    tags = [
+        "manual",
+        "rtl",
+        "vcs",
+    ],
+    verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
+)
+
+vcs_cocotb_model(
+    name = "rvv_core_mini_highmem_axi_vcs_model",
+    build_args = VCS_BUILD_ARGS,
+    data = VCS_COMMON_DATA,
+    defines = VCS_DEFINES,
+    hdl_toplevel = "RvvCoreMiniHighmemAxi",
+    tags = [
+        "manual",
+        "rtl",
+        "vcs",
+    ],
+    verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+)
+
+vcs_cocotb_model(
+    name = "rvv_core_mini_itcm512kb_dtcm512kb_axi_vcs_model",
+    build_args = VCS_BUILD_ARGS,
+    data = VCS_COMMON_DATA,
+    defines = VCS_DEFINES,
+    hdl_toplevel = "RvvCoreMini_ITCM512KB_DTCM512KBAxi",
+    tags = [
+        "manual",
+        "rtl",
+        "vcs",
+    ],
+    verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_itcm512kb_dtcm512kb_axi_cc_library_verilog"],
+)
+
+vcs_cocotb_model(
+    name = "vme_core_mini_axi_vcs_model",
+    build_args = VCS_BUILD_ARGS,
+    data = VCS_COMMON_DATA,
+    defines = dict(
+        VCS_DEFINES,
+        ZVTBF16FMM_ON = "",
+        ZVT_ON = "",
+    ),
+    hdl_toplevel = "VmeCoreMiniAxi",
+    tags = [
+        "manual",
+        "rtl",
+        "vcs",
+    ],
+    verilog_sources = ["//hdl/chisel/src/coralnpu:vme_core_mini_axi_cc_library_verilog"],
+)
+
 # BEGIN_TESTCASES_FOR_core_mini_axi_sim_cocotb
 CORE_MINI_AXI_SIM_TESTCASES = [
-    ("core_mini_axi_basic_write_read_memory", "large"),
+    "core_mini_axi_basic_write_read_memory",
     "core_mini_axi_run_wfi_in_all_slots",
     "core_mini_axi_slow_bready",
-    ("core_mini_axi_write_read_memory_stress_test", "large"),
+    "core_mini_axi_write_read_memory_stress_test",
     "core_mini_axi_master_write_alignment",
     "core_mini_axi_finish_txn_before_halt_test",
     "core_mini_axi_riscv_tests",
@@ -142,8 +216,8 @@ CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_csr_illegal_write_test",
     "core_mini_axi_exceptions_test",
     "core_mini_axi_coralnpu_isa_test",
-    ("core_mini_axi_rand_instr_test", "large"),
-    ("core_mini_axi_burst_types_test", "large"),
+    "core_mini_axi_rand_instr_test",
+    "core_mini_axi_burst_types_test",
     "core_mini_axi_float_csr_test",
     "core_mini_axi_float_hazard_test",
     "unreachable_prefetch_fault",
@@ -162,7 +236,7 @@ CORE_MINI_AXI_SIM_TESTCASES = [
 
 # BEGIN_TESTCASES_FOR_rvv_core_mini_axi_sim_cocotb
 RVV_CORE_MINI_AXI_SIM_TESTCASES = [
-    ("core_mini_axi_basic_write_read_memory", "enormous"),
+    "core_mini_axi_basic_write_read_memory",
     "core_mini_axi_run_wfi_in_all_slots",
     "core_mini_axi_slow_bready",
     "core_mini_axi_write_read_memory_stress_test",
@@ -170,13 +244,13 @@ RVV_CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_finish_txn_before_halt_test",
     "core_mini_axi_riscv_tests",
     "core_mini_axi_riscv_dv",
-    ("core_mini_axi_csr_test", "large"),
+    "core_mini_axi_csr_test",
     "core_mini_axi_csr_illegal_write_test",
     "core_mini_axi_exceptions_test",
     "rvv_exceptions_test",
     "core_mini_axi_coralnpu_isa_test",
-    ("core_mini_axi_rand_instr_test", "large"),
-    ("core_mini_axi_burst_types_test", "large"),
+    "core_mini_axi_rand_instr_test",
+    "core_mini_axi_burst_types_test",
     "core_mini_axi_float_csr_test",
     "core_mini_axi_float_hazard_test",
     "unreachable_prefetch_fault",
@@ -193,231 +267,39 @@ RVV_CORE_MINI_AXI_SIM_TESTCASES = [
 ]
 # END_TESTCASES_FOR_rvv_core_mini_axi_sim_cocotb
 
-CORE_MINI_AXI_SIM_COMMON_TEST_KWARGS = {
-    "waves": False,
-    "seed": "42",
-    "test_module": ["core_mini_axi_sim.py"],
-    "deps": [
-        "//coralnpu_test_utils:core_mini_axi_sim_interface",
-        "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-        requirement("tqdm"),
-        "@bazel_tools//tools/python/runfiles",
-    ],
-    "data": COCOTB_TEST_BINARY_TARGETS,
-    "size": "enormous",
-}
+CORE_MINI_AXI_SIM_DEPS = [
+    "//coralnpu_test_utils:core_mini_axi_sim_interface",
+    requirement("tqdm"),
+    "@bazel_tools//tools/python/runfiles",
+]
 
-template_rule(
-    cocotb_test_suite,
-    {
-        "core_mini_axi_sim_cocotb": {
-            "tests_kwargs": dict(
-                CORE_MINI_AXI_SIM_COMMON_TEST_KWARGS,
-                size = "enormous",
-                default_testcase_size = "medium",
-                hdl_toplevel = "CoreMiniAxi",
-            ),
-            "vcs_verilog_sources": ["//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_verilog"],
-            "verilator_model": ":core_mini_axi_model",
-            "testcases": CORE_MINI_AXI_SIM_TESTCASES,
-            "testcases_vname": "CORE_MINI_AXI_SIM_TESTCASES",
-        },
-        "rvv_core_mini_axi_sim_cocotb": {
-            "tests_kwargs": dict(
-                CORE_MINI_AXI_SIM_COMMON_TEST_KWARGS,
-                size = "enormous",
-                default_testcase_size = "medium",
-                hdl_toplevel = "RvvCoreMiniAxi",
-            ),
-            "vcs_verilog_sources": ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-            "verilator_model": ":rvv_core_mini_axi_model",
-            "testcases": RVV_CORE_MINI_AXI_SIM_TESTCASES,
-            "testcases_vname": "RVV_CORE_MINI_AXI_SIM_TESTCASES",
-        },
-    },
-    simulators = [
+coralflow_test(
+    name = "core_mini_axi_sim_cocotb",
+    size = "large",
+    srcs = ["core_mini_axi_sim.py"],
+    data = COCOTB_TEST_BINARY_TARGETS,
+    hdl_toplevel = "CoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
     ],
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = COCOTB_TEST_BINARY_TARGETS + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
+    testcases = CORE_MINI_AXI_SIM_TESTCASES,
+    deps = CORE_MINI_AXI_SIM_DEPS,
 )
 
-# BEGIN_TESTCASES_FOR_core_mini_axi_debug_cocotb
-CORE_MINI_AXI_DEBUG_TESTCASES = [
-    "core_mini_axi_debug_trigger_match",
-    "core_mini_axi_debug_gdbserver",
-    "core_mini_axi_debug_dmactive",
-    "core_mini_axi_debug_probe_impl",
-    "core_mini_axi_debug_ndmreset",
-    "core_mini_axi_debug_halt_resume",
-    "core_mini_axi_debug_hartsel",
-    "core_mini_axi_debug_abstract_access_registers",
-    "core_mini_axi_debug_abstract_access_nonexistent_register",
-    "core_mini_axi_debug_single_step",
-    "core_mini_axi_debug_breakpoint",
-    "core_mini_axi_debug_scalar_registers",
-]
-# END_TESTCASES_FOR_core_mini_axi_debug_cocotb
-
-# BEGIN_TESTCASES_FOR_rvv_assembly_cocotb_test
-RVV_ASSEMBLY_TESTCASES = [
-    "core_mini_rvv_load",
-    "core_mini_rvv_add",
-    "core_mini_vstart_store",
-    "core_mini_vcsr_test",
-    "core_mini_viota_test",
-    "core_mini_vfirst_test",
-    "core_mini_vcpop_exception_test",
-    "core_mini_vcpop_test",
-    "core_mini_vcompress_test",
-    "core_mini_vmsbf_test",
-    "core_mini_vmsof_test",
-    "core_mini_vmsif_test",
-    "core_mini_vill_test",
-    "core_mini_vill_whole_reg_test",
-    "core_mini_vl_test",
-    "vsetvl_test",
-    "vslideup_test",
-    "vslidedown_test",
-    "vslide1up_test",
-    "vslide1down_test",
-    "vslide_boundary_test",
-    "vgather_test",
-    "vstart_test",
-    "core_mini_rvv_small_loop_test",
-    "core_mini_rvv_flush_race_test",
-    "core_mini_rvv_vill_loop_trap_test",
-    "core_mini_rvv_vstart_rob_test",
-    "core_mini_rvv_vstart_trap_flush_test",
-    "core_mini_rvv_vstart_vmv_scalar_test",
-    "core_mini_rvv_vstart_vset_test",
-    "core_mini_rvv_vfrdiv_test",
-    "core_mini_rvv_vleff_test",
-    "core_mini_rvv_vl0_v0_corruption_test",
-    "core_mini_rvv_lsu_indexed_short_vl_test",
-    "core_mini_rvv_vstart_pipeline_test",
-    "core_mini_rvv_vstart_dual_dispatch_lsu_test",
-    "core_mini_rvv_vstart_forwarding_debug_breakpoint_test",
-    "core_mini_rvv_vstart_forwarding_debug_async_halt_test",
-    "core_mini_rvv_vstart_forwarding_whole_reg_control_test",
-    "core_mini_rvv_vstart_forwarding_squash_test",
-    "core_mini_rvv_vill_trap_squashed_load_test",
-]
-# END_TESTCASES_FOR_rvv_assembly_cocotb_test
-
-# BEGIN_TESTCASES_FOR_rvv_load_store_test
-RVV_LOAD_STORE_TESTCASES = [
-    "load_store_bits",
-    "load_store_whole_register_test",
-    "whole_reg_repro",
-    "load_unit_masked",
-    "load_unit_ff",
-    "load_unit_all_vtypes_test",
-    ("load_strided_all_vtypes_test", "large"),
-    "load8_index8",
-    "load8_index8_seg",
-    "load8_index16",
-    ("load8_index16_seg", "large"),
-    "load8_index32",
-    ("load8_index32_seg", "large"),
-    "load8_seg_unit",
-    "load8_stride0_m1",
-    "load8_stride0strict_m1",
-    "load8_stride2_m1",
-    "load8_stride2_m1_partial",
-    "load8_stride2_mf4",
-    "load16_index8",
-    "load16_index8_seg",
-    ("load16_index16_seg", "large"),
-    ("load16_index32_seg", "large"),
-    "load16_seg_unit",
-    "load16_stride4_m1",
-    "load16_stride4_m1_partial",
-    "load16_stride4_mf2",
-    "load32_index8",
-    "load32_index8_seg",
-    "load32_index16_seg",
-    "load32_index32_seg",
-    "load32_seg_unit",
-    "load32_stride8_m1",
-    "load32_stride8_m1_partial",
-    "load_store8_unit_m2",
-    "load_store16_unit_m2",
-    "load_store32_unit_m2",
-    "load8_segment2_stride6_m1",
-    "load16_segment2_stride6_m1",
-    "store_unit_masked",
-    "store_unit_all_vtypes_test",
-    ("store_strided_all_vtypes_test", "large"),
-    "store8_index8",
-    "store8_index8_seg",
-    "store8_index16",
-    "store8_index32",
-    "store16_index8",
-    "store16_index16",
-    "store16_index32",
-    "store32_index8",
-    "store32_index16",
-    "store32_index32",
-    "store8_seg_unit",
-    "store16_seg_unit",
-    "store32_seg_unit",
-    "lsu_fault_scalar_preserves_vstart",
-    "lsu_fault_unit_stride_rs_flush",
-    "lsu_fault_negative_stride_mid_vstart",
-    "lsu_fault_indexed_mid_vstart",
-    "lsu_fault_seg3_negative_stride_mid_vstart",
-    "lsu_fault_seg5_negative_stride_mid_vstart",
-    "lsu_fault_vector_load_rs_flush",
-    "lsu_fault_vleff_rs_flush",
-    "lsu_fault_scalar_mixed_rs_flush",
-    "lsu_fault_scalar_to_scalar_rs_flush",
-    "load_store8_test",
-    ("load_store_stride_masked_param_test", "large"),
-    "load_store_stride_masked_test",
-]
-# END_TESTCASES_FOR_rvv_load_store_test
-
-# BEGIN_TESTCASES_FOR_rvv_arithmetic_cocotb_test
-RVV_ARITHMETIC_TESTCASES = [
-    "arithmetic_m1_vanilla_ops",
-    "float32_arithmetic_m1_vanilla_ops",
-    "reduction_m1_vanilla_ops",
-    "float32_reduction_m1_vanilla_ops",
-    "reduction_m1_failure_ops",
-    "float32_reduction_m1_failure_ops",
-    "widen_math_ops_test_impl",
-    "vnclip_test",
-    "vnclip_vxsat_test",
-    "vnclipu_test",
-    "vnsra_test",
-    "vnsrl_test",
-    "ternary_op_vx",
-    "comparison_op_vx",
-    "comparison_op_vv",
-    "carry_op_vx",
-    "merge_op_vv",
-    "widen_wide_math_ops_test",
-    "extension_op_test",
-    "immediate_op_test",
-    "float_comparison_op",
-    "float_misc_op",
-    "float_convert_op",
-    ("binary_op_vx", "large"),
-]
-# END_TESTCASES_FOR_rvv_arithmetic_cocotb_test
-
-# BEGIN_TESTCASES_FOR_highmem_test
-HIGHMEM_TESTCASES = [
-    "core_mini_axi_run_wfi_in_all_slots_highmem",
-    "core_mini_rvv_matmul_test",
-    "core_mini_axi_basic_write_read_memory",
-    "core_mini_axi_wrap_burst_highmem_test",
-]
-# END_TESTCASES_FOR_highmem_test
+coralflow_test(
+    name = "rvv_core_mini_axi_sim_cocotb",
+    size = "enormous",
+    srcs = ["core_mini_axi_sim.py"],
+    data = COCOTB_TEST_BINARY_TARGETS,
+    hdl_toplevel = "RvvCoreMiniAxi",
+    targets = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_CORE_MINI_AXI_SIM_TESTCASES,
+    deps = CORE_MINI_AXI_SIM_DEPS,
+)
 
 COCOTB_DEBUG_TEST_BINARY_TARGETS = [
     ":debug_trigger_test.elf",
@@ -428,83 +310,55 @@ COCOTB_DEBUG_TEST_BINARY_TARGETS = [
     ":registers.elf",
 ]
 
-CORE_MINI_AXI_DEBUG_COMMON_TEST_KWARGS = {
-    "deps": [
-        "//coralnpu_test_utils:core_mini_axi_sim_interface",
-        "//coralnpu_test_utils:core_mini_axi_pyocd_gdbserver",
-        "@bazel_tools//tools/python/runfiles",
-    ],
-    "waves": False,
-    "seed": "42",
-    "test_module": ["core_mini_axi_debug.py"],
-    "data": COCOTB_DEBUG_TEST_BINARY_TARGETS,
-    "default_testcase_size": "medium",
-    "size": "medium",
-}
+CORE_MINI_AXI_DEBUG_DEPS = [
+    "//coralnpu_test_utils:core_mini_axi_sim_interface",
+    "//coralnpu_test_utils:core_mini_axi_pyocd_gdbserver",
+    "@bazel_tools//tools/python/runfiles",
+]
 
-template_rule(
-    cocotb_test_suite,
-    {
-        "core_mini_axi_debug_cocotb": {
-            "tests_kwargs": dict(
-                CORE_MINI_AXI_DEBUG_COMMON_TEST_KWARGS,
-                hdl_toplevel = "CoreMiniAxi",
-            ),
-            "vcs_verilog_sources": ["//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_verilog"],
-            "verilator_model": ":core_mini_axi_model",
-        },
-        "rvv_core_mini_axi_debug_cocotb": {
-            "tests_kwargs": dict(
-                CORE_MINI_AXI_DEBUG_COMMON_TEST_KWARGS,
-                hdl_toplevel = "RvvCoreMiniAxi",
-            ),
-            "vcs_verilog_sources": ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-            "verilator_model": ":rvv_core_mini_axi_model",
-        },
-    },
-    simulators = [
+coralflow_test(
+    name = "core_mini_axi_debug_cocotb",
+    size = "large",
+    srcs = ["core_mini_axi_debug.py"],
+    data = COCOTB_DEBUG_TEST_BINARY_TARGETS,
+    hdl_toplevel = "CoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
     ],
-    testcases = CORE_MINI_AXI_DEBUG_TESTCASES,
-    testcases_vname = "CORE_MINI_AXI_DEBUG_TESTCASES",
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = COCOTB_DEBUG_TEST_BINARY_TARGETS + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
+    deps = CORE_MINI_AXI_DEBUG_DEPS,
 )
 
-cocotb_test_suite(
-    name = "rvv_assembly_cocotb_test",
-    simulators = [
+coralflow_test(
+    name = "rvv_core_mini_axi_debug_cocotb",
+    size = "large",
+    srcs = ["core_mini_axi_debug.py"],
+    data = COCOTB_DEBUG_TEST_BINARY_TARGETS,
+    hdl_toplevel = "RvvCoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
     ],
-    testcases = RVV_ASSEMBLY_TESTCASES,
-    testcases_vname = "RVV_ASSEMBLY_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_assembly_cocotb_test.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils:dispatch_verifier",
-            "//coralnpu_test_utils:rvv_type_util",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            requirement("tqdm"),
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": ["//tests/cocotb/rvv:rvv_assem_tests"],
-        "default_testcase_size": "medium",
-        "size": "medium",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = ["//tests/cocotb/rvv:rvv_assem_tests"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = ":rvv_core_mini_axi_model",
+    deps = CORE_MINI_AXI_DEBUG_DEPS,
+)
+
+coralflow_test(
+    name = "rvv_assembly_cocotb_test",
+    size = "large",
+    srcs = ["rvv_assembly_cocotb_test.py"],
+    data = ["//tests/cocotb/rvv:rvv_assem_tests"],
+    hdl_toplevel = "RvvCoreMiniAxi",
+    targets = [
+        "verilator",
+        "vcs",
+    ],
+    deps = [
+        "//coralnpu_test_utils:core_mini_axi_sim_interface",
+        "//coralnpu_test_utils:dispatch_verifier",
+        "//coralnpu_test_utils:rvv_type_util",
+        requirement("tqdm"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
 )
 
 coralnpu_v2_binary(
@@ -534,70 +388,53 @@ template_rule(
     get_wfi_slot_targets(),
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "rvv_highmem_tests",
-    simulators = [
-        "verilator",
+    size = "large",
+    srcs = ["rvv_highmem_sim.py"],
+    data = [
+        ":wfi_slot_0_highmem.elf",
+        ":wfi_slot_1_highmem.elf",
+        ":wfi_slot_2_highmem.elf",
+        ":wfi_slot_3_highmem.elf",
+        "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_highmem.elf",
+        "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem.elf",
     ],
-    testcases = HIGHMEM_TESTCASES,
-    testcases_vname = "HIGHMEM_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_highmem_sim.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            requirement("tqdm"),
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":wfi_slot_0_highmem.elf",
-            ":wfi_slot_1_highmem.elf",
-            ":wfi_slot_2_highmem.elf",
-            ":wfi_slot_3_highmem.elf",
-            "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_highmem.elf",
-            "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem.elf",
-        ],
-        "size": "large",
-    },
-    verilator_model = ":rvv_core_mini_highmem_axi_model",
+    hdl_toplevel = "RvvCoreMiniHighmemAxi",
+    highmem = True,
+    targets = [
+        "verilator",
+        "vcs",
+    ],
+    deps = [
+        "//coralnpu_test_utils:core_mini_axi_sim_interface",
+        requirement("tqdm"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "rvv_itcm512kb_dtcm512kb_tests",
-    simulators = [
+    size = "large",
+    srcs = ["rvv_itcm512kb_dtcm512kb_sim.py"],
+    data = [
+        ":wfi_slot_0_itcm512kb_dtcm512kb.elf",
+        ":wfi_slot_1_itcm512kb_dtcm512kb.elf",
+        ":wfi_slot_2_itcm512kb_dtcm512kb.elf",
+        ":wfi_slot_3_itcm512kb_dtcm512kb.elf",
+        "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_itcm512kb_dtcm512kb.elf",
+        "//tests/cocotb/rvv/ml_ops:rvv_matmul_itcm512kb_dtcm512kb.elf",
+    ],
+    hdl_toplevel = "RvvCoreMini_ITCM512KB_DTCM512KBAxi",
+    targets = [
         "verilator",
+        "vcs",
     ],
-    testcases = [
-        "core_mini_axi_run_wfi_in_all_slots_itcm512kb_dtcm512kb",
-        "core_mini_rvv_matmul_test",
-        "core_mini_axi_basic_write_read_memory",
+    deps = [
+        "//coralnpu_test_utils:core_mini_axi_sim_interface",
+        requirement("tqdm"),
+        "@bazel_tools//tools/python/runfiles",
     ],
-    testcases_vname = "ITCM512KB_DTCM512KB_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMini_ITCM512KB_DTCM512KBAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_itcm512kb_dtcm512kb_sim.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            requirement("tqdm"),
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":wfi_slot_0_itcm512kb_dtcm512kb.elf",
-            ":wfi_slot_1_itcm512kb_dtcm512kb.elf",
-            ":wfi_slot_2_itcm512kb_dtcm512kb.elf",
-            ":wfi_slot_3_itcm512kb_dtcm512kb.elf",
-            "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_itcm512kb_dtcm512kb.elf",
-            "//tests/cocotb/rvv/ml_ops:rvv_matmul_itcm512kb_dtcm512kb.elf",
-        ],
-        "size": "large",
-    },
-    verilator_model = ":rvv_core_mini_itcm512kb_dtcm512kb_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -816,102 +653,56 @@ coralnpu_v2_binary(
     srcs = ["csr_behavior.S"],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "rvv_load_store_test",
-    simulators = [
+    size = "enormous",
+    srcs = ["rvv_load_store_test.py"],
+    data = ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"],
+    hdl_toplevel = "RvvCoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
     ],
-    testcases = RVV_LOAD_STORE_TESTCASES,
-    testcases_vname = "RVV_LOAD_STORE_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_load_store_test.py"],
-        "deps": [
-            "//coralnpu_test_utils:rvv_type_util",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-            requirement("tqdm"),
-        ],
-        "data": ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"],
-        "default_testcase_size": "medium",
-        "size": "enormous",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = ":rvv_core_mini_axi_model",
+    deps = [
+        "//coralnpu_test_utils:rvv_type_util",
+        "@bazel_tools//tools/python/runfiles",
+        requirement("tqdm"),
+    ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "vme_rvv_load_store_test",
-    simulators = [
+    size = "enormous",
+    srcs = ["rvv_load_store_test.py"],
+    data = ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"],
+    hdl_toplevel = "VmeCoreMiniAxi",
+    targets = [
         "verilator",
         "vcs",
     ],
-    testcases = RVV_LOAD_STORE_TESTCASES,
-    testcases_vname = "RVV_LOAD_STORE_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "VmeCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_load_store_test.py"],
-        "deps": [
-            "//coralnpu_test_utils:rvv_type_util",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-            requirement("tqdm"),
-        ],
-        "data": ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"],
-        "default_testcase_size": "medium",
-        "size": "enormous",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"] + VCS_COMMON_DATA,
-    vcs_defines = dict(
-        VCS_DEFINES,
-        ZVTBF16FMM_ON = "",
-        ZVT_ON = "",
-    ),
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:vme_core_mini_axi_cc_library_verilog"],
-    verilator_model = ":vme_core_mini_axi_model",
+    deps = [
+        "//coralnpu_test_utils:rvv_type_util",
+        "@bazel_tools//tools/python/runfiles",
+        requirement("tqdm"),
+    ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "rvv_arithmetic_cocotb_test",
-    simulators = [
+    size = "large",
+    srcs = ["rvv_arithmetic_cocotb_test.py"],
+    data = [
+        "//tests/cocotb/rvv/arithmetics:rvv_arith_tests",
+    ],
+    targets = [
         "verilator",
         "vcs",
+        "nexus_fpga",
     ],
-    testcases = RVV_ARITHMETIC_TESTCASES,
-    testcases_vname = "RVV_ARITHMETIC_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_arithmetic_cocotb_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-            requirement("tqdm"),
-        ],
-        "data": [
-            "//tests/cocotb/rvv/arithmetics:rvv_arith_tests",
-        ],
-        "default_testcase_size": "medium",
-        "size": "large",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = ["//tests/cocotb/rvv/arithmetics:rvv_arith_tests"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = ":rvv_core_mini_axi_model",
+    deps = [
+        "@bazel_tools//tools/python/runfiles",
+        requirement("tqdm"),
+    ],
 )
 
 pkg_zip(
@@ -922,98 +713,59 @@ pkg_zip(
     ],
 )
 
-# BEGIN_TESTCASES_FOR_rvv_ml_ops_cocotb_test
-RVV_ML_OPS_TESTCASES = [
-    "core_mini_rvv_matmul_c_test",
-    "core_mini_rvv_matmul_asm_test",
-    "core_mini_rvv_float_matmul_c_test",
-    "core_mini_rvv_float_matmul_asm_test",
-    "core_mini_rvv_float_matmul_optimized_c_test",
-    "core_mini_rvv_bf16_matmul_c_test",
-]
-# END_TESTCASES_FOR_rvv_ml_ops_cocotb_test
-
-cocotb_test_suite(
+coralflow_test(
     name = "rvv_ml_ops_cocotb_test",
-    simulators = [
+    size = "enormous",
+    srcs = ["rvv_ml_ops_cocotb_test.py"],
+    data = ["//tests/cocotb/rvv/ml_ops:rvv_mlop_tests"],
+    exclude_testcases = {
+        "uvm": ["core_mini_rvv_bf16_matmul_c_test"],
+    },
+    targets = [
         "verilator",
         "vcs",
+        "uvm",
+        "nexus_fpga",
     ],
-    testcases = RVV_ML_OPS_TESTCASES,
-    testcases_vname = "RVV_ML_OPS_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_ml_ops_cocotb_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "//sw/utils:metrics",
-            requirement("ml_dtypes"),
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": ["//tests/cocotb/rvv/ml_ops:rvv_mlop_tests"],
-        "size": "enormous",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = ["//tests/cocotb/rvv/ml_ops:rvv_mlop_tests"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = ":rvv_core_mini_axi_model",
+    deps = [
+        "//sw/utils:metrics",
+        requirement("ml_dtypes"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "isa_cycle_bench_test",
-    simulators = [
+    size = "large",
+    srcs = ["isa_cycle_bench_test.py"],
+    elf = ":isa_cycle_bench.elf",
+    targets = [
         "verilator",
+        "vcs",
+        "uvm",
+        "nexus_fpga",
     ],
-    testcases = [
-        "isa_cycle_bench_test",
+    deps = [
+        "@bazel_tools//tools/python/runfiles",
     ],
-    testcases_vname = "ISA_CYCLE_BENCH_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["isa_cycle_bench_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":isa_cycle_bench.elf",
-        ],
-        "size": "medium",
-    },
-    verilator_model = ":rvv_core_mini_axi_model",
 )
 
 # This test is used for baseline vector power analysis.
-cocotb_test_suite(
+coralflow_test(
     name = "nop_stress_test",
-    simulators = [
+    size = "large",
+    srcs = ["nop_test.py"],
+    elf = ":nop_test.elf",
+    targets = [
         "verilator",
+        "vcs",
+        "npusim",
+        "uvm",
+        "nexus_fpga",
     ],
-    testcases = [
-        "nop_stress_test",
+    deps = [
+        "@bazel_tools//tools/python/runfiles",
     ],
-    testcases_vname = "NOP_STRESS_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["nop_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":nop_test.elf",
-        ],
-        "size": "medium",
-    },
-    verilator_model = ":rvv_core_mini_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -1023,36 +775,19 @@ coralnpu_v2_binary(
     ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "zvfbf_cocotb_test",
-    simulators = [
+    size = "medium",
+    srcs = ["zvfbf_test.py"],
+    elf = ":zvfbf_test.elf",
+    targets = [
         "verilator",
         "vcs",
+        "nexus_fpga",
     ],
-    testcases = [
-        "zvfbf_test",
+    deps = [
+        "@bazel_tools//tools/python/runfiles",
     ],
-    testcases_vname = "ZVFBF_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["zvfbf_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":zvfbf_test.elf",
-        ],
-        "size": "medium",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [":zvfbf_test.elf"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = ":rvv_core_mini_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -1062,74 +797,51 @@ coralnpu_v2_binary(
     ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "rvv_fflags_cocotb_test",
-    simulators = [
+    size = "medium",
+    srcs = ["rvv_fflags_test.py"],
+    elf = ":rvv_fflags_test.elf",
+    targets = [
         "verilator",
         "vcs",
+        "uvm",
+        "nexus_fpga",
     ],
-    testcases = [
-        "rvv_fflags_test",
+    deps = [
+        "@bazel_tools//tools/python/runfiles",
     ],
-    testcases_vname = "RVV_FFLAGS_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_fflags_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":rvv_fflags_test.elf",
-        ],
-        "size": "medium",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [":rvv_fflags_test.elf"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = ":rvv_core_mini_axi_model",
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "rvv_bf16_ops_cocotb_test",
-    simulators = [
-        "verilator",
+    size = "medium",
+    srcs = ["rvv_bf16_ops_cocotb_test.py"],
+    data = [
+        "//tests/cocotb/rvv/arithmetics:rvv_bf16_{}_{}.elf".format(op, lmul)
+        for op in [
+            "mac_vv",
+            "mac_vf",
+            "pipeline",
+            "strided",
+            "indexed",
+        ]
+        for lmul in [
+            "mf2",
+            "m1",
+            "m2",
+            "m4",
+        ]
     ],
-    testcases = ["rvv_bf16_ops_test"],
-    testcases_vname = "RVV_BF16_OPS_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_bf16_ops_cocotb_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            requirement("ml_dtypes"),
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            "//tests/cocotb/rvv/arithmetics:rvv_bf16_{}_{}.elf".format(op, lmul)
-            for op in [
-                "mac_vv",
-                "mac_vf",
-                "pipeline",
-                "strided",
-                "indexed",
-            ]
-            for lmul in [
-                "mf2",
-                "m1",
-                "m2",
-                "m4",
-            ]
-        ],
-        "size": "medium",
-    },
-    verilator_model = ":rvv_core_mini_axi_model",
+    targets = [
+        "verilator",
+        "vcs",
+        "nexus_fpga",
+    ],
+    deps = [
+        requirement("ml_dtypes"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
 )
 
 coralnpu_v2_binary(
@@ -1139,36 +851,20 @@ coralnpu_v2_binary(
     ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "zfbfmin_cocotb_test",
-    simulators = [
+    size = "medium",
+    srcs = ["zfbfmin_test.py"],
+    elf = ":zfbfmin_test.elf",
+    targets = [
         "verilator",
         "vcs",
+        "uvm",
+        "nexus_fpga",
     ],
-    testcases = [
-        "zfbfmin_test",
+    deps = [
+        "@bazel_tools//tools/python/runfiles",
     ],
-    testcases_vname = "ZFBFMIN_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["zfbfmin_test.py"],
-        "deps": [
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":zfbfmin_test.elf",
-        ],
-        "size": "medium",
-    },
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = [":zfbfmin_test.elf"] + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = ":rvv_core_mini_axi_model",
 )
 
 coralnpu_v2_binary(
@@ -1178,76 +874,60 @@ coralnpu_v2_binary(
     ],
 )
 
-cocotb_test_suite(
+coralflow_test(
     name = "rvv_highmem_tests_slow",
-    simulators = [
-        "verilator",
+    size = "large",
+    srcs = ["rvv_highmem_sim.py"],
+    data = [
+        ":wfi_slot_0_highmem.elf",
+        ":wfi_slot_1_highmem.elf",
+        ":wfi_slot_2_highmem.elf",
+        ":wfi_slot_3_highmem.elf",
+        "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_highmem.elf",
+        "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem.elf",
     ],
-    testcases = HIGHMEM_TESTCASES,
-    testcases_vname = "HIGHMEM_TESTCASES",
-    tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
-        "waves": False,
-        "seed": "42",
-        "test_module": ["rvv_highmem_sim.py"],
-        "deps": [
-            "//coralnpu_test_utils:core_mini_axi_sim_interface",
-            "//coralnpu_test_utils/sim_backends:verilator_test_fixture",
-            requirement("tqdm"),
-            "@bazel_tools//tools/python/runfiles",
-        ],
-        "data": [
-            ":wfi_slot_0_highmem.elf",
-            ":wfi_slot_1_highmem.elf",
-            ":wfi_slot_2_highmem.elf",
-            ":wfi_slot_3_highmem.elf",
-            "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_highmem.elf",
-            "//tests/cocotb/rvv/ml_ops:rvv_matmul_highmem.elf",
-        ],
-        "size": "large",
-        "test_args": ["+CLOCK_NS=2.0"],
-    },
-    verilator_model = ":rvv_core_mini_highmem_axi_model",
-)
-
-template_rule(
-    cocotb_test_suite,
-    {
-        "core_mini_axi_sim_cocotb_slow": {
-            "tests_kwargs": dict(
-                CORE_MINI_AXI_SIM_COMMON_TEST_KWARGS,
-                size = "enormous",
-                default_testcase_size = "medium",
-                hdl_toplevel = "CoreMiniAxi",
-                test_args = ["+CLOCK_NS=2.0"],
-            ),
-            "vcs_verilog_sources": ["//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_verilog"],
-            "verilator_model": ":core_mini_axi_model",
-            "testcases": CORE_MINI_AXI_SIM_TESTCASES,
-            "testcases_vname": "CORE_MINI_AXI_SIM_TESTCASES",
-        },
-        "rvv_core_mini_axi_sim_cocotb_slow": {
-            "tests_kwargs": dict(
-                CORE_MINI_AXI_SIM_COMMON_TEST_KWARGS,
-                size = "enormous",
-                default_testcase_size = "medium",
-                hdl_toplevel = "RvvCoreMiniAxi",
-                test_args = ["+CLOCK_NS=2.0"],
-            ),
-            "vcs_verilog_sources": ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-            "verilator_model": ":rvv_core_mini_axi_model",
-            "testcases": RVV_CORE_MINI_AXI_SIM_TESTCASES,
-            "testcases_vname": "RVV_CORE_MINI_AXI_SIM_TESTCASES",
-        },
-    },
-    simulators = [
+    hdl_toplevel = "RvvCoreMiniHighmemAxi",
+    highmem = True,
+    targets = [
         "verilator",
         "vcs",
     ],
-    vcs_build_args = VCS_BUILD_ARGS,
-    vcs_data = COCOTB_TEST_BINARY_TARGETS + VCS_COMMON_DATA,
-    vcs_defines = VCS_DEFINES,
-    vcs_test_args = VCS_TEST_ARGS + ["+CLOCK_NS=2.0"],
+    test_args = ["+CLOCK_NS=2.0"],
+    deps = [
+        "//coralnpu_test_utils:core_mini_axi_sim_interface",
+        requirement("tqdm"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+coralflow_test(
+    name = "core_mini_axi_sim_cocotb_slow",
+    size = "large",
+    srcs = ["core_mini_axi_sim.py"],
+    data = COCOTB_TEST_BINARY_TARGETS,
+    hdl_toplevel = "CoreMiniAxi",
+    targets = [
+        "verilator",
+        "vcs",
+    ],
+    test_args = ["+CLOCK_NS=2.0"],
+    testcases = CORE_MINI_AXI_SIM_TESTCASES,
+    deps = CORE_MINI_AXI_SIM_DEPS,
+)
+
+coralflow_test(
+    name = "rvv_core_mini_axi_sim_cocotb_slow",
+    size = "enormous",
+    srcs = ["core_mini_axi_sim.py"],
+    data = COCOTB_TEST_BINARY_TARGETS,
+    hdl_toplevel = "RvvCoreMiniAxi",
+    targets = [
+        "verilator",
+        "vcs",
+    ],
+    test_args = ["+CLOCK_NS=2.0"],
+    testcases = RVV_CORE_MINI_AXI_SIM_TESTCASES,
+    deps = CORE_MINI_AXI_SIM_DEPS,
 )
 
 filegroup(
@@ -1283,7 +963,6 @@ vcs_test_macro_smoke_test(
     deps = [
         "//coralnpu_test_utils:core_mini_axi_sim_interface",
         "//coralnpu_test_utils:dispatch_verifier",
+        "//coralnpu_test_utils/coralflow",
     ],
 )
-
-collect_coralnpu_elfs()

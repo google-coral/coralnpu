@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -22,31 +21,6 @@ py_binary(
     srcs = ["scm_info.py"],
 )
 
-py_library(
-    name = "run_uvm_regression",
-    srcs = ["run_uvm_regression.py"],
-    data = ["//rules:uvm_denylist.bzl"],
-    imports = ["."],
-    deps = [
-        requirement("pyelftools"),
-        "@bazel_tools//tools/python/runfiles",
-    ],
-)
-
-py_test(
-    name = "run_uvm_regression_test",
-    srcs = [
-        "run_uvm_regression.py",
-        "run_uvm_regression_test.py",
-    ],
-    data = ["//rules:uvm_denylist.bzl"],
-    main = "run_uvm_regression_test.py",
-    deps = [
-        requirement("pyelftools"),
-        "@bazel_tools//tools/python/runfiles",
-    ],
-)
-
 py_test(
     name = "check_macro_signatures_test",
     srcs = ["check_macro_signatures.py"],
@@ -54,13 +28,4 @@ py_test(
         "//rules:coco_tb.bzl",
     ],
     main = "check_macro_signatures.py",
-)
-
-py_binary(
-    name = "uvm_batch_runner",
-    srcs = ["uvm_batch_runner.py"],
-    deps = [
-        ":run_uvm_regression",
-        "@bazel_tools//tools/python/runfiles",
-    ],
 )
