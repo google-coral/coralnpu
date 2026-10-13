@@ -1,2 +1,7 @@
 #!/bin/bash
+# Self-recursion guard: bazel prepends this wrapper directory to PATH (so the
+# linker wrapper is found during link steps). Resolve the real clang from PATH
+# with our own directory removed, otherwise this script execs itself forever.
+_self_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$_self_dir" | paste -sd: -)
 exec clang "$@"
