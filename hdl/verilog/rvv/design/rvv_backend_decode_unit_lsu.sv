@@ -3049,19 +3049,19 @@ module rvv_backend_decode_unit_lsu
         TILELDST: begin
           case(inst_funct6[5:3])
             TILESEW8: begin
-              emul_max = EMUL1;
+              emul_max      = EMUL1;
             end
             TILESEW16: begin
               emul_max      = EMUL2;
-              uop_index_max = (csr_vl > 'd8) ? (`UOP_INDEX_WIDTH)'('d1) : (`UOP_INDEX_WIDTH)'('d0);
+              uop_index_max = (csr_vl > (`TE/2)) ? (`UOP_INDEX_WIDTH)'('d1) : (`UOP_INDEX_WIDTH)'('d0);
             end
             TILESEW32: begin
               emul_max      = EMUL4;
-              if (csr_vl > 'd12)
+              if (csr_vl > (`TE*3/4))
                 uop_index_max = (`UOP_INDEX_WIDTH)'('d3);
-              else if (csr_vl > 'd8)
+              else if (csr_vl > (`TE/2))
                 uop_index_max = (`UOP_INDEX_WIDTH)'('d2);
-              else if (csr_vl > 'd4)
+              else if (csr_vl > (`TE/4))
                 uop_index_max = (`UOP_INDEX_WIDTH)'('d1);
               else
                 uop_index_max = (`UOP_INDEX_WIDTH)'('d0);

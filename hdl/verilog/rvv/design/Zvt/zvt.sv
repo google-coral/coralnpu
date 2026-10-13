@@ -102,6 +102,8 @@ module zvt (
   logic                 rtCmdRdy;
   logic                 miscRtVld;
   logic [`NUM_BLK-1:0]  peRtVld;
+  logic                 miscRtVldD1;
+  logic [`NUM_BLK-1:0]  blkRtVld;
 `ifdef RVVI_ON
   MISC_RTINFO_t              miscRtInfo;
   PE_RTINFO_t [`NUM_BLK-1:0] peRtInfo;
@@ -125,7 +127,7 @@ module zvt (
     .vmelsuresRdy     (vmelsuresRdy),
     .peCmdVld         (peCmdVld),
     .peCmdRdy         (peCmdRdy),
-    .peBusy           (peBusy),
+    .peBusy           (peBusy || (|blkRtVld)),
     .peReadMtIdx      (peReadMtIdx),
     .peReadSubIdx     (peReadSubIdx),
   `ifdef TB_SUPPORT
@@ -271,9 +273,6 @@ module zvt (
   assign vmeRtCmdVld = ~rtCmdAempty;
 
   // register rt valid
-  logic                miscRtVldD1;
-  logic [`NUM_BLK-1:0] blkRtVld;
-  
   dff regMiscRtVld (.q(miscRtVldD1), .clk(clk), .rst_n(rst_n), .d(miscRtVld));
   dff regBlk0RtVld (.q(blkRtVld[0]), .clk(clk), .rst_n(rst_n), .d(peRtVld[0]));
   dff regBlk1RtVld (.q(blkRtVld[1]), .clk(clk), .rst_n(rst_n), .d(blkRtVld[0]));
