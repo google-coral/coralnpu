@@ -72,6 +72,7 @@ EOF
 
 # Mock all required linters
 mock_linter "yapf"
+mock_linter "yapf3"
 mock_linter "buildifier"
 mock_linter "verible-verilog-lint"
 mock_linter "verible-verilog-format"
@@ -248,6 +249,62 @@ echo "int main() {}" > test.cc
 git add test.cc
 git commit -q -m "add test.cc"
 run_test "Fix mode --all clang-format" "" "--fix --all" "/dev/null" 0 "MOCK: clang-format-19 running on -i.*test.cc" || FAILED_TESTS=$((FAILED_TESTS + 1))
+
+# 16. Commit message check fails on body line > 70 chars
+setup_repo
+git checkout -q -b msg-check
+echo "int main() {}" > msg.cc
+git add msg.cc
+git commit -q -m "short subject" -m "This commit body line is intentionally much longer than seventy characters so the linter detects it."
+run_test "Commit message > 70 chars fails check" "" "" "/dev/null" 1 "exceeding 70 characters" || FAILED_TESTS=$((FAILED_TESTS + 1))
+
+# 17. Commit message --fix wraps HEAD body at 70 chars while preserving trailers
+run_test "Commit message --fix wraps HEAD body" "" "--fix" "/dev/null" 0 "Commit message body wrapped for HEAD" || FAILED_TESTS=$((FAILED_TESTS + 1))
+run_test "Commit message passes after --fix" "" "" "/dev/null" 0 "All linters passed" || FAILED_TESTS=$((FAILED_TESTS + 1))
+
+# 18. .githooks/commit-msg automatically wraps commit body on git commit
+setup_repo
+COMMIT_MSG_HOOK="$(dirname "${SCRIPT_DIR}")/.githooks/commit-msg"
+mkdir -p .githooks utils
+cp "${COMMIT_MSG_HOOK}" .githooks/commit-msg
+cp "${SCRIPT_DIR}/format_commit_msg.py" utils/format_commit_msg.py
+chmod +x .githooks/commit-msg utils/format_commit_msg.py
+run_test "Unset core.hooksPath prints notice" "" "" "/dev/null" 0 "Tip: Run 'git config core.hooksPath .githooks'" || FAILED_TESTS=$((FAILED_TESTS + 1))
+git config core.hooksPath .githooks
+echo "hello" > doc.txt
+git add doc.txt
+git commit -q -m "[test] Short subject" -m "Note: This is a very long body paragraph starting with Note: that should still be automatically wrapped at 70 characters by the commit-msg hook." -m "Change-Id: I1234567890abcdef1234567890abcdef12345678"
+echo -e "Testing: .githooks/commit-msg auto-wrap (including 'Note:' prefix)..."
+MAX_BODY_LEN=$(git log -1 --format=%b | grep -v '^Change-Id:' | awk '{ if (length > max) max = length } END { print max+0 }')
+if [[ "${MAX_BODY_LEN}" -le 70 ]] && git log -1 --format=%B | grep -q '^Change-Id: I1234567890abcdef1234567890abcdef12345678$'; then
+    echo -e "  ${GREEN}PASS${NC}"
+else
+    echo -e "  ${RED}FAIL${NC} (Max body line length: ${MAX_BODY_LEN})"
+    git log -1 --format=%B
+    FAILED_TESTS=$((FAILED_TESTS + 1))
+fi
+
+# 19. gqap reflowing of jagged short lines (<= 70 chars) into 70-char paragraph
+echo "world" >> doc.txt
+git add doc.txt
+git commit -q -m "[test] Jagged paragraph" -m "$(printf 'Short first line\nand a second short line that fits on one line.')" -m "$(printf 'CustomTag: foo\nChange-Id: I1234567890abcdef1234567890abcdef12345678')"
+echo -e "Testing: .githooks/commit-msg gqap reflow of short lines and footer preservation..."
+BODY_FIRST_LINE=$(git log -1 --format=%b | head -n 1)
+if [[ "${BODY_FIRST_LINE}" == "Short first line and a second short line that fits on one line." ]] && git log -1 --format=%B | grep -q '^CustomTag: foo$'; then
+    echo -e "  ${GREEN}PASS${NC}"
+else
+    echo -e "  ${RED}FAIL${NC}"
+    git log -1 --format=%B
+    FAILED_TESTS=$((FAILED_TESTS + 1))
+fi
+
+# 20. run_linters.sh check mode does not fail on short (< 70 char) manually broken lines
+setup_repo
+git checkout -q -b short-lines
+echo "int main() {}" > short.cc
+git add short.cc
+git commit -q --no-verify -m "[test] Short manual lines" -m "$(printf 'bazel build //foo\nbazel test //bar')"
+run_test "Short manually broken lines pass check mode" "" "" "/dev/null" 0 "All linters passed" || FAILED_TESTS=$((FAILED_TESTS + 1))
 
 # --- Summary ---
 

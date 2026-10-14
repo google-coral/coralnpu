@@ -5,6 +5,7 @@ set -eu -o pipefail
 
 # Change to the repository root to ensure all relative paths (configs and files)
 # resolve correctly regardless of where the script is invoked from.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "${REPO_ROOT}"
 
@@ -163,6 +164,19 @@ detect_base_branch() {
     echo "HEAD"
 }
 
+format_commit_msg_file() {
+    local msg_file="$1"
+    python3 "${SCRIPT_DIR}/format_commit_msg.py" "${msg_file}"
+}
+
+# Print a notice if .githooks is available but core.hooksPath is unset
+if [[ "${CI:-}" != "true" ]] && [[ "${GITHUB_ACTIONS:-}" != "true" ]] && [[ -d "${REPO_ROOT}/.githooks" ]]; then
+    current_hooks_path=$(git config --get core.hooksPath || true)
+    if [[ -z "${current_hooks_path}" ]]; then
+        info "Tip: Run 'git config core.hooksPath .githooks' to enable automatic commit-msg and pre-push hooks."
+    fi
+fi
+
 # --- Argument Parsing ---
 FIX_MODE=false
 ALL_MODE=false
@@ -292,13 +306,43 @@ fi
 
 TOTAL_FAILED=0
 
+# Gather commits whose messages need 70-char body wrapping (in diff mode)
+COMMITS_TO_CHECK=()
+UNWRAPPED_COMMITS=()
+if [[ "${IS_DIFF_LINT}" == "true" ]]; then
+    if [[ -n "${PREUPLOAD_COMMIT:-}" ]]; then
+        COMMITS_TO_CHECK=("${PREUPLOAD_COMMIT}")
+    else
+        mapfile -t COMMITS_TO_CHECK < <(git rev-list --no-merges "${LINT_BASE}..HEAD" 2>/dev/null || true)
+    fi
+
+    for commit in "${COMMITS_TO_CHECK[@]}"; do
+        [[ -z "${commit}" ]] && continue
+        git log -1 --format=%B "${commit}" > "${LINT_TMP}/msg_${commit}.orig"
+        if ! python3 "${SCRIPT_DIR}/format_commit_msg.py" --check "${LINT_TMP}/msg_${commit}.orig"; then
+            cp "${LINT_TMP}/msg_${commit}.orig" "${LINT_TMP}/msg_${commit}.fmt"
+            format_commit_msg_file "${LINT_TMP}/msg_${commit}.fmt"
+            UNWRAPPED_COMMITS+=("${commit}")
+        fi
+    done
+fi
+
 # Iterate through linter files in alphabetical order
 shopt -s nullglob
 LINTER_FILES=("${LINT_TMP}"/*)
 shopt -u nullglob
 
+# Filter out temporary msg_* files from LINTER_FILES
+FILTERED_LINTER_FILES=()
+for f in "${LINTER_FILES[@]}"; do
+    if [[ "$(basename "${f}")" != msg_* ]]; then
+        FILTERED_LINTER_FILES+=("${f}")
+    fi
+done
+LINTER_FILES=("${FILTERED_LINTER_FILES[@]}")
+
 if [[ ${#LINTER_FILES[@]} -eq 0 ]]; then
-    if [[ "${CHECK_LOCKFILE}" != "true" ]]; then
+    if [[ "${CHECK_LOCKFILE}" != "true" ]] && [[ ${#UNWRAPPED_COMMITS[@]} -eq 0 ]]; then
         echo "✅ No relevant files changed. Skipping linters."
         exit 0
     fi
@@ -350,11 +394,37 @@ for linter_file in "${LINTER_FILES_SORTED[@]}"; do
     fi
 done
 
+# --- Commit Message Body Wrapping (70 chars) ---
+if [[ ${#UNWRAPPED_COMMITS[@]} -gt 0 ]]; then
+    head_sha=$(git rev-parse HEAD 2>/dev/null || true)
+    for commit in "${UNWRAPPED_COMMITS[@]}"; do
+        short_sha=$(git rev-parse --short "${commit}")
+        if [[ "${FIX_MODE}" == "true" ]]; then
+            if [[ "${commit}" == "${head_sha}" ]] && git diff --cached --quiet; then
+                echo "🔧 Wrapping commit message body at 70 chars for HEAD (${short_sha})..."
+                if ! git commit --amend -F "${LINT_TMP}/msg_${commit}.fmt" --cleanup=whitespace --no-verify >/dev/null 2>&1; then
+                    echo "❌ Failed to amend commit message for ${short_sha}."
+                    TOTAL_FAILED=$((TOTAL_FAILED + 1))
+                else
+                    echo "✅ Commit message body wrapped for HEAD (${short_sha})."
+                fi
+            else
+                echo "❌ Commit ${short_sha} has body line(s) > 70 chars and cannot be auto-amended (not HEAD or staged changes exist)."
+                TOTAL_FAILED=$((TOTAL_FAILED + 1))
+            fi
+        else
+            echo "❌ Commit ${short_sha} has commit message body line(s) exceeding 70 characters."
+            echo "   Run '$0 --fix' (or 'git commit --amend') to wrap the commit body."
+            TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        fi
+    done
+fi
+
 # --- Bzlmod Lockfile Check ---
 RUN_LOCKFILE_CHECK=false
 if [[ "${CHECK_LOCKFILE}" == "true" ]]; then
     RUN_LOCKFILE_CHECK=true
-elif [[ "${CHECK_LOCKFILE}" != "false" ]]; then
+elif [[ "${CHECK_LOCKFILE}" != "false" ]] && [[ -f "${REPO_ROOT}/MODULE.bazel" ]]; then
     if [[ "${CI:-}" == "true" ]] || [[ "${ALL_MODE}" == "true" ]] || [[ -f "${LINT_TMP}/buildifier" ]] || [[ -n "${ALL_FILES["MODULE.bazel.lock"]:-}" ]]; then
         RUN_LOCKFILE_CHECK=true
     fi

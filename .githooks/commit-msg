@@ -1,0 +1,19 @@
+#!/bin/bash
+# Automatically wrap commit message body lines at 70 characters and chain
+# to repo's Gerrit commit-msg hook (if present) to generate Change-Id.
+
+set -eu -o pipefail
+
+MSG_FILE="${1:?Commit message file path required}"
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
+python3 "${REPO_ROOT}/utils/format_commit_msg.py" "${MSG_FILE}"
+
+# Chain to repo's Gerrit commit-msg hook so Change-Id is generated/preserved
+GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || true)
+if [[ -n "${GIT_DIR}" ]]; then
+    REPO_COMMIT_MSG="${GIT_DIR}/hooks/commit-msg"
+    if [[ -x "${REPO_COMMIT_MSG}" ]] && [[ ! "${REPO_COMMIT_MSG}" -ef "$0" ]]; then
+        "${REPO_COMMIT_MSG}" "${MSG_FILE}"
+    fi
+fi
