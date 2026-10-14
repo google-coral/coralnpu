@@ -166,10 +166,17 @@ struct Sysc_tb : public sc_module {
 
   template <typename T>
   void trace(T* design, const char *name = "") {
-    if (!strlen(name)) {
-      name = design->name();
+    std::string path;
+    if (name != nullptr && strlen(name) > 0) {
+      path = name;
+      if (path.size() < 4 || path.substr(path.size() - 4) != ".fst") {
+        path += ".fst";
+      }
+    } else {
+      const char *test_tmpdir = std::getenv("TEST_TMPDIR");
+      std::string dir = (test_tmpdir != nullptr && strlen(test_tmpdir) > 0) ? test_tmpdir : "/tmp";
+      path            = dir + "/" + design->name() + ".fst";
     }
-    std::string path = std::string("/tmp/") + name;
 
     reset = 1;
     resetn = 0;
@@ -178,7 +185,6 @@ struct Sysc_tb : public sc_module {
     resetn = 1;
 
     design->trace(tf_, 99);
-    path += ".fst";
     Verilated::traceEverOn(true);
     tf_->open(path.c_str());
     printf("\nInfo: default timescale unit used for tracing: 1 ps (%s)\n",

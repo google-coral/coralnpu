@@ -243,6 +243,7 @@ template_rule(
     srcs = [
         "coralnpu/core_mini_axi_sim.cc",
     ],
+    visibility = ["//visibility:public"],
 )
 
 cc_test(

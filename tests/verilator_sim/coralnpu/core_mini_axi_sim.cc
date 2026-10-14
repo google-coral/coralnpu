@@ -34,22 +34,26 @@
 /* clang-format on */
 
 ABSL_FLAG(int, cycles, 100000000, "Simulation cycles");
-ABSL_FLAG(bool, trace, false, "Dump VCD trace");
+ABSL_FLAG(bool, trace, false, "Dump FST trace");
+ABSL_FLAG(std::string, trace_file, "", "Output path for FST trace file (enables tracing if set)");
 ABSL_FLAG(std::string, binary, "", "Binary to execute");
 ABSL_FLAG(bool, debug_axi, false, "Enable AXI traffic debugging");
 ABSL_FLAG(bool, instr_trace, false, "Log instructions to console");
 ABSL_FLAG(bool, backdoor_load, false, "Enable high-speed backdoor code loading");
 
-static bool run(const char* name, const std::string binary, const int cycles,
-                const bool trace, const bool debug_axi, const bool instr_trace,
+static bool run(const char *name, const std::string binary, const int cycles, const bool trace,
+                const std::string &trace_file, const bool debug_axi, const bool instr_trace,
                 const bool backdoor_load) {
   absl::Mutex halted_mtx;
   absl::CondVar halted_cv;
+  bool simulation_halted = false;
+  bool simulation_done   = false;
   CoreMiniAxi_tb tb(CoreMiniAxi_tb::kCoreMiniAxiModelName, cycles, /* random= */ false, debug_axi,
                     instr_trace, backdoor_load,
                     /*wfi_cb=*/std::nullopt,
-                    /*halted_cb=*/[&halted_mtx, &halted_cv]() {
+                    /*halted_cb=*/[&halted_mtx, &halted_cv, &simulation_halted]() {
                       absl::MutexLock lock_(&halted_mtx);
+                      simulation_halted = true;
                       halted_cv.SignalAll();
                     });
   // Ensure we call sc_start @0 time, before we startup anything else.
@@ -57,11 +61,16 @@ static bool run(const char* name, const std::string binary, const int cycles,
   // DUT model.
   sc_start(SC_ZERO_TIME);
 
-  if (trace) {
-    tb.trace(tb.core());
+  if (trace || !trace_file.empty()) {
+    tb.trace(tb.core(), trace_file.c_str());
   }
 
-  std::thread sc_main_thread([&tb]() { tb.start(); });
+  std::thread sc_main_thread([&tb, &halted_mtx, &halted_cv, &simulation_done]() {
+    tb.start();
+    absl::MutexLock lock_(&halted_mtx);
+    simulation_done = true;
+    halted_cv.SignalAll();
+  });
 
   CHECK_OK(tb.LoadElfSync(binary));
   CHECK_OK(tb.ClockGateSync(false));
@@ -69,14 +78,18 @@ static bool run(const char* name, const std::string binary, const int cycles,
 
   {
     absl::MutexLock lock_(&halted_mtx);
-    halted_cv.Wait(&halted_mtx);
+    while (!simulation_halted && !simulation_done) {
+      halted_cv.Wait(&halted_mtx);
+    }
   }
 
-  if (!tb.io_fault && !tb.tohost_halt) {
-    CHECK_OK(tb.CheckStatusSync());
+  if (simulation_halted) {
+    if (!tb.io_fault && !tb.tohost_halt) {
+      CHECK_OK(tb.CheckStatusSync());
+    }
+    sc_stop();
   }
 
-  sc_stop();
   sc_main_thread.join();
   return (!tb.io_fault && !(tb.tohost_halt && tb.tohost_val != 1));
 }
@@ -96,8 +109,10 @@ extern "C" int sc_main(int argc, char** argv) {
     return -1;
   }
 
-  return run(Sysc_tb::get_name(argv[0]), absl::GetFlag(FLAGS_binary),
-      absl::GetFlag(FLAGS_cycles), absl::GetFlag(FLAGS_trace),
-      absl::GetFlag(FLAGS_debug_axi), absl::GetFlag(FLAGS_instr_trace),
-      absl::GetFlag(FLAGS_backdoor_load)) ? 0 : 1;
+  return run(Sysc_tb::get_name(argv[0]), absl::GetFlag(FLAGS_binary), absl::GetFlag(FLAGS_cycles),
+             absl::GetFlag(FLAGS_trace), absl::GetFlag(FLAGS_trace_file),
+             absl::GetFlag(FLAGS_debug_axi), absl::GetFlag(FLAGS_instr_trace),
+             absl::GetFlag(FLAGS_backdoor_load))
+             ? 0
+             : 1;
 }
