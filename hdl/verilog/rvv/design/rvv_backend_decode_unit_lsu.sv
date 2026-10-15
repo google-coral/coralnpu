@@ -104,7 +104,7 @@ module rvv_backend_decode_unit_lsu
   assign csr_sew        = inst_valid ? inst.arch_state.sew : SEW8;
   assign csr_lmul       = inst_valid ? inst.arch_state.lmul_orig : LMULRESERVED;
   assign reduced_lmul   = inst_valid ? inst.arch_state.lmul : LMULRESERVED;  
-  `ifdef ZVT_ON
+`ifdef ZVT_ON
   assign csr_mtwiden    = inst_valid ? inst.arch_state.mtwiden : 'b0;
   assign csr_tm         = inst_valid ? inst.arch_state.tm : 'b0;
 `endif
@@ -3386,7 +3386,11 @@ module rvv_backend_decode_unit_lsu
 
       `ifdef ZVT_ON
         TILE_LDST: begin
-          check_special = inst_vm&check_evl_not_0&check_vstart_sle_evl;
+          check_special = inst_vm
+                        `ifndef RVVCHECK_VSTART_VL
+                          &check_evl_not_0&check_vstart_sle_evl
+                        `endif 
+                          ;
         end
       `endif
     endcase
@@ -3533,7 +3537,7 @@ module rvv_backend_decode_unit_lsu
           end
         endcase
       end
-    `ifdef ZVT_ON
+      `ifdef ZVT_ON
       TILE_LDST: begin
         evl = (csr_vl > `TE) ? `TE : csr_vl;
       end
@@ -3542,7 +3546,7 @@ module rvv_backend_decode_unit_lsu
   end
   
   // check evl is not 0
-  assign check_evl_not_0 = evl!='b0;
+  assign check_evl_not_0 = |evl;
 
   // check vstart < evl
   assign check_vstart_sle_evl = {1'b0,csr_vstart} < evl;

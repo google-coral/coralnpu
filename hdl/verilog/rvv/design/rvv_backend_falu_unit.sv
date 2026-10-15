@@ -39,7 +39,6 @@ module rvv_backend_falu_unit(
   // 5 stages are supported for ultra-high-frequency (1.0 GHz) timing closure.
   // Note for Physical Design: If 3-cycle architectural latency is preferred, synthesis
   // register retiming ('set_optimize_registers true') on the 3-stage core is an option.
-  parameter int unsigned PIPEREGS  = `FALU_PIPEREGS; 
   //global
   input   logic         clk;
   input   logic         rst_n;
@@ -122,9 +121,9 @@ module rvv_backend_falu_unit(
   logic                                     allcmp_result_rdy_tmp;
   logic                                     allcmp_result_rdy;
   // fcmp info
-  logic         [PIPEREGS:0][1:0]           info_vld;
-  logic         [PIPEREGS:0]                info_rdy;
-  FCMP_INFO_t   [PIPEREGS:0]                cmp_info;
+  logic         [`FALU_PIPEREGS:0][1:0]     info_vld;
+  logic         [`FALU_PIPEREGS:0]          info_rdy;
+  FCMP_INFO_t   [`FALU_PIPEREGS:0]          cmp_info;
   logic   [`VLEN-1:0]                       v0;
   logic   [`VLEN-1:0]                       vstart_elements_tmp;
   logic   [`VLEN-1:0]                       vstart_elements;
@@ -483,7 +482,7 @@ module rvv_backend_falu_unit(
       `else
       .FpFmtConfig        (5'b10000),
       `endif
-      .NumPipeRegs        (PIPEREGS),
+      .NumPipeRegs        (`FALU_PIPEREGS),
       .PipeConfig         (fpnew_pkg::DISTRIBUTED),
       .TagType            (TAG_t)
       )
@@ -526,7 +525,7 @@ module rvv_backend_falu_unit(
   
     fpnew_noncomp #(
       .FpFormat           (fpnew_pkg::FP32),
-      .NumPipeRegs        (PIPEREGS),
+      .NumPipeRegs        (`FALU_PIPEREGS),
       .PipeConfig         (fpnew_pkg::DISTRIBUTED),
       .TagType            (FCMP_TAG_t)
     )
@@ -573,7 +572,7 @@ module rvv_backend_falu_unit(
       .FpFmtConfig        (5'b10000),
       `endif
       .IntFmtConfig       (4'b1110),
-      .NumPipeRegs        (PIPEREGS),
+      .NumPipeRegs        (`FALU_PIPEREGS),
       .PipeConfig         (fpnew_pkg::DISTRIBUTED),
       .TagType            (FCVT_TAG_t)
     )
@@ -645,7 +644,7 @@ module rvv_backend_falu_unit(
         `else
         .FpFmtConfig        (5'b10000),
         `endif
-        .NumPipeRegs        (PIPEREGS),
+        .NumPipeRegs        (`FALU_PIPEREGS),
         .PipeConfig         (fpnew_pkg::DISTRIBUTED)
         )
       addmul (
@@ -687,7 +686,7 @@ module rvv_backend_falu_unit(
   
       fpnew_noncomp #(
         .FpFormat           (fpnew_pkg::FP32),
-        .NumPipeRegs        (PIPEREGS),
+        .NumPipeRegs        (`FALU_PIPEREGS),
         .PipeConfig         (fpnew_pkg::DISTRIBUTED)
       )
       allcmp (
@@ -733,7 +732,7 @@ module rvv_backend_falu_unit(
         .FpFmtConfig        (5'b10000),
         `endif
         .IntFmtConfig       (4'b1110),
-        .NumPipeRegs        (PIPEREGS),
+        .NumPipeRegs        (`FALU_PIPEREGS),
         .PipeConfig         (fpnew_pkg::DISTRIBUTED),
         .TagType            (FCVT_TAG_t)
       )
@@ -800,18 +799,18 @@ module rvv_backend_falu_unit(
   endgenerate
 
   // register some extra information for FCMP instructions.
-  assign info_vld[0][0]     = falu_uop_vld&(falu_uop.uop_exe_unit==VEU_FCMP);
-  assign info_vld[0][1]     = falu_uop_vld&(falu_uop.uop_exe_unit==VEU_FNCMP);
-  assign info_rdy[PIPEREGS] = allcmp_result_rdy_tmp; 
-  assign cmp_info[0].vstart = falu_uop.vstart;
-  assign cmp_info[0].vl     = falu_uop.vl;   
-  assign cmp_info[0].vm     = falu_uop.vm;
-  assign cmp_info[0].v0     = falu_uop.v0_data_valid ? falu_uop.v0_data : '1;
-  assign cmp_info[0].vd     = falu_uop.vs3_data;
+  assign info_vld[0][0]           = falu_uop_vld&(falu_uop.uop_exe_unit==VEU_FCMP);
+  assign info_vld[0][1]           = falu_uop_vld&(falu_uop.uop_exe_unit==VEU_FNCMP);
+  assign info_rdy[`FALU_PIPEREGS] = allcmp_result_rdy_tmp; 
+  assign cmp_info[0].vstart       = falu_uop.vstart;
+  assign cmp_info[0].vl           = falu_uop.vl;   
+  assign cmp_info[0].vm           = falu_uop.vm;
+  assign cmp_info[0].v0           = falu_uop.v0_data_valid ? falu_uop.v0_data : '1;
+  assign cmp_info[0].vd           = falu_uop.vs3_data;
   
   // info pipeline
   generate
-    for(i=0;i<PIPEREGS;i++) begin
+    for(i=0;i<`FALU_PIPEREGS;i++) begin
       assign info_rdy[i] = !(|info_vld[i+1]) || info_rdy[i+1];
       
       // vld
@@ -882,23 +881,23 @@ module rvv_backend_falu_unit(
     assign cmp_fexp_tmp     = {((`VLEN-8*`VLENW)*5)'(0), cmp_status[8*`VLENW-1:7*`VLENW], (cmp_status[7*`VLENW-1:0]|cmp_status_d1)};
 
     barrel_shifter #(.DATA_WIDTH(`VLEN)) 
-    u_prestart (.din((`VLEN)'('1)), .shift_amount(cmp_info[PIPEREGS].vstart[$clog2(`VLEN)-1:0]), .shift_mode(2'b00), .dout(vstart_elements_tmp));
+    u_prestart (.din((`VLEN)'('1)), .shift_amount(cmp_info[`FALU_PIPEREGS].vstart[$clog2(`VLEN)-1:0]), .shift_mode(2'b00), .dout(vstart_elements_tmp));
     barrel_shifter #(.DATA_WIDTH(`VLEN)) 
-    u_tail (.din((`VLEN)'('1)), .shift_amount(cmp_info[PIPEREGS].vl[$clog2(`VLEN)-1:0]), .shift_mode(2'b00), .dout(tail_elements_tmp));
+    u_tail (.din((`VLEN)'('1)), .shift_amount(cmp_info[`FALU_PIPEREGS].vl[$clog2(`VLEN)-1:0]), .shift_mode(2'b00), .dout(tail_elements_tmp));
     
     assign vstart_elements  = ~vstart_elements_tmp;
-    assign tail_elements    = cmp_info[PIPEREGS].vl[$clog2(`VLEN)] ? 'b0 : tail_elements_tmp;
+    assign tail_elements    = cmp_info[`FALU_PIPEREGS].vl[$clog2(`VLEN)] ? 'b0 : tail_elements_tmp;
 
-    assign v0               = {(`VLEN-8*`VLENW)'(0), cmp_info[PIPEREGS].v0};
+    assign v0               = {(`VLEN-8*`VLENW)'(0), cmp_info[`FALU_PIPEREGS].v0};
 
     for(i=0;i<`VLEN;i++) begin: FCMP_MERGE
       always_comb begin
-        if(!(vstart_elements[i]|tail_elements[i]) & (cmp_info[PIPEREGS].vm|v0[i])) begin
+        if(!(vstart_elements[i]|tail_elements[i]) & (cmp_info[`FALU_PIPEREGS].vm|v0[i])) begin
           cmp_res[i]        = cmp_res_tmp[i];
           cmp_fexp_per1[i]  = cmp_fexp_tmp[i];
         end
         else begin
-          cmp_res[i]        = cmp_info[PIPEREGS].vd[i];
+          cmp_res[i]        = cmp_info[`FALU_PIPEREGS].vd[i];
           cmp_fexp_per1[i]  = 'b0;
         end
       end

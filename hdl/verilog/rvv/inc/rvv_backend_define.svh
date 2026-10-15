@@ -228,6 +228,8 @@
 `ifndef FALU_PIPEREGS
   `ifdef FPU_PIPEREGS
     `define FALU_PIPEREGS `FPU_PIPEREGS
+  `elsif FPU_PIPENUM
+    `define FALU_PIPEREGS (`FPU_PIPENUM)
   `else
     `define FALU_PIPEREGS 4
   `endif
