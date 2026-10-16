@@ -146,7 +146,8 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   val wfi    = Bool()
 
   // Fences.
-  val fencei = Bool()
+  val fencei   = Bool()
+  val fencetso = Bool()
 
   val rvv = Option.when(p.enableRvv)(Valid(new RvvCompressedInstruction(p)))
 
@@ -1008,7 +1009,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
     // -------------------------------------------------------------------------
     // Fence
-    val fenceValid = if (i == 0) { tryDispatch && d.fence }
+    val fenceValid = if (i == 0) { tryDispatch && (d.fence || d.fencetso) }
     else { false.B }
 
     // Set next lastReady if dispatched.
@@ -1295,7 +1296,8 @@ object DecodeInstruction {
 
     // Fences.
     val fences = Seq(
-      "fencei" -> BitPat("b0000_0000_0000_00000_001_00000_0001111")
+      "fencei"   -> BitPat("b0000_0000_0000_00000_001_00000_0001111"),
+      "fencetso" -> BitPat("b1000_0011_0011_00000_000_00000_0001111")
     )
 
     rv32i ++ rv64i ++ rv32m ++ zbb ++ zbb64 ++ coreControls ++ fences
@@ -1361,8 +1363,9 @@ object DecodeInstruction {
       d.mret   := false.B
       d.wfi    := false.B
 
-      d.fence  := false.B
-      d.fencei := false.B
+      d.fence    := false.B
+      d.fencei   := false.B
+      d.fencetso := false.B
 
       if (p.enableFloat) {
         d.float.get := MakeInvalid(new FloatInstruction(p))

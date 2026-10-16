@@ -22,6 +22,11 @@ coralnpu_v2_binary(
 )
 
 coralnpu_v2_binary(
+    name = "fence_test",
+    srcs = ["fence_test.cc"],
+)
+
+coralnpu_v2_binary(
     name = "perf_counters",
     srcs = ["perf_counters.cc"],
 )
@@ -30,6 +35,7 @@ filegroup(
     name = "coralnpu_isa_tests",
     srcs = [
         "ecall.elf",
+        "fence_test.elf",
         "perf_counters.elf",
     ],
 )

@@ -47,6 +47,24 @@ class DecodeInstructionSpec extends AnyFreeSpec with Matchers with ChiselSim {
       }
     }
 
+    "should decode fence and fence.tso as valid (undef == false)" in {
+      simulate(new DecodeTester(p)) { dut =>
+        val validFences = Seq(
+          0x0ff0000fL, // fence iorw, iorw
+          0x0330000fL, // fence rw, rw
+          0x8330000fL  // fence.tso
+        )
+        for (word <- validFences) {
+          dut.io.inst.poke(word.U(32.W))
+          dut.clock.step()
+          assert(
+            dut.io.undef.peek().litValue == 0,
+            s"Fence instruction 0x${word.toHexString} decoded as undef"
+          )
+        }
+      }
+    }
+
     "should decode invalid opcodes as undefined (undef == true)" in {
       simulate(new DecodeTester(p)) { dut =>
         val invalidWords = Seq(
@@ -54,7 +72,9 @@ class DecodeInstructionSpec extends AnyFreeSpec with Matchers with ChiselSim {
           0xffffffffL,         // All ones
           0x00000000L | 0x7bL, // Invalid custom opcode
           0x00000000L | 0x0bL, // Invalid opcode
-          0x00000000L | 0x2bL  // Invalid opcode
+          0x00000000L | 0x2bL, // Invalid opcode
+          0x1330000fL,         // Invalid fence fm=0001
+          0x8110000fL          // Invalid fence.tso pred/succ!=0011
         )
         for (word <- invalidWords) {
           dut.io.inst.poke(word.U(32.W))
