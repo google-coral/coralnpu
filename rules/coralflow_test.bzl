@@ -152,7 +152,7 @@ def coralflow_test(
             srcs = srcs,
             main = srcs[0] if len(srcs) == 1 else None,
             data = common_data + [
-                "//tests/uvm:uvm_sim_verilator",
+                "//tests/uvm:uvm_sim_verilator_dut",
             ],
             env = {
                 "CORALFLOW_TARGET": "uvm",

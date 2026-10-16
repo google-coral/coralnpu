@@ -113,7 +113,7 @@ int ParseCsrIndex(const std::string &name) {
       {"cycle", 0xC00},  {"time", 0xC01},     {"instret", 0xC02}, {"cycleh", 0xC80},
       {"timeh", 0xC81},  {"instreth", 0xC82}, {"vstart", 0x008},  {"vxsat", 0x009},
       {"vxrm", 0x00A},   {"vcsr", 0x00F},     {"vl", 0xC20},      {"vtype", 0xC21},
-      {"vlenb", 0xC22},
+      {"vlenb", 0xC22},  {"mtype", 0xC23},
   };
 
   auto it = kCsrMap.find(name);
@@ -419,6 +419,30 @@ bool SpikeSimulator::WriteVectorRegister(int v_idx, const uint32_t words[4]) {
   }
   for (int i = 0; i < 4; ++i) {
     impl_->proc->VU.elt<uint32_t>(v_idx, i, true) = words[i];
+  }
+  return true;
+}
+
+bool SpikeSimulator::ReadCurrentMatrixTile(uint32_t tile, uint32_t *tew,
+                                           std::vector<uint32_t> *words) {
+  if (!impl_->proc || tile >= 16 || !tew || !words) {
+    return false;
+  }
+  auto &vu = impl_->proc->VU;
+  if (vu.TE == 0 || vu.mt.size() < 16 * vu.TE * vu.TE) {
+    return false;
+  }
+  *tew                       = static_cast<uint32_t>(vu.tew());
+  const uint32_t ptile_bytes = static_cast<uint32_t>(vu.TE * vu.TE);
+  const uint32_t ptile_words = ptile_bytes / sizeof(uint32_t);
+  words->assign(ptile_words, 0);
+  const uint8_t *raw_bytes = reinterpret_cast<const uint8_t *>(vu.mt.data()) + tile * ptile_bytes;
+  for (uint32_t word = 0; word < ptile_words; ++word) {
+    uint32_t packed = 0;
+    for (uint32_t byte = 0; byte < sizeof(uint32_t); ++byte) {
+      packed |= static_cast<uint32_t>(raw_bytes[word * sizeof(uint32_t) + byte]) << (8 * byte);
+    }
+    (*words)[word] = packed;
   }
   return true;
 }

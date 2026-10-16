@@ -204,7 +204,7 @@ def get_tohost_addr(elf_path: str) -> Optional[int]:
 DUT_CHOICES = ("rvv", "vme")
 
 
-def get_uvm_model_name(simulator: str = "verilator", dut: str = "rvv") -> str:
+def get_uvm_model_name(simulator: str = "verilator", dut: str = "vme") -> str:
     """Returns the //tests/uvm model target name for a simulator and DUT."""
     if dut not in DUT_CHOICES:
         raise ValueError(f"Unknown DUT '{dut}', expected one of {DUT_CHOICES}")
@@ -213,7 +213,7 @@ def get_uvm_model_name(simulator: str = "verilator", dut: str = "rvv") -> str:
 
 
 def get_simulator_binary_path(
-    simulator: str = "verilator", dut: str = "rvv"
+    simulator: str = "verilator", dut: str = "vme"
 ) -> str:
     return os.path.abspath(
         f"bazel-bin/tests/uvm/{get_uvm_model_name(simulator, dut)}"
@@ -227,7 +227,7 @@ def build_simulator(
     verilator_bin: Optional[str] = None,
     verilator_root: Optional[str] = None,
     uvm_root: Optional[str] = None,
-    dut: str = "rvv",
+    dut: str = "vme",
 ) -> bool:
     logging.info(
         f"Building UVM Simulator ({simulator}, dut={dut}) via Bazel..."
@@ -318,7 +318,7 @@ def parse_arguments():
         "--dut",
         type=str,
         choices=DUT_CHOICES,
-        default="rvv",
+        default="vme",
         help="DUT toplevel: rvv (RvvCoreMiniVerificationAxi) or "
         "vme (VmeCoreMiniVerificationAxi, RVV + Zvt)"
     )
@@ -711,7 +711,7 @@ def run_full_regression(
     verilator_bin: Optional[str] = None,
     verilator_root: Optional[str] = None,
     uvm_root: Optional[str] = None,
-    dut: str = "rvv",
+    dut: str = "vme",
 ):
     # Build the UVM simulator once
     if not build_simulator(mpact_root, simulator, mpact_riscv_root,

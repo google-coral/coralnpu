@@ -14,7 +14,7 @@
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("//rules:coco_tb.bzl", "cocotb_test_suite")
-load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs", "coralnpu_v2_binary")
 load(
     "//tests/cocotb:build_defs.bzl",
     "VCS_BUILD_ARGS",
@@ -151,3 +151,5 @@ coralnpu_v2_binary(
     srcs = ["vme_mstatus_ms_test.cc"],
     hdrs = ["vme_test_utils.h"],
 )
+
+collect_coralnpu_elfs()

@@ -234,7 +234,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "MekdZ4B0gmeZseQgn/nfqBp+SikBv3qXhhy0dF2r4fg=",
+        "bzlTransitiveDigest": "iSghULExL+qSfRCmhbuDWJulP1ygEKiSq/GpbZborUY=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -799,7 +799,8 @@
                 "@@//third_party/spike:0005-Force-logging-in-vcompress.patch",
                 "@@//third_party/spike:0006-Hardwire-misa-as-read-only-WARL.patch",
                 "@@//third_party/spike:0007-Rename-yield-macro-avoid-boost-std-conflict.patch",
-                "@@//third_party/spike:0008-Link-libstdc-explicitly-in-LIBS.patch"
+                "@@//third_party/spike:0008-Link-libstdc-explicitly-in-LIBS.patch",
+                "@@//third_party/spike:0009-Fix-Zvt-and-CoralNPU-mstatus-alignment.patch"
               ],
               "patch_args": [
                 "-p1"

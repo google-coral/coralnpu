@@ -57,6 +57,15 @@ class spike_cosim_checker extends uvm_object;
       end
     end
 
+`ifdef ZVT_ON
+    begin
+      int unsigned mstatus_val = 0;
+      if (spike_get_register("mstatus", mstatus_val) == 0) begin
+        void'(spike_set_register("mstatus", mstatus_val | (32'h1 << 29)));
+      end
+    end
+`endif
+
     spike_enabled = 1;
     `uvm_info("SPIKE_CHECK", $sformatf(
               "In-process Spike cosim enabled for %s (entry: 0x%h, custom: %0d)",
@@ -113,6 +122,15 @@ class spike_cosim_checker extends uvm_object;
   function bit get_vpr(input string reg_name, output logic [127:0] val);
     if (!spike_enabled) return 0;
     return (spike_get_vector_register(reg_name, val) == 0);
+  endfunction
+
+  // Function: get_current_matrix_tile
+  // Reads physical matrix tile from Spike using current configuration.
+  function bit get_current_matrix_tile(input int unsigned tile, output logic [1023:0][31:0] value,
+                                       output int unsigned tew,
+                                       output int unsigned valid_word_count);
+    if (!spike_enabled) return 0;
+    return (spike_get_current_matrix_tile(tile, value, tew, valid_word_count) == 0);
   endfunction
 
   // Function: is_halted

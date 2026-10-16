@@ -25,7 +25,7 @@ configure_make(
     args = ["-j{}".format(MAKE_JOBS)],
     configure_options = [
         "--enable-commitlog",
-        "--with-isa=rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zicclsm_zfbfmin_zvfbfa",
+        "--with-isa=rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zicclsm_zfbfmin_zvfbfmin_zvfbfwma_zvfbfa_zvt16t_zvti8i32mm_zvtbf16fmm_zvtfmm",
     ],
     env = {
         "CXXFLAGS": "-std=c++20",

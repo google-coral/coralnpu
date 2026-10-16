@@ -785,45 +785,77 @@ package coralnpu_cosim_checker_pkg;
                         UVM_NONE)
             end
 
-            if (mpact_enabled) begin
+            begin
               logic [1023:0][31:0] mpact_words;
-              int unsigned current_tew = 0;
-              int unsigned valid_word_count = 0;
+              logic [1023:0][31:0] spike_words;
+              int unsigned mpact_tew = 0;
+              int unsigned spike_tew = 0;
+              int unsigned mpact_word_count = 0;
+              int unsigned spike_word_count = 0;
+              bit mpact_ok = 1;
+              bit spike_ok = 1;
 
-              if (mpact_get_current_matrix_tile(
-                      i, mpact_words, current_tew, valid_word_count
-                  ) != 0) begin
-                `uvm_error("COSIM_API_FAIL", $sformatf(
-                                                 "Failed to get MPACT matrix tile %s at PC 0x%08h",
-                                                 reg_name, rtl_info.pc))
-                return 0;
+              if (mpact_enabled) begin
+                if (mpact_get_current_matrix_tile(
+                        i, mpact_words, mpact_tew, mpact_word_count
+                    ) != 0) begin
+                  `uvm_error("COSIM_API_FAIL",
+                             $sformatf("Failed to get MPACT matrix tile %s at PC 0x%08h", reg_name,
+                                       rtl_info.pc))
+                  mpact_ok = 0;
+                end
               end
 
-              if (valid_word_count > 0) begin
-                int num_128b_chunks = valid_word_count / 4;
-                for (int chunk = 0; chunk < num_128b_chunks && chunk < 16; chunk++) begin
-                  logic [127:0] mpact_chunk = {
-                    mpact_words[chunk*4+3],
-                    mpact_words[chunk*4+2],
-                    mpact_words[chunk*4+1],
-                    mpact_words[chunk*4+0]
-                  };
-                  logic [127:0] rtl_chunk = rvvi_vif.t_wdata[0][rtl_info.retire_index][i][chunk];
+              if (has_spike) begin
+                if (!spike_checker.get_current_matrix_tile(
+                        i, spike_words, spike_tew, spike_word_count
+                    )) begin
+                  `uvm_error("COSIM_API_FAIL",
+                             $sformatf("Failed to get Spike matrix tile %s at PC 0x%08h", reg_name,
+                                       rtl_info.pc))
+                  spike_ok = 0;
+                end
+              end
 
-                  if (mpact_chunk != rtl_chunk) begin
-                    `uvm_error(
-                        "COSIM_MISMATCH",
-                        $sformatf(
-                            {"\n========================= [TILE CO-SIM MISMATCH] =========================\n",
-                             "  PC:          0x%08h\n", "  Instruction: 0x%08h\n",
-                             "  Tile:        %s (chunk %0d / %0d, TEW=%0d)\n",
-                             "  -------------------------------------------------------------------------\n",
-                             "  RTL:         0x%032h\n", "  MPACT:       0x%032h (MISMATCH)\n",
-                             "  Diagnosis:   🟡 MPACT DIVERGENCE or RTL TILE BUG\n",
-                             "==========================================================================="
-                              }, rtl_info.pc, rtl_info.insn, reg_name, chunk, num_128b_chunks,
-                              current_tew, rtl_chunk, mpact_chunk))
-                    return 0;
+              begin
+                int unsigned valid_word_count = (mpact_enabled && mpact_ok) ? mpact_word_count :
+                                                (has_spike && spike_ok) ? spike_word_count : 0;
+                int unsigned current_tew = (mpact_enabled && mpact_ok) ? mpact_tew : spike_tew;
+                if (valid_word_count > 0) begin
+                  int num_128b_chunks = valid_word_count / 4;
+                  for (int chunk = 0; chunk < num_128b_chunks && chunk < 16; chunk++) begin
+                    logic [127:0] rtl_chunk = rvvi_vif.t_wdata[0][rtl_info.retire_index][i][chunk];
+                    logic [127:0] mpact_chunk = {
+                      mpact_words[chunk*4+3],
+                      mpact_words[chunk*4+2],
+                      mpact_words[chunk*4+1],
+                      mpact_words[chunk*4+0]
+                    };
+                    logic [127:0] spike_chunk = {
+                      spike_words[chunk*4+3],
+                      spike_words[chunk*4+2],
+                      spike_words[chunk*4+1],
+                      spike_words[chunk*4+0]
+                    };
+
+                    if ((mpact_enabled && mpact_ok && mpact_chunk != rtl_chunk) ||
+                        (has_spike && spike_ok && spike_chunk != rtl_chunk)) begin
+                      string tile_reg_name = $sformatf(
+                          "%s (chunk %0d / %0d, TEW=%0d)",
+                          reg_name,
+                          chunk,
+                          num_128b_chunks,
+                          current_tew
+                      );
+                      report_3way_mismatch(
+                          tile_reg_name, rtl_info.pc, rtl_info.insn, $sformatf("0x%032h", rtl_chunk
+                          ), mpact_enabled ? $sformatf("0x%032h", mpact_chunk) : "DISABLED",
+                          has_spike ? $sformatf("0x%032h", spike_chunk) : "DISABLED",
+                          mpact_enabled ? (mpact_chunk == rtl_chunk) : 1'b1,
+                          has_spike ? (spike_chunk == rtl_chunk) : 1'b1,
+                          (mpact_enabled && has_spike) ? (mpact_chunk == spike_chunk) : 1'b1);
+                      return 0;
+                    end
                   end
                 end
               end

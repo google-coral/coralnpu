@@ -1,51 +1,83 @@
 diff --git a/sim/coralnpu_m4_instructions.cc b/sim/coralnpu_m4_instructions.cc
-index 1234567..89abcdef 100644
+index 8127db3..d6255c1 100755
 --- a/sim/coralnpu_m4_instructions.cc
 +++ b/sim/coralnpu_m4_instructions.cc
-@@ -52,9 +52,18 @@ void CoralNPUM4Vtle(int eew_bits,
+@@ -52,16 +52,30 @@ void CoralNPUM4Vtle(int eew_bits,
    auto* state = static_cast<::coralnpu::sim::CoralNPUM4State*>(
        matrix_state->riscv_state());
    auto* vector_state = state->rv_vector();
-+  const int kVstart = vector_state->vstart();
-+  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
 +  if (eew_bits > vector_state->max_elen() || vector_state->is_vill() ||
-+      state->IsMatrixStatusOff() || kVstart >= kCount) {
++      (state->mstatus() != nullptr &&
++       state->mstatus()->vs() == ::mpact::sim::riscv::RiscVMStatus::kStatusOff) ||
++      state->IsMatrixStatusOff() || !matrix_state->configured()) {
 +    ::mpact::sim::riscv::RiscVZvtVtle(eew_bits, inst);
 +    return;
 +  }
    const uint64_t kBase =
        ::mpact::sim::generic::GetInstructionSource<uint64_t>(inst, 0);
    const int kElementSize = eew_bits / 8;
--  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
+   const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
 -  if (!state->HasPermission(kBase, kCount * kElementSize,
-+  const uint64_t kAddr =
-+      kBase + static_cast<uint64_t>(kVstart) * kElementSize;
-+  const int kActiveBytes = (kCount - kVstart) * kElementSize;
-+  if (!state->HasPermission(kAddr, kActiveBytes,
-                             ::coralnpu::sim::MemoryPermission::kRead)) {
-@@ -75,9 +84,18 @@ void CoralNPUM4Vtse(int eew_bits,
+-                            ::coralnpu::sim::MemoryPermission::kRead)) {
+-    state->Trap(/*is_interrupt=*/false, kBase,
+-                *::mpact::sim::riscv::ExceptionCode::kLoadAccessFault,
+-                inst->address(), inst);
+-    return;
++  const int kVstart = vector_state->vstart();
++  if (kVstart < kCount) {
++    const uint64_t kStartAddr =
++        kBase + static_cast<uint64_t>(kVstart) * kElementSize;
++    const uint32_t kByteSize =
++        static_cast<uint32_t>(kCount - kVstart) * kElementSize;
++    if (!state->HasPermission(kStartAddr, kByteSize,
++                              ::coralnpu::sim::MemoryPermission::kRead)) {
++      state->Trap(/*is_interrupt=*/false, kStartAddr,
++                  *::mpact::sim::riscv::ExceptionCode::kLoadAccessFault,
++                  inst->address(), inst);
++      return;
++    }
+   }
+ 
+   ::mpact::sim::riscv::RiscVZvtVtle(eew_bits, inst);
+@@ -75,16 +89,30 @@ void CoralNPUM4Vtse(int eew_bits,
    auto* state = static_cast<::coralnpu::sim::CoralNPUM4State*>(
        matrix_state->riscv_state());
    auto* vector_state = state->rv_vector();
-+  const int kVstart = vector_state->vstart();
-+  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
 +  if (eew_bits > vector_state->max_elen() || vector_state->is_vill() ||
-+      state->IsMatrixStatusOff() || kVstart >= kCount) {
++      (state->mstatus() != nullptr &&
++       state->mstatus()->vs() == ::mpact::sim::riscv::RiscVMStatus::kStatusOff) ||
++      state->IsMatrixStatusOff() || !matrix_state->configured()) {
 +    ::mpact::sim::riscv::RiscVZvtVtse(eew_bits, inst);
 +    return;
 +  }
    const uint64_t kBase =
        ::mpact::sim::generic::GetInstructionSource<uint64_t>(inst, 0);
    const int kElementSize = eew_bits / 8;
--  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
+   const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
 -  if (!state->HasPermission(kBase, kCount * kElementSize,
-+  const uint64_t kAddr =
-+      kBase + static_cast<uint64_t>(kVstart) * kElementSize;
-+  const int kActiveBytes = (kCount - kVstart) * kElementSize;
-+  if (!state->HasPermission(kAddr, kActiveBytes,
-                             ::coralnpu::sim::MemoryPermission::kWrite)) {
+-                            ::coralnpu::sim::MemoryPermission::kWrite)) {
+-    state->Trap(/*is_interrupt=*/false, kBase,
+-                *::mpact::sim::riscv::ExceptionCode::kStoreAccessFault,
+-                inst->address(), inst);
+-    return;
++  const int kVstart = vector_state->vstart();
++  if (kVstart < kCount) {
++    const uint64_t kStartAddr =
++        kBase + static_cast<uint64_t>(kVstart) * kElementSize;
++    const uint32_t kByteSize =
++        static_cast<uint32_t>(kCount - kVstart) * kElementSize;
++    if (!state->HasPermission(kStartAddr, kByteSize,
++                              ::coralnpu::sim::MemoryPermission::kWrite)) {
++      state->Trap(/*is_interrupt=*/false, kStartAddr,
++                  *::mpact::sim::riscv::ExceptionCode::kStoreAccessFault,
++                  inst->address(), inst);
++      return;
++    }
+   }
+ 
+   ::mpact::sim::riscv::RiscVZvtVtse(eew_bits, inst);
 diff --git a/sim/coralnpu_m4_state.cc b/sim/coralnpu_m4_state.cc
-index 51303be..7b4ad32 100755
+index 3ba9bbb..7cadb0b 100755
 --- a/sim/coralnpu_m4_state.cc
 +++ b/sim/coralnpu_m4_state.cc
 @@ -23,6 +23,7 @@
@@ -69,7 +101,7 @@ index 51303be..7b4ad32 100755
    csr_set()->AddCsr(new_mstatus).IgnoreError();
    mstatus_ = new_mstatus;
  }
-@@ -48,6 +53,34 @@ CoralNPUM4State::~CoralNPUM4State() {
+@@ -49,6 +54,34 @@ CoralNPUM4State::~CoralNPUM4State() {
    delete mstatus_;
  }
  
@@ -105,7 +137,7 @@ index 51303be..7b4ad32 100755
  inline uint64_t StretchMisa32(uint32_t value) {
    uint64_t value64 = static_cast<uint64_t>(value);
 diff --git a/sim/coralnpu_m4_state.h b/sim/coralnpu_m4_state.h
-index b086035..30c607f 100755
+index b086035..6ff9b92 100755
 --- a/sim/coralnpu_m4_state.h
 +++ b/sim/coralnpu_m4_state.h
 @@ -31,6 +31,10 @@ class CoralNPUM4State : public CoralNPUV2State {
@@ -120,7 +152,7 @@ index b086035..30c607f 100755
  
  std::unique_ptr<CoralNPUM4State> CreateCoralNPUM4State(
 diff --git a/sim/coralnpu_simulator.cc b/sim/coralnpu_simulator.cc
-index 86bd41f..3688eec 100755
+index 4fb59c6..6f032e6 100755
 --- a/sim/coralnpu_simulator.cc
 +++ b/sim/coralnpu_simulator.cc
 @@ -148,13 +148,15 @@ CoralNPUSimulator::CoralNPUSimulator(const CoralNPUSimulatorOptions& options)
@@ -142,19 +174,22 @@ index 86bd41f..3688eec 100755
          << "Failed to create matrix state: " << matrix_status.status();
      matrix_state_ = std::move(*matrix_status);
 diff --git a/sim/coralnpu_v2.bin_fmt b/sim/coralnpu_v2.bin_fmt
-index 45d29f7..5452723 100755
+index 45d29f7..9dd2ecc 100755
 --- a/sim/coralnpu_v2.bin_fmt
 +++ b/sim/coralnpu_v2.bin_fmt
-@@ -261,6 +261,7 @@ format VConfig[32] : Inst32Format {
+@@ -261,6 +261,10 @@ format VConfig[32] : Inst32Format {
      signed zimm10[10] = top12[9..0];
      unsigned uimm5[5] = rs1;
      unsigned rs2[5] = top12[4..0];
++    unsigned mseti_hi[3] = top12[11..9];
++    unsigned mseti_mid[3] = top12[7..5];
 +    unsigned subfunc[3] = top12[2..0];
++    unsigned mseti_rs1_hi[3] = rs1[4..2];
  };
  
  instruction group RiscVIInstBase32[32] : Inst32Format {
 diff --git a/sim/coralnpu_xstatus.h b/sim/coralnpu_xstatus.h
-index 1234567..89abcdef 100644
+index 5009c5b..2e3cfad 100755
 --- a/sim/coralnpu_xstatus.h
 +++ b/sim/coralnpu_xstatus.h
 @@ -18,6 +18,7 @@
@@ -194,45 +229,325 @@ index 1234567..89abcdef 100644
      return RiscVMStatus::sd() || ms() == 0b11 || vs() == 0b11 || fs() == 0b11 ||
             xs() == 0b11;
 diff --git a/sim/test/coralnpu_m4_config_test.cc b/sim/test/coralnpu_m4_config_test.cc
-index be642b2..aef241e 100755
+index be642b2..9133df8 100755
 --- a/sim/test/coralnpu_m4_config_test.cc
 +++ b/sim/test/coralnpu_m4_config_test.cc
-@@ -211,4 +211,30 @@ TEST_F(CoralNPUM4ConfigTest, MsetTkWhenUnconfigured) {
+@@ -123,7 +123,7 @@ TEST_F(CoralNPUM4ConfigTest, MsetMtypeInt8ConfigClampsTkTm) {
+   SetXReg(1, kMtype);  // rs1 = mtype
+   SetXReg(2, 0x0);     // rs2 = vtype: SEW=8, LMUL=1.
+ 
+-  Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
+ 
+   // vl must be 0 after msetmtype.
+   EXPECT_EQ(rvv_->vector_length(), 0);
+@@ -140,7 +140,7 @@ TEST_F(CoralNPUM4ConfigTest, MsetMtypeInt8ConfigClampsTkTm) {
+ TEST_F(CoralNPUM4ConfigTest, MsetMtypeUnconfiguredZeroesMtype) {
+   SetXReg(1, 0x0);  // mtwiden = 0.
+   SetXReg(2, 0x0);
+-  Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
+   EXPECT_EQ(matrix_->mtype(), 0u);
+   EXPECT_FALSE(matrix_->configured());
+ }
+@@ -151,12 +151,12 @@ TEST_F(CoralNPUM4ConfigTest, MsetTnSetsVlAndWritesRd) {
+   const uint32_t kMtype = 0x3 | (4u << 5) | (8u << 10);
+   SetXReg(1, kMtype);
+   SetXReg(2, 0x0);
+-  Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
+ 
+   // msettn x3, x4 with x4 = 10. Bound = min(10, VLMAX=16,
+   // EFFECTIVE_TILE_EDGE=32) = 10.
+   SetXReg(4, 10);
+-  Execute(MakeVConfig(0b100'0010, /*rs2=*/0, /*rs1=*/4, 0b111, /*rd=*/3));
++  Execute(MakeVConfig(0b100'0100, /*rs2=*/0, /*rs1=*/4, 0b111, /*rd=*/3));
+   EXPECT_EQ(rvv_->vector_length(), 10u);
+   EXPECT_EQ(GetXReg(3), 10u);
+ }
+@@ -166,11 +166,11 @@ TEST_F(CoralNPUM4ConfigTest, MsetTkClampsToKmax) {
+   const uint32_t kMtype = 0x3 | (1u << 5) | (8u << 10);  // tk starts at 1.
+   SetXReg(1, kMtype);
+   SetXReg(2, 0x0);
+-  Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
+ 
+   // msettk x3, x4 with x4 = 7 -> clamped to KMAX = 4.
+   SetXReg(4, 7);
+-  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/4, 0b111, /*rd=*/3));
++  Execute(MakeVConfig(0b100'0100, /*rs2=*/2, /*rs1=*/4, 0b111, /*rd=*/3));
+   EXPECT_EQ(matrix_->tile_k(), 4);
+   EXPECT_EQ(GetXReg(3), 4u);
+ }
+@@ -178,10 +178,10 @@ TEST_F(CoralNPUM4ConfigTest, MsetTkClampsToKmax) {
+ TEST_F(CoralNPUM4ConfigTest, MsetTnWhenUnconfigured) {
+   SetXReg(1, 0x0);  // mtwiden = 0
+   SetXReg(2, 0x0);
+-  Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
+ 
+   SetXReg(4, 10);
+-  Execute(MakeVConfig(0b100'0010, /*rs2=*/0, /*rs1=*/4, 0b111,
++  Execute(MakeVConfig(0b100'0100, /*rs2=*/0, /*rs1=*/4, 0b111,
+                       /*rd=*/3));  // msettn
+   EXPECT_EQ(rvv_->vector_length(), 10u);
+   EXPECT_EQ(GetXReg(3), 10u);
+@@ -190,10 +190,10 @@ TEST_F(CoralNPUM4ConfigTest, MsetTnWhenUnconfigured) {
+ TEST_F(CoralNPUM4ConfigTest, MsetTmWhenUnconfigured) {
+   SetXReg(1, 0x0);  // mtwiden = 0
+   SetXReg(2, 0x0);
+-  Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
+ 
+   SetXReg(4, 10);
+-  Execute(MakeVConfig(0b100'0010, /*rs2=*/1, /*rs1=*/4, 0b111,
++  Execute(MakeVConfig(0b100'0100, /*rs2=*/1, /*rs1=*/4, 0b111,
+                       /*rd=*/3));  // msettm
+   EXPECT_EQ(matrix_->tile_m(), 0u);
+   EXPECT_EQ(GetXReg(3), 0u);
+@@ -202,13 +202,108 @@ TEST_F(CoralNPUM4ConfigTest, MsetTmWhenUnconfigured) {
+ TEST_F(CoralNPUM4ConfigTest, MsetTkWhenUnconfigured) {
+   SetXReg(1, 0x0);  // mtwiden = 0
+   SetXReg(2, 0x0);
+-  Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
+ 
+   SetXReg(4, 10);
+-  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/4, 0b111,
++  Execute(MakeVConfig(0b100'0100, /*rs2=*/2, /*rs1=*/4, 0b111,
+                       /*rd=*/3));  // msettk
+   EXPECT_EQ(matrix_->tile_k(), 0u);
    EXPECT_EQ(GetXReg(3), 0u);
  }
  
 +TEST_F(CoralNPUM4ConfigTest, MsetMtypeiDerivesVtypeAndLmul) {
-+  // msetmtypei with uimm=3 (mtwiden=3), vsew=0 (SEW8) -> LMUL1 (vlmul=0).
-+  Execute(0x8431f057);
++  state_->mstatus()->set_vs(::mpact::sim::riscv::RiscVMStatus::kStatusInitial);
++  state_->mstatus()->Submit();
++  // Default TE=32, VLEN=128:
++  // msetmtypei with uimm=3 (mtwiden=3), vsew=0 (SEW8) -> LMUL2 (16/8).
++  Execute(0x8841f057);
++  EXPECT_EQ(state_->mstatus()->vs(),
++            ::mpact::sim::riscv::RiscVMStatus::kStatusDirty);
 +  EXPECT_EQ(rvv_->vector_length(), 0u);
 +  EXPECT_EQ(matrix_->mtwiden(), 3);
 +  EXPECT_EQ(rvv_->selected_element_width(), 1);  // 8-bit SEW
-+  EXPECT_EQ(rvv_->vector_length_multiplier(), 8);  // LMUL 1 (8/8)
-+
-+  // msetmtypei with uimm=2 (mtwiden=2), vsew=1 (SEW16) -> LMUL2 (vlmul=1).
-+  Execute(0x84b17057);
-+  EXPECT_EQ(matrix_->mtwiden(), 2);
-+  EXPECT_EQ(rvv_->selected_element_width(), 2);  // 16-bit SEW
 +  EXPECT_EQ(rvv_->vector_length_multiplier(), 16);  // LMUL 2 (16/8)
 +
-+  // msetmtypei with uimm=1 (mtwiden=1), vsew=2 (SEW32) -> LMUL4 (vlmul=2).
-+  Execute(0x8530f057);
-+  EXPECT_EQ(matrix_->mtwiden(), 1);
-+  EXPECT_EQ(rvv_->selected_element_width(), 4);  // 32-bit SEW
++  // msetmtypei with uimm=2 (mtwiden=2), vsew=1 (SEW16) -> LMUL4 (32/8).
++  Execute(0x88c17057);
++  EXPECT_EQ(matrix_->mtwiden(), 2);
++  EXPECT_EQ(rvv_->selected_element_width(), 2);  // 16-bit SEW
 +  EXPECT_EQ(rvv_->vector_length_multiplier(), 32);  // LMUL 4 (32/8)
 +
++  // msetmtypei with uimm=1 (mtwiden=1), vsew=2 (SEW32) -> LMUL8 (64/8).
++  Execute(0x8940f057);
++  EXPECT_EQ(matrix_->mtwiden(), 1);
++  EXPECT_EQ(rvv_->selected_element_width(), 4);  // 32-bit SEW
++  EXPECT_EQ(rvv_->vector_length_multiplier(), 64);  // LMUL 8 (64/8)
++
 +  // msetmtypei with uimm=0 (mtwiden=0, unconfigured) -> mtype=0.
-+  Execute(0x84307057);
++  Execute(0x88407057);
 +  EXPECT_EQ(matrix_->mtype(), 0u);
 +  EXPECT_FALSE(matrix_->configured());
 +}
 +
++TEST_F(CoralNPUM4ConfigTest, MtypeMasksReservedBitsAndValidatesAltfmt) {
++  // Non-zero reserved bits (31:24, 9:8, 4:2) in rs1 when mtwiden != 0
++  // set vtype.vill = 1 and mtype = 0 per Zvt v0.4 §12.1.1.4.
++  const uint32_t kReservedMtype =
++      0xFF00031Cu | 0x3u | (2u << 5) | (4u << 10);
++  SetXReg(1, kReservedMtype);
++  SetXReg(2, 1u << 8);
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  EXPECT_TRUE(rvv_->is_vill());
++  EXPECT_EQ(Mtype(), 0u);
++
++  // Valid mtype (mtwiden=3, tk=2, tm=4) with SEW=8 (vsew=0), altfmt=1 -> valid,
++  // and marks mstatus.vs Dirty.
++  state_->mstatus()->set_vs(::mpact::sim::riscv::RiscVMStatus::kStatusInitial);
++  state_->mstatus()->Submit();
++  SetXReg(1, 0x3u | (2u << 5) | (4u << 10));
++  SetXReg(2, 1u << 8);
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  EXPECT_FALSE(rvv_->is_vill());
++  EXPECT_EQ(Mtype(), 0x3u | (2u << 5) | (4u << 10));
++  EXPECT_EQ(state_->mstatus()->vs(),
++            ::mpact::sim::riscv::RiscVMStatus::kStatusDirty);
++
++  // Unconfigured (mtwiden=0) ignores upper rs1 bits, zeroes mtype, and
++  // preserves valid altfmt=1 (SEW=16) per v0.4.
++  SetXReg(1, 0xFF00031Cu);
++  SetXReg(2, (1u << 8) | (1u << 3));
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  EXPECT_FALSE(rvv_->is_vill());
++  EXPECT_EQ(rvv_->vtype() & (1u << 8), 1u << 8);
++  EXPECT_EQ(Mtype(), 0u);
++
++  // SEW=32 (vsew=2) with altfmt=1 is illegal -> sets vill=1 and mtype=0.
++  SetXReg(1, 0x1u | (1u << 5) | (4u << 10));
++  SetXReg(2, (1u << 8) | (2u << 3));
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  EXPECT_TRUE(rvv_->is_vill());
++  EXPECT_EQ(Mtype(), 0u);
++
++  // msettn when vill == 1 writes 0 to vl and rd, and clears vstart.
++  rvv_->set_vstart(5);
++  SetXReg(4, 8);
++  Execute(MakeVConfig(0b100'0100, /*rs2=*/0, /*rs1=*/4, 0b111, /*rd=*/3));
++  EXPECT_EQ(rvv_->vector_length(), 0u);
++  EXPECT_EQ(GetXReg(3), 0u);
++  EXPECT_EQ(rvv_->vstart(), 0u);
++
++  // When mstatus.vs == Off, msetmtype and msetmtypei trap with illegal inst.
++  bool trapped = false;
++  state_->set_on_trap(
++      [&trapped](bool, uint64_t, uint64_t, uint64_t,
++                 const ::mpact::sim::generic::Instruction*) -> bool {
++        trapped = true;
++        return true;
++      });
++  state_->mstatus()->set_vs(::mpact::sim::riscv::RiscVMStatus::kStatusOff);
++  state_->mstatus()->Submit();
++  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++  EXPECT_TRUE(trapped);
++  trapped = false;
++  Execute(0x8841f057);
++  EXPECT_TRUE(trapped);
++}
++
+ }  // namespace
+diff --git a/sim/test/coralnpu_m4_encoding_test.cc b/sim/test/coralnpu_m4_encoding_test.cc
+index f84e0f7..0a4a03e 100755
+--- a/sim/test/coralnpu_m4_encoding_test.cc
++++ b/sim/test/coralnpu_m4_encoding_test.cc
+@@ -60,29 +60,29 @@ class CoralNPUM4EncodingTest : public ::testing::Test {
+ };
+ 
+ TEST_F(CoralNPUM4EncodingTest, DecodesMsetmtype) {
+-  // func7 == 0b100'0001, func3 == 0b111.
+-  EXPECT_EQ(Decode(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111,
++  // func7 == 0b100'0010, func3 == 0b111.
++  EXPECT_EQ(Decode(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111,
+                                /*rd=*/0)),
+             OpcodeEnum::kMsetmtype);
+ }
+ 
+ TEST_F(CoralNPUM4EncodingTest, DecodesMsettn) {
+-  // func7 == 0b100'0010, rs2 == 0.
+-  EXPECT_EQ(Decode(MakeVConfig(0b100'0010, /*rs2=*/0, /*rs1=*/1, 0b111,
++  // func7 == 0b100'0100, rs2 == 0.
++  EXPECT_EQ(Decode(MakeVConfig(0b100'0100, /*rs2=*/0, /*rs1=*/1, 0b111,
+                                /*rd=*/2)),
+             OpcodeEnum::kMsettn);
+ }
+ 
+ TEST_F(CoralNPUM4EncodingTest, DecodesMsettm) {
+-  // func7 == 0b100'0010, rs2 == 1.
+-  EXPECT_EQ(Decode(MakeVConfig(0b100'0010, /*rs2=*/1, /*rs1=*/1, 0b111,
++  // func7 == 0b100'0100, rs2 == 1.
++  EXPECT_EQ(Decode(MakeVConfig(0b100'0100, /*rs2=*/1, /*rs1=*/1, 0b111,
+                                /*rd=*/2)),
+             OpcodeEnum::kMsettm);
+ }
+ 
+ TEST_F(CoralNPUM4EncodingTest, DecodesMsettk) {
+-  // func7 == 0b100'0010, rs2 == 2.
+-  EXPECT_EQ(Decode(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111,
++  // func7 == 0b100'0100, rs2 == 2.
++  EXPECT_EQ(Decode(MakeVConfig(0b100'0100, /*rs2=*/2, /*rs1=*/1, 0b111,
+                                /*rd=*/2)),
+             OpcodeEnum::kMsettk);
+ }
+diff --git a/sim/test/coralnpu_m4_ops_test.cc b/sim/test/coralnpu_m4_ops_test.cc
+index 3a22b12..5ff4789 100755
+--- a/sim/test/coralnpu_m4_ops_test.cc
++++ b/sim/test/coralnpu_m4_ops_test.cc
+@@ -148,7 +148,7 @@ class CoralNPUM4OpsTest : public ::testing::Test {
+   void Configure(uint32_t mtype, uint32_t vtype, int tn) {
+     SetXReg(1, mtype);
+     SetXReg(2, vtype);
+-    Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
++    Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
+     rvv_->set_vector_length(tn);
+   }
+ 
+@@ -206,8 +206,9 @@ TEST_F(CoralNPUM4OpsTest, Vtfmm_Fp32Matmul) {
+ 
+ // bf16 x bf16 -> fp32, K=2.
+ TEST_F(CoralNPUM4OpsTest, VtfmmAlt_Bf16Matmul) {
+-  // mtype: mtwiden=2 (TWIDEN=2), tk=2, tm=2. vtype: SEW=16 (vsew=001).
+-  Configure(/*mtype=*/0x2 | (2u << 5) | (2u << 10), /*vtype=*/(0b001u << 3),
++  // mtype: mtwiden=2 (TWIDEN=2), tk=2, tm=2. vtype: SEW=16 (vsew=001), altfmt=1.
++  Configure(/*mtype=*/0x2 | (2u << 5) | (2u << 10),
++            /*vtype=*/(1u << 8) | (0b001u << 3),
+             /*tn=*/2);
+   ASSERT_EQ(matrix_->tile_k(), 2);
+ 
+@@ -444,4 +445,59 @@ TEST_F(CoralNPUM4OpsTest, VtseVtle64RoundTrip) {
+             static_cast<int64_t>(0x3333333344444444ll));
+ }
+ 
++TEST_F(CoralNPUM4OpsTest, VstartPrestartUndisturbedAndMatmulTraps) {
++  Configure(/*mtype=*/0x3 | (2u << 5) | (2u << 10), /*vtype=*/0, /*tn=*/4);
++  for (int i = 0; i < 4; i++) {
++    matrix_->SetElem<uint8_t>(0, 0, i, 8, static_cast<uint8_t>(100 + i));
++  }
++  SetVreg<uint8_t>(8, {1, 2, 3, 4});
++  SetXReg(3, MakeTss(/*tile=*/0, /*pattern=*/0, /*index=*/0));
++
++  // vtmv.t.v with vstart=2 updates only elements [2, 3] and resets vstart=0.
++  rvv_->set_vstart(2);
++  Execute(MakeVArith(0b010'111, /*vs2=*/8, /*vs1=*/3, 0b110, /*vd=*/0));
++  EXPECT_EQ(rvv_->vstart(), 0u);
++  EXPECT_EQ((matrix_->GetElem<uint8_t>(0, 0, 0, 8)), 100);
++  EXPECT_EQ((matrix_->GetElem<uint8_t>(0, 0, 1, 8)), 101);
++  EXPECT_EQ((matrix_->GetElem<uint8_t>(0, 0, 2, 8)), 3);
++  EXPECT_EQ((matrix_->GetElem<uint8_t>(0, 0, 3, 8)), 4);
++
++  // vtmv.v.t with vstart=2 leaves prestart elements [0, 1] in v24 undisturbed.
++  SetVreg<uint8_t>(24, {55, 66, 77, 88});
++  rvv_->set_vstart(2);
++  Execute(MakeVArith(0b010'000, /*vs2=*/0b11111, /*vs1=*/3, 0b110, /*vd=*/24));
++  EXPECT_EQ(rvv_->vstart(), 0u);
++  auto [reg, unused] = state_->GetRegister<RVVectorRegister>("v24");
++  auto* v24 = reg->data_buffer();
++  EXPECT_EQ(v24->Get<uint8_t>(0), 55);
++  EXPECT_EQ(v24->Get<uint8_t>(1), 66);
++  EXPECT_EQ(v24->Get<uint8_t>(2), 3);
++  EXPECT_EQ(v24->Get<uint8_t>(3), 4);
++
++  // Non-zero vstart on matmul traps.
++  was_trap_handler_called_ = false;
++  rvv_->set_vstart(1);
++  Execute(MakeVMatrix(0b111'100, /*vs2=*/8, /*vs1=*/16, 0b000, /*mtd=*/1));
++  EXPECT_TRUE(was_trap_handler_called_);
++}
++
++TEST_F(CoralNPUM4OpsTest, AlignmentAndModeLegalityChecks) {
++  Configure(/*mtype=*/0x3 | (2u << 5) | (2u << 10), /*vtype=*/0, /*tn=*/2);
++
++  // Unaligned destination tile (mt1 -> mtd = 0b00011) on TEW=32 matmul traps.
++  was_trap_handler_called_ = false;
++  Execute(MakeVMatrix(0b111'100, /*vs2=*/8, /*vs1=*/16, 0b000, /*mtd=*/3));
++  EXPECT_TRUE(was_trap_handler_called_);
++
++  // vs2 % 8 >= 8/KMAX (for SEW=8, KMAX=4, 8/KMAX=2 -> vs2=10 has 10%8=2) traps.
++  was_trap_handler_called_ = false;
++  Execute(MakeVMatrix(0b111'100, /*vs2=*/10, /*vs1=*/16, 0b000, /*mtd=*/1));
++  EXPECT_TRUE(was_trap_handler_called_);
++
++  // Executing vtfmm.tvv when configured for int8 (SEW=8, TWIDEN=4) traps.
++  was_trap_handler_called_ = false;
++  Execute(MakeVMatrix(0b111'100, /*vs2=*/8, /*vs1=*/16, 0b001, /*mtd=*/0));
++  EXPECT_TRUE(was_trap_handler_called_);
++}
++
  }  // namespace
 diff --git a/sim/test/coralnpu_xstatus_test.cc b/sim/test/coralnpu_xstatus_test.cc
-index 697bd21..9cb6083 100755
+index 697bd21..198bd14 100755
 --- a/sim/test/coralnpu_xstatus_test.cc
 +++ b/sim/test/coralnpu_xstatus_test.cc
-@@ -96,43 +96,44 @@ TEST_F(CoralNPUXStatusTest, UpdateVsUpdatesSd) {
+@@ -96,28 +96,29 @@ TEST_F(CoralNPUXStatusTest, UpdateVsUpdatesSd) {
  }
  
  TEST_F(CoralNPUXStatusTest, WriteMaskHonored) {
@@ -272,11 +587,7 @@ index 697bd21..9cb6083 100755
    CoralNPUMStatus mstatus32(kInitialVal, state_.get(), misa_.get());
    EXPECT_EQ(mstatus32.ms(), kMsDirty);
    EXPECT_TRUE(mstatus32.sd());
-   EXPECT_EQ(mstatus32.GetUint32() & kInitialVal, kInitialVal);
-   EXPECT_EQ(mstatus32.AsUint32() & kInitialVal, kInitialVal);
-   EXPECT_EQ(mstatus32.read_mask(), CoralNPUMStatus::kCoralNpuReadMask);
-   EXPECT_EQ(mstatus32.write_mask(), CoralNPUMStatus::kCoralNpuWriteMask);
- }
+@@ -129,11 +130,11 @@ TEST_F(CoralNPUXStatusTest, Uint32Constructor) {
  
  TEST_F(CoralNPUXStatusTest, SetAndClearBits32) {
    constexpr uint32_t kMsMask32 = 0b11U << 29;
@@ -290,4 +601,4 @@ index 697bd21..9cb6083 100755
 +  EXPECT_EQ(mstatus_->GetUint32() & 0x8000'0000U, 0x8000'0000U);
    EXPECT_EQ(mstatus_->GetUint32() & kMsMask32, kMsDirty << 29);
    EXPECT_EQ(mstatus_->AsUint32() & kMsMask32, kMsDirty << 29);
-
+ 

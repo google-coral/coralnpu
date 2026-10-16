@@ -64,6 +64,16 @@ package coralnpu_spike_cosim_dpi_if;
     output logic [127:0] value
   );
 
+  // Function to get a physical matrix tile using Spike's current configuration.
+  // Value array provides storage for up to TE*TE words (1024 words = 4096 bytes).
+  // Returns 0 on success.
+  import "DPI-C" function int spike_get_current_matrix_tile(
+    input int unsigned tile,
+    output logic [1023:0][31:0] value,
+    output int unsigned tew,
+    output int unsigned valid_word_count
+  );
+
   // Function to apply a binary memory patch to Spike memory.
   // Returns 0 on success.
   import "DPI-C" function int spike_apply_memory_patch(input string patch_file);

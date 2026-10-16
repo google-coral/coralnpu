@@ -567,6 +567,7 @@ filegroup(
             "@coralnpu_hw//third_party/spike:0006-Hardwire-misa-as-read-only-WARL.patch",
             "@coralnpu_hw//third_party/spike:0007-Rename-yield-macro-avoid-boost-std-conflict.patch",
             "@coralnpu_hw//third_party/spike:0008-Link-libstdc-explicitly-in-LIBS.patch",
+            "@coralnpu_hw//third_party/spike:0009-Fix-Zvt-and-CoralNPU-mstatus-alignment.patch",
         ],
         patch_args = ["-p1"],
         urls = [

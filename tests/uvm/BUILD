@@ -104,16 +104,21 @@ filter_files_by_extension(
 
 # Selects the DUT used by the generated UVM regression targets
 # (`collect_coralnpu_elfs`, `collect_coralnpu_riscv_tests`, ISG rules):
-#   rvv - RvvCoreMiniVerificationAxi (default)
-#   vme - VmeCoreMiniVerificationAxi (RVV + Zvt matrix extension)
-# Example: bazel test --//tests/uvm:dut=vme --test_tag_filters=verilator-uvm-regression //...
+#   vme - VmeCoreMiniVerificationAxi (default, RVV + Zvt matrix extension)
+#   rvv - RvvCoreMiniVerificationAxi
+# Example: bazel test --//tests/uvm:dut=rvv --test_tag_filters=verilator-uvm-regression //...
 string_flag(
     name = "dut",
-    build_setting_default = "rvv",
+    build_setting_default = "vme",
     values = [
         "rvv",
         "vme",
     ],
+)
+
+config_setting(
+    name = "dut_rvv",
+    flag_values = {":dut": "rvv"},
 )
 
 config_setting(
@@ -167,6 +172,7 @@ verilator_model(
     cflags = UVM_VERILATOR_CFLAGS,
     hdl_toplevel = "coralnpu_tb_top",
     include_dirs = [":include_dirs"],
+    tags = ["manual"],
     verilog_sources = [
         "//hdl/chisel/src/coralnpu:rvv_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
         ":source_files",
@@ -187,7 +193,6 @@ verilator_model(
     ],
     hdl_toplevel = "coralnpu_tb_top",
     include_dirs = [":include_dirs"],
-    tags = ["manual"],
     verilog_sources = [
         "//hdl/chisel/src/coralnpu:vme_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
         ":source_files",
@@ -198,14 +203,13 @@ verilator_model(
 alias(
     name = "uvm_vme_sim_verilator",
     actual = ":uvm_sim_verilator_vme",
-    tags = ["manual"],
 )
 
 alias(
     name = "uvm_sim_verilator_dut",
     actual = select({
-        ":dut_vme": ":uvm_sim_verilator_vme",
-        "//conditions:default": ":uvm_sim_verilator",
+        ":dut_rvv": ":uvm_sim_verilator",
+        "//conditions:default": ":uvm_sim_verilator_vme",
     }),
 )
 
@@ -215,7 +219,10 @@ vcs_model(
     coralnpu_mpact_lib = ":coralnpu_cosim_lib_static_archive",
     hdl_toplevel = "coralnpu_tb_top",
     include_dirs = [":include_dirs"],
-    tags = ["vcs"],
+    tags = [
+        "manual",
+        "vcs",
+    ],
     verilog_sources = [
         ":source_files",
         "//hdl/chisel/src/coralnpu:rvv_core_mini_verification_axi_cc_library_emit_verilog_single_sv",
@@ -234,7 +241,6 @@ vcs_model(
     hdl_toplevel = "coralnpu_tb_top",
     include_dirs = [":include_dirs"],
     tags = [
-        "manual",
         "vcs",
     ],
     verilog_sources = [
@@ -248,7 +254,6 @@ alias(
     name = "uvm_vme_sim_vcs",
     actual = ":uvm_sim_vcs_vme",
     tags = [
-        "manual",
         "vcs",
     ],
 )
@@ -256,8 +261,8 @@ alias(
 alias(
     name = "uvm_sim_vcs_dut",
     actual = select({
-        ":dut_vme": ":uvm_sim_vcs_vme",
-        "//conditions:default": ":uvm_sim_vcs",
+        ":dut_rvv": ":uvm_sim_vcs",
+        "//conditions:default": ":uvm_sim_vcs_vme",
     }),
     tags = ["vcs"],
 )

@@ -202,6 +202,39 @@ int spike_get_vector_register(const char *name, svLogicVecVal *value) {
   }
 }
 
+int spike_get_current_matrix_tile(uint32_t tile, svLogicVecVal *value, uint32_t *tew,
+                                  uint32_t *valid_word_count) {
+  try {
+    if (value == nullptr || tew == nullptr || valid_word_count == nullptr ||
+        g_spike_sim == nullptr) {
+      return -1;
+    }
+    *tew              = 0;
+    *valid_word_count = 0;
+
+    std::vector<uint32_t> words;
+    uint32_t current_tew = 0;
+    if (!g_spike_sim->ReadCurrentMatrixTile(tile, &current_tew, &words)) {
+      return -1;
+    }
+
+    for (uint32_t i = 0; i < 1024; ++i) {
+      value[i].aval = (i < words.size()) ? words[i] : 0;
+      value[i].bval = 0;
+    }
+    *tew              = current_tew;
+    *valid_word_count = static_cast<uint32_t>(words.size());
+    return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "[Spike DPI] Exception in spike_get_current_matrix_tile: " << e.what()
+              << std::endl;
+    return -1;
+  } catch (...) {
+    std::cerr << "[Spike DPI] Unknown exception in spike_get_current_matrix_tile." << std::endl;
+    return -1;
+  }
+}
+
 int spike_apply_memory_patch(const char *patch_file) {
   try {
     if (g_spike_sim == nullptr) {

@@ -42,6 +42,6 @@ py_binary(
 # specifying --//rules:uvm_run_spike_cosim=true
 bool_flag(
     name = "uvm_run_spike_cosim",
-    build_setting_default = False,
+    build_setting_default = True,
     visibility = ["//visibility:public"],
 )

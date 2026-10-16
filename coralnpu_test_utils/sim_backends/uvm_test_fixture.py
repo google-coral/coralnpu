@@ -278,7 +278,13 @@ class UvmTestFixture:
     def _get_simulator_binary(self) -> str:
         if self.sim_binary_path:
             return self.resolve_path(self.sim_binary_path)
-        return self.resolve_path(f"tests/uvm/uvm_sim_{self.simulator}")
+        for suffix in ("_vme", ""):
+            candidate = self.resolve_path(
+                f"tests/uvm/uvm_sim_{self.simulator}{suffix}"
+            )
+            if os.path.exists(candidate):
+                return candidate
+        return self.resolve_path(f"tests/uvm/uvm_sim_{self.simulator}_vme")
 
     async def run_to_halt(
         self,

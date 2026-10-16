@@ -27,7 +27,7 @@ class CoralNPUV2Simulator:
         highmem_ld=True,
         exit_on_ebreak=True,
         semihost_htif=True,
-        architecture=Architecture.kM3,
+        architecture=Architecture.kM4,
     ):
         self.options = coralnpu_v2_sim_pybind.CoralNPUSimulatorOptions()
         self.options.architecture = architecture

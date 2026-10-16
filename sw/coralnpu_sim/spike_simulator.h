@@ -31,7 +31,8 @@ struct SpikeMemoryRegion {
 
 struct SpikeSimulatorOptions {
   std::string isa =
-      "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zicclsm_zfbfmin_zvfbfmin_zvfbfwma_zvfbfa_xdummy";
+      "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zicclsm_zfbfmin_zvfbfmin_zvfbfwma_zvfbfa_"
+      "zvt16t_zvti8i32mm_zvtbf16fmm_zvtfmm_xdummy";
   std::string priv = "m";
   bool misaligned  = true;
   std::vector<SpikeMemoryRegion> memory_regions;
@@ -53,6 +54,7 @@ class SpikeSimulator {
   void WriteRegister(const std::string &name, uint64_t value);
   bool ReadVectorRegister(int v_idx, uint32_t words[4]);
   bool WriteVectorRegister(int v_idx, const uint32_t words[4]);
+  bool ReadCurrentMatrixTile(uint32_t tile, uint32_t *tew, std::vector<uint32_t> *words);
 
   // Memory access
   bool ReadMemory(uint64_t address, void *buffer, size_t length);

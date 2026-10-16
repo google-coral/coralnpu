@@ -149,8 +149,16 @@ def _vcs_binary_impl(ctx):
         "+notimingcheck",
         "-timescale=1ns/1ps",
         "-Mdir=" + vcs_simv_output.path + ".csrc",
+        "-cpp",
+        "clang++",
+        "-cflags",
+        "-std=c++17",
+        "-cflags",
+        "-I.",
         "-cflags",
         "-I..",
+        "-LDFLAGS",
+        "\"-lstdc++ -lm -lpthread -latomic -ldl\"",
         "-o",
         vcs_simv_output.path,
     ] + cflags + ctx.attr.build_args
@@ -168,7 +176,8 @@ def _vcs_binary_impl(ctx):
         vcs_command.append(file.path)
 
     for file in ctx.files.srcs:
-        vcs_command.append(file.path)
+        if file.extension in ["c", "cc", "cpp", "cxx"]:
+            vcs_command.append(file.path)
 
     for lib_path in stripped_libs:
         vcs_command.append(lib_path)

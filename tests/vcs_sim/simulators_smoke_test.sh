@@ -50,7 +50,7 @@ function rlocation() {
   exit 1
 }
 
-SIMULATOR="$(rlocation "coralnpu_hw/tests/vcs_sim/rvv_core_mini_verification_axi_sim")"
+SIMULATOR="$(rlocation "coralnpu_hw/tests/vcs_sim/vme_core_mini_verification_axi_sim")"
 ELF="$(rlocation "coralnpu_hw/tests/cocotb/nop_test.elf")"
 
 if [[ -z "${SIMULATOR}" || ! -x "${SIMULATOR}" ]]; then

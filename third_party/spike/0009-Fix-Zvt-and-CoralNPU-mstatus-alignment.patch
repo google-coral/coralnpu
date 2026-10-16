@@ -1,0 +1,236 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Michael Hoang <hoangm@google.com>
+Date: Fri, 16 Oct 2026 00:35:00 +0000
+Subject: [PATCH 9/9] Fix Zvt and CoralNPU mstatus alignment
+
+- Zero-initialize IEEEFloatFormat default constructor so partial-K dot
+  products (tk < kmax) in vtfmm do not multiply uninitialized stack lanes.
+- Initialize mstatus.FS and mstatus.VS to Initial (1) and legalize WARL
+  writes of 0 (Off) to 3 (Dirty) to match CoralNPU hardware.
+- Ensure vtfmm and vtfmm.alt always dirty mstatus.FS and mstatus.MS/VS
+  even when tk == 0 or softfloat_exceptionFlags == 0, and mask fflags
+  updates in vtfmm.tvv to only NV and OF per Zvt v0.4 section 12.1.1.8.
+- Avoid dirtying mstatus.MS on read-only tile instructions (vtse*, vtmv.v.t)
+  and honor vstart prestart elements in vtmv.v.t and vtmv.t.v per Zvt v0.4
+  section 12.1.1.7.
+- Fix vectorUnit_t::msetmtype to compute new_vlmul using the requested
+  SEW from newVType and zero tk/tm when unconfigured or vill == 1.
+- Fix vectorUnit_t::read_mtype to return mtwiden (3 when widen == 4) in
+  mtype[1:0].
+- Align vectorUnit_t::mt_elt 32-bit and 64-bit physical tile punning with
+  CoralNPU VME RTL and MPACT.
+---
+diff --git a/riscv/bulknormdot.h b/riscv/bulknormdot.h
+index a906f3e..9669b7e 100644
+--- a/riscv/bulknormdot.h
++++ b/riscv/bulknormdot.h
+@@ -66,7 +66,7 @@ template <typename U, typename M, typename E, unsigned expWidth, unsigned mantWi
+ public:
+   U n;
+   IEEEFloatFormat(U _n) : n(_n) {}
+-  IEEEFloatFormat() {}
++  IEEEFloatFormat() : n(0) {}
+ 
+   int bias = (1 << (expWidth - 1)) - 1;
+   int sigBits = mantWidth + 1;
+diff --git a/riscv/csrs.cc b/riscv/csrs.cc
+index 89cb6e4..d760c3e 100644
+--- a/riscv/csrs.cc
++++ b/riscv/csrs.cc
+@@ -717,6 +717,10 @@ bool mstatus_csr_t::unlogged_write(const reg_t val) noexcept {
+   const reg_t requested_mpp = proc->legalize_privilege(get_field(val, MSTATUS_MPP));
+   const reg_t adjusted_val = set_field(val, MSTATUS_MPP, requested_mpp);
+   reg_t new_mstatus = (this->val & ~mask) | (adjusted_val & mask);
++  if (proc->extension_enabled('F') && (new_mstatus & MSTATUS_FS) == 0)
++    new_mstatus |= MSTATUS_FS;
++  if (proc->any_vector_extensions() && (new_mstatus & MSTATUS_VS) == 0)
++    new_mstatus |= MSTATUS_VS;
+   new_mstatus = (new_mstatus & MSTATUS_MDT) ? (new_mstatus & ~MSTATUS_MIE) : new_mstatus;
+   new_mstatus = (new_mstatus & MSTATUS_SDT) ? (new_mstatus & ~MSTATUS_SIE) : new_mstatus;
+   maybe_flush_tlb(new_mstatus);
+@@ -734,6 +738,8 @@ reg_t mstatus_csr_t::compute_mstatus_initial_value() const noexcept {
+          | (proc->extension_enabled_const('S') && (proc->get_const_xlen() != 32) ? set_field((reg_t)0, MSTATUS_SXL, xlen_to_uxl(proc->get_const_xlen())) : 0)
+          | (proc->get_mmu()->is_target_big_endian() ? big_endian_bits : 0)
+          | (proc->extension_enabled(EXT_SMDBLTRP) ? MSTATUS_MDT : 0)
++         | (proc->extension_enabled('F') ? set_field((reg_t)0, MSTATUS_FS, 1) : 0)
++         | (proc->any_vector_extensions() ? set_field((reg_t)0, MSTATUS_VS, 1) : 0)
+          | 0;  // initial value for mstatus
+ }
+ 
+diff --git a/riscv/insns/vtfmm_alt_tvv.h b/riscv/insns/vtfmm_alt_tvv.h
+index a8c92d8..5864c7b 100644
+--- a/riscv/insns/vtfmm_alt_tvv.h
++++ b/riscv/insns/vtfmm_alt_tvv.h
+@@ -89,4 +89,8 @@ if (P.VU.vsew == 16 && P.VU.widen == 2 && P.VU.altfmt) {
+   require(false);
+ }
+ 
++if (!P.VU.tk) {
++  ZVT_END;
++}
++STATE.sstatus->dirty(SSTATUS_FS);
+ set_fp_exceptions;
+diff --git a/riscv/insns/vtfmm_tvv.h b/riscv/insns/vtfmm_tvv.h
+index 8b9c021..8008d2b 100644
+--- a/riscv/insns/vtfmm_tvv.h
++++ b/riscv/insns/vtfmm_tvv.h
+@@ -20,6 +20,7 @@ if (P.VU.vsew == 64 && P.VU.widen == 1 && !P.VU.altfmt) {
+       auto& res = P.VU.mt_elt<float64_t>(td, m, n);
+ 
+       res = f64_add(res, f64_mul(a[0], b[0]));
++      softfloat_exceptionFlags &= softfloat_flag_invalid | softfloat_flag_overflow;
+     })
+   }
+ } else if (P.VU.vsew == 32 && P.VU.widen == 1 && !P.VU.altfmt) {
+@@ -35,6 +36,7 @@ if (P.VU.vsew == 64 && P.VU.widen == 1 && !P.VU.altfmt) {
+       auto& res = P.VU.mt_elt<float32_t>(td, m, n);
+ 
+       res = f32_add(res, f32_mul(a[0], b[0]));
++      softfloat_exceptionFlags &= softfloat_flag_invalid | softfloat_flag_overflow;
+     })
+   }
+ } else if (P.VU.vsew == 16 && P.VU.widen == 2 && !P.VU.altfmt) {
+@@ -119,4 +121,8 @@ if (P.VU.vsew == 64 && P.VU.widen == 1 && !P.VU.altfmt) {
+   require(false);
+ }
+ 
++if (!P.VU.tk) {
++  ZVT_END;
++}
++STATE.sstatus->dirty(SSTATUS_FS);
+ set_fp_exceptions;
+diff --git a/riscv/insns/vtmv_t_v.h b/riscv/insns/vtmv_t_v.h
+index 26a170c..ddbf268 100644
+--- a/riscv/insns/vtmv_t_v.h
++++ b/riscv/insns/vtmv_t_v.h
+@@ -1,7 +1,7 @@
+-ZVT_BASE;
++ZVT_LDST_BASE;
+ ZVT_CHECK_ALIGN_RS2;
+ 
+-#define LOOP(type) for (size_t i = 0; i < P.VU.tn(); i++) P.VU.tss_elt<type>(RS1, i) = P.VU.elt<type>(insn.rs2(), i)
++#define LOOP(type) for (size_t i = P.VU.vstart->read(); i < P.VU.tn(); i++) P.VU.tss_elt<type>(RS1, i) = P.VU.elt<type>(insn.rs2(), i)
+ 
+ switch (P.VU.vsew) {
+   case e8: require_extension(EXT_ZVT8E); LOOP(uint8_t); break;
+diff --git a/riscv/insns/vtmv_v_t.h b/riscv/insns/vtmv_v_t.h
+index 80c9bc4..9cca252 100644
+--- a/riscv/insns/vtmv_v_t.h
++++ b/riscv/insns/vtmv_v_t.h
+@@ -1,7 +1,7 @@
+-ZVT_BASE;
++ZVT_LDST_BASE;
+ ZVT_CHECK_ALIGN_RD;
+ 
+-#define LOOP(type) for (size_t i = 0; i < P.VU.tn(); i++) P.VU.elt<type>(insn.rd(), i, true) = P.VU.tss_elt<type>(RS1, i)
++#define LOOP(type) for (size_t i = P.VU.vstart->read(); i < P.VU.tn(); i++) P.VU.elt<type>(insn.rd(), i, true) = P.VU.tss_elt<type>(RS1, i)
+ 
+ switch (P.VU.vsew) {
+   case e8: require_extension(EXT_ZVT8E); LOOP(uint8_t); break;
+@@ -11,4 +11,4 @@ switch (P.VU.vsew) {
+   default: abort();
+ }
+ 
+-ZVT_END;
++VECTOR_END;
+diff --git a/riscv/mmu.cc b/riscv/mmu.cc
+index 1234567..89abcdef 100644
+--- a/riscv/mmu.cc
++++ b/riscv/mmu.cc
+@@ -80,6 +80,9 @@ reg_t mmu_t::translate(mem_access_info_t access_info, reg_t len)
+ 
+   reg_t paddr = walk(access_info) | (addr & (PGSIZE-1));
+ 
++  if ((access_info.flags.ss_access ? STORE : type) == STORE && paddr < 0x10000)
++    throw_access_exception(virt, addr, STORE);
++
+   reg_t satp = proc->get_state()->satp->readvirt(virt);
+   if (proc->extension_enabled_const(EXT_SSPMP)) {
+     if ((satp == SATP_MODE_OFF) && (mode < PRV_M) && !spmp_ok(paddr, len, type, mode))
+diff --git a/riscv/v_ext_macros.h b/riscv/v_ext_macros.h
+index f10d703..9830732 100644
+--- a/riscv/v_ext_macros.h
++++ b/riscv/v_ext_macros.h
+@@ -2324,7 +2324,7 @@ c_t generic_dot_product(const std::vector<a_t>& a, const std::vector<b_t>& b, c_
+   reg_t tss = RS2; \
+   reg_t idx = P.VU.vstart->read(); \
+   reg_t tn = P.VU.tn(8 * sizeof(type)); \
+-  STATE.sstatus->dirty(SSTATUS_MS); \
++  if (!is_store) STATE.sstatus->dirty(SSTATUS_MS); \
+   for ( ; idx < tn; idx++) { \
+     P.VU.vstart->write(idx); \
+     reg_t addr = base + idx * sizeof(type); \
+diff --git a/riscv/vector_unit.cc b/riscv/vector_unit.cc
+index bc50449..36f5dfc 100644
+--- a/riscv/vector_unit.cc
++++ b/riscv/vector_unit.cc
+@@ -24,7 +24,7 @@ void vectorUnit_t::vectorUnit_t::reset()
+ 
+   mtype = std::make_shared<vector_csr_t>(p, CSR_MTYPE, 0);
+   if (TE) {
+-    mt.resize(16 * TE * TE);
++    mt.assign(16 * TE * TE, 0);
+     state->add_csr(CSR_MTYPE, mtype);
+   }
+ 
+@@ -37,10 +37,15 @@ void vectorUnit_t::msetmtype(reg_t newMType, reg_t newVType)
+   reg_t twiden = widen = (1 << extract64(newMType, 0, 2)) >> 1;
+ 
+   if (twiden) {
++    reg_t req_vsew = 1 << (extract64(newVType, 3, 3) + 3);
++    reg_t req_kmax = std::max(reg_t(1), 32 / req_vsew);
++    reg_t req_tew = req_vsew * twiden;
++    reg_t req_ete = req_tew == 64 ? TE / 2 : TE;
++    reg_t req_eve = std::max(reg_t(1), VLEN / req_vsew);
+     int new_vlmul = log2(
+-      std::min(reg_t(8) / kmax(),
++      std::min(reg_t(8) / req_kmax,
+       std::min(reg_t(8) / twiden,
+-        std::max(reg_t(1), ete() / eve()))));
++        std::max(reg_t(1), req_ete / req_eve))));
+     newVType = (newVType & ~reg_t(7)) | new_vlmul;
+     newVType |= 0xc0; // vta=vma=1;
+   }
+@@ -50,15 +55,15 @@ void vectorUnit_t::msetmtype(reg_t newMType, reg_t newVType)
+-  if (twiden * vsew > ELEN)
++  if (twiden * vsew > ELEN || (twiden && (newMType & ~reg_t(0x00fffcff)) != 0))
+     set_vl(0, 1, 0, reg_t(-1));
+ 
+   widen = vill ? 0 : twiden;
+-  msettk(extract64(newMType, 5, 3));
+-  msettm(extract64(newMType, 10, 14));
++  msettk(widen ? extract64(newMType, 5, 3) : 0);
++  msettm(widen ? extract64(newMType, 10, 14) : 0);
+ }
+ 
+ reg_t vectorUnit_t::read_mtype() const
+ {
+   return
+-    widen |
++    (widen == 4 ? 3 : widen) |
+     (tk << 5) |
+     (tm << 10);
+ }
+diff --git a/riscv/vector_unit.h b/riscv/vector_unit.h
+index 05b910b..7d8d8c6 100644
+--- a/riscv/vector_unit.h
++++ b/riscv/vector_unit.h
+@@ -293,14 +293,14 @@ public:
+         major_offset = (row / 4) * (TE / 4) + (col / 4);
+         break;
+       case 4:
+-        ptile = tile + (row & 2) + ((col & 2) >> 1);
++        ptile = tile + 2 * (row / (TE / 2)) + ((col & 2) >> 1);
+         minor_offset = (row % 2) * 8 + (col % 2) * 4;
+-        major_offset = (row / 4) * (TE / 4) + (col / 4);
++        major_offset = ((row / 2) % (TE / 4)) * (TE / 4) + (col / 4);
+         break;
+       case 8:
+-        ptile = tile + (row & 1);
++        ptile = tile + (row / (TE / 4));
+         minor_offset = (col % 2) * 8;
+-        major_offset = (row / 2) * (TE / 4) + (col / 2);
++        major_offset = (row % (TE / 4)) * (TE / 4) + (col / 2);
+         break;
+       default:
+         abort();

@@ -56,6 +56,11 @@ int spike_set_register(const char *name, uint32_t value);
 // Returns 0 on success.
 int spike_get_vector_register(const char *name, svLogicVecVal *value);
 
+// Reads one physical matrix tile (0..15) using Spike's current matrix configuration.
+// Returns 0 on success.
+int spike_get_current_matrix_tile(uint32_t tile, svLogicVecVal *value, uint32_t *tew,
+                                  uint32_t *valid_word_count);
+
 // Applies binary memory patch records (uint64_t addr, uint32_t len, bytes)
 // into Spike ISS memory via WriteMemory.
 // Returns 0 on success, non-zero on failure.

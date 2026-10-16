@@ -1,17 +1,20 @@
 diff --git a/riscv/riscv_format32.bin_fmt b/riscv/riscv_format32.bin_fmt
-index e3c38bb..59db637 100644
+index e3c38bb..635cc7a 100644
 --- a/riscv/riscv_format32.bin_fmt
 +++ b/riscv/riscv_format32.bin_fmt
-@@ -240,6 +240,7 @@ format VConfig[32] : Inst32Format {
+@@ -240,6 +240,10 @@ format VConfig[32] : Inst32Format {
      signed zimm10[10] = top12[9..0];
      unsigned uimm5[5] = rs1;
      unsigned rs2[5] = top12[4..0];
++    unsigned mseti_hi[3] = top12[11..9];
++    unsigned mseti_mid[3] = top12[7..5];
 +    unsigned subfunc[3] = top12[2..0];
++    unsigned mseti_rs1_hi[3] = rs1[4..2];
  };
  
  // Matrix-multiply format (OP-VE). Same field layout as VArith but the rd field
 diff --git a/riscv/riscv_misa.cc b/riscv/riscv_misa.cc
-index 1234567..89abcdef 100644
+index 6a9da83..342b028 100644
 --- a/riscv/riscv_misa.cc
 +++ b/riscv/riscv_misa.cc
 @@ -75,7 +75,9 @@ bool RiscVMIsa::HasSupervisorMode() {
@@ -26,7 +29,7 @@ index 1234567..89abcdef 100644
  RiscVXlen RiscVMIsa::Xlen() {
    switch ((GetUint64() >> 62) & 0xb11) {
 diff --git a/riscv/riscv_state.h b/riscv/riscv_state.h
-index 60dffd2..2391259 100644
+index 60dffd2..feb1975 100644
 --- a/riscv/riscv_state.h
 +++ b/riscv/riscv_state.h
 @@ -413,6 +413,10 @@ class RiscVState : public ArchState {
@@ -41,10 +44,11 @@ index 60dffd2..2391259 100644
    RiscVMStatus* mstatus_ = nullptr;
  
 diff --git a/riscv/riscv_vector_fp_instructions.cc b/riscv/riscv_vector_fp_instructions.cc
-index 1234567..89abcdef 100644
+index 5fec18f..4adbf36 100644
 --- a/riscv/riscv_vector_fp_instructions.cc
 +++ b/riscv/riscv_vector_fp_instructions.cc
-@@ -559,12 +559,25 @@ void Vfnmsac(const Instruction* inst) {
+@@ -558,14 +558,27 @@ void Vfnmsac(const Instruction* inst) {
+ 
  // Widening floating point multiply and accumulate vd.
  void Vfwmacc(const Instruction* inst) {
 -  auto* rv_fp = static_cast<RiscVState*>(inst->state())->rv_fp();
@@ -72,29 +76,60 @@ index 1234567..89abcdef 100644
 +  }
    ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
    switch (sew) {
+     case 4:
 diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memory_instructions.cc
-index 1234567..89abcdef 100644
+index 5366199..ed71e41 100644
 --- a/riscv/riscv_vector_memory_instructions.cc
 +++ b/riscv/riscv_vector_memory_instructions.cc
-@@ -160,6 +160,9 @@ absl::Status WriteBackSegmentLoadData(int vector_register_byte_length,
+@@ -160,6 +160,10 @@ absl::Status WriteBackSegmentLoadData(int vector_register_byte_length,
  void Vsetvl(bool rd_zero, bool rs1_zero, const Instruction* inst) {
    auto* rv_state = static_cast<RiscVState*>(inst->state());
    auto* rv_vector = rv_state->rv_vector();
+-  uint32_t vtype = GetInstructionSource<uint32_t>(inst, 1) & 0b1'1'111'111;
 +  if (auto mtype_csr = rv_state->csr_set()->GetCsr(0xC23); mtype_csr.ok()) {
 +    (*mtype_csr)->Set(uint32_t{0});
 +  }
-   uint32_t vtype = GetInstructionSource<uint32_t>(inst, 1) & 0b1'1'111'111;
++  rv_vector->clear_vstart();
++  uint32_t vtype = GetInstructionSource<uint32_t>(inst, 1);
    // Get previous vtype.
    uint32_t prev_vtype = rv_vector->vtype();
+diff --git a/riscv/riscv_vector_state.cc b/riscv/riscv_vector_state.cc
+index 563370e..6cade7a 100644
+--- a/riscv/riscv_vector_state.cc
++++ b/riscv/riscv_vector_state.cc
+@@ -189,11 +189,13 @@ void RiscVVectorState::SetVectorType(uint32_t vtype) {
+ 
+   uint32_t vlmul_enc = vtype & 0b111;
+   uint32_t vsew_enc = (vtype >> 3) & 0b111;
++  uint32_t altfmt = (vtype >> 8) & 0b1;
+   uint32_t sew_bits = kSewValues[vsew_enc];
+ 
+   constexpr uint32_t kReservedMask = 0xFFFFFE00U;
+-  bool is_illegal =
+-      (vlmul_enc == 4) || (sew_bits == 0) || ((vtype & kReservedMask) != 0);
++  bool is_illegal = (vlmul_enc == 4) || (sew_bits == 0) ||
++                    ((vtype & kReservedMask) != 0) ||
++                    (altfmt != 0 && sew_bits > 16);
+ 
+   if (!is_illegal) {
+     if (static_cast<int>(sew_bits) > max_elen_) {
 diff --git a/riscv/riscv_zvt.bin_fmt b/riscv/riscv_zvt.bin_fmt
-index dde5ca3..b13cb2e 100644
+index dde5ca3..902caad 100644
 --- a/riscv/riscv_zvt.bin_fmt
 +++ b/riscv/riscv_zvt.bin_fmt
-@@ -23,28 +23,29 @@ instruction group RiscVZvtInst32[32] : Inst32Format {
-   msettn        : VConfig : func7 == 0b100'0010, rs2 == 0b00000, func3 == 0b111, opcode == 0b101'0111;
-   msettm        : VConfig : func7 == 0b100'0010, rs2 == 0b00001, func3 == 0b111, opcode == 0b101'0111;
-   msettk        : VConfig : func7 == 0b100'0010, rs2 == 0b00010, func3 == 0b111, opcode == 0b101'0111;
-+  msetmtypei    : VConfig : func7 == 0b100'0010, subfunc == 0b011, func3 == 0b111, opcode == 0b101'0111;
+@@ -19,32 +19,33 @@
+ // msettn/tm/tk    func7 == 0b100'0010, selected by the low rs2 bits.
+ 
+ instruction group RiscVZvtInst32[32] : Inst32Format {
+-  msetmtype     : VConfig : func7 == 0b100'0001,                 func3 == 0b111, opcode == 0b101'0111;
+-  msettn        : VConfig : func7 == 0b100'0010, rs2 == 0b00000, func3 == 0b111, opcode == 0b101'0111;
+-  msettm        : VConfig : func7 == 0b100'0010, rs2 == 0b00001, func3 == 0b111, opcode == 0b101'0111;
+-  msettk        : VConfig : func7 == 0b100'0010, rs2 == 0b00010, func3 == 0b111, opcode == 0b101'0111;
++  msetmtype     : VConfig : func7 == 0b100'0010,                 func3 == 0b111, rd == 0b00000, opcode == 0b101'0111;
++  msettn        : VConfig : func7 == 0b100'0100, rs2 == 0b00000, func3 == 0b111, opcode == 0b101'0111;
++  msettm        : VConfig : func7 == 0b100'0100, rs2 == 0b00001, func3 == 0b111, opcode == 0b101'0111;
++  msettk        : VConfig : func7 == 0b100'0100, rs2 == 0b00010, func3 == 0b111, opcode == 0b101'0111;
++  msetmtypei    : VConfig : mseti_hi == 0b100, mseti_mid == 0b100, subfunc == 0b100, mseti_rs1_hi == 0b000, func3 == 0b111, rd == 0b00000, opcode == 0b101'0111;
  
    // Tile manipulation (OP-V, func3 == 0b110).
 -  vtmv_v_t      : VArith : func6 == 0b010'000, vs2 == 0b11111, func3 == 0b110, opcode == 0b101'0111;
@@ -103,7 +138,7 @@ index dde5ca3..b13cb2e 100644
 -  vtdiscard     : VArith : func6 == 0b010'000, vs2 == 0b11100, vs1 == 0b00000, func3 == 0b110, opcode == 0b101'0111;
 +  vtmv_v_t      : VArith : func6 == 0b010'000, vm == 0b1, vs2 == 0b11111, func3 == 0b110, opcode == 0b101'0111;
 +  vtmv_t_v      : VArith : func6 == 0b010'111, vm == 0b1,                 func3 == 0b110, vd == 0b00000, opcode == 0b101'0111;
-+  vtzero        : VArith : func6 == 0b010'000, vm == 0b1, vs2 == 0b11110, vs1 == 0b00000, func3 == 0b110, opcode == 0b101'0111;
++  vtzero        : VMatrix : func6 == 0b010'000, vm == 0b1, vs2 == 0b11110, vs1 == 0b00000, func3 == 0b110, alt == 0b0, opcode == 0b101'0111;
 +  vtdiscard     : VArith : func6 == 0b010'000, vm == 0b1, vs2 == 0b11100, vs1 == 0b00000, func3 == 0b110, vd == 0b00000, opcode == 0b101'0111;
  
    // Tile load/store to memory (LOAD-FP / STORE-FP, mew == 1, width == 0b111;
@@ -151,19 +186,565 @@ index db77d9e..80ff64f 100644
      // Tile manipulation.
      vtzero{: mtd : },
 diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
-index 9a7965b..f7fa184 100644
+index 9a7965b..1c70e2e 100644
 --- a/riscv/riscv_zvt_instructions.cc
 +++ b/riscv/riscv_zvt_instructions.cc
-@@ -15,6 +15,7 @@
- #include "riscv/riscv_zvt_instructions.h"
+@@ -20,9 +20,11 @@
  
- #include <algorithm>
-+#include <cmath>
- #include <cstdint>
- #include <cstring>
+ #include "absl/base/casts.h"
+ #include "absl/log/check.h"
++#include "absl/strings/string_view.h"
+ #include "absl/types/span.h"
+ #include "mpact/sim/generic/data_buffer.h"
+ #include "mpact/sim/generic/instruction.h"
++#include "riscv/riscv_csr.h"
+ #include "riscv/riscv_register.h"
+ #include "riscv/riscv_state.h"
+ #include "riscv/riscv_vector_state.h"
+@@ -39,40 +41,516 @@ using ::mpact::sim::riscv::RV32VectorSourceOperand;
  
-@@ -91,6 +92,19 @@ uint64_t LoadTileBits(RiscVZvtMatrixState* matrix_state, int kTile, int row,
+ namespace {
  
+-// ELEN for the Zve32{x,f} kBase.
+-constexpr int kElen = 32;
++int TileAlign(int eew_bits) { return eew_bits <= 32 ? (eew_bits / 8) : 2; }
+ 
+-// Decoded kTile subset specifier (TSS). Spec 15.1.1.5.
++int EffectiveTileEdge(RiscVZvtMatrixState* matrix_state, int eew_bits) {
++  return eew_bits < 64 ? matrix_state->tile_elements()
++                       : matrix_state->tile_elements() / 2;
++}
++
++// Decoded tile subset specifier (TSS). Spec §12.1.1.5.
+ struct Tss {
+-  int kTile;       // bits[30:27]
+-  int pattern;     // bits[26:24]: 0 = row, 1 = col.
+-  uint32_t index;  // bits[23:0].
++  int kTile;       // bits[30:27], aligned to 16 / NTiles
++  int pattern;     // bit[24]: 0 = row, 1 = col (pattern mod 2)
++  uint32_t index;  // bits[23:0] mod ETE
+ };
+ 
+-Tss DecodeTss(uint32_t tss) {
++Tss DecodeTss(uint32_t tss, int eew_bits, RiscVZvtMatrixState* matrix_state) {
++  const int kAlign = TileAlign(eew_bits);
++  const int kEte = EffectiveTileEdge(matrix_state, eew_bits);
+   return Tss{
+-      .kTile = static_cast<int>((tss >> 27) & 0xF),
+-      .pattern = static_cast<int>((tss >> 24) & 0x7),
+-      .index = tss & 0xFFFFFF,
++      .kTile = static_cast<int>(((tss >> 27) & 0xF) & ~(kAlign - 1)),
++      .pattern = static_cast<int>((tss >> 24) & 0x1),
++      .index = tss & static_cast<uint32_t>(kEte - 1),
+   };
+ }
+ 
+ constexpr int kTssPatternCol = 1;  // pattern 0 = row (the default branch).
+ 
+-// Reinterprets the low 16 bits of a bf16 value as the high half of an fp32.
+-float Bf16ToF32(uint16_t bits) {
+-  uint32_t u = static_cast<uint32_t>(bits) << 16;
+-  return absl::bit_cast<float>(u);
++int GetVectorRegIndex(absl::string_view reg_name) {
++  if (!reg_name.empty() && reg_name[0] == 'v') {
++    reg_name.remove_prefix(1);
++  }
++  if (reg_name.empty()) return -1;
++  int reg_index = 0;
++  for (char c : reg_name) {
++    if (c < '0' || c > '9') return -1;
++    reg_index = reg_index * 10 + (c - '0');
++  }
++  return reg_index;
+ }
+ 
+-// Reads kTile element (row,col) of `kTile` at width `tile_element_width` as a
++int DeriveMatrixVlmulEncoding(RiscVZvtMatrixState* matrix_state,
++                              RiscVVectorState* vector_state,
++                              uint32_t vsew_enc) {
++  if (vsew_enc > 3) return 4;  // Reserved
++  const int kReqSewBits = 8 << vsew_enc;
++  const int kTwiden = matrix_state->twiden();
++  if (kTwiden <= 0) return 4;
++  const int kReqTewBits = kReqSewBits * kTwiden;
++  const int kReqKmax = RiscVZvtKmax(kReqSewBits);
++  const int kReqEte = EffectiveTileEdge(matrix_state, kReqTewBits);
++  const int kReqEve = std::max(
++      1, (vector_state->vector_register_byte_length() * 8) / kReqSewBits);
++  const int kCeilEteEve = std::max(1, (kReqEte + kReqEve - 1) / kReqEve);
++  const int kLmul = std::min({8 / kReqKmax, 8 / kTwiden, kCeilEteEve});
++  switch (kLmul) {
++    case 1:
++      return 0;
++    case 2:
++      return 1;
++    case 4:
++      return 2;
++    case 8:
++      return 3;
++    default:
++      return 4;
++  }
++}
++
++// ----------------------------------------------------------------------------
++// IEEE 754 FP32 & Zvt v0.4 RVBNA Bulk-Normalized Dot-Product Helpers
++// ----------------------------------------------------------------------------
++
++constexpr uint32_t kFpFlagInexact = 0b00001;
++constexpr uint32_t kFpFlagUnderflow = 0b00010;
++constexpr uint32_t kFpFlagOverflow = 0b00100;
++constexpr uint32_t kFpFlagInvalid = 0b10000;
++
++constexpr uint32_t kFpRoundNearEven = 0;
++constexpr uint32_t kFpRoundToZero = 1;
++constexpr uint32_t kFpRoundDown = 2;
++constexpr uint32_t kFpRoundUp = 3;
++constexpr uint32_t kFpRoundNearMaxMag = 4;
++constexpr uint32_t kFpRoundOdd = 6;
++
++constexpr uint32_t kDefaultNaNF32UI = 0x7FC00000u;
++
++inline bool SignF32UI(uint32_t a) { return static_cast<bool>(a >> 31); }
++inline int16_t ExpF32UI(uint32_t a) {
++  return static_cast<int16_t>((a >> 23) & 0xFF);
++}
++inline uint32_t FracF32UI(uint32_t a) { return a & 0x007FFFFFu; }
++inline uint32_t PackToF32UI(bool sign, int16_t exp, uint32_t sig) {
++  return (static_cast<uint32_t>(sign) << 31) +
++         (static_cast<uint32_t>(exp) << 23) + sig;
++}
++inline bool IsSigNaNF32UI(uint32_t a) {
++  return ((a & 0x7FC00000u) == 0x7F800000u) && ((a & 0x003FFFFFu) != 0);
++}
++
++inline uint32_t PropagateNaNF32UI(uint32_t a, uint32_t b, uint32_t* flags) {
++  if (IsSigNaNF32UI(a) || IsSigNaNF32UI(b)) {
++    *flags |= kFpFlagInvalid;
++  }
++  return kDefaultNaNF32UI;
++}
++
++inline uint32_t ShiftRightJam32(uint32_t a, uint16_t dist) {
++  return (dist < 31)
++             ? (a >> dist) |
++                   static_cast<uint32_t>((a << ((-dist) & 31)) != 0)
++             : static_cast<uint32_t>(a != 0);
++}
++
++inline uint64_t ShiftRightJam64(uint64_t a, uint32_t dist) {
++  return (dist < 63)
++             ? (a >> dist) |
++                   static_cast<uint64_t>((a << ((-dist) & 63)) != 0)
++             : static_cast<uint64_t>(a != 0);
++}
++
++inline int CountLeadingZeros32(uint32_t a) {
++  return a == 0 ? 32 : __builtin_clz(a);
++}
++
++inline void NormSubnormalF32Sig(uint32_t sig, int16_t* exp_out,
++                                uint32_t* sig_out) {
++  const int shift_dist = CountLeadingZeros32(sig) - 8;
++  *exp_out = static_cast<int16_t>(1 - shift_dist);
++  *sig_out = sig << shift_dist;
++}
++
++uint32_t RoundPackToF32(bool sign, int16_t exp, uint32_t sig,
++                        uint32_t rounding_mode, uint32_t* flags) {
++  const bool round_near_even = (rounding_mode == kFpRoundNearEven);
++  uint8_t round_increment = 0x40;
++  if (!round_near_even && (rounding_mode != kFpRoundNearMaxMag)) {
++    round_increment =
++        (rounding_mode == (sign ? kFpRoundDown : kFpRoundUp)) ? 0x7F : 0;
++  }
++  uint8_t round_bits = sig & 0x7F;
++  if (0xFDu <= static_cast<uint32_t>(static_cast<uint16_t>(exp))) {
++    if (exp < 0) {
++      const bool is_tiny =
++          (exp < -1) || (sig + round_increment < 0x80000000u);
++      sig = ShiftRightJam32(sig, static_cast<uint16_t>(-exp));
++      exp = 0;
++      round_bits = sig & 0x7F;
++      if (is_tiny && round_bits) {
++        *flags |= kFpFlagUnderflow;
++      }
++    } else if ((0xFD < exp) || (0x80000000u <= sig + round_increment)) {
++      *flags |= kFpFlagOverflow | kFpFlagInexact;
++      return PackToF32UI(sign, 0xFF, 0) - (round_increment == 0 ? 1u : 0u);
++    }
++  }
++  sig = (sig + round_increment) >> 7;
++  if (round_bits) {
++    *flags |= kFpFlagInexact;
++    if (rounding_mode == kFpRoundOdd) {
++      sig |= 1;
++      return PackToF32UI(sign, exp, sig);
++    }
++  }
++  sig &= ~static_cast<uint32_t>(!(round_bits ^ 0x40) & round_near_even);
++  if (!sig) exp = 0;
++  return PackToF32UI(sign, exp, sig);
++}
++
++uint32_t NormRoundPackToF32(bool sign, int16_t exp, uint32_t sig,
++                            uint32_t rounding_mode, uint32_t* flags) {
++  const int shift_dist = CountLeadingZeros32(sig) - 1;
++  exp -= shift_dist;
++  if ((7 <= shift_dist) &&
++      (static_cast<uint32_t>(static_cast<uint16_t>(exp)) < 0xFDu)) {
++    return PackToF32UI(sign, sig ? exp : 0, sig << (shift_dist - 7));
++  }
++  return RoundPackToF32(sign, exp, sig << shift_dist, rounding_mode, flags);
++}
++
++uint32_t F32Mul(uint32_t ui_a, uint32_t ui_b, uint32_t rounding_mode,
++                uint32_t* flags) {
++  const bool sign_a = SignF32UI(ui_a);
++  int16_t exp_a = ExpF32UI(ui_a);
++  uint32_t sig_a = FracF32UI(ui_a);
++  const bool sign_b = SignF32UI(ui_b);
++  int16_t exp_b = ExpF32UI(ui_b);
++  uint32_t sig_b = FracF32UI(ui_b);
++  const bool sign_z = sign_a ^ sign_b;
++
++  if (exp_a == 0xFF) {
++    if (sig_a || ((exp_b == 0xFF) && sig_b)) {
++      return PropagateNaNF32UI(ui_a, ui_b, flags);
++    }
++    if ((exp_b | sig_b) == 0) {
++      *flags |= kFpFlagInvalid;
++      return kDefaultNaNF32UI;
++    }
++    return PackToF32UI(sign_z, 0xFF, 0);
++  }
++  if (exp_b == 0xFF) {
++    if (sig_b) {
++      return PropagateNaNF32UI(ui_a, ui_b, flags);
++    }
++    if ((exp_a | sig_a) == 0) {
++      *flags |= kFpFlagInvalid;
++      return kDefaultNaNF32UI;
++    }
++    return PackToF32UI(sign_z, 0xFF, 0);
++  }
++  if (!exp_a) {
++    if (!sig_a) return PackToF32UI(sign_z, 0, 0);
++    NormSubnormalF32Sig(sig_a, &exp_a, &sig_a);
++  }
++  if (!exp_b) {
++    if (!sig_b) return PackToF32UI(sign_z, 0, 0);
++    NormSubnormalF32Sig(sig_b, &exp_b, &sig_b);
++  }
++  int16_t exp_z = exp_a + exp_b - 0x7F;
++  sig_a = (sig_a | 0x00800000u) << 7;
++  sig_b = (sig_b | 0x00800000u) << 8;
++  uint32_t sig_z = static_cast<uint32_t>(
++      ShiftRightJam64(static_cast<uint64_t>(sig_a) * sig_b, 32));
++  if (sig_z < 0x40000000u) {
++    --exp_z;
++    sig_z <<= 1;
++  }
++  return RoundPackToF32(sign_z, exp_z, sig_z, rounding_mode, flags);
++}
++
++uint32_t AddMagsF32(uint32_t ui_a, uint32_t ui_b, uint32_t rounding_mode,
++                    uint32_t* flags) {
++  const int16_t exp_a = ExpF32UI(ui_a);
++  uint32_t sig_a = FracF32UI(ui_a);
++  const int16_t exp_b = ExpF32UI(ui_b);
++  uint32_t sig_b = FracF32UI(ui_b);
++  const int16_t exp_diff = exp_a - exp_b;
++  bool sign_z;
++  int16_t exp_z;
++  uint32_t sig_z;
++  if (!exp_diff) {
++    if (!exp_a) return ui_a + sig_b;
++    if (exp_a == 0xFF) {
++      if (sig_a | sig_b) return PropagateNaNF32UI(ui_a, ui_b, flags);
++      return ui_a;
++    }
++    sign_z = SignF32UI(ui_a);
++    exp_z = exp_a;
++    sig_z = 0x01000000u + sig_a + sig_b;
++    if (!(sig_z & 1) && (exp_z < 0xFE)) {
++      return PackToF32UI(sign_z, exp_z, sig_z >> 1);
++    }
++    sig_z <<= 6;
++  } else {
++    sign_z = SignF32UI(ui_a);
++    sig_a <<= 6;
++    sig_b <<= 6;
++    if (exp_diff < 0) {
++      if (exp_b == 0xFF) {
++        if (sig_b) return PropagateNaNF32UI(ui_a, ui_b, flags);
++        return PackToF32UI(sign_z, 0xFF, 0);
++      }
++      exp_z = exp_b;
++      sig_a += exp_a ? 0x20000000u : sig_a;
++      sig_a = ShiftRightJam32(sig_a, static_cast<uint16_t>(-exp_diff));
++    } else {
++      if (exp_a == 0xFF) {
++        if (sig_a) return PropagateNaNF32UI(ui_a, ui_b, flags);
++        return ui_a;
++      }
++      exp_z = exp_a;
++      sig_b += exp_b ? 0x20000000u : sig_b;
++      sig_b = ShiftRightJam32(sig_b, static_cast<uint16_t>(exp_diff));
++    }
++    sig_z = 0x20000000u + sig_a + sig_b;
++    if (sig_z < 0x40000000u) {
++      --exp_z;
++      sig_z <<= 1;
++    }
++  }
++  return RoundPackToF32(sign_z, exp_z, sig_z, rounding_mode, flags);
++}
++
++uint32_t SubMagsF32(uint32_t ui_a, uint32_t ui_b, uint32_t rounding_mode,
++                    uint32_t* flags) {
++  int16_t exp_a = ExpF32UI(ui_a);
++  uint32_t sig_a = FracF32UI(ui_a);
++  const int16_t exp_b = ExpF32UI(ui_b);
++  uint32_t sig_b = FracF32UI(ui_b);
++  int16_t exp_diff = exp_a - exp_b;
++  if (!exp_diff) {
++    if (exp_a == 0xFF) {
++      if (sig_a | sig_b) return PropagateNaNF32UI(ui_a, ui_b, flags);
++      *flags |= kFpFlagInvalid;
++      return kDefaultNaNF32UI;
++    }
++    int32_t sig_diff =
++        static_cast<int32_t>(sig_a) - static_cast<int32_t>(sig_b);
++    if (!sig_diff) {
++      return PackToF32UI(rounding_mode == kFpRoundDown, 0, 0);
++    }
++    if (exp_a) --exp_a;
++    bool sign_z = SignF32UI(ui_a);
++    if (sig_diff < 0) {
++      sign_z = !sign_z;
++      sig_diff = -sig_diff;
++    }
++    int shift_dist = CountLeadingZeros32(static_cast<uint32_t>(sig_diff)) - 8;
++    int16_t exp_z = exp_a - shift_dist;
++    if (exp_z < 0) {
++      shift_dist = exp_a;
++      exp_z = 0;
++    }
++    return PackToF32UI(sign_z, exp_z,
++                       static_cast<uint32_t>(sig_diff) << shift_dist);
++  } else {
++    bool sign_z = SignF32UI(ui_a);
++    sig_a <<= 7;
++    sig_b <<= 7;
++    int16_t exp_z;
++    uint32_t sig_x, sig_y;
++    if (exp_diff < 0) {
++      sign_z = !sign_z;
++      if (exp_b == 0xFF) {
++        if (sig_b) return PropagateNaNF32UI(ui_a, ui_b, flags);
++        return PackToF32UI(sign_z, 0xFF, 0);
++      }
++      exp_z = exp_b - 1;
++      sig_x = sig_b | 0x40000000u;
++      sig_y = sig_a + (exp_a ? 0x40000000u : sig_a);
++      exp_diff = -exp_diff;
++    } else {
++      if (exp_a == 0xFF) {
++        if (sig_a) return PropagateNaNF32UI(ui_a, ui_b, flags);
++        return ui_a;
++      }
++      exp_z = exp_a - 1;
++      sig_x = sig_a | 0x40000000u;
++      sig_y = sig_b + (exp_b ? 0x40000000u : sig_b);
++    }
++    return NormRoundPackToF32(
++        sign_z, exp_z,
++        sig_x - ShiftRightJam32(sig_y, static_cast<uint16_t>(exp_diff)),
++        rounding_mode, flags);
++  }
++}
++
++uint32_t F32Add(uint32_t ui_a, uint32_t ui_b, uint32_t rounding_mode,
++                uint32_t* flags) {
++  if (SignF32UI(ui_a ^ ui_b)) {
++    return SubMagsF32(ui_a, ui_b, rounding_mode, flags);
++  }
++  return AddMagsF32(ui_a, ui_b, rounding_mode, flags);
++}
++
++uint32_t F32AddOdd(uint32_t ui_a, uint32_t ui_b, uint32_t* flags) {
++  uint32_t local_flags = 0;
++  uint32_t res = F32Add(ui_a, ui_b, kFpRoundOdd, &local_flags);
++  if (local_flags & kFpFlagOverflow) {
++    res += 1;  // FLT_MAX -> INF (RVBNA Rounding to Odd)
++  }
++  *flags |= local_flags & (kFpFlagOverflow | kFpFlagInvalid);
++  return res;
++}
++
++template <typename T>
++int IntLog2(T n) {
++  int res = 0;
++  while (n >>= 1) {
++    res++;
++  }
++  return res;
++}
++
++template <typename T>
++T ShiftRightJamGeneric(T n, int amt) {
++  const int width = 8 * sizeof(T);
++  const T shifted = amt >= width ? 0 : (n >> amt);
++  const T jam_mask = amt >= width ? T(-1) : ((T(1) << amt) - 1);
++  const bool jam = (n & jam_mask) != 0;
++  return shifted | static_cast<T>(jam);
++}
++
++// RVBNA bulk-normalized 2-way BF16 dot product (without accumulation), rounded
++// to odd into FP32 per Zvt v0.4 §12.1.1.8.
++uint32_t BulkNormDotBf16(const uint16_t a[2], const uint16_t b[2],
++                         uint32_t* flags) {
++  constexpr int kNumProd = 2;
++  constexpr int kGuardBits = 1;
++  constexpr int kF32ExpBits = 8;
++  constexpr int kF32ExpBias = 127;
++  constexpr int kF32MantBits = 23;
++  constexpr int kF32ExpMask = 0xFF;
++  constexpr uint32_t kF32MantMask = 0x007FFFFFu;
++  constexpr int kBf16Bias = 127;
++  constexpr int kBf16MantBits = 7;
++
++  auto bf16_sign = [](uint16_t x) -> bool { return (x >> 15) != 0; };
++  auto bf16_exp = [](uint16_t x) -> int { return (x >> 7) & 0xFF; };
++  auto bf16_mant = [](uint16_t x) -> uint8_t { return x & 0x7F; };
++  auto bf16_sub_or_zero = [&](uint16_t x) -> bool { return bf16_exp(x) == 0; };
++  auto bf16_exp_sub_fixed = [&](uint16_t x) -> int {
++    return bf16_exp(x) + (bf16_sub_or_zero(x) ? 1 : 0);
++  };
++  auto bf16_sig = [&](uint16_t x) -> uint16_t {
++    return bf16_mant(x) ^ (static_cast<uint16_t>(!bf16_sub_or_zero(x)) << 7);
++  };
++  auto bf16_inf = [&](uint16_t x) -> bool {
++    return bf16_exp(x) == 0xFF && bf16_mant(x) == 0;
++  };
++  auto bf16_nan = [&](uint16_t x) -> bool {
++    return bf16_exp(x) == 0xFF && bf16_mant(x) != 0;
++  };
++  auto bf16_sig_nan = [&](uint16_t x) -> bool {
++    return bf16_nan(x) && ((bf16_mant(x) >> 6) == 0);
++  };
++  auto bf16_is_zero = [&](uint16_t x) -> bool {
++    return bf16_exp(x) == 0 && bf16_mant(x) == 0;
++  };
++
++  int approx_prod_exp[kNumProd];
++  uint16_t prod_sigs[kNumProd];
++  bool any_pos_inf = false;
++  bool any_neg_inf = false;
++  bool any_nan = false;
++  bool any_invalid_nan = false;
++  bool any_sig_nan = false;
++
++  for (int i = 0; i < kNumProd; i++) {
++    prod_sigs[i] = bf16_sig(a[i]) * bf16_sig(b[i]);
++    const bool a_zero = bf16_is_zero(a[i]);
++    const bool b_zero = bf16_is_zero(b[i]);
++    approx_prod_exp[i] =
++        (a_zero || b_zero)
++            ? (kF32ExpBias - (kBf16Bias + kBf16Bias))
++            : (bf16_exp_sub_fixed(a[i]) + bf16_exp_sub_fixed(b[i]) +
++               (kF32ExpBias - (kBf16Bias + kBf16Bias)));
++
++    const bool either_inf = bf16_inf(a[i]) || bf16_inf(b[i]);
++    const bool either_nan = bf16_nan(a[i]) || bf16_nan(b[i]);
++    const bool either_zero = a_zero || b_zero;
++    any_pos_inf |= either_inf && !either_nan && !either_zero &&
++                   (bf16_sign(a[i]) == bf16_sign(b[i]));
++    any_neg_inf |= either_inf && !either_nan && !either_zero &&
++                   (bf16_sign(a[i]) != bf16_sign(b[i]));
++    any_invalid_nan |= (bf16_inf(a[i]) && b_zero) || (bf16_inf(b[i]) && a_zero);
++    any_nan |= any_invalid_nan || either_nan;
++    any_sig_nan |= bf16_sig_nan(a[i]) || bf16_sig_nan(b[i]);
++  }
++
++  const int max_approx_prod_exp =
++      std::max(approx_prod_exp[0], approx_prod_exp[1]);
++  int64_t acc = 0;
++  for (int i = 0; i < kNumProd; i++) {
++    const bool prod_sign = bf16_sign(a[i]) ^ bf16_sign(b[i]);
++    uint64_t prod_sig = static_cast<uint64_t>(prod_sigs[i])
++                        << (kF32MantBits - kBf16MantBits - kBf16MantBits +
++                            kGuardBits);
++    const int shift_amt = max_approx_prod_exp - approx_prod_exp[i];
++    const uint64_t shifted_sig = ShiftRightJamGeneric(prod_sig, shift_amt);
++    acc += prod_sign ? -static_cast<int64_t>(shifted_sig)
++                     : static_cast<int64_t>(shifted_sig);
++  }
++
++  bool sign = acc < 0;
++  const uint64_t mag =
++      acc < 0 ? static_cast<uint64_t>(-acc) : static_cast<uint64_t>(acc);
++  const int norm_dist = IntLog2(mag);
++  int exp = max_approx_prod_exp - kF32MantBits - kGuardBits + norm_dist;
++  int sig_bits = (exp <= 0) ? (kF32MantBits - (1 - exp)) : kF32MantBits;
++  sig_bits = std::max(sig_bits, 0);
++  uint32_t rounded_sig = static_cast<uint32_t>(
++      ShiftRightJamGeneric(mag << sig_bits, norm_dist));
++
++  const bool any_inf = any_pos_inf || any_neg_inf;
++  const bool overflow = (exp >= kF32ExpMask && mag != 0) || any_inf;
++  const bool op_sign_inf = any_pos_inf && any_neg_inf;
++  const bool nan_out = any_nan || op_sign_inf;
++  const bool overflow_flag =
++      (exp >= kF32ExpMask && mag != 0) && !any_inf && !nan_out;
++
++  if (nan_out) {
++    sign = false;
++    exp = kF32ExpMask;
++    rounded_sig = uint32_t{1} << (kF32MantBits - 1);
++  } else if (overflow) {
++    exp = kF32ExpMask;
++    rounded_sig = 0;
++    if (any_inf) sign = any_neg_inf;
++  } else if (mag == 0 || exp <= 0) {
++    exp = 0;
++  }
++
++  if (any_sig_nan || any_invalid_nan || op_sign_inf) {
++    *flags |= kFpFlagInvalid;
++  }
++  if (overflow_flag) {
++    *flags |= kFpFlagOverflow;
++  }
++
++  return (rounded_sig & kF32MantMask) |
++         (static_cast<uint32_t>(exp) << kF32MantBits) |
++         (static_cast<uint32_t>(sign) << (kF32ExpBits + kF32MantBits));
++}
++
++// Reads tile element (row,col) of `kTile` at width `tile_element_width` as a
+ // generic 64-bit container, and the inverse. Used by the move/load/store paths
+ // which carry the element width dynamically.
+ uint64_t LoadTileBits(RiscVZvtMatrixState* matrix_state, int kTile, int row,
+                       int col, int tile_element_width) {
+-  const int kEffectiveTileEdge = tile_element_width < 64
+-                                     ? matrix_state->tile_elements()
+-                                     : matrix_state->tile_elements() / 2;
++  const int kEffectiveTileEdge =
++      EffectiveTileEdge(matrix_state, tile_element_width);
+   CHECK(row >= 0 && row < kEffectiveTileEdge) << "row out of bounds";
+   CHECK(col >= 0 && col < kEffectiveTileEdge) << "col out of bounds";
+   switch (tile_element_width) {
+@@ -89,11 +567,29 @@ uint64_t LoadTileBits(RiscVZvtMatrixState* matrix_state, int kTile, int row,
+   }
+ }
+ 
++bool IsVectorStatusOff(RiscVState* state) {
++  return state != nullptr && state->mstatus() != nullptr &&
++         state->mstatus()->vs() == RiscVMStatus::kStatusOff;
++}
++
 +void TrapIllegalInstruction(RiscVState* state, const Instruction* inst) {
 +  uint64_t address = inst->address();
 +  auto* db = state->db_factory()->Allocate<uint32_t>(1);
@@ -178,47 +759,67 @@ index 9a7965b..f7fa184 100644
 +
  void StoreTileBits(RiscVZvtMatrixState* matrix_state, int kTile, int row,
                     int col, int tile_element_width, uint64_t value) {
+-  const int kEffectiveTileEdge = tile_element_width < 64
+-                                     ? matrix_state->tile_elements()
+-                                     : matrix_state->tile_elements() / 2;
 +  matrix_state->MarkDirty();
-   const int kEffectiveTileEdge = tile_element_width < 64
-                                      ? matrix_state->tile_elements()
-                                      : matrix_state->tile_elements() / 2;
-@@ -136,40 +150,53 @@ void RiscVZvtMsetMtype(const Instruction* inst) {
-   // Spec 15.1.1.4: vl = 0; mtype = rs1; then vtype = rs2 as if by vsetvl.
-   vector_state->set_vector_length(0);
-   matrix_state->set_mtype(kRs1);
--  vector_state->SetVectorType(kRs2);
--
-   if (matrix_state->mtwiden() == 0) {
-     matrix_state->set_mtype(0);
-+    vector_state->SetVectorType(kRs2 & ~0x100u);
-     return;
-   }
++  const int kEffectiveTileEdge =
++      EffectiveTileEdge(matrix_state, tile_element_width);
+   CHECK(row >= 0 && row < kEffectiveTileEdge) << "row out of bounds";
+   CHECK(col >= 0 && col < kEffectiveTileEdge) << "col out of bounds";
+   switch (tile_element_width) {
+@@ -132,12 +628,40 @@ void RiscVZvtMsetMtype(const Instruction* inst) {
+   const uint32_t kRs1 = GetInstructionSource<uint32_t>(inst, 0);  // rs1
+   const uint32_t kRs2 = GetInstructionSource<uint32_t>(inst, 1);  // rs2
  
-+  // If the matrix unit is configured, force vma/vta = 1 and derive vlmul per
-+  // Zvt spec §15.1.1.4: LMUL = min(8/KMAX, 8/TWIDEN, ceil(ETE/EVE)).
-+  // For VLEN=128, TE=16: SEW8 -> LMUL1 (0), SEW16 -> LMUL2 (1), SEW32 -> LMUL4 (2).
-+  const uint32_t kVsew = (kRs2 >> 3) & 0x7;
-+  uint32_t vlmul = 4;  // Reserved if SEW is unsupported.
-+  switch (kVsew) {
-+    case 0: vlmul = 0; break;  // SEW8 -> LMUL1
-+    case 1: vlmul = 1; break;  // SEW16 -> LMUL2
-+    case 2: vlmul = 2; break;  // SEW32 -> LMUL4
-+    default: vlmul = 4; break;
+-  // Spec 15.1.1.4: vl = 0; mtype = rs1; then vtype = rs2 as if by vsetvl.
++  if (IsVectorStatusOff(matrix_state->riscv_state())) {
++    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
++    return;
 +  }
-+  uint32_t new_vtype =
-+      (kRs2 & ~0b1100'0111u) | (1u << 7) | (1u << 6) | vlmul;
-+  vector_state->SetVectorType(new_vtype);
-+  if (vector_state->is_vill()) {
++
++  // Spec §12.1.1.4: vl = 0; mtype = rs1; then vtype = rs2 as if by vsetvl.
+   vector_state->set_vector_length(0);
++  vector_state->clear_vstart();
++  vector_state->MarkDirty();
+   matrix_state->set_mtype(kRs1);
++  if (matrix_state->mtwiden() == 0) {
++    matrix_state->set_mtype(0);
++    vector_state->SetVectorType(kRs2);
++    return;
++  }
++  if ((kRs1 & ~kMtypeValidMask) != 0) {
++    vector_state->SetVectorType(kVillBitMask);
 +    matrix_state->set_mtype(0);
 +    return;
 +  }
 +
++  // Validate rs2 under vsetvl semantics first, then derive vlmul and vma=vta=1.
+   vector_state->SetVectorType(kRs2);
++  if (vector_state->is_vill()) {
++    matrix_state->set_mtype(0);
++    return;
++  }
+ 
+-  if (matrix_state->mtwiden() == 0) {
++  const uint32_t kVsew = (kRs2 >> 3) & 0x7;
++  const int vlmul = DeriveMatrixVlmulEncoding(matrix_state, vector_state, kVsew);
++  uint32_t new_vtype =
++      (kRs2 & ~0b1100'0111u) | (1u << 7) | (1u << 6) | static_cast<uint32_t>(vlmul);
++  vector_state->SetVectorType(new_vtype);
++  if (vector_state->is_vill()) {
+     matrix_state->set_mtype(0);
+     return;
+   }
+@@ -145,29 +668,21 @@ void RiscVZvtMsetMtype(const Instruction* inst) {
    const int kSewBits = vector_state->selected_element_width() * 8;
    const int kTwiden = matrix_state->twiden();
    const int kTileElementWidth = kSewBits * kTwiden;
-   const int kEffectiveTileElements = kTileElementWidth < 64
-                                          ? matrix_state->tile_elements()
-                                          : matrix_state->tile_elements() / 2;
+-  const int kEffectiveTileElements = kTileElementWidth < 64
+-                                         ? matrix_state->tile_elements()
+-                                         : matrix_state->tile_elements() / 2;
++  const int kEffectiveTileElements =
++      EffectiveTileEdge(matrix_state, kTileElementWidth);
    const int kmax = RiscVZvtKmax(kSewBits);
    const int kLmulElements =
        vector_state->max_vector_length();  // LMUL * (VLEN/SEW).
@@ -228,45 +829,101 @@ index 9a7965b..f7fa184 100644
 -  // the v0.3 encoding firms up.
 -  vector_state->SetVectorType(vector_state->vtype() | (1u << 6) | (1u << 7));
 -
-   // kVill if the resulting TILE_ELEMENT_WIDTH is unsupported for the kBase
+-  // kVill if the resulting TILE_ELEMENT_WIDTH is unsupported for the kBase
++  // vill if the resulting TILE_ELEMENT_WIDTH is unsupported for the base
    // (SEW*TWIDEN > ELEN).
 -  const bool kVill = kTileElementWidth > kElen;
-+  const bool kVill = kTileElementWidth > vector_state->max_elen();
-   if (kVill) {
+-  if (kVill) {
 -    vector_state->set_vector_exception();
++  if (kTileElementWidth > vector_state->max_elen()) {
 +    vector_state->SetVectorType(kVillBitMask);
      matrix_state->set_mtype(0);
      return;
    }
  
-   // kTileK = min(kTileK, KMAX); kTileM = min(kTileM, LMUL*EVE,
-   // EFFECTIVE_TILE_EDGE).
+-  // kTileK = min(kTileK, KMAX); kTileM = min(kTileM, LMUL*EVE,
+-  // EFFECTIVE_TILE_EDGE).
++  // tk = min(tk, KMAX); tm = min(tm, LMUL*EVE, EFFECTIVE_TILE_EDGE).
    matrix_state->set_tile_k(std::min(matrix_state->tile_k(), kmax));
    matrix_state->set_tile_m(std::min(
        {matrix_state->tile_m(), kLmulElements, kEffectiveTileElements}));
- }
-@@ -207,33 +234,85 @@ void RiscVZvtMsetTm(const Instruction* inst) {
-     kTileM = std::min<uint32_t>(kRs1, kBound);
+@@ -179,16 +694,24 @@ void RiscVZvtMsetTn(const Instruction* inst) {
+   auto* vector_state = matrix_state->riscv_state()->rv_vector();
+   const uint32_t kRs1 = GetInstructionSource<uint32_t>(inst, 0);
+ 
+-  uint32_t kTileN;
+-  if (matrix_state->mtwiden() == 0) {
+-    // Degenerates to vsetvl using the current vtype: vl = min(rs1, VLMAX).
+-    kTileN = std::min<uint32_t>(kRs1, vector_state->max_vector_length());
+-  } else {
+-    const int kBound = std::min(vector_state->max_vector_length(),
+-                                matrix_state->effective_tile_edge());
+-    kTileN = std::min<uint32_t>(kRs1, kBound);
++  if (IsVectorStatusOff(matrix_state->riscv_state())) {
++    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
++    return;
++  }
++  uint32_t kTileN = 0;
++  if (!vector_state->is_vill()) {
++    if (matrix_state->mtwiden() == 0) {
++      // Degenerates to vsetvl using the current vtype: vl = min(rs1, VLMAX).
++      kTileN = std::min<uint32_t>(kRs1, vector_state->max_vector_length());
++    } else {
++      const int kBound = std::min(vector_state->max_vector_length(),
++                                  matrix_state->effective_tile_edge());
++      kTileN = std::min<uint32_t>(kRs1, kBound);
++    }
    }
+   vector_state->set_vector_length(kTileN);
++  vector_state->clear_vstart();
++  vector_state->MarkDirty();
+   WriteScalar(inst, 0, kTileN);
+ }
+ 
+@@ -198,15 +721,17 @@ void RiscVZvtMsetTm(const Instruction* inst) {
+   auto* vector_state = matrix_state->riscv_state()->rv_vector();
+   const uint32_t kRs1 = GetInstructionSource<uint32_t>(inst, 0);
+ 
+-  uint32_t kTileM;
+-  if (matrix_state->mtwiden() == 0) {
+-    kTileM = 0;
+-  } else {
+-    const int kBound = std::min(vector_state->max_vector_length(),
+-                                matrix_state->effective_tile_edge());
+-    kTileM = std::min<uint32_t>(kRs1, kBound);
++  if (IsVectorStatusOff(matrix_state->riscv_state()) ||
++      matrix_state->mtwiden() == 0) {
++    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
++    return;
+   }
++  const int kBound = std::min(vector_state->max_vector_length(),
++                              matrix_state->effective_tile_edge());
++  const uint32_t kTileM = std::min<uint32_t>(kRs1, kBound);
    matrix_state->set_tile_m(kTileM);
++  vector_state->clear_vstart();
 +  vector_state->MarkDirty();
    WriteScalar(inst, 0, kTileM);
  }
  
- void RiscVZvtMsetTk(const Instruction* inst) {
-   auto m_result = GetMatrixState(inst);
-   auto* matrix_state = *m_result;
+@@ -216,17 +741,70 @@ void RiscVZvtMsetTk(const Instruction* inst) {
    auto* vector_state = matrix_state->riscv_state()->rv_vector();
    const uint32_t kRs1 = GetInstructionSource<uint32_t>(inst, 0);
  
-   uint32_t kTileK;
-   if (matrix_state->mtwiden() == 0) {
-     kTileK = 0;
-   } else {
-     const int kSewBits = vector_state->selected_element_width() * 8;
-     kTileK = std::min<uint32_t>(kRs1, RiscVZvtKmax(kSewBits));
+-  uint32_t kTileK;
+-  if (matrix_state->mtwiden() == 0) {
+-    kTileK = 0;
+-  } else {
+-    const int kSewBits = vector_state->selected_element_width() * 8;
+-    kTileK = std::min<uint32_t>(kRs1, RiscVZvtKmax(kSewBits));
++  if (IsVectorStatusOff(matrix_state->riscv_state()) ||
++      matrix_state->mtwiden() == 0) {
++    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
++    return;
    }
++  const int kSewBits = vector_state->selected_element_width() * 8;
++  const uint32_t kTileK = std::min<uint32_t>(kRs1, RiscVZvtKmax(kSewBits));
    matrix_state->set_tile_k(kTileK);
++  vector_state->clear_vstart();
 +  vector_state->MarkDirty();
    WriteScalar(inst, 0, kTileK);
  }
@@ -274,263 +931,538 @@ index 9a7965b..f7fa184 100644
 +void RiscVZvtMsetMtypei(const Instruction* inst) {
 +  auto m_result = GetMatrixState(inst);
 +  auto* matrix_state = *m_result;
-+  auto* vector_state = matrix_state->riscv_state()->rv_vector();
++  auto* state = matrix_state->riscv_state();
++  auto* vector_state = state->rv_vector();
++  if (IsVectorStatusOff(state)) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
 +  const uint32_t kUimm = GetInstructionSource<uint32_t>(inst, 0);
 +  const uint32_t kZimm10 = GetInstructionSource<uint32_t>(inst, 1);
 +  const uint32_t kMtwiden = kUimm & 0x3;
 +  const uint32_t kVsew = (kZimm10 >> 3) & 0x3;
++  const uint32_t kAltfmt = (kZimm10 >> 8) & 0x1;
 +
 +  vector_state->set_vector_length(0);
++  vector_state->clear_vstart();
++  vector_state->MarkDirty();
 +  matrix_state->set_mtype(kMtwiden);
 +
-+  if (kMtwiden != 0) {
-+    uint32_t vlmul = 4;
-+    switch (kVsew) {
-+      case 0: vlmul = 0; break;  // SEW8 -> LMUL1
-+      case 1: vlmul = 1; break;  // SEW16 -> LMUL2
-+      case 2: vlmul = 2; break;  // SEW32 -> LMUL4
-+      default: vlmul = 4; break;
-+    }
-+    uint32_t new_vtype = (kVsew << 3) | (1u << 6) | (1u << 7) | vlmul;
-+    vector_state->SetVectorType(new_vtype);
-+    if (vector_state->is_vill()) {
-+      matrix_state->set_mtype(0);
-+      return;
-+    }
-+    const int kSewBits = vector_state->selected_element_width() * 8;
-+    const int kTileElementWidth = kSewBits * matrix_state->twiden();
-+    if (kTileElementWidth > vector_state->max_elen()) {
-+      vector_state->SetVectorType(kVillBitMask);
-+      matrix_state->set_mtype(0);
-+      return;
-+    }
-+  } else {
++  const uint32_t base_vtype = (kAltfmt << 8) | (kVsew << 3);
++  if (kMtwiden == 0) {
 +    matrix_state->set_mtype(0);
-+    uint32_t new_vtype = (kVsew << 3);  // LMUL1, ta=0, ma=0
-+    vector_state->SetVectorType(new_vtype);
++    vector_state->SetVectorType(base_vtype);
++    return;
++  }
++
++  vector_state->SetVectorType(base_vtype);
++  if (vector_state->is_vill()) {
++    matrix_state->set_mtype(0);
++    return;
++  }
++
++  const int vlmul = DeriveMatrixVlmulEncoding(matrix_state, vector_state, kVsew);
++  const uint32_t new_vtype =
++      base_vtype | (1u << 6) | (1u << 7) | static_cast<uint32_t>(vlmul);
++  vector_state->SetVectorType(new_vtype);
++  if (vector_state->is_vill()) {
++    matrix_state->set_mtype(0);
++    return;
++  }
++
++  const int kSewBits = vector_state->selected_element_width() * 8;
++  const int kTileElementWidth = kSewBits * matrix_state->twiden();
++  if (kTileElementWidth > vector_state->max_elen()) {
++    vector_state->SetVectorType(kVillBitMask);
++    matrix_state->set_mtype(0);
++    return;
 +  }
 +}
 +
  // ----------------------------------------------------------------------------
  // Tile manipulation
  // ----------------------------------------------------------------------------
- 
+@@ -234,13 +812,27 @@ void RiscVZvtMsetTk(const Instruction* inst) {
  void RiscVZvtVtZero(const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;
-   auto* vector_state = matrix_state->riscv_state()->rv_vector();
-+  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
-+    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
+-  auto* vector_state = matrix_state->riscv_state()->rv_vector();
++  auto* state = matrix_state->riscv_state();
++  auto* vector_state = state->rv_vector();
++  if (IsVectorStatusOff(state) || matrix_state->IsMatrixStatusOff() ||
++      vector_state->is_vill() || !matrix_state->configured() ||
++      vector_state->vstart() != 0) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
+   const int kTile = GetInstructionSource<uint32_t>(inst, 0);  // mtd
+   const int kTileElementWidth = matrix_state->tile_element_width_bits();
++  const int kAlign = TileAlign(kTileElementWidth);
++  if ((kTile & (kAlign - 1)) != 0) {
++    TrapIllegalInstruction(state, inst);
 +    return;
 +  }
 +  matrix_state->MarkDirty();
-   const int kTile = GetInstructionSource<uint32_t>(inst, 0);  // mtd
-   const int kTileElementWidth = matrix_state->tile_element_width_bits();
-@@ -250,8 +324,18 @@ void RiscVZvtVtZero(const Instruction* inst) {
++  vector_state->MarkDirty();
++  vector_state->clear_vstart();
+   const int kTileM = matrix_state->tile_m();
+-  const int kEffectiveTileEdge = kTileElementWidth < 64
+-                                     ? matrix_state->tile_elements()
+-                                     : matrix_state->tile_elements() / 2;
++  const int kEffectiveTileEdge =
++      EffectiveTileEdge(matrix_state, kTileElementWidth);
+   const int kTileN =
+       std::min(vector_state->vector_length(), kEffectiveTileEdge);
+   for (int row = 0; row < kTileM; row++) {
+@@ -250,18 +842,30 @@ void RiscVZvtVtZero(const Instruction* inst) {
    }
  }
  
 -void RiscVZvtVtDiscard(const Instruction* /*inst*/) {
 -  // Architecturally hints the kTile state is dead. No-op in the ISS.
 +void RiscVZvtVtDiscard(const Instruction* inst) {
-+  // Architecturally hints the kTile state is dead. Transition to Initial.
++  // Architecturally hints the tile state is dead. Transition to Initial.
 +  auto m_result = GetMatrixState(inst);
 +  if (!m_result.ok()) return;
 +  auto* matrix_state = *m_result;
 +  auto* vector_state = matrix_state->riscv_state()->rv_vector();
-+  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
++  if (IsVectorStatusOff(matrix_state->riscv_state()) ||
++      matrix_state->IsMatrixStatusOff() || vector_state->is_vill() ||
++      vector_state->vstart() != 0) {
 +    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
 +    return;
 +  }
 +  matrix_state->MarkInitial();
 +  vector_state->MarkDirty();
++  vector_state->clear_vstart();
  }
  
- // Number of kTile-subset elements processed: min(vl, EFFECTIVE_TILE_EDGE) for
-@@ -271,9 +355,17 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
+-// Number of kTile-subset elements processed: min(vl, EFFECTIVE_TILE_EDGE) for
++// Number of tile-subset elements processed: min(vl, EFFECTIVE_TILE_EDGE) for
+ // the given TILE_ELEMENT_WIDTH.
+ static int TileSubsetCount(RiscVZvtMatrixState* matrix_state,
+                            RiscVVectorState* vector_state,
+                            int tile_element_width) {
+-  const int kEffectiveTileEdge = tile_element_width < 64
+-                                     ? matrix_state->tile_elements()
+-                                     : matrix_state->tile_elements() / 2;
++  const int kEffectiveTileEdge =
++      EffectiveTileEdge(matrix_state, tile_element_width);
+   return std::min(vector_state->vector_length(), kEffectiveTileEdge);
+ }
+ 
+@@ -270,23 +874,46 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
+   // SEW.
    auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;
-   auto* vector_state = matrix_state->riscv_state()->rv_vector();
-+  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
-+    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
+-  auto* vector_state = matrix_state->riscv_state()->rv_vector();
+-  const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 0));
++  auto* state = matrix_state->riscv_state();
++  auto* vector_state = state->rv_vector();
++  if (IsVectorStatusOff(state) || matrix_state->IsMatrixStatusOff() ||
++      vector_state->is_vill() || !matrix_state->configured()) {
++    TrapIllegalInstruction(state, inst);
 +    return;
 +  }
++  auto* vd = static_cast<RV32VectorDestinationOperand*>(inst->Destination(0));
++  const int kVdReg = GetVectorRegIndex(vd->AsString());
++  const int kLmulRegs = std::max(1, vector_state->vector_length_multiplier() / 8);
++  if (kVdReg < 0 || (kVdReg % kLmulRegs) != 0) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
++
 +  vector_state->MarkDirty();
-+  const int kVstart = vector_state->vstart();
-+  vector_state->clear_vstart();
-   const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 0));
    const int kSewBytes = vector_state->selected_element_width();
    const int kTileElementWidth = kSewBytes * 8;
++  const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 0),
++                             kTileElementWidth, matrix_state);
    const int kCount =
        TileSubsetCount(matrix_state, vector_state, kTileElementWidth);
-+  if (kVstart >= kCount) return;
-   const int kElementsPerVector =
-@@ -305,13 +397,21 @@ void RiscVZvtVtmvTv(const Instruction* inst) {
-   auto m_result = GetMatrixState(inst);
-   auto* matrix_state = *m_result;
-   auto* vector_state = matrix_state->riscv_state()->rv_vector();
-+  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
-+    TrapIllegalInstruction(matrix_state->riscv_state(), inst);
++  const int kVstart = vector_state->vstart();
++  vector_state->clear_vstart();
++  if (kVstart >= kCount) {
 +    return;
 +  }
-+  matrix_state->MarkDirty();
-+  const int kVstart = vector_state->vstart();
-+  vector_state->clear_vstart();
+   const int kElementsPerVector =
+       vector_state->vector_register_byte_length() / kSewBytes;
+-  auto* vd = static_cast<RV32VectorDestinationOperand*>(inst->Destination(0));
+   const int kNumRegs = (kCount + kElementsPerVector - 1) / kElementsPerVector;
+   for (int r = 0; r < kNumRegs; r++) {
+-    DataBuffer* db = vd->AllocateDataBuffer(r);
++    DataBuffer* db = vd->CopyDataBuffer(r);
+     absl::Span<uint8_t> bytes = db->Get<uint8_t>();
+-    std::memset(bytes.data(), 0, bytes.size());  // tail-agnostic fill.
+     for (int kE = 0; kE < kElementsPerVector; kE++) {
+       const int kElem = r * kElementsPerVector + kE;
+-      if (kElem >= kCount) break;
++      if (kElem < kVstart) continue;  // Prestart elements are undisturbed.
++      if (kElem >= kCount) {
++        std::memset(&bytes[kE * kSewBytes], 0, kSewBytes);  // Tail-agnostic fill.
++        continue;
++      }
+       const uint64_t kVal =
+           (kTss.pattern == kTssPatternCol)
+               ? LoadTileBits(matrix_state, kTss.kTile, kElem, kTss.index,
+@@ -300,20 +927,38 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
+ }
+ 
+ void RiscVZvtVtmvTv(const Instruction* inst) {
+-  // Vector register group -> kTile row/col subset. Move TILE_ELEMENT_WIDTH =
++  // Vector register group -> tile row/col subset. Move TILE_ELEMENT_WIDTH =
+   // SEW.
+   auto m_result = GetMatrixState(inst);
+   auto* matrix_state = *m_result;
+-  auto* vector_state = matrix_state->riscv_state()->rv_vector();
++  auto* state = matrix_state->riscv_state();
++  auto* vector_state = state->rv_vector();
++  if (IsVectorStatusOff(state) || matrix_state->IsMatrixStatusOff() ||
++      vector_state->is_vill() || !matrix_state->configured()) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
    auto* vs = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
-   const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));
+-  const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));
++  const int kVs2Reg = GetVectorRegIndex(vs->AsString());
++  const int kLmulRegs = std::max(1, vector_state->vector_length_multiplier() / 8);
++  if (kVs2Reg < 0 || (kVs2Reg % kLmulRegs) != 0) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
++
++  matrix_state->MarkDirty();
++  vector_state->MarkDirty();
    const int kSewBytes = vector_state->selected_element_width();
    const int kTileElementWidth = kSewBytes * 8;
++  const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1),
++                             kTileElementWidth, matrix_state);
    const int kCount =
        TileSubsetCount(matrix_state, vector_state, kTileElementWidth);
-+  if (kVstart >= kCount) return;
++  const int kVstart = vector_state->vstart();
++  vector_state->clear_vstart();
    const int kElementsPerVector =
        vector_state->vector_register_byte_length() / kSewBytes;
 -  for (int kElem = 0; kElem < kCount; kElem++) {
 +  for (int kElem = kVstart; kElem < kCount; kElem++) {
      const int kReg = kElem / kElementsPerVector;
-@@ -335,14 +435,25 @@ void RiscVZvtVtle(int eew_bits, const Instruction* inst) {
+     const int kE = kElem % kElementsPerVector;
+     auto bytes = vs->GetRegister(kReg)->data_buffer()->Get<uint8_t>();
+@@ -330,21 +975,38 @@ void RiscVZvtVtmvTv(const Instruction* inst) {
+ }
+ 
+ void RiscVZvtVtle(int eew_bits, const Instruction* inst) {
+-  // Memory -> kTile row/col subset. EEW is statically encoded.
++  // Memory -> tile row/col subset. EEW is statically encoded.
+   auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;
    auto* state = matrix_state->riscv_state();
    auto* vector_state = state->rv_vector();
-+  if (eew_bits > vector_state->max_elen() || matrix_state->IsMatrixStatusOff() ||
-+      vector_state->is_vill()) {
+-  const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);       // rs1
+-  const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));  // rs2
++  if (eew_bits > vector_state->max_elen() || IsVectorStatusOff(state) ||
++      matrix_state->IsMatrixStatusOff() || vector_state->is_vill() ||
++      !matrix_state->configured()) {
 +    TrapIllegalInstruction(state, inst);
 +    return;
 +  }
 +  matrix_state->MarkDirty();
-+  const int kVstart = vector_state->vstart();
-+  vector_state->clear_vstart();
-   const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);       // rs1
-   const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));  // rs2
++  vector_state->MarkDirty();
++  const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);  // rs1
++  const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1), eew_bits,
++                             matrix_state);  // rs2
    const int kElementSize = eew_bits / 8;
    const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
 -  DataBuffer* db = matrix_state->GetScratchDb(kCount * kElementSize);
 -  state->memory()->Load(kBase, db, nullptr, nullptr);
-+  if (kVstart >= kCount) return;
-+  const int kActiveCount = kCount - kVstart;
-+  DataBuffer* db = matrix_state->GetScratchDb(kActiveCount * kElementSize);
++  const int kVstart = vector_state->vstart();
++  vector_state->clear_vstart();
++  if (kVstart >= kCount) {
++    return;
++  }
++  const int kNumElems = kCount - kVstart;
++  DataBuffer* db = matrix_state->GetScratchDb(kNumElems * kElementSize);
 +  state->memory()->Load(kBase + static_cast<uint64_t>(kVstart) * kElementSize,
 +                        db, nullptr, nullptr);
    absl::Span<uint8_t> bytes = db->Get<uint8_t>();
 -  for (int kE = 0; kE < kCount; kE++) {
-+  for (int kE = kVstart; kE < kCount; kE++) {
++  for (int i = 0; i < kNumElems; i++) {
++    const int kE = kVstart + i;
      uint64_t kVal = 0;
 -    std::memcpy(&kVal, &bytes[kE * kElementSize], kElementSize);
-+    std::memcpy(&kVal, &bytes[(kE - kVstart) * kElementSize], kElementSize);
++    std::memcpy(&kVal, &bytes[i * kElementSize], kElementSize);
      if (kTss.pattern == kTssPatternCol) {
-@@ -359,18 +470,29 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+       StoreTileBits(matrix_state, kTss.kTile, kE, kTss.index, eew_bits, kVal);
+     } else {
+@@ -359,20 +1021,36 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
    auto* matrix_state = *m_result;
    auto* state = matrix_state->riscv_state();
    auto* vector_state = state->rv_vector();
-+  if (eew_bits > vector_state->max_elen() || matrix_state->IsMatrixStatusOff() ||
-+      vector_state->is_vill()) {
+-  const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);       // rs1
+-  const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));  // rs2
++  if (eew_bits > vector_state->max_elen() || IsVectorStatusOff(state) ||
++      matrix_state->IsMatrixStatusOff() || vector_state->is_vill() ||
++      !matrix_state->configured()) {
 +    TrapIllegalInstruction(state, inst);
 +    return;
 +  }
 +  vector_state->MarkDirty();
-+  const int kVstart = vector_state->vstart();
-+  vector_state->clear_vstart();
-   const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);       // rs1
-   const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1));  // rs2
++  const uint64_t kBase = GetInstructionSource<uint64_t>(inst, 0);  // rs1
++  const Tss kTss = DecodeTss(GetInstructionSource<uint32_t>(inst, 1), eew_bits,
++                             matrix_state);  // rs2
    const int kElementSize = eew_bits / 8;
    const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
 -  DataBuffer* db = matrix_state->GetScratchDb(kCount * kElementSize);
-+  if (kVstart >= kCount) return;
-+  const int kActiveCount = kCount - kVstart;
-+  DataBuffer* db = matrix_state->GetScratchDb(kActiveCount * kElementSize);
++  const int kVstart = vector_state->vstart();
++  vector_state->clear_vstart();
++  if (kVstart >= kCount) {
++    return;
++  }
++  const int kNumElems = kCount - kVstart;
++  DataBuffer* db = matrix_state->GetScratchDb(kNumElems * kElementSize);
    absl::Span<uint8_t> bytes = db->Get<uint8_t>();
 -  for (int kE = 0; kE < kCount; kE++) {
-+  for (int kE = kVstart; kE < kCount; kE++) {
++  for (int i = 0; i < kNumElems; i++) {
++    const int kE = kVstart + i;
      const uint64_t kVal =
          (kTss.pattern == kTssPatternCol)
              ? LoadTileBits(matrix_state, kTss.kTile, kE, kTss.index, eew_bits)
              : LoadTileBits(matrix_state, kTss.kTile, kTss.index, kE, eew_bits);
 -    std::memcpy(&bytes[kE * kElementSize], &kVal, kElementSize);
-+    std::memcpy(&bytes[(kE - kVstart) * kElementSize], &kVal, kElementSize);
++    std::memcpy(&bytes[i * kElementSize], &kVal, kElementSize);
    }
 -  state->memory()->Store(kBase, db);
 +  state->memory()->Store(kBase + static_cast<uint64_t>(kVstart) * kElementSize,
 +                         db);
  }
-@@ -382,7 +488,21 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+ 
+ // ----------------------------------------------------------------------------
+@@ -382,90 +1060,208 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
  void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;
+-  auto* vector_state = matrix_state->riscv_state()->rv_vector();
 +  auto* state = matrix_state->riscv_state();
-   auto* vector_state = matrix_state->riscv_state()->rv_vector();
-+  if (matrix_state->IsMatrixStatusOff() || vector_state->is_vill()) {
++  auto* vector_state = state->rv_vector();
++  if (IsVectorStatusOff(state) || matrix_state->IsMatrixStatusOff() ||
++      vector_state->is_vill() || !matrix_state->configured() ||
++      vector_state->vstart() != 0) {
 +    TrapIllegalInstruction(state, inst);
 +    return;
 +  }
++
 +  const bool kIsFp =
 +      (kind == RiscVZvtMatmulKind::kFp32 || kind == RiscVZvtMatmulKind::kBf16);
++  uint32_t kFrm = kFpRoundNearEven;
++  if (kIsFp) {
++    if (state->mstatus() != nullptr &&
++        state->mstatus()->fs() == RiscVMStatus::kStatusOff) {
++      TrapIllegalInstruction(state, inst);
++      return;
++    }
++    if (auto frm_csr =
++            state->csr_set()->GetCsr(static_cast<uint64_t>(RiscVCsrEnum::kFrm));
++        frm_csr.ok()) {
++      kFrm = (*frm_csr)->AsUint32();
++      if (kFrm >= 5) {
++        TrapIllegalInstruction(state, inst);
++        return;
++      }
++    }
++  }
++
+   const int kSewBytes = vector_state->selected_element_width();
+   const int kSewBits = kSewBytes * 8;
+-  const int kElementsPerVector =
+-      vector_state->vector_register_byte_length() / kSewBytes;  // elems/kReg.
++  const int kTwiden = matrix_state->twiden();
++  const bool kAltfmt = ((vector_state->vtype() & 0x100u) != 0);
++  const int kTileElementWidth = matrix_state->tile_element_width_bits();
++
++  // Check mode legality per Zvt v0.4 §12.1.1.8.
++  bool mode_valid = false;
++  switch (kind) {
++    case RiscVZvtMatmulKind::kInt8Unsigned:
++    case RiscVZvtMatmulKind::kInt8Signed:
++      mode_valid = (kSewBits == 8 && kTwiden == 4);
++      break;
++    case RiscVZvtMatmulKind::kFp32:
++      mode_valid = (kSewBits == 32 && kTwiden == 1 && !kAltfmt);
++      break;
++    case RiscVZvtMatmulKind::kBf16:
++      mode_valid = (kSewBits == 16 && kTwiden == 2 && kAltfmt);
++      break;
++  }
++  if (!mode_valid) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
++
++  // Check destination tile alignment and vector register alignment (§12.1.1.3,
++  // §12.1.1.8).
++  const int kDestTile = GetInstructionSource<uint32_t>(inst, 2);  // mtd
++  const int kTileAlign = TileAlign(kTileElementWidth);
++  if ((kDestTile & (kTileAlign - 1)) != 0) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
++
++  auto* a = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
++  auto* b = static_cast<RV32VectorSourceOperand*>(inst->Source(1));
++  const int kVs2Reg = GetVectorRegIndex(a->AsString());
++  const int kVs1Reg = GetVectorRegIndex(b->AsString());
++  const int kLmulRegs = std::max(1, vector_state->vector_length_multiplier() / 8);
+   const int kStride = 8 / RiscVZvtKmax(kSewBits);  // regs between rows.
++  if (kVs2Reg < 0 || (kVs2Reg % kLmulRegs) != 0 || (kVs2Reg % 8) >= kStride ||
++      kVs1Reg < 0 || (kVs1Reg % kLmulRegs) != 0 || (kVs1Reg % 8) >= kStride) {
++    TrapIllegalInstruction(state, inst);
++    return;
++  }
++
++  // Dirty context status per §12.1.1.10.
 +  matrix_state->MarkDirty();
++  vector_state->MarkDirty();
++  vector_state->clear_vstart();
 +  if (kIsFp && state->mstatus() != nullptr &&
 +      state->mstatus()->fs() != RiscVMStatus::kStatusOff &&
 +      state->mstatus()->fs() != RiscVMStatus::kStatusDirty) {
 +    state->mstatus()->set_fs(RiscVMStatus::kStatusDirty);
 +    state->mstatus()->Submit();
 +  }
-   const int kSewBytes = vector_state->selected_element_width();
-   const int kSewBits = kSewBytes * 8;
-   const int kElementsPerVector =
-@@ -403,6 +523,9 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
-   // length).
++
+   const int kTileK =
+       matrix_state->tile_k();  // K: the inner dimension of the dot product.
+   const int kTileM =
+-      matrix_state
+-          ->tile_m();  // M: the number of rows of the accumulator kTile.
+-  const int kDestTile = GetInstructionSource<uint32_t>(inst, 2);  // mtd
+-  const int kTileElementWidth =
+-      matrix_state
+-          ->tile_element_width_bits();  // == 32 for the supported datatypes.
+-  const int kEffectiveTileEdge = kTileElementWidth < 64
+-                                     ? matrix_state->tile_elements()
+-                                     : matrix_state->tile_elements() / 2;
+-  // N: the number of columns of the accumulator kTile (derived from vector
+-  // length).
++      matrix_state->tile_m();  // M: the number of rows of the accumulator tile.
++  const int kEffectiveTileEdge =
++      EffectiveTileEdge(matrix_state, kTileElementWidth);
    const int kTileN =
        std::min(vector_state->vector_length(), kEffectiveTileEdge);
-+  if (!kIsFp && (kSewBytes != 1 || kTileElementWidth != 32)) {
+ 
+-  auto* a = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
+-  auto* b = static_cast<RV32VectorSourceOperand*>(inst->Source(1));
++  // Spec §12.1.1.8: If any of tm, tn, or tk are zero, no computation is
++  // performed and no state is updated.
++  if (kTileM == 0 || kTileN == 0 || kTileK == 0) {
 +    return;
 +  }
  
-   auto* a = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
-   auto* b = static_cast<RV32VectorSourceOperand*>(inst->Source(1));
-@@ -410,9 +519,6 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
++  const int kElementsPerVector =
++      vector_state->vector_register_byte_length() / kSewBytes;  // elems/reg.
    absl::Span<uint8_t> a_spans[32] = {};
    absl::Span<uint8_t> b_spans[32] = {};
  
 -  const bool kIsFp =
 -      (kind == RiscVZvtMatmulKind::kFp32 || kind == RiscVZvtMatmulKind::kBf16);
--
-   // Reads element `col` of row `kk` from a vector-group operand.
-   auto read_fp = [&](RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
-                      int kk, int col) -> float {
-@@ -432,33 +538,42 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
-     return f;
++  auto get_reg_span = [&](RV32VectorSourceOperand* op,
++                          absl::Span<uint8_t>* spans,
++                          int reg_offset) -> absl::Span<uint8_t> {
++    if (spans[reg_offset].empty()) {
++      spans[reg_offset] =
++          op->GetRegister(reg_offset)->data_buffer()->Get<uint8_t>();
++    }
++    return spans[reg_offset];
++  };
+ 
+-  // Reads element `col` of row `kk` from a vector-group operand.
+-  auto read_fp = [&](RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
+-                     int kk, int col) -> float {
++  auto read_u16 = [&](RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
++                      int kk, int col) -> uint16_t {
+     const int kReg = kk * kStride + col / kElementsPerVector;
+     const int kE = col % kElementsPerVector;
+-    if (spans[kReg].empty()) {
+-      spans[kReg] = op->GetRegister(kReg)->data_buffer()->Get<uint8_t>();
+-    }
+-    absl::Span<uint8_t> span = spans[kReg];
+-    if (kind == RiscVZvtMatmulKind::kBf16) {
+-      uint16_t u;
+-      std::memcpy(&u, &span[kE * kSewBytes], sizeof(u));
+-      return Bf16ToF32(u);
+-    }
+-    float f;
+-    std::memcpy(&f, &span[kE * kSewBytes], sizeof(f));
+-    return f;
++    absl::Span<uint8_t> span = get_reg_span(op, spans, kReg);
++    uint16_t u;
++    std::memcpy(&u, &span[kE * sizeof(uint16_t)], sizeof(u));
++    return u;
++  };
++
++  auto read_u32 = [&](RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
++                      int kk, int col) -> uint32_t {
++    const int kReg = kk * kStride + col / kElementsPerVector;
++    const int kE = col % kElementsPerVector;
++    absl::Span<uint8_t> span = get_reg_span(op, spans, kReg);
++    uint32_t u;
++    std::memcpy(&u, &span[kE * sizeof(uint32_t)], sizeof(u));
++    return u;
    };
++
 +  const bool kVs2Signed = (kind == RiscVZvtMatmulKind::kInt8Signed);
-+  const bool kVs1Signed = ((vector_state->vtype() & 0x100) != 0);
++  const bool kVs1Signed = kAltfmt;
    auto read_int = [&](RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
 -                      int kk, int col) -> int32_t {
 +                      int kk, int col, bool is_signed) -> int32_t {
      const int kReg = kk * kStride + col / kElementsPerVector;
      const int kE = col % kElementsPerVector;
-     if (spans[kReg].empty()) {
-       spans[kReg] = op->GetRegister(kReg)->data_buffer()->Get<uint8_t>();
-     }
-     absl::Span<uint8_t> span = spans[kReg];
+-    if (spans[kReg].empty()) {
+-      spans[kReg] = op->GetRegister(kReg)->data_buffer()->Get<uint8_t>();
+-    }
+-    absl::Span<uint8_t> span = spans[kReg];
 -    if (kind == RiscVZvtMatmulKind::kInt8Signed) {
++    absl::Span<uint8_t> span = get_reg_span(op, spans, kReg);
 +    if (is_signed) {
        return static_cast<int8_t>(span[kE]);
      }
      return static_cast<uint8_t>(span[kE]);
    };
  
++  uint32_t accumulated_fp_flags = 0;
++
    for (int mm = 0; mm < kTileM; mm++) {
      for (int nn = 0; nn < kTileN; nn++) {
-       if (kIsFp) {
-         float acc =
-             matrix_state->GetElem<float>(kDestTile, mm, nn, kTileElementWidth);
+-      if (kIsFp) {
+-        float acc =
+-            matrix_state->GetElem<float>(kDestTile, mm, nn, kTileElementWidth);
++      if (kind == RiscVZvtMatmulKind::kFp32) {
++        uint32_t acc = matrix_state->GetElem<uint32_t>(kDestTile, mm, nn,
++                                                       kTileElementWidth);
++        for (int kk = 0; kk < kTileK; kk++) {
++          const uint32_t a_val = read_u32(a, a_spans, kk, mm);
++          const uint32_t b_val = read_u32(b, b_spans, kk, nn);
++          const uint32_t prod =
++              F32Mul(a_val, b_val, kFrm, &accumulated_fp_flags);
++          acc = F32Add(acc, prod, kFrm, &accumulated_fp_flags);
++        }
++        matrix_state->SetElem<uint32_t>(kDestTile, mm, nn, kTileElementWidth,
++                                        acc);
++      } else if (kind == RiscVZvtMatmulKind::kBf16) {
++        uint32_t acc = matrix_state->GetElem<uint32_t>(kDestTile, mm, nn,
++                                                       kTileElementWidth);
++        uint16_t in_a[2] = {0, 0};
++        uint16_t in_b[2] = {0, 0};
          for (int kk = 0; kk < kTileK; kk++) {
 -          acc += read_fp(a, a_spans, kk, mm) * read_fp(b, b_spans, kk, nn);
-+          float a_val = read_fp(a, a_spans, kk, mm);
-+          float b_val = read_fp(b, b_spans, kk, nn);
-+          acc = std::fma(a_val, b_val, acc);
-+        }
-+        if (std::isnan(acc)) {
-+          uint32_t nan_bits = 0x7fc00000;
-+          std::memcpy(&acc, &nan_bits, sizeof(float));
++          in_a[kk] = read_u16(a, a_spans, kk, mm);
++          in_b[kk] = read_u16(b, b_spans, kk, nn);
          }
-         matrix_state->SetElem<float>(kDestTile, mm, nn, kTileElementWidth, acc);
+-        matrix_state->SetElem<float>(kDestTile, mm, nn, kTileElementWidth, acc);
++        const uint32_t dot =
++            BulkNormDotBf16(in_a, in_b, &accumulated_fp_flags);
++        acc = F32AddOdd(acc, dot, &accumulated_fp_flags);
++        matrix_state->SetElem<uint32_t>(kDestTile, mm, nn, kTileElementWidth,
++                                        acc);
        } else {
          int32_t acc = matrix_state->GetElem<int32_t>(kDestTile, mm, nn,
                                                       kTileElementWidth);
@@ -541,8 +1473,25 @@ index 9a7965b..f7fa184 100644
          }
          matrix_state->SetElem<int32_t>(kDestTile, mm, nn, kTileElementWidth,
                                         acc);
+       }
+     }
+   }
++
++  if (kIsFp) {
++    // Spec §12.1.1.8: Only NV and OF flags are updated by floating-point matrix
++    // operations; NX, UF, and DZ are not updated.
++    const uint32_t kZvtFpFlags =
++        accumulated_fp_flags & (kFpFlagInvalid | kFpFlagOverflow);
++    if (kZvtFpFlags != 0 && inst->DestinationsSize() > 0 &&
++        inst->Destination(0) != nullptr) {
++      WriteScalar(inst, 0, kZvtFpFlags);
++    }
++  }
+ }
+ 
+ }  // namespace mpact::sim::riscv
 diff --git a/riscv/riscv_zvt_instructions.h b/riscv/riscv_zvt_instructions.h
-index 94779de..4f79eed 100644
+index 94779de..c99c98b 100644
 --- a/riscv/riscv_zvt_instructions.h
 +++ b/riscv/riscv_zvt_instructions.h
 @@ -29,7 +29,7 @@ using ::mpact::sim::generic::Instruction;
@@ -563,7 +1512,7 @@ index 94779de..4f79eed 100644
  // Tile manipulation instructions (Zvtbase).
  //   vtzero mtd         : zeroes the tm x tn submatrix of tile mtd.
 diff --git a/riscv/riscv_zvt_state.cc b/riscv/riscv_zvt_state.cc
-index 1234567..89abcdef 100644
+index a00168d..326faf0 100644
 --- a/riscv/riscv_zvt_state.cc
 +++ b/riscv/riscv_zvt_state.cc
 @@ -31,6 +31,7 @@ namespace mpact::sim::riscv {
@@ -575,10 +1524,20 @@ index 1234567..89abcdef 100644
  absl::StatusOr<std::unique_ptr<RiscVZvtMatrixState>>
  RiscVZvtMatrixState::Create(
 diff --git a/riscv/riscv_zvt_state.h b/riscv/riscv_zvt_state.h
-index 40a1007..ad43383 100644
+index 40a1007..7c42808 100644
 --- a/riscv/riscv_zvt_state.h
 +++ b/riscv/riscv_zvt_state.h
-@@ -80,6 +80,10 @@ class RiscVMtypeCsr : public ::mpact::sim::riscv::RiscVSimpleCsr<uint32_t> {
+@@ -53,6 +53,9 @@ inline constexpr uint32_t kMtypeTkShift = 5;
+ inline constexpr uint32_t kMtypeTkMask = 0x7;
+ inline constexpr uint32_t kMtypeTmShift = 10;
+ inline constexpr uint32_t kMtypeTmMask = 0x3FFF;
++inline constexpr uint32_t kMtypeValidMask =
++    (kMtypeTmMask << kMtypeTmShift) | (kMtypeTkMask << kMtypeTkShift) |
++    (kMtypeMtwidenMask << kMtypeMtwidenShift);
+ 
+ // Default tile-edge dimension (TE). The tile state is fixed at the
+ // implementation maximum; the runtime-usable extents are bounded by tk/tm/tn.
+@@ -80,6 +83,10 @@ class RiscVMtypeCsr : public ::mpact::sim::riscv::RiscVSimpleCsr<uint32_t> {
    // Overrides: read the live value from the matrix state.
    uint32_t AsUint32() override;
    uint64_t AsUint64() override;
@@ -589,7 +1548,7 @@ index 40a1007..ad43383 100644
  
    [[nodiscard]] RiscVZvtMatrixState* matrix_state() const {
      return matrix_state_;
-@@ -110,6 +114,20 @@ class RiscVZvtMatrixState {
+@@ -110,6 +117,20 @@ class RiscVZvtMatrixState {
      return state_;
    }
  
@@ -610,3 +1569,18 @@ index 40a1007..ad43383 100644
    // Byte offset into tile_buffer_ for element (tile,row,col) at the given tile
    // element width `tile_element_width` (in bits: 8/16/32/64). Transcribed
    // verbatim from the Zvt v0.3 spec (15.1.1.1, "Tile Punning"). `tile` is the
+@@ -134,7 +155,13 @@ class RiscVZvtMatrixState {
+ 
+   // mtype accessors. The mtype value is held here; the CSR is a read-only view.
+   [[nodiscard]] uint32_t mtype() const { return mtype_; }
+-  void set_mtype(uint32_t value) { mtype_ = value; }
++  void set_mtype(uint32_t value) {
++    if ((value & kMtypeMtwidenMask) == 0) {
++      mtype_ = 0;
++    } else {
++      mtype_ = value & kMtypeValidMask;
++    }
++  }
+ 
+   // Decoded mtype fields.
+   [[nodiscard]] int mtwiden() const {

@@ -158,9 +158,9 @@ class TestCoralNPUV2SimPybind(unittest.TestCase):
 
     def test_architecture_option(self):
         """Verifies configuring the simulator architecture."""
-        self.assertEqual(self.sim.options.architecture, Architecture.kM3)
-        sim = CoralNPUV2Simulator(architecture=Architecture.kM4)
-        self.assertEqual(sim.options.architecture, Architecture.kM4)
+        self.assertEqual(self.sim.options.architecture, Architecture.kM4)
+        sim = CoralNPUV2Simulator(architecture=Architecture.kM3)
+        self.assertEqual(sim.options.architecture, Architecture.kM3)
         entry_point, _ = sim.get_elf_entry_and_symbol(self.elf_path, [])
         sim.load_program(self.elf_path, entry_point)
         self.assertEqual(sim.step(5), 5)

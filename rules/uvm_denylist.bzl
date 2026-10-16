@@ -40,8 +40,6 @@ DENYLIST = [
     # Exclude until MPACT supports the vector bf16 spec.
     "*bf16*",
     "//tests/cocotb:zvfbf_test",
-    # Exclude until MPACT supports VME.
-    "*vme*",
     # Exclude remaining ml_ops tests from regression
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_highmem",
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly_itcm512kb_dtcm512kb",
@@ -51,8 +49,6 @@ DENYLIST = [
     # 2) UVM testbench lacks mechanism to initialize input/scale/zp data in external memory.
     "//internal/kernels:*",
     "//internal/kernels/*",
-    "//tests/cocotb/vme_test:vme_matmul_test",
-    "//tests/cocotb/vme_test:vme_mset_test",
 ]
 
 # List of targets to exclude from Spike co-simulation (e.g. tests requiring external IRQs)
@@ -79,6 +75,8 @@ TIMEOUT_MAP = {
     "//tests/cocotb/rvv/ml_ops:rvv_matmul_assembly": 100000000,
     "//tests/cocotb/rvv/ml_ops/static_reference_tests:float_matmul_16x48x16": 100000000,
     "//tests/cocotb/rvv/ml_ops/static_reference_tests:int_matmul_16x48x16": 100000000,
+    "//tests/cocotb/vme_test:vme_load_store_test": 1000000,
+    "//tests/cocotb/vme_test:vme_transpose_test": 1000000,
 }
 
 def is_uvm_denylisted(target):
