@@ -59,6 +59,7 @@ cc_test(
         ":fst_query_lib",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
+        "@com_googlesource_code_re2//:re2",
         "@verilator//:verilator_runtime",
     ],
 )
