@@ -38,7 +38,7 @@ RESULT_WORDS = 6
 
 
 def _pack_mtype(tm, tk, mtwiden):
-    """Pack tm/tk/mtwiden into the mtype CSR bit layout (Zvt §15.1.1.2)."""
+    """Pack tm/tk/mtwiden into the mtype CSR bit layout (Zvt §12.1.1.2)."""
     return ((tm & 0x3FFF) << 10) | ((tk & 0x7) << 5) | (mtwiden & 0x3)
 
 
@@ -1138,7 +1138,7 @@ async def vme_altfmt_test(dut):
 
     # struct VmeAltfmtCase { uint32_t mtype_value; uint32_t vtype_value; };
     # struct VmeAltfmtResult { uint32_t mtype_readback; uint32_t vtype_readback; };
-    # vtype CSR Bit Layout (RV32 with VME / Zvt §1.2 & §15.1.1.4):
+    # vtype CSR Bit Layout (RV32 with VME / Zvt §12.1.1.4 & §12.1.1.8):
     #   [31]   : vill
     #   [30:9] : reserved (0)
     #   [8]    : altfmt
@@ -1532,7 +1532,7 @@ async def vme_mstatus_ms_test(dut):
     assert sd_step2 == 0, f"Step 2: Expected SD=0, got {sd_step2}"
 
     # Step 3: After vtdiscard: MS = 2'b01 (Initial), VS = 2'b11 (Dirty), FS = 2'b01 (Initial), SD = 1
-    # Per Zvt v0.3 spec: "For the purposes of the mstatus.VS and vsstatus.VS fields,
+    # Per Zvt §12.1.1.10: "For the purposes of the mstatus.VS and vsstatus.VS fields,
     # all Zvt instructions (including configuration instructions) are considered to modify vector state."
     ms_step3 = (mstatus_words[3] >> 29) & 0x3
     sd_step3 = (mstatus_words[3] >> 31) & 0x1
@@ -1560,7 +1560,7 @@ async def vme_mstatus_ms_test(dut):
     assert sd_step5 == 1, f"Step 5: Expected SD=1, got {sd_step5}"
 
     # All 19 Zvt instructions preceded immediately by csrw mstatus (MS=2 Clean, FS=1 Initial, VS=1 Initial)
-    # Expected (MS, FS, VS, SD) per Zvt v0.3 specification:
+    # Expected (MS, FS, VS, SD) per Zvt §12.1.1.10:
     # - All Zvt instructions modify vector state -> VS = 3 (Dirty), SD = 1
     # - Tile-writing instructions modify matrix state -> MS = 3 (Dirty)
     # - vtdiscard discards matrix state -> MS = 1 (Initial)

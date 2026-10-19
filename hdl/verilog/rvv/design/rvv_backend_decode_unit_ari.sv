@@ -3715,7 +3715,7 @@ module rvv_backend_decode_unit_ari
 
         `ifdef ZVT_ON
           VTXMMXTVV: begin
-            // Per Zvt §15.1.1.8 matrix arith traps on non-zero vstart.
+            // Per Zvt §12.1.1.8 matrix arith traps on non-zero vstart.
             // Mirrors the OPIVV arm at line 3147-3151 which already gates on
             // (csr_vstart=='b0).
             check_special = inst_vm&check_tm&check_tn&check_tk&check_mtd_align&(csr_vstart=='b0)&(csr_mtwiden!=2'b00);

@@ -252,7 +252,7 @@ module RvvFrontEnd#(parameter N = 4,
           is_setvl[i] = 1;
         end
 `ifdef ZVT_ON
-        // VME (Zvt v0.4 §12.1.1.4) mset* family.
+        // VME (Zvt §12.1.1.4) mset* family.
         // msetmtype: funct7 = 7'b1000010, rd = x0 (bits[4:0] == 5'b00000)
         else if (inst_q[i].bits[24:18] == 7'b1000010 && inst_q[i].bits[4:0] == 5'b00000) begin
           // mtype <- rs1, vtype <- rs2 (vsetvl semantics), vl <- 0.
@@ -413,7 +413,7 @@ module RvvFrontEnd#(parameter N = 4,
         if (inst_config_state[i+1].altfmt && (inst_config_state[i+1].sew >= SEW32)) begin
           inst_config_state[i+1].vill = 1'b1;
         end
-        // Zvt §15.1.1.4: vill |= (SEW * TWIDEN > ELEN). With ELEN=32:
+        // Zvt §12.1.1.4: vill |= (SEW * TWIDEN > ELEN). With ELEN=32:
         // SEW16 with mtwiden=3 (TWIDEN=4) -> TEW=64 > 32
         // SEW32 with mtwiden>=2 (TWIDEN>=2) -> TEW>=64 > 32
         if (inst_config_state[i+1].mtwiden != 2'b00) begin
@@ -566,7 +566,7 @@ module RvvFrontEnd#(parameter N = 4,
       config_state_q.lmul <= LMUL1;
       config_state_q.lmul_orig <= LMUL1;
 `ifdef ZVT_ON
-      // VME (Zvt) §15.1.1.2 says mtype is implicitly zero when mtwiden==0
+      // VME (Zvt) §12.1.1.2 says mtype is implicitly zero when mtwiden==0
       // ("matrix unit is not configured"). Reset to that state.
       config_state_q.altfmt  <= 1'b0;
       config_state_q.mtwiden <= 2'b00;

@@ -114,11 +114,20 @@ index 563370e..6cade7a 100644
    if (!is_illegal) {
      if (static_cast<int>(sew_bits) > max_elen_) {
 diff --git a/riscv/riscv_zvt.bin_fmt b/riscv/riscv_zvt.bin_fmt
-index dde5ca3..902caad 100644
+index dde5ca3..f52a19d 100644
 --- a/riscv/riscv_zvt.bin_fmt
 +++ b/riscv/riscv_zvt.bin_fmt
-@@ -19,32 +19,33 @@
- // msettn/tm/tk    func7 == 0b100'0010, selected by the low rs2 bits.
+@@ -13,38 +13,39 @@
+ // limitations under the License.
+ 
+ // Matrix configuration instructions, encoded in the vector-configuration
+-// (OP-V) major opcode like the vset* family (spec 15.1.1.4). They are
++// (OP-V) major opcode like the vset* family (spec 12.1.1.4). They are
+ // distinguished from vsetvl (func7 == 0b100'0000) by func7:
+-//   msetmtype       func7 == 0b100'0001
+-// msettn/tm/tk    func7 == 0b100'0010, selected by the low rs2 bits.
++//   msetmtype       func7 == 0b100'0010
++// msettn/tm/tk    func7 == 0b100'0100, selected by the low rs2 bits.
  
  instruction group RiscVZvtInst32[32] : Inst32Format {
 -  msetmtype     : VConfig : func7 == 0b100'0001,                 func3 == 0b111, opcode == 0b101'0111;
@@ -172,9 +181,18 @@ index dde5ca3..902caad 100644
 +  vtfmm_alt_tvv : VMatrix : func6 == 0b111'100, vm == 0b1, func3 == 0b001, alt == 0b1, opcode == 0b111'0111;
  };
 diff --git a/riscv/riscv_zvt.isa b/riscv/riscv_zvt.isa
-index db77d9e..80ff64f 100644
+index db77d9e..c4257ee 100644
 --- a/riscv/riscv_zvt.isa
 +++ b/riscv/riscv_zvt.isa
+@@ -12,7 +12,7 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
+-// Zvtbase matrix configuration instructions (spec 15.1.1.4).
++// Zvtbase matrix configuration instructions (spec 12.1.1.4).
+ slot riscv_zvt {
+   includes {
+     #include "riscv/riscv_zvt_instructions.h"
 @@ -31,6 +31,9 @@ slot riscv_zvt {
      msettk{: rs1 : rd},
        disasm: "msettk", "%rd, %rs1",
@@ -185,6 +203,19 @@ index db77d9e..80ff64f 100644
  
      // Tile manipulation.
      vtzero{: mtd : },
+diff --git a/riscv/riscv_zvt_getters.h b/riscv/riscv_zvt_getters.h
+index a1b2c3d..e4f5a6b 100644
+--- a/riscv/riscv_zvt_getters.h
++++ b/riscv/riscv_zvt_getters.h
+@@ -75,7 +75,7 @@ inline ::mpact::sim::generic::DestinationOperandInterface*
+ }
+ 
+ // The maximum vector-register window a matrix operand row group can span (one
+-// eight-register group, per spec 15.1.1.3).
++// eight-register group, per spec 12.1.1.3).
+ inline constexpr int kRiscVZvtMatrixGroupRegs = 8;
+ 
+ template <typename SourceOpEnum, typename Extractors>
 diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
 index 9a7965b..1c70e2e 100644
 --- a/riscv/riscv_zvt_instructions.cc
@@ -1491,12 +1522,26 @@ index 9a7965b..1c70e2e 100644
  
  }  // namespace mpact::sim::riscv
 diff --git a/riscv/riscv_zvt_instructions.h b/riscv/riscv_zvt_instructions.h
-index 94779de..c99c98b 100644
+index 94779de..6f85c42 100644
 --- a/riscv/riscv_zvt_instructions.h
 +++ b/riscv/riscv_zvt_instructions.h
-@@ -29,7 +29,7 @@ using ::mpact::sim::generic::Instruction;
+@@ -13,8 +13,8 @@
+ // limitations under the License.
+ 
+ // Semantic functions for the RISC-V Vector Matrix Extension (Zvt / "VME",
+-// spec v0.3). This header declares the matrix configuration instructions
+-// (Zvtbase, spec 15.1.1.4). Tile move/load/store and the matrix-multiply
++// spec). This header declares the matrix configuration instructions
++// (Zvtbase, spec 12.1.1.4). Tile move/load/store and the matrix-multiply
+ // instructions are added in their respective translation units.
+ 
+ #ifndef THIRD_PARTY_MPACT_RISCV_RISCV_ZVT_INSTRUCTIONS_H_
+@@ -27,9 +27,9 @@ namespace mpact::sim::riscv {
+ using ::mpact::sim::generic::Instruction;
+ 
  // KMAX (max inner dot-product depth) as a function of SEW in bits.
- // Per spec 15.1.1.4: KMAX = max(1, 32 / SEW). int8->4, bf16(16)->2, fp32->1.
+-// Per spec 15.1.1.4: KMAX = max(1, 32 / SEW). int8->4, bf16(16)->2, fp32->1.
++// Per spec 12.1.1.4: KMAX = max(1, 32 / SEW). int8->4, bf16(16)->2, fp32->1.
  inline int RiscVZvtKmax(int sew_bits) {
 -  return sew_bits >= 32 ? 1 : (32 / sew_bits);
 +  return sew_bits <= 0 ? 0 : (sew_bits >= 32 ? 1 : (32 / sew_bits));
@@ -1511,8 +1556,17 @@ index 94779de..c99c98b 100644
  
  // Tile manipulation instructions (Zvtbase).
  //   vtzero mtd         : zeroes the tm x tn submatrix of tile mtd.
+@@ -64,7 +65,7 @@ void RiscVZvtVtle(int eew_bits, const Instruction* inst);
+ void RiscVZvtVtse(int eew_bits, const Instruction* inst);
+ 
+ // Matrix-multiply instructions: C[m,n] += sum_k A[k,m] * B[k,n], with C in a
+-// tile and A/B sourced from vector register groups (spec 15.1.1.8).
++// tile and A/B sourced from vector register groups (spec 12.1.1.8).
+ // M is the number of rows of C, N is the number of columns of C, and
+ // K is the inner dimension of the dot product.
+ enum class RiscVZvtMatmulKind {
 diff --git a/riscv/riscv_zvt_state.cc b/riscv/riscv_zvt_state.cc
-index a00168d..326faf0 100644
+index a00168d..4720d93 100644
 --- a/riscv/riscv_zvt_state.cc
 +++ b/riscv/riscv_zvt_state.cc
 @@ -31,6 +31,7 @@ namespace mpact::sim::riscv {
@@ -1523,11 +1577,45 @@ index a00168d..326faf0 100644
  
  absl::StatusOr<std::unique_ptr<RiscVZvtMatrixState>>
  RiscVZvtMatrixState::Create(
+@@ -79,7 +80,7 @@ int RiscVZvtMatrixState::sew_bytes() const {
+   return rv_vector == nullptr ? 1 : rv_vector->selected_element_width();
+ }
+ 
+-// Transcribed verbatim from the Zvt v0.3 spec (15.1.1.1, "Tile Punning").
++// Transcribed verbatim from the Zvt spec (12.1.1.1, "Tile Punning").
+ int RiscVZvtMatrixState::Punning(int tile, int row, int col,
+                                  int tile_element_width) const {
+   const int kTileElements = tile_elements_;
 diff --git a/riscv/riscv_zvt_state.h b/riscv/riscv_zvt_state.h
-index 40a1007..7c42808 100644
+index 40a1007..8f9d604 100644
 --- a/riscv/riscv_zvt_state.h
 +++ b/riscv/riscv_zvt_state.h
-@@ -53,6 +53,9 @@ inline constexpr uint32_t kMtypeTkShift = 5;
+@@ -13,12 +13,12 @@
+ // limitations under the License.
+ 
+ // Architectural state for the RISC-V Vector Matrix Extension (Zvt / "VME",
+-// spec v0.3, chapter 15.1). This is layered on top of the existing RISC-V
++// spec, chapter 12.1). This is layered on top of the existing RISC-V
+ // vector state: the matrix unit sources its A/B operands from vector registers
+ // and accumulates results into the new square matrix "tile" state modeled here.
+ //
+-// NOTE: Zvt is a draft (v0.3) extension. The mtype CSR field positions below
+-// follow the v0.3 manual (15.1.1.2). They are isolated as named constants so
++// NOTE: Zvt is a draft extension. The mtype CSR field positions below
++// follow the manual (12.1.1.2). They are isolated as named constants so
+ // they can be adjusted if the encoding firms up.
+ 
+ #ifndef THIRD_PARTY_MPACT_RISCV_RISCV_ZVT_STATE_H_
+@@ -38,7 +38,7 @@
+ 
+ namespace mpact::sim::riscv {
+ 
+-// mtype CSR address (unprivileged, read-only). Spec 15.1.1.2.
++// mtype CSR address (unprivileged, read-only). Spec 12.1.1.2.
+ inline constexpr uint64_t kRiscVMtypeCsrIndex = 0xC23;
+ 
+ // mtype field layout (see note above re: draft status).
+@@ -53,10 +53,13 @@ inline constexpr uint32_t kMtypeTkShift = 5;
  inline constexpr uint32_t kMtypeTkMask = 0x7;
  inline constexpr uint32_t kMtypeTmShift = 10;
  inline constexpr uint32_t kMtypeTmMask = 0x3FFF;
@@ -1537,6 +1625,11 @@ index 40a1007..7c42808 100644
  
  // Default tile-edge dimension (TE). The tile state is fixed at the
  // implementation maximum; the runtime-usable extents are bounded by tk/tm/tn.
+-// Constraint (spec 15.1.1.1): TE a power of two, VLEN/4 >= TE >= 4. With
++// Constraint (spec 12.1.1.1): TE a power of two, VLEN/4 >= TE >= 4. With
+ // VLEN = 128 bits (kRiscVV2VectorByteLength = 16 bytes), VLEN/4 = 32.
+ inline constexpr int kRiscVZvtDefaultTe = 32;
+ 
 @@ -80,6 +83,10 @@ class RiscVMtypeCsr : public ::mpact::sim::riscv::RiscVSimpleCsr<uint32_t> {
    // Overrides: read the live value from the matrix state.
    uint32_t AsUint32() override;
@@ -1548,7 +1641,7 @@ index 40a1007..7c42808 100644
  
    [[nodiscard]] RiscVZvtMatrixState* matrix_state() const {
      return matrix_state_;
-@@ -110,6 +117,20 @@ class RiscVZvtMatrixState {
+@@ -110,8 +117,22 @@ class RiscVZvtMatrixState {
      return state_;
    }
  
@@ -1568,7 +1661,10 @@ index 40a1007..7c42808 100644
 +
    // Byte offset into tile_buffer_ for element (tile,row,col) at the given tile
    // element width `tile_element_width` (in bits: 8/16/32/64). Transcribed
-   // verbatim from the Zvt v0.3 spec (15.1.1.1, "Tile Punning"). `tile` is the
+-  // verbatim from the Zvt v0.3 spec (15.1.1.1, "Tile Punning"). `tile` is the
++  // verbatim from the Zvt spec (12.1.1.1, "Tile Punning"). `tile` is the
+   // named tile index (0..15); `tile_element_width` selects the aliasing scheme.
+   int Punning(int tile, int row, int col, int tile_element_width) const;
 @@ -134,7 +155,13 @@ class RiscVZvtMatrixState {
  
    // mtype accessors. The mtype value is held here; the CSR is a read-only view.

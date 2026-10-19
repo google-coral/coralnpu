@@ -32,7 +32,7 @@ extern "C" {
 
 __attribute__((noinline)) void run_mset_vtmmu_sequence(void) {
   asm volatile(
-      // Part 1: Integer vtmmu.tvv sequence (Zvt §15.1.1.8: SEW=8, TWIDEN=4, KMAX=4)
+      // Part 1: Integer vtmmu.tvv sequence (Zvt §12.1.1.8: SEW=8, TWIDEN=4, KMAX=4)
       // x6 (mtype): tm=16 (bit 14=1), tk=2 (bits 6:5=2), mtwiden=3 (bits 1:0=3) => 0x4043
       // x9 (vtype): altfmt=0, SEW=8 (bits 5:3=0), LMUL=1 (bits 2:0=0) => 0x000
       "lui   x6, 0x4 \n"

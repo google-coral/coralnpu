@@ -602,3 +602,16 @@ index 697bd21..198bd14 100755
    EXPECT_EQ(mstatus_->GetUint32() & kMsMask32, kMsDirty << 29);
    EXPECT_EQ(mstatus_->AsUint32() & kMsMask32, kMsDirty << 29);
  
+diff --git a/sim/test/coralnpu_m4_state_test.cc b/sim/test/coralnpu_m4_state_test.cc
+index 1234567..89abcdef 100755
+--- a/sim/test/coralnpu_m4_state_test.cc
++++ b/sim/test/coralnpu_m4_state_test.cc
+@@ -33,7 +33,7 @@ using ::mpact::sim::util::FlatDemandMemory;
+ 
+ // The set of named tiles that exist for each TILE_ELEMENT_WIDTH, and the
+ // effective tile edge (EFFECTIVE_TILE_EDGE) over which row/col indices are
+-// valid. These come straight from the spec's tile-count table (15.1.1.1).
++// valid. These come straight from the spec's tile-count table (12.1.1.1).
+ struct TileElementWidthConfig {
+   int tile_element_width;
+   std::vector<int> tiles;
