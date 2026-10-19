@@ -1170,9 +1170,31 @@ async def vme_altfmt_test(dut):
     # Case 3: unconfigured matrix unit (mtwiden=0):
     #   mtype: 0x0 (mtwiden=0)
     #   vtype in rs2: 0x108 (altfmt=1, sew=16, lmul=0)
-    #   When mtwiden == 0, matrix unit is unconfigured, so altfmt should be 0.
+    #   When mtwiden == 0, mtype is 0 and vtype is written as though by vsetvl,
+    #   preserving valid altfmt=1 for sew=16.
     #   Expected mtype: 0x0
-    #   Expected vtype: 0x008 (altfmt=0, ma=0, ta=0, sew=16, lmul=1)
+    #   Expected vtype: 0x108 (altfmt=1, ma=0, ta=0, sew=16, lmul=1)
+    #
+    # Case 4: context save/restore of vill=1 via csrr + msetmtype:
+    #   Trigger vill=1 (msetmtype(0x4083, 0x108)), save mtype/vtype with csrr,
+    #   clobber with valid config, and restore via msetmtype.
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x80000000
+    #
+    # Case 5: context save/restore of altfmt=1 via csrr + vsetvl:
+    #   Configure altfmt=1 (msetmtype(0x4042, 0x108) -> vtype=0x1C9), save
+    #   vtype/vl with csrr, clobber vtype with vsetvli (e32, m1), and restore
+    #   via vsetvl.
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x1C9
+    #
+    # Case 6: vsetvli with zimm[8] (altfmt=1) set (zimm11=0x1C9):
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x1C9
+    #
+    # Case 7: vsetivli with zimm[8] (altfmt=1) set (uimm5=8, zimm10=0x1C9):
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x1C9
     cases = [
         dict(
             desc="altfmt=1 with valid mtwiden=2 (sew=16)",
@@ -1196,11 +1218,39 @@ async def vme_altfmt_test(dut):
             expected_vtype=0x80000000,
         ),
         dict(
-            desc="unconfigured matrix unit (mtwiden=0) clears altfmt",
+            desc="unconfigured matrix unit (mtwiden=0) preserves altfmt",
             mtype=0x0000,
             vtype=0x108,
             expected_mtype=0x0000,
-            expected_vtype=0x008,
+            expected_vtype=0x108,
+        ),
+        dict(
+            desc="context save/restore of vill=1 via csrr + msetmtype",
+            mtype=0x0000,
+            vtype=0x0000,
+            expected_mtype=0x0000,
+            expected_vtype=0x80000000,
+        ),
+        dict(
+            desc="context save/restore of altfmt=1 via csrr + vsetvl",
+            mtype=0x0000,
+            vtype=0x0000,
+            expected_mtype=0x0000,
+            expected_vtype=0x1C9,
+        ),
+        dict(
+            desc="vsetvli with zimm[8] (altfmt=1) set",
+            mtype=0x0000,
+            vtype=0x0000,
+            expected_mtype=0x0000,
+            expected_vtype=0x1C9,
+        ),
+        dict(
+            desc="vsetivli with zimm[8] (altfmt=1) set",
+            mtype=0x0000,
+            vtype=0x0000,
+            expected_mtype=0x0000,
+            expected_vtype=0x1C9,
         ),
     ]
 
@@ -1226,6 +1276,10 @@ async def vme_altfmt_test(dut):
             f"  mtype expected=0x{case['expected_mtype']:08x} actual=0x{actual_mtype:08x}\n"
             f"  vtype expected=0x{case['expected_vtype']:08x} actual=0x{actual_vtype:08x}"
         )
+
+    for i, case in enumerate(cases):
+        actual_mtype = int(results[i][0])
+        actual_vtype = int(results[i][1])
         assert actual_mtype == case["expected_mtype"], (
             f"case {i} ({case['desc']}) mtype mismatch: "
             f"got 0x{actual_mtype:08x}, expected 0x{case['expected_mtype']:08x}"

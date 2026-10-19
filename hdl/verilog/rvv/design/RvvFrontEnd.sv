@@ -144,6 +144,7 @@ module RvvFrontEnd#(parameter N = 4,
   RegDataT avl [N-1:0];
   RegDataT vlmax [N-1:0];
   logic is_setvl [N-1:0];
+  logic setvl_rs2_reserved [N-1:0];
   logic [`VL_WIDTH-1:0] vl_minus_one [N-1:0];
 `ifdef ZVT_ON
   // tm = min(tm, LMUL*EVE, ETE) = min(tm, 16)
@@ -173,6 +174,7 @@ module RvvFrontEnd#(parameter N = 4,
       avl[i] = 0;
       vlmax[i] = 0;
       is_setvl[i] = 0;
+      setvl_rs2_reserved[i] = 0;
 `ifdef ZVT_ON
       mset_writes_rd[i] = 0;
       mset_rd_data[i] = 0;
@@ -196,12 +198,13 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].sew = RVVSEW'(inst_q[i].bits[18:16]);
           inst_config_state[i+1].ta = inst_q[i].bits[19];
           inst_config_state[i+1].ma = inst_q[i].bits[20];
+          setvl_rs2_reserved[i] = |inst_q[i].bits[23:22];
 `ifdef ZVT_ON
           // Zvt §12.1.1.4: vset[i]vl[i] instructions write zero to mtype CSR
           inst_config_state[i+1].mtwiden = 2'b00;
           inst_config_state[i+1].tk     = 3'b000;
           inst_config_state[i+1].tm     = 14'd0;
-          inst_config_state[i+1].altfmt = 1'b0;
+          inst_config_state[i+1].altfmt = inst_q[i].bits[21];
 `endif
           is_setvl[i] = 1;
         end else if (inst_q[i].bits[24:23] == 2'b11) begin  // vsetivli
@@ -211,12 +214,13 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].sew = RVVSEW'(inst_q[i].bits[18:16]);
           inst_config_state[i+1].ta = inst_q[i].bits[19];
           inst_config_state[i+1].ma = inst_q[i].bits[20];
+          setvl_rs2_reserved[i] = inst_q[i].bits[22];
 `ifdef ZVT_ON
           // Zvt §12.1.1.4: vset[i]vl[i] instructions write zero to mtype CSR
           inst_config_state[i+1].mtwiden = 2'b00;
           inst_config_state[i+1].tk     = 3'b000;
           inst_config_state[i+1].tm     = 14'd0;
-          inst_config_state[i+1].altfmt = 1'b0;
+          inst_config_state[i+1].altfmt = inst_q[i].bits[21];
 `endif
           is_setvl[i] = 1;
         end else if (inst_q[i].bits[24:18] == 7'b1000000) begin  // vsetvl
@@ -237,12 +241,13 @@ module RvvFrontEnd#(parameter N = 4,
               RVVSEW'(reg_read_data_i[(2*i) + 1][5:3]);
           inst_config_state[i+1].ta = reg_read_data_i[(2*i) + 1][6];
           inst_config_state[i+1].ma = reg_read_data_i[(2*i) + 1][7];
+          setvl_rs2_reserved[i] = |reg_read_data_i[(2*i) + 1][31:9];
 `ifdef ZVT_ON
           // Zvt §12.1.1.4: vset[i]vl[i] instructions write zero to mtype CSR
           inst_config_state[i+1].mtwiden = 2'b00;
           inst_config_state[i+1].tk     = 3'b000;
           inst_config_state[i+1].tm     = 14'd0;
-          inst_config_state[i+1].altfmt = 1'b0;
+          inst_config_state[i+1].altfmt = reg_read_data_i[(2*i) + 1][8];
 `endif
           is_setvl[i] = 1;
         end
@@ -254,6 +259,8 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].mtwiden = reg_read_data_i[2*i][1:0];
           inst_config_state[i+1].sew =
               RVVSEW'(reg_read_data_i[(2*i) + 1][5:3]);
+          inst_config_state[i+1].altfmt = reg_read_data_i[(2*i) + 1][8];
+          setvl_rs2_reserved[i] = |reg_read_data_i[(2*i) + 1][31:9];
           if (reg_read_data_i[2*i][1:0] != 2'b00) begin
             // Zvt §12.1.1.4: When mtwiden != 0, vma and vta are set to 1,
             // and vlmul is derived:
@@ -262,7 +269,6 @@ module RvvFrontEnd#(parameter N = 4,
             //   SEW8  -> LMUL1 (3'b000)
             //   SEW16 -> LMUL2 (3'b001)
             //   SEW32 -> LMUL4 (3'b010)
-            inst_config_state[i+1].altfmt = reg_read_data_i[(2*i) + 1][8];
             inst_config_state[i+1].ta = 1'b1;
             inst_config_state[i+1].ma = 1'b1;
             unique case (inst_config_state[i+1].sew)
@@ -291,7 +297,6 @@ module RvvFrontEnd#(parameter N = 4,
                                         ? TILE_EDGE_DIM : reg_read_data_i[2*i][23:10];
           end else begin
             // Unconfigured (mtwiden == 0): mtype is 0, vtype takes rs2 as if by vsetvl.
-            inst_config_state[i+1].altfmt    = 1'b0;
             inst_config_state[i+1].tk        = 3'b000;
             inst_config_state[i+1].tm        = 14'd0;
             inst_config_state[i+1].lmul_orig =
@@ -311,8 +316,8 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].tm     = 14'd0;
           inst_config_state[i+1].sew     =
               RVVSEW'({1'b0, inst_q[i].bits[17:16]});
+          inst_config_state[i+1].altfmt = inst_q[i].bits[21];
           if (inst_q[i].bits[9:8] != 2'b00) begin
-            inst_config_state[i+1].altfmt = inst_q[i].bits[21];
             inst_config_state[i+1].ta = 1'b1;
             inst_config_state[i+1].ma = 1'b1;
             unique case (inst_config_state[i+1].sew)
@@ -322,7 +327,6 @@ module RvvFrontEnd#(parameter N = 4,
               default: inst_config_state[i+1].lmul_orig = LMULRESERVED;
             endcase
           end else begin
-            inst_config_state[i+1].altfmt = 1'b0;
             inst_config_state[i+1].lmul_orig = LMUL1;
             inst_config_state[i+1].ta = 1'b0;
             inst_config_state[i+1].ma = 1'b0;
@@ -399,8 +403,16 @@ module RvvFrontEnd#(parameter N = 4,
             endcase
           default: inst_config_state[i+1].vill = 1;
         endcase
+        if (setvl_rs2_reserved[i]) begin
+          inst_config_state[i+1].vill = 1'b1;
+        end
 
 `ifdef ZVT_ON
+        // Zvt §12.1.1.8: altfmt=1 is supported for SEW8 (Zvti8i32mm) and SEW16
+        // (Zvtbf16fmm), and is illegal for SEW >= SEW32.
+        if (inst_config_state[i+1].altfmt && (inst_config_state[i+1].sew >= SEW32)) begin
+          inst_config_state[i+1].vill = 1'b1;
+        end
         // Zvt §15.1.1.4: vill |= (SEW * TWIDEN > ELEN). With ELEN=32:
         // SEW16 with mtwiden=3 (TWIDEN=4) -> TEW=64 > 32
         // SEW32 with mtwiden>=2 (TWIDEN>=2) -> TEW>=64 > 32
