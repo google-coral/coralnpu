@@ -81,7 +81,11 @@ class RealFtdi : public FtdiInterface {
     return ftdi_read_data(ftdi_, buf, size);
   }
 
+#ifdef SIO_TCIFLUSH
   int purge_buffers() override { return ftdi_tcioflush(ftdi_); }
+#else
+  int purge_buffers() override { return ftdi_usb_purge_buffers(ftdi_); }
+#endif
 };
 
 struct ElfDeleter {

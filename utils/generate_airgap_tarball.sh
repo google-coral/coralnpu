@@ -121,6 +121,12 @@ done
 echo "ignore(\"@@nonhermetic\")" >> "${WORKDIR}/vendor/VENDOR.bazel"
 echo "ignore(\"@@+coralnpu_deps_ext+nonhermetic\")" >> "${WORKDIR}/vendor/VENDOR.bazel"
 rm -f "${WORKDIR}/vendor/bazel-external"
+while IFS= read -r -d '' link; do
+    target="$(readlink "${link}")"
+    if [[ "${target}" == *"bazel-external/"* ]]; then
+        ln -snf "${target//bazel-external\//}" "${link}"
+    fi
+done < <(find "${WORKDIR}/vendor" -type l -print0 || true)
 chmod -R a+rX "${WORKDIR}/vendor"
 
 ################################################################################
@@ -143,7 +149,7 @@ chmod +x "${WORKDIR}/bazel.sh"
 
 if [[ "${CREATE_TAR}" == "true" ]]; then
     TAR_PATH="${REPO_TOP}/coralnpu_airgap_${CORALNPU_VERSION}.tar"
-    tar --transform="s|/|/coralnpu_airgap_${CORALNPU_VERSION}/|" -cf "${TAR_PATH}" -C "${WORKDIR}" .
+    tar --transform="flags=r;s|^\./|coralnpu_airgap_${CORALNPU_VERSION}/|" -cf "${TAR_PATH}" -C "${WORKDIR}" .
     echo "Tarball containing dependencies for building CoralNPU offline is available at ${TAR_PATH}"
 else
     echo "Directory containing dependencies for building CoralNPU offline is available at ${WORKDIR}"

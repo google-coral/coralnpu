@@ -57,6 +57,7 @@ cc_library(
     name = "spike_simulator",
     srcs = ["spike_simulator.cc"],
     hdrs = ["spike_simulator.h"],
+    linkopts = ["-ldl"],
     deps = [
         "@riscv_isa_sim",
     ],
