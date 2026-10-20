@@ -182,7 +182,7 @@ def _verilator_cocotb_model_impl(ctx):
             --vpi \
             --prefix Vtop \
             -o {hdl_toplevel} \
-            -LDFLAGS "-rdynamic -Wl,-rpath {cocotb_lib_path} -L{cocotb_lib_path} -lcocotbvpi_verilator" \
+            -LDFLAGS "-rdynamic -Wl,-rpath {cocotb_lib_path} -L{cocotb_lib_path} -lcocotbvpi_verilator -ldl" \
             {trace} \
             {cflags} \
             -I. -Ihdl/verilog {dpi_includes} \

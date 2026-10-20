@@ -115,9 +115,9 @@ verilator_build_template(
         "@CFG_CXXFLAGS_PCH_I@": "-include",
         "@CFG_GCH_IF_CLANG@": "",
         "@CFG_LDFLAGS_VERILATED@": "",
-        "@CFG_LDLIBS_THREADS@": "-lpthread -latomic -lstdc++ -lm",
+        "@CFG_LDLIBS_THREADS@": "-lpthread -latomic -ldl -lstdc++ -lm",
         "@CFG_LDFLAGS_DYNAMIC@": "",
-        "@CFG_LDLIBS_DYNAMIC@": "",
+        "@CFG_LDLIBS_DYNAMIC@": "-ldl",
     },
     template = "include/verilated.mk.in",
     version = ":version",
@@ -396,6 +396,7 @@ cc_library(
     ],
     linkopts = [
         "-lpthread",
+        "-ldl",
         "-llz4",
     ],
     strip_include_prefix = "include/",
@@ -483,6 +484,7 @@ cc_library(
     linkopts = [
         "-lpthread",
         "-latomic",
+        "-ldl",
         "-llz4",
     ],
     strip_include_prefix = "include",

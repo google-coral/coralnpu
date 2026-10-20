@@ -21,7 +21,10 @@ cc_library(
     srcs = ["fst_query.cc"],
     hdrs = ["fst_query.h"],
     copts = ["-std=c++20"],
-    linkopts = ["-llz4"],
+    linkopts = [
+        "-ldl",
+        "-llz4",
+    ],
     deps = [
         "@com_google_absl//absl/flags:usage",
         "@com_google_absl//absl/status",

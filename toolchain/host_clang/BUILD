@@ -67,8 +67,10 @@ cc_toolchain_config(
         "-fuse-ld=lld",
         "-Wl,-no-as-needed",
         "-Wl,-z,relro,-z,now",
-        "-lm",
+    ],
+    link_libs = [
         "-lstdc++",
+        "-lm",
     ],
     opt_compile_flags = [
         "-g0",
