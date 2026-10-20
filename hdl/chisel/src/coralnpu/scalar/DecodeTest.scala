@@ -26,10 +26,12 @@ class DecodeInstructionSpec extends AnyFreeSpec with Matchers with ChiselSim {
     val io = IO(new Bundle {
       val inst  = Input(UInt(32.W))
       val undef = Output(Bool())
+      val fence = Output(Bool())
     })
 
     val d = DecodeInstruction(p, pipeline = 0, addr = 0.U, op = io.inst, csrFrm = 0.U)
     io.undef := d.undef
+    io.fence := d.fence
   }
 
   "DecodeInstruction" - {
@@ -61,6 +63,17 @@ class DecodeInstructionSpec extends AnyFreeSpec with Matchers with ChiselSim {
             dut.io.undef.peek().litValue == 0,
             s"Fence instruction 0x${word.toHexString} decoded as undef"
           )
+        }
+      }
+    }
+
+    "should decode FENCE.TSO and FENCE RW,RW as fences" in {
+      simulate(new DecodeTester(p)) { dut =>
+        for (word <- Seq(0x0330000fL, 0x8330000fL)) {
+          dut.io.inst.poke(word.U(32.W))
+          dut.clock.step()
+          dut.io.undef.expect(false.B)
+          dut.io.fence.expect(true.B)
         }
       }
     }
