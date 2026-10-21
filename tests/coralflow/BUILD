@@ -41,6 +41,12 @@ coralflow_test(
     ],
 )
 
+coralflow_test(
+    name = "test_rvv_vmv_x_s_vl0",
+    srcs = ["test_rvv_vmv_x_s_vl0.py"],
+    elf = "//tests/cocotb/rvv:rvv_vmv_x_s_vl0_test.elf",
+)
+
 py_test(
     name = "runner_test",
     srcs = ["runner_test.py"],

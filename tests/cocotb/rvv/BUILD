@@ -131,6 +131,9 @@ template_rule(
         "vwredsumu_test": {
             "srcs": ["vwredsumu_test.cc"],
         },
+        "rvv_vmv_x_s_vl0_test": {
+            "srcs": ["rvv_vmv_x_s_vl0_test.cc"],
+        },
     },
 )
 
@@ -147,6 +150,7 @@ filegroup(
         "rvv_vill_trap_squashed_load_test.elf",
         "rvv_vl0_v0_corruption_test.elf",
         "rvv_vleff_test.elf",
+        "rvv_vmv_x_s_vl0_test.elf",
         "rvv_vstart_dual_dispatch_lsu_test.elf",
         "rvv_vstart_forwarding_debug_test.elf",
         "rvv_vstart_forwarding_squash_test.elf",
