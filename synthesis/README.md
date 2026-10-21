@@ -2,6 +2,10 @@
 
 This directory contains the physical design infrastructure, synthesis automation, and timing characterization workflows for CoralNPU (`RvvCoreMiniAxi`) targeting modern open-source and predictive process design kits (PDKs) via [OpenROAD-flow-scripts (ORFS)](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts).
 
+For complete technical documentation on the ~200 MHz ASAP7 physical design flow, structural arithmetic optimizations, and benchmark results, see:
+
+* **[BUILDING_CORALNPU_WITH_OPENROAD.md](BUILDING_CORALNPU_WITH_OPENROAD.md)**: Full physical design report, Yosys arithmetic compiler analysis, structural RTL manifest, and post-route PPA metrics.
+
 ---
 
 ## 1. Directory Structure
@@ -9,6 +13,7 @@ This directory contains the physical design infrastructure, synthesis automation
 ```text
 synthesis/
 ├── .gitignore                      # Run artifact ignore rules
+├── BUILDING_CORALNPU_WITH_OPENROAD.md # ~200 MHz physical implementation guide & architectural analysis
 ├── README.md                       # This quickstart and user guide
 └── rvv_core_mini/
     ├── emit_rtl.sh                 # On-demand Bazel/Chisel SystemVerilog RTL generation

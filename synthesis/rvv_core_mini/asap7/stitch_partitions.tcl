@@ -79,5 +79,3 @@ write_verilog -nohex -nodec "$results_dir/1_2_yosys.v"
 file copy -force $::env(SDC_FILE) "$results_dir/1_2_yosys.sdc"
 
 puts "Stitching complete -> $results_dir/1_2_yosys.v"
-
-

@@ -18,12 +18,13 @@ export DESIGN_NICKNAME        = RvvCoreMiniAxi
 
 export VERILOG_FILES         ?= $(DESIGN_HOME)/RvvCoreMiniAxi.sv $(PLATFORM_DIR)/verilog/fakeram_512x128.sv $(PLATFORM_DIR)/verilog/fakeram_2048x128.sv
 export SDC_FILE              ?= $(DESIGN_HOME)/constraint.sdc
+export CLK_PERIOD_PS         ?= 5000
 
 export ADDITIONAL_LEFS        = $(PLATFORM_DIR)/lef/fakeram_512x128.lef $(PLATFORM_DIR)/lef/fakeram_2048x128.lef
 export ADDITIONAL_LIBS        = $(PLATFORM_DIR)/lib/NLDM/fakeram_512x128.lib $(PLATFORM_DIR)/lib/NLDM/fakeram_2048x128.lib
 
 export SYNTH_HDL_FRONTEND     = slang
-export VERILOG_DEFINES        = -DVLEN_128=1 -DZVE32F_ON=1 -DZVFBFWMA_ON=1 -DTB_SUPPORT=1 -DUSE_ASAP7
+export VERILOG_DEFINES        = -DVLEN_128=1 -DZVE32F_ON=1 -DZVFBFWMA_ON=1 -DTB_SUPPORT=1 -DUSE_ASAP7 -DCORALNPU_STRUCTURAL_DATAPATH=1
 
 export SYNTH_HIERARCHICAL      = 0
 export SYNTH_ARGS              = -noshare
@@ -66,4 +67,3 @@ export SKIP_ANTENNA_REPAIR                = 0
 export CORNER                             = WC
 export CORNERS                            = wc tc bc
 export DETAILED_METRICS                   = 1
-

@@ -144,6 +144,55 @@ module rvv_backend_pmtrdt_unit_reduction_alu
     end //for (i=0; i<ALU_BYTE; i++) begin : gen_cin
   endgenerate
 
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+  // Fast Parallel-Prefix Carry Lookahead across SIMD byte lanes
+  logic [ALU_BYTE-1:0][7:0] sum8_raw;
+  logic [ALU_BYTE-1:0]      g8, p8;
+  logic [ALU_BYTE-1:0]      cin_fast;
+
+  generate
+    for (i = 0; i < ALU_BYTE; i = i + 1) begin : gen_byte_cla
+      assign {g8[i], sum8_raw[i]} = src2_tmp[i][7:0] + src1_tmp[i][7:0];
+      assign p8[i] = (sum8_raw[i] == 8'hff);
+    end
+  endgenerate
+
+  always_comb begin
+    for (int b = 0; b < ALU_BYTE; b = b + 1) begin
+      if (b == 0 || is_lsb_byte[b]) begin
+        cin_fast[b] = cin[b];
+      end else begin
+        cin_fast[b] = g8[b-1] | (p8[b-1] & cin_fast[b-1]);
+      end
+    end
+  end
+
+  generate
+    for (i = 0; i < ALU_BYTE; i = i + 1) begin : gen_byte_alu
+      assign {cout[i], sum_dst[i]} = src2_tmp[i] + src1_tmp[i] + cin_fast[i];
+      assign and_dst[i] = src2[i][7:0] & src1[i][7:0];
+      assign or_dst[i]  = src2[i][7:0] | src1[i][7:0];
+      assign xor_dst[i] = src2[i][7:0] ^ src1[i][7:0];
+      assign lt[i]      = cout[i];
+      always_comb begin
+        case(ctrl.uop_funct6)
+          VMUNARY0,
+          VWRXUNARY0,
+          VREDSUM,
+          VWREDSUMU,
+          VWREDSUM: dst[i] = sum_dst[i][7:0];
+          VREDMAXU,
+          VREDMAX: dst[i] = ~elem_lt[i] ? src2[i][7:0] : src1[i][7:0];
+          VREDMINU,
+          VREDMIN: dst[i] = elem_lt[i] ? src2[i][7:0] : src1[i][7:0];
+          VREDAND: dst[i] = and_dst[i];
+          VREDOR:  dst[i] = or_dst[i];
+          default: dst[i] = xor_dst[i]; //VREDXOR
+        endcase
+      end
+    end
+  endgenerate
+`else
   generate
     for (i=0;i<ALU_BYTE;i++) begin : gen_byte_alu
       assign {cout[i],sum_dst[i]} = src2_tmp[i] + src1_tmp[i] + cin[i];
@@ -169,5 +218,6 @@ module rvv_backend_pmtrdt_unit_reduction_alu
       end
     end
   endgenerate
+`endif
 
 endmodule

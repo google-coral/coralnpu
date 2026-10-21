@@ -59,7 +59,11 @@ logic [7:0]                    mul8_in1[15:0];
 logic [15:0]                   mul8_in1_is_signed;
 logic [15:0]                   mul8_out[63:0];
 
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+logic [63:0][15:0]             mul8_out_d1;
+`else
 logic [15:0]                   mul8_out_d1[63:0];
+`endif
 
 logic                          rs2mul_uop_valid_d1;
 logic                          mul_src2_is_signed_d1;
@@ -89,11 +93,15 @@ logic [7:0]                    vsmul_sat_eew16_d1;
 logic [`VLEN-1:0]              mul_rslt_eew16_d1;
 logic [`VLENB-1:0]             update_vxsat_eew16_d1;
 
+`ifndef CORALNPU_STRUCTURAL_DATAPATH
 logic [63:0]                   mul_rslt_full_eew32_d1[3:0];
+`endif
 logic [2*`VLEN-1:0]            mul_rslt_eew32_widen_d1;
 logic [`VLEN-1:0]              mul_rslt_eew32_no_widen_d1;
+`ifndef CORALNPU_STRUCTURAL_DATAPATH
 logic [3:0]                    vsmul_round_incr_eew32_d1;
 logic [`VLEN-1:0]              vsmul_rslt_eew32_d1;
+`endif
 logic [3:0]                    vsmul_sat_eew32_d1;
 logic [`VLEN-1:0]              mul_rslt_eew32_d1;
 logic [`VLENB-1:0]             update_vxsat_eew32_d1;
@@ -490,6 +498,25 @@ assign update_vxsat_eew16_d1 = {vsmul_sat_eew16_d1[7],1'b0,
                                 vsmul_sat_eew16_d1[1],1'b0,
                                 vsmul_sat_eew16_d1[0],1'b0};
 //eew32
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+generate
+  for (genvar mul_i = 0; mul_i < 4; mul_i = mul_i + 1) begin : gen_mul_eew32_lane
+    rvv_backend_mul_eew32_datapath u_mul_eew32_lane (
+      .mul8_out       (mul8_out_d1[mul_i*16 +: 16]),
+      .src1_is_signed (mul_src1_is_signed_d1),
+      .src2_is_signed (mul_src2_is_signed_d1),
+      .keep_low_bits  (mul_keep_low_bits_d1),
+      .xrm            (mul_uop_xrm_d1),
+      .is_vsmul       (is_vsmul_d1),
+      .result_narrow  (mul_rslt_eew32_no_widen_d1[32*mul_i +: 32]),
+      .result_widen   (mul_rslt_eew32_widen_d1[64*mul_i +: 64]),
+      .vxsat          (vsmul_sat_eew32_d1[mul_i])
+    );
+  end
+endgenerate
+assign mul_rslt_eew32_d1 = mul_is_widen_d1 ? mul_rslt_eew32_widen_d1[`VLEN-1:0] :
+                                             mul_rslt_eew32_no_widen_d1;
+`else
 //full rslt is 64bit
 always@(*) begin
   for (i=0; i<4; i=i+1) begin //z
@@ -526,6 +553,7 @@ end
 assign mul_rslt_eew32_d1 = is_vsmul_d1     ? vsmul_rslt_eew32_d1 : //vsmul
                            mul_is_widen_d1 ? mul_rslt_eew32_widen_d1[`VLEN-1:0] : //widen
                                              mul_rslt_eew32_no_widen_d1; //normal
+`endif
 assign update_vxsat_eew32_d1 = {vsmul_sat_eew32_d1[3],3'b0,
                                 vsmul_sat_eew32_d1[2],3'b0,
                                 vsmul_sat_eew32_d1[1],3'b0,

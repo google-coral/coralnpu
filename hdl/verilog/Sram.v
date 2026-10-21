@@ -250,6 +250,9 @@ module Sram #(
   ///////////////////////////
   //////// ASAP7 SRAM ///////
   ///////////////////////////
+  // WARNING: fakeram_512x128 and fakeram_2048x128 are abstract non-functional
+  // PnR placement proxies without byte-enable pins and should not be used for
+  // functional simulation.
   if (NUM_ENTRIES == 2048) begin
     fakeram_2048x128 u_sram (
         .rd_out(rdata),

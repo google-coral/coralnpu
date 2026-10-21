@@ -29,3 +29,7 @@ toolchain/build_scripts/*.tar.*
 uvm_regression_*/
 uvm_regression_*.zip
 dispatch.log
+# Synthesis outputs & telemetry
+results_*/
+synthesis/flow_runs.db
+synthesis/telemetry/

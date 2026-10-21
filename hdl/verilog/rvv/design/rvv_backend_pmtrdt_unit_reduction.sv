@@ -520,6 +520,33 @@ module rvv_backend_pmtrdt_unit_reduction
   assign vs2_m_t0 = vm_state==MSK0 ? vs2_m[`VLENB-1:0] : vs2_m_q[`VLENB-1:0];
   edff #(.T(logic[`VLENB-1:0])) rdt_vs2_m_t0_reg (.q(vs2_m_t1), .d(vs2_m_t0), .e(alu_t0_valid&alu_t0_ready), .clk(clk), .rst_n(rst_n));
 
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+  // Structural Brent-Kung 16-element Parallel-Prefix Mask Adder
+  // Replaces the 62 cascaded half-adders with balanced depth <= 7 gates
+  logic [M_SUM_NUM/4-1:0][`VSTART_WIDTH-1:0] blk_total_sum;
+
+  for (genvar blk = 0; blk < M_SUM_NUM/4; blk = blk + 1) begin : gen_bk_blk
+    logic [3:0][`VSTART_WIDTH-1:0] blk_sum;
+
+    brent_kung_prefix_sum_16 #(
+      .WIDTH (`VSTART_WIDTH)
+    ) u_mask_bk16 (
+      .mask_in          (vs2_m_t0[blk*16 +: 16]),
+      .block_prefix_sum (blk_sum),
+      .total_sum        (blk_total_sum[blk]),
+      .prefix_sum       ()
+    );
+
+    if (blk == 0) begin : gen_blk0
+      assign vs2_m_sum_t0[0] = blk_sum[0];
+    end else begin : gen_blk_ext
+      assign vs2_m_sum_t0[blk*4 + 0] = blk_total_sum[blk - 1];
+    end
+    assign vs2_m_sum_t0[blk*4 + 1] = blk_sum[1];
+    assign vs2_m_sum_t0[blk*4 + 2] = blk_sum[2];
+    assign vs2_m_sum_t0[blk*4 + 3] = blk_sum[3];
+  end
+`else
   always_comb begin
     for (int i=0; i<M_SUM_NUM; i++) vs2_m_sum_t0[i] = '0;
     for (int i=1; i<M_SUM_NUM; i++) 
@@ -528,6 +555,7 @@ module rvv_backend_pmtrdt_unit_reduction
     for (int i=3; i<M_SUM_NUM; i=i+4) vs2_m_sum_t0[i] = vs2_m_sum_t0[i] + vs2_m_sum_t0[i-1];
     for (int i=4; i<M_SUM_NUM; i=i+4) vs2_m_sum_t0[i] = vs2_m_sum_t0[i] + vs2_m_sum_t0[i-2];
   end
+`endif
   edff #(.T(logic[M_SUM_NUM-1:0][`VSTART_WIDTH-1:0])) rdt_vs2_m_sum_t0_reg (.q(vs2_m_sum_t1), .d(vs2_m_sum_t0), .e(alu_t0_valid&alu_t0_ready), .clk(clk), .rst_n(rst_n));
 
   handshake_ff #(.T(RDT_ALU_t)) rdt_alu_ctrl_t0_reg (.outdata(alu_ctrl_t1), .outvalid(alu_t1_valid), .outready(alu_t1_ready), 
@@ -822,6 +850,52 @@ endgenerate
     .dst    (dst_32b)
   );
 
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+  // 16-bit Fast Structural Reduction Tree: 3:2 CSA Compressor
+  logic [15:0] csa16_sum, csa16_carry;
+  logic [15:0] rdt_sum_tree_16b;
+  logic [15:0] non_sum_dst_16b;
+
+  compressor_3_2 #(.WIDTH(16)) u_csa16_stg1 (
+    .src1        (rdt_vs2_32b[15:0]),
+    .src2        (rdt_vs2_32b[31:16]),
+    .src3        ({rdt_vs1[1], rdt_vs1[0]}),
+    .result_sum  (csa16_sum),
+    .result_carry(csa16_carry)
+  );
+
+  assign rdt_sum_tree_16b = csa16_sum + {csa16_carry[14:0], 1'b0};
+
+  rvv_backend_pmtrdt_unit_reduction_alu #(
+    .ALU_WIDTH (16)
+  ) u_alu_16b (
+    .src1   (rdt_vs2_32b[15:0]),
+    .src2   (rdt_vs2_32b[31:16]),
+    .ctrl   (alu_ctrl),
+    .dst    (rdt_vs2_16b)
+  );
+
+  assign rdt_vs1_16b = rdt_vs1[1:0];
+  rvv_backend_pmtrdt_unit_reduction_alu #(
+    .ALU_WIDTH (16)
+  ) u_alu_dst_16b (
+    .src1   (rdt_vs2_16b),
+    .src2   (rdt_vs1_16b),
+    .ctrl   (alu_ctrl),
+    .dst    (non_sum_dst_16b)
+  );
+
+  always_comb begin
+    case (alu_ctrl.uop_funct6)
+      VMUNARY0,
+      VWRXUNARY0,
+      VREDSUM,
+      VWREDSUMU,
+      VWREDSUM: dst_16b = rdt_sum_tree_16b;
+      default:  dst_16b = non_sum_dst_16b;
+    endcase
+  end
+`else
   rvv_backend_pmtrdt_unit_reduction_alu #(
     .ALU_WIDTH (16)
   ) u_alu_16b (
@@ -840,7 +914,88 @@ endgenerate
     .ctrl   (alu_ctrl),
     .dst    (dst_16b)
   );
+`endif
 
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+  // ---------------------------------------------------------------------------
+  // Structural Reduction Tree: Fast Carry-Save Tree + Parallel Merge
+  // ---------------------------------------------------------------------------
+  logic [7:0] rdt_sum_tree;
+  logic [7:0] csa_sum1, csa_carry1;
+  logic [7:0] csa_sum2, csa_carry2;
+  logic [7:0] non_sum_dst_8b;
+
+  // CSA stage 1: compress 3 terms (byte 0, byte 1, byte 2)
+  compressor_3_2 #(.WIDTH(8)) u_csa8_stg1 (
+    .src1        (rdt_vs2_32b[7:0]),
+    .src2        (rdt_vs2_32b[15:8]),
+    .src3        (rdt_vs2_32b[23:16]),
+    .result_sum  (csa_sum1),
+    .result_carry(csa_carry1)
+  );
+
+  // CSA stage 2: compress (sum1, carry1<<1, byte 3, vs1)
+  compressor_tree_4to2 #(.WIDTH(8)) u_csa8_stg2 (
+    .src         ({rdt_vs1[0], rdt_vs2_32b[31:24], {csa_carry1[6:0], 1'b0}, csa_sum1}),
+    .result_sum  (csa_sum2),
+    .result_carry(csa_carry2)
+  );
+
+  assign rdt_sum_tree = csa_sum2 + {csa_carry2[6:0], 1'b0};
+
+  // Dedicated parallel min/max tree & logical tree
+  rvv_backend_pmtrdt_unit_reduction_alu #(
+    .ALU_WIDTH (8)
+  ) u_alu_8b_0 (
+    .src1   (rdt_vs2_32b[7:0]),
+    .src2   (rdt_vs2_32b[15:8]),
+    .ctrl   (alu_ctrl),
+    .dst    (rdt_src2_8b)
+  );
+
+  rvv_backend_pmtrdt_unit_reduction_alu #(
+    .ALU_WIDTH (8)
+  ) u_alu_8b_1 (
+    .src1   (rdt_vs2_32b[23:16]),
+    .src2   (rdt_vs2_32b[31:24]),
+    .ctrl   (alu_ctrl),
+    .dst    (rdt_src1_8b)
+  );
+
+  rvv_backend_pmtrdt_unit_reduction_alu #(
+    .ALU_WIDTH (8)
+  ) u_alu_8b_2 (
+    .src1   (rdt_src2_8b),
+    .src2   (rdt_src1_8b),
+    .ctrl   (alu_ctrl),
+    .dst    (rdt_vs2_8b)
+  );
+
+  assign rdt_vs1_8b = rdt_vs1[0];
+  rvv_backend_pmtrdt_unit_reduction_alu #(
+    .ALU_WIDTH (8)
+  ) u_alu_dst_8b (
+    .src1   (rdt_vs2_8b),
+    .src2   (rdt_vs1_8b),
+    .ctrl   (alu_ctrl),
+    .dst    (non_sum_dst_8b)
+  );
+
+  always_comb begin
+    case (alu_ctrl.uop_funct6)
+      VMUNARY0,
+      VWRXUNARY0,
+      VREDSUM,
+      VWREDSUMU,
+      VWREDSUM: dst_8b = rdt_sum_tree;
+      default:  dst_8b = non_sum_dst_8b;
+    endcase
+  end
+
+`else
+  // ---------------------------------------------------------------------------
+  // Default Behavioral Reference Flow
+  // ---------------------------------------------------------------------------
   rvv_backend_pmtrdt_unit_reduction_alu #(
     .ALU_WIDTH (8)
   ) u_alu_8b_0 (
@@ -877,6 +1032,7 @@ endgenerate
     .ctrl   (alu_ctrl),
     .dst    (dst_8b)
   );
+`endif
 
   //rdt_dst data
   always_comb begin

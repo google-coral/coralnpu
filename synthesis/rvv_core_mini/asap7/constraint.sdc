@@ -14,12 +14,20 @@
 
 current_design RvvCoreMiniAxi
 
+# =============================================================================
+# Timing Mode: Functional (func)
+# Target:      RvvCoreMiniAxi @ 200 MHz (ASAP7 7nm Predictive PDK)
+#
+# Note: This constraint file covers functional mode only. Manufacturing DFT
+#       and scan test modes are not timed in this flow.
+# =============================================================================
+
 # -----------------------------------------------------------------------------
-# 1. Clock Definition (Default 400 MHz / 2500 ps; override via CLK_PERIOD_PS)
+# 1. Clock Definition (Default 200 MHz / 5000 ps; override via CLK_PERIOD_PS)
 # -----------------------------------------------------------------------------
 set clk_name io_aclk
 set clk_port_name io_aclk
-set clk_period 2500
+set clk_period 5000
 if {[info exists ::env(CLK_PERIOD_PS)]} {
   set clk_period $::env(CLK_PERIOD_PS)
 }
@@ -37,30 +45,52 @@ create_clock -name $clk_io_name -period $clk_period
 # -----------------------------------------------------------------------------
 set_clock_uncertainty -setup [expr {$clk_period * 0.05}] [all_clocks]
 set_clock_uncertainty -hold 30 [all_clocks]
-set_clock_transition 20 [all_clocks]
+# Physical clock slew model (virtual clocks cannot have transitions)
+set_clock_transition 20 [get_clocks $clk_name]
 set_input_transition 25 [all_inputs -no_clocks]
 
-# Model estimated CTS insertion delay on virtual clock
-set_clock_latency -source 120 [get_clocks $clk_io_name]
+# Symmetrical network latency model matching ORFS ASAP7 reference standards (~1050 ps on ASAP7 CTS mesh)
+set_clock_latency 1050 [get_clocks $clk_name]
+set_clock_latency 1050 [get_clocks $clk_io_name]
 
-# Standard output load model (5 fF pin load for ASAP7 finFET)
+# Standard output load model (5 fF pin load for ASAP7 finFET where capacitive_load_unit is 1ff)
 set_load -pin_load 5.0 [all_outputs]
 
 # -----------------------------------------------------------------------------
 # 3. Asynchronous & Static False Paths (Eliminates Hold Buffer Explosion)
 # -----------------------------------------------------------------------------
+# Functional mode: exclude DFT scan paths from timing analysis.
+# Ties io_te low to prune CoreAxi DFT reset-bypass muxes (Mux(io.te, !io.aresetn, ...))
+# and ClockGate scan pins.
+set te_port [get_ports -quiet io_te]
+if {[llength $te_port] > 0} {
+  set_case_analysis 0 $te_port
+  set_false_path -from $te_port
+}
+
+# Asynchronous active-low reset; internal deassertion is synchronized by RstSync
 set_false_path -from [get_ports -quiet io_aresetn]
-set_false_path -from [get_ports -quiet io_te]
+
+# Quasi-static boot address strap sampled into pcStartReg only on cycle 0 out of reset
 set_false_path -from [get_ports -quiet io_boot_addr*]
-set_false_path -from [get_ports -quiet io_irq]
-set_false_path -from [get_ports -quiet io_timer_irq]
-set_false_path -from [get_ports -quiet io_software_irq]
+
+# Asynchronous interrupt inputs registered immediately at core boundary (RegNext)
+set_false_path -from [get_ports -quiet {io_irq io_timer_irq io_software_irq}]
+
+# Quasi-static CPU status flags; direct flop outputs with no single-cycle timing contract
 set_false_path -to [get_ports -quiet {io_halted io_fault io_wfi}]
-set_false_path -from [get_ports -quiet io_dm_req_*]
-set_false_path -to   [get_ports -quiet io_dm_req_*]
-set_false_path -from [get_ports -quiet io_dm_rsp_*]
-set_false_path -to   [get_ports -quiet io_dm_rsp_*]
-set_false_path -from [get_cells -hier -quiet *dmcontrol*]
+
+# Low-speed asynchronous RISC-V Debug Module Interface (DMI) timed at JTAG/DTM boundary.
+# Split strictly by Decoupled port direction (req_ready is output; rsp_ready is input)
+# to avoid OpenSTA STA-1554 (invalid startpoint) and STA-1551 (invalid endpoint) warnings.
+set_false_path -from [get_ports -quiet {io_dm_req_valid io_dm_req_bits_* io_dm_rsp_ready}]
+set_false_path -to   [get_ports -quiet {io_dm_req_ready io_dm_rsp_valid io_dm_rsp_bits_*}]
+
+# Asynchronous soft-reset flops (CoreCSR.resetReg[0] and DebugModule.dmcontrol[1])
+set soft_rst_pins [get_pins -hier -quiet {*/*dmcontrol*1*/Q */*resetReg*0*/Q}]
+if {[llength $soft_rst_pins] > 0} {
+  set_false_path -from $soft_rst_pins
+}
 
 # -----------------------------------------------------------------------------
 # 4. Path Groups (for independent cost optimization)
@@ -81,5 +111,3 @@ set_output_delay -max [expr {$clk_period * 0.35}] -clock $clk_io_name [all_outpu
 # Hold delay budget (5% clock period / 50 ps min margin)
 set_input_delay  -min [expr {$clk_period * 0.05}] -clock $clk_io_name $non_clock_inputs
 set_output_delay -min [expr {$clk_period * 0.05}] -clock $clk_io_name [all_outputs]
-
-

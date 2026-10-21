@@ -125,6 +125,93 @@ module zvt_pe_mulbulk_int_lane#(
   logic[WIDTH-1:0] int8_result;
   logic[WIDTH-1:0] int16_result;
 
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+  // ---------------------------------------------------------------------------
+  // Structural OpenROAD Flow: Explicit Compressor Trees
+  // ---------------------------------------------------------------------------
+  logic [WIDTH-1:0] int8_terms [WIDTH/8];
+  logic [WIDTH-1:0] int8_csa_sum, int8_csa_carry;
+
+  generate
+    for (genvar x = 0; x < WIDTH/8; x = x + 1) begin : gen_int8_terms
+      assign int8_terms[x] = { {(WIDTH - 16){(|pp_signed_q) & pp_q[x][x][15]}}, pp_q[x][x] };
+    end
+  endgenerate
+
+  generate
+    if (WIDTH/8 == 4) begin : gen_int8_tree4
+      compressor_tree_4to2 #(.WIDTH(WIDTH)) u_int8_csa42 (
+        .src         ({int8_terms[3], int8_terms[2], int8_terms[1], int8_terms[0]}),
+        .result_sum  (int8_csa_sum),
+        .result_carry(int8_csa_carry)
+      );
+      assign int8_result = int8_csa_sum + {int8_csa_carry[WIDTH-2:0], 1'b0};
+    end else begin : gen_int8_behav
+      always_comb begin
+        int8_result = '0;
+        if (INT_FMT_CONFIG[0] && (src_fmt_q == fpnew_pkg::INT8)) begin
+          for (int x = 0; x < WIDTH/8; x++) begin
+            int8_result = int8_result + int8_terms[x];
+          end
+        end
+      end
+    end
+  endgenerate
+
+  // INT16: 3 partial products per 16-bit halfword (6 terms total when WIDTH == 32)
+  generate
+    if (WIDTH/8 == 4) begin : gen_int16_tree
+      logic [1:0][WIDTH-1:0] int16_stg1_sum, int16_stg1_carry;
+      logic [WIDTH-1:0]      int16_csa_sum, int16_csa_carry;
+
+      for (genvar h = 0; h < 2; h = h + 1) begin : gen_int16_half
+        localparam int X = 2 * h;
+        logic [WIDTH-1:0] term0, term1, term2;
+
+        assign term0 = { {(WIDTH-24){pp_signed_q[0] & pp_q[X+1][X  ][15]}},
+                         pp_q[X+1][X  ], 8'b0 };
+        assign term1 = { {(WIDTH-24){pp_signed_q[1] & pp_q[X  ][X+1][15]}},
+                         pp_q[X  ][X+1], 8'b0 };
+        assign term2 = { {(WIDTH-32){(|pp_signed_q) & pp_q[X+1][X+1][15]}},
+                         pp_q[X+1][X+1], pp_q[X][X] };
+
+        compressor_3_2 #(.WIDTH(WIDTH)) u_int16_csa32 (
+          .src1        (term0),
+          .src2        (term1),
+          .src3        (term2),
+          .result_sum  (int16_stg1_sum[h]),
+          .result_carry(int16_stg1_carry[h])
+        );
+      end
+
+      compressor_tree_4to2 #(.WIDTH(WIDTH)) u_int16_csa42 (
+        .src         ({{int16_stg1_carry[1][WIDTH-2:0], 1'b0},
+                       int16_stg1_sum[1],
+                       {int16_stg1_carry[0][WIDTH-2:0], 1'b0},
+                       int16_stg1_sum[0]}),
+        .result_sum  (int16_csa_sum),
+        .result_carry(int16_csa_carry)
+      );
+      assign int16_result = int16_csa_sum + {int16_csa_carry[WIDTH-2:0], 1'b0};
+    end else begin : gen_int16_behav
+      always_comb begin
+        int16_result = '0;
+        if (INT_FMT_CONFIG[1] && (src_fmt_q == fpnew_pkg::INT16)) begin
+          for (int x = 0; x < WIDTH/8; x = x + 2) begin
+            int16_result = int16_result
+                         + { {(WIDTH-24){pp_signed_q[0]&pp_q[x+1][  x][15]}},    pp_q[x+1][x], 8'b0}
+                         + { {(WIDTH-24){pp_signed_q[1]&pp_q[  x][x+1][15]}},    pp_q[x][x+1], 8'b0}
+                         + { {(WIDTH-32){(|pp_signed_q)&pp_q[x+1][x+1][15]}}, pp_q[x+1][x+1], pp_q[x][x]};
+          end
+        end
+      end
+    end
+  endgenerate
+
+`else
+  // ---------------------------------------------------------------------------
+  // Default Behavioral Reference Flow
+  // ---------------------------------------------------------------------------
   always_comb begin
     int8_result = '0;
     int16_result = '0;
@@ -144,6 +231,7 @@ module zvt_pe_mulbulk_int_lane#(
     end
 
   end
+`endif
 
   assign result = '0
     | ((INT_FMT_CONFIG[0] && (src_fmt_q == fpnew_pkg::INT8))  ? int8_result  : '0)

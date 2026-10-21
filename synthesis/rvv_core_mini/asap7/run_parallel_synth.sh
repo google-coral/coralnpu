@@ -116,7 +116,6 @@ trap 'kill $(jobs -p) 2>/dev/null || true' EXIT INT TERM
 MAX_PARALLEL_JOBS="${MAX_PARALLEL_JOBS:-16}"
 
 PARENT_RESULTS_DIR="${RESULTS_DIR}"
-pids=()
 
 run_worker() {
   local out_name="$1"
@@ -196,27 +195,28 @@ run_worker() {
   )
 }
 
+pids=()
+# Fail-fast: Kills all active synthesis workers immediately if any partition crashes.
 for out_name in "${TARGET_KEYS[@]}"; do
   run_worker "${out_name}" &
   pids+=("$!")
   if [[ ${#pids[@]} -ge ${MAX_PARALLEL_JOBS} ]]; then
-    wait -n 2>/dev/null || true
+    if ! wait -n; then
+      echo "[ERROR] Partition synthesis worker failed. Terminating remaining workers..." >&2
+      kill "${pids[@]}" 2>/dev/null || true
+      exit 1
+    fi
   fi
 done
 
-failed=0
 for pid in "${pids[@]}"; do
   if ! wait "${pid}"; then
-    failed=$((failed + 1))
+    echo "[ERROR] Partition synthesis worker (PID ${pid}) failed. Terminating remaining workers..." >&2
+    kill "${pids[@]}" 2>/dev/null || true
+    exit 1
   fi
 done
-
-if [[ "${failed}" -ne 0 ]]; then
-  echo "[ERROR] ${failed} partition synthesis worker(s) failed." >&2
-  exit 1
-fi
 
 echo "========================================================================"
 echo " All ${#TARGET_KEYS[@]} partition targets synthesized cleanly."
 echo "========================================================================"
-

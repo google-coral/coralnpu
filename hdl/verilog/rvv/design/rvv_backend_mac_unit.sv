@@ -116,23 +116,29 @@ logic [`VLENH-1:0][`WORD_WIDTH:0]     vmac_mul_add_eew16_widen_d1;
 logic [`VLENH-1:0][`WORD_WIDTH:0]     vmac_mul_sub_eew16_widen_d1;
 logic [2*`VLEN-1:0]                   vmac_rslt_eew16_widen_d1;
 
+`ifndef CORALNPU_STRUCTURAL_DATAPATH
 logic [`VLENW-1:0][17:0]              mac_rslt_part16_eew32_d1;
 logic [`VLENW-1:0][33:0]              mac_rslt_part32_eew32_d1;
 logic [`VLENW-1:0][49:0]              mac_rslt_part48_eew32_d1;
 logic [`VLENW-1:0][2*`WORD_WIDTH-1:0] mac_rslt_full_eew32_d1;
+`endif
 logic [2*`VLEN-1:0]                   mac_rslt_eew32_widen_d1;
 logic [`VLEN-1:0]                     mac_rslt_eew32_no_widen_d1;
+`ifndef CORALNPU_STRUCTURAL_DATAPATH
 logic [`VLENW-1:0]                    vsmul_round_incr_eew32_d1;
 logic [`VLEN-1:0]                     vsmul_rslt_eew32_d1;
+`endif
 logic [`VLENW-1:0]                    vsmul_sat_eew32_d1;
 logic [`VLEN-1:0]                     mac_rslt_eew32_d1;
 logic [`VLENB-1:0]                    update_vxsat_eew32_d1;
+`ifndef CORALNPU_STRUCTURAL_DATAPATH
 logic [`VLENW-1:0][`WORD_WIDTH:0]     vmac_mul_add_eew32_no_widen_d1;
 logic [`VLENW-1:0][`WORD_WIDTH:0]     vmac_mul_sub_eew32_no_widen_d1;
 logic [`VLEN-1:0]                     vmac_rslt_eew32_no_widen_d1;
 logic [`VLENW-1:0][2*`WORD_WIDTH:0]   vmac_mul_add_eew32_widen_d1;
 logic [`VLENW-1:0][2*`WORD_WIDTH:0]   vmac_mul_sub_eew32_widen_d1;
 logic [2*`VLEN-1:0]                   vmac_rslt_eew32_widen_d1;
+`endif
 
 logic [`VLENB-1:0]                    update_vxsat;
 
@@ -886,6 +892,30 @@ always_comb begin
 end
 
 //eew32
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+generate
+  for (genvar mac_i = 0; mac_i < `VLENW; mac_i = mac_i + 1) begin : gen_mac_eew32_lane
+    rvv_backend_mac_eew32_datapath u_mac_eew32_lane (
+      .mac8_out       (mac8_out_d1[mac_i*16 +: 16]),
+      .src1_is_signed (mac_src1_is_signed_d1),
+      .src2_is_signed (mac_src2_is_signed_d1),
+      .keep_low_bits  (mac_keep_low_bits_d1),
+      .xrm            (mac_uop_xrm_d1),
+      .is_vsmul       (is_vsmul_d1),
+      .is_vmac        (is_vmac_d1),
+      .mul_reverse    (mac_mul_reverse_d1),
+      .addsrc_no_widen(mac_addsrc_d1[`WORD_WIDTH*mac_i +: `WORD_WIDTH]),
+      .addsrc_widen   (mac_addsrc_widen_d1[2*`WORD_WIDTH*mac_i +: 2*`WORD_WIDTH]),
+      .result_narrow  (mac_rslt_eew32_no_widen_d1[`WORD_WIDTH*mac_i +: `WORD_WIDTH]),
+      .result_widen   (mac_rslt_eew32_widen_d1[2*`WORD_WIDTH*mac_i +: 2*`WORD_WIDTH]),
+      .vxsat          (vsmul_sat_eew32_d1[mac_i])
+    );
+  end
+endgenerate
+
+assign mac_rslt_eew32_d1 = mac_is_widen_d1 ? mac_rslt_eew32_widen_d1[`VLEN-1:0] :
+                                             mac_rslt_eew32_no_widen_d1;
+`else
 //full rslt is 64bit
 always@(*) begin
   for (i=0; i<`VLENW; i=i+1) begin //z
@@ -954,6 +984,7 @@ always_comb begin
   endcase
 end
 
+`endif
 always_comb begin
   for(int i=0;i<`VLENW;i++) begin
     update_vxsat_eew32_d1[4*i +: 4] = {vsmul_sat_eew32_d1[i],3'b0}; 

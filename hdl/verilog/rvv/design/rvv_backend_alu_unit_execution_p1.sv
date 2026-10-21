@@ -2,6 +2,11 @@
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `include "rvv_backend.svh"
 `endif
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+`ifndef ALU_DEFINE_SVH
+`include "rvv_backend_alu.svh"
+`endif
+`endif
 `ifndef RVV_ASSERT__SVH
 `include "rvv_backend_sva.svh"
 `endif
@@ -61,9 +66,11 @@ module rvv_backend_alu_unit_execution_p1
   logic   [`VLENB-1:0]                    cout8;
   logic   [`VLENH-1:0]                    cout16;
   logic   [`VLENW-1:0]                    cout32;  
+`ifndef CORALNPU_STRUCTURAL_DATAPATH
   logic   [`VLENB-1:0][`BYTE_WIDTH-1:0]   round8_src;
   logic   [`VLENH-1:0][`HWORD_WIDTH-1:0]  round16_src;
   logic   [`VLENW-1:0][`WORD_WIDTH-1:0]   round32_src;
+`endif
   logic   [`VLENB-1:0][`BYTE_WIDTH-1:0]   round8;
   logic   [`VLENH-1:0][`HWORD_WIDTH-1:0]  round16;
   logic   [`VLENW-1:0][`WORD_WIDTH-1:0]   round32;
@@ -177,6 +184,35 @@ module rvv_backend_alu_unit_execution_p1
 //    
 // calculate the result
 //
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+  generate
+    for (j = 0; j < `VLENW; j = j + 1) begin : gen_alu_p1_lane
+      rvv_backend_alu_addsub_p1_datapath u_alu_p1_dp (
+        .is_sub             (opcode == ADDSUB_VSUB),
+        .vs2_eew            (vs2_eew),
+        .uop_funct6         (uop_funct6),
+        .vxrm               (vxrm),
+        .src2_sgn           (src2_sgn[4*j +: 4]),
+        .src1_sgn           (src1_sgn[4*j +: 4]),
+        .product8_in        ({product8[4*j+3], product8[4*j+2], product8[4*j+1], product8[4*j]}),
+        .cout8_in           (cout8[4*j +: 4]),
+        .product16_out      ({product16[2*j+1], product16[2*j]}),
+        .cout16_out         (cout16[2*j +: 2]),
+        .product32_out      (product32[j]),
+        .cout32_out         (cout32[j]),
+        .round8_out         ({round8[4*j+3], round8[4*j+2], round8[4*j+1], round8[4*j]}),
+        .round16_out        ({round16[2*j+1], round16[2*j]}),
+        .round32_out        (round32[j]),
+        .addu_upoverflow    (addu_upoverflow[4*j +: 4]),
+        .add_upoverflow     (add_upoverflow[4*j +: 4]),
+        .add_underoverflow  (add_underoverflow[4*j +: 4]),
+        .subu_underoverflow (subu_underoverflow[4*j +: 4]),
+        .sub_upoverflow     (sub_upoverflow[4*j +: 4]),
+        .sub_underoverflow  (sub_underoverflow[4*j +: 4])
+      );
+    end
+  endgenerate
+`else
   always_comb begin
     for(int i=0;i<`VLENH;i++) begin: VADDSUB_PROD16
       if (opcode==ADDSUB_VADD) 
@@ -442,6 +478,7 @@ module rvv_backend_alu_unit_execution_p1
       end
     end
   endgenerate
+`endif
 
   generate 
     if(CMP_SUPPORT) begin

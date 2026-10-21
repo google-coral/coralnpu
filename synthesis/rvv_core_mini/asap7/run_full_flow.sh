@@ -22,21 +22,27 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/tmp/config}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Robust ORFS discovery (Environment -> Local Repo -> System Root)
-# TODO(coralnpu): Walking 5 levels up to find OpenROAD-flow-scripts in the repo
-# workspace root is brittle. Integrate OpenROAD-flow-scripts into the default repo
-# manifest so it is checked out into a standardized location automatically.
-WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
-
+# Robust ORFS discovery (Environment -> Local Repo Sentinel -> System Root)
 if [[ -n "${OPENROAD_FLOW_HOME:-}" && -d "${OPENROAD_FLOW_HOME}" ]]; then
   ORFS_ROOT="${OPENROAD_FLOW_HOME}"
 elif [[ -d "/OpenROAD-flow-scripts" ]]; then
   ORFS_ROOT="/OpenROAD-flow-scripts"
-elif [[ -d "${WORKSPACE_ROOT}/OpenROAD-flow-scripts" ]]; then
-  ORFS_ROOT="${WORKSPACE_ROOT}/OpenROAD-flow-scripts"
 else
-  echo "Error: Could not locate OpenROAD-flow-scripts directory." >&2
-  exit 1
+  # Walk up parent directories dynamically until finding OpenROAD-flow-scripts
+  CUR_DIR="${SCRIPT_DIR}"
+  ORFS_ROOT=""
+  while [[ "${CUR_DIR}" != "/" ]]; do
+    if [[ -d "${CUR_DIR}/OpenROAD-flow-scripts" ]]; then
+      ORFS_ROOT="${CUR_DIR}/OpenROAD-flow-scripts"
+      break
+    fi
+    CUR_DIR="$(dirname "${CUR_DIR}")"
+  done
+
+  if [[ -z "${ORFS_ROOT}" ]]; then
+    echo "Error: Could not locate OpenROAD-flow-scripts directory." >&2
+    exit 1
+  fi
 fi
 
 if [[ -f "${ORFS_ROOT}/env.sh" ]]; then
@@ -67,6 +73,7 @@ Options:
   --resume            Automatically resume from latest detected completed checkpoint
   --rerun             Force full clean rerun from scratch without prompting
   --synth-only        Stop after synthesis & netlist stitching (Stages 1-3), skipping PnR
+  --clock-period <ps> Target clock period in picoseconds (default: 5000 / 200 MHz)
   --dry-run           Print flow steps without executing synthesis or PnR commands
   -h, --help          Display this help message and exit
 
@@ -115,6 +122,9 @@ detect_latest_checkpoint_stage() {
   fi
 }
 
+# Verifies that prerequisite stage inputs required by ORFS Make targets exist.
+# Intermediate step checkpoints (e.g., 3_5_place_dp.odb) are insufficient for downstream
+# flow steps if the stage-final odb was not finalized.
 check_required_checkpoint() {
   local stage_num="$1"
   local required_file=""
@@ -128,7 +138,7 @@ check_required_checkpoint() {
     *) ;;
   esac
   if [[ -n "${required_file}" && ! -f "${required_file}" ]]; then
-    if [[ "${stage_num}" -eq 7 && -f "${RESULTS_DIR}/5_route.odb" ]]; then
+    if [[ "${stage_num}" -eq 7 && ( -f "${RESULTS_DIR}/5_route.odb" || -f "${RESULTS_DIR}/6_final.odb" ) ]]; then
       return 0
     fi
     if [[ "${DRY_RUN}" -eq 1 ]]; then
@@ -141,6 +151,7 @@ check_required_checkpoint() {
 }
 
 # CLI Argument Parsing
+CLK_PERIOD_PS="${CLK_PERIOD_PS:-5000}"
 CLI_MODE=""
 FROM_ARG=""
 DRY_RUN="${DRY_RUN:-0}"
@@ -148,6 +159,18 @@ SYNTH_ONLY="${SYNTH_ONLY:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --clock-period=*)
+      CLK_PERIOD_PS="${1#*=}"
+      shift
+      ;;
+    --clock-period)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --clock-period requires an argument in ps (e.g., 5000)" >&2
+        exit 1
+      fi
+      CLK_PERIOD_PS="$2"
+      shift 2
+      ;;
     --from=*)
       CLI_MODE="from"
       FROM_ARG="${1#*=}"
@@ -203,9 +226,14 @@ export REPORTS_DIR="${REPORTS_DIR:-${WORK_HOME}/reports/${PLATFORM}/${DESIGN}/${
 export OBJECTS_DIR="${OBJECTS_DIR:-${WORK_HOME}/objects/${PLATFORM}/${DESIGN}/${VARIANT}}"
 export SDC_FILE="${SDC_FILE:-${SCRIPT_DIR}/constraint.sdc}"
 export DESIGN_CONFIG="${DESIGN_CONFIG:-${SCRIPT_DIR}/config.mk}"
-export VERILOG_FILES="${VERILOG_FILES:-${SCRIPT_DIR}/RvvCoreMiniAxi.sv ${ORFS_ROOT}/flow/platforms/asap7/verilog/fakeram_512x128.sv ${ORFS_ROOT}/flow/platforms/asap7/verilog/fakeram_2048x128.sv}"
+DEFAULT_TOP_SV="${SCRIPT_DIR}/RvvCoreMiniAxi.sv"
+if [[ ! -f "${DEFAULT_TOP_SV}" && -f "${SCRIPT_DIR}/../RvvCoreMiniAxi.sv" ]]; then
+  DEFAULT_TOP_SV="${SCRIPT_DIR}/../RvvCoreMiniAxi.sv"
+fi
+export VERILOG_FILES="${VERILOG_FILES:-${DEFAULT_TOP_SV} ${ORFS_ROOT}/flow/platforms/asap7/verilog/fakeram_512x128.sv ${ORFS_ROOT}/flow/platforms/asap7/verilog/fakeram_2048x128.sv}"
 export NUM_CORES="${NUM_CORES:-64}"
 export ROUTING_CORES="${ROUTING_CORES:-64}"
+export CLK_PERIOD_PS
 export KEEP_VARS=1
 
 # Stage Resolution
@@ -289,10 +317,10 @@ T_START=$(date +%s)
 if [[ "${TARGET_STAGE_NUM}" -eq 0 ]]; then
   echo ">>> [STAGE 0] Full clean rerun selected. Resetting checkpoints in ${RESULTS_DIR}..."
   if [[ "${DRY_RUN}" -eq 1 ]]; then
-    echo ">>> [DRY-RUN] Would remove existing .odb files in ${RESULTS_DIR}"
+    echo ">>> [DRY-RUN] Would remove existing .odb and partition files in ${RESULTS_DIR}"
   else
     if [[ -d "${RESULTS_DIR}" ]]; then
-      rm -f "${RESULTS_DIR}"/*.odb
+      rm -f "${RESULTS_DIR}"/*.odb "${RESULTS_DIR}"/1_2_yosys*.v "${RESULTS_DIR}"/1_1_yosys*.rtlil
     fi
   fi
 fi
@@ -384,10 +412,27 @@ if [[ "${SYNTH_ONLY}" -eq 1 ]]; then
   fi
   PNR_DUR="0 (skipped: synth-only)"
 else
-  echo ">>> [STAGE 4/4] Running Flat PnR (Floorplan -> Place -> CTS -> Route -> Finish)..."
+  pnr_targets=()
+  case "${TARGET_STAGE_NUM}" in
+    0|1) pnr_targets=(do-1_synth do-floorplan do-place do-cts do-route do-finish) ;;
+    2)   pnr_targets=(do-floorplan do-place do-cts do-route do-finish) ;;
+    3)   pnr_targets=(do-place do-cts do-route do-finish) ;;
+    4)   pnr_targets=(do-cts do-route do-finish) ;;
+    5)   pnr_targets=(do-grt do-route do-finish) ;;
+    6)   pnr_targets=(do-route do-finish) ;;
+    7)   pnr_targets=(do-finish) ;;
+    *)   pnr_targets=(do-1_synth do-floorplan do-place do-cts do-route do-finish) ;;
+  esac
+
+  if [[ -n "${CLK_PERIOD_PS:-}" ]]; then
+    mkdir -p "${RESULTS_DIR}"
+    echo "${CLK_PERIOD_PS}" > "${RESULTS_DIR}/clock_period.txt"
+  fi
+
+  echo ">>> [STAGE 4/4] Running Flat PnR (${pnr_targets[*]} | Cores: ${NUM_CORES}/${ROUTING_CORES})..."
   T_PNR_START=$(date +%s)
   if [[ "${DRY_RUN}" -eq 1 ]]; then
-    echo ">>> [DRY-RUN] Would run: make -C ${FLOW_HOME} DESIGN_CONFIG=${DESIGN_CONFIG} SDC_FILE=${SDC_FILE} WORK_HOME=${WORK_HOME} NUM_CORES=${NUM_CORES} ROUTING_CORES=${ROUTING_CORES} finish"
+    echo ">>> [DRY-RUN] Would run: make -C ${FLOW_HOME} DESIGN_CONFIG=${DESIGN_CONFIG} SDC_FILE=${SDC_FILE} WORK_HOME=${WORK_HOME} NUM_CORES=${NUM_CORES} ROUTING_CORES=${ROUTING_CORES} CLK_PERIOD_PS=${CLK_PERIOD_PS:-5000} ${pnr_targets[*]}"
     PNR_DUR=0
   else
     make -C "${FLOW_HOME}" \
@@ -396,7 +441,8 @@ else
          WORK_HOME="${WORK_HOME}" \
          NUM_CORES="${NUM_CORES}" \
          ROUTING_CORES="${ROUTING_CORES}" \
-         finish
+         CLK_PERIOD_PS="${CLK_PERIOD_PS:-5000}" \
+         "${pnr_targets[@]}"
     T_PNR_END=$(date +%s)
     PNR_DUR=$((T_PNR_END - T_PNR_START))
   fi
@@ -447,4 +493,3 @@ if [[ -f "${RESULTS_DIR}/1_2_yosys.v" ]]; then
   echo " Half Adders (HAxp5_ASAP7_75t_R): ${ha_count}"
   echo "========================================================================"
 fi
-

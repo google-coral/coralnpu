@@ -1524,6 +1524,20 @@ module rvv_backend_alu_unit_addsub
 //    
 // calculate the result
 //
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+  generate
+    for (j = 0; j < `VLENW; j = j + 1) begin : gen_alu_p0_lane
+      rvv_backend_alu_addsub_p0_datapath u_alu_p0_dp (
+        .is_sub       (opcode == ADDSUB_VSUB),
+        .src2_data    ({src2_data[4*j+3], src2_data[4*j+2], src2_data[4*j+1], src2_data[4*j]}),
+        .src1_data    ({src1_data[4*j+3], src1_data[4*j+2], src1_data[4*j+1], src1_data[4*j]}),
+        .cin          (cin[4*j +: 4]),
+        .product8_out ({product8[4*j+3], product8[4*j+2], product8[4*j+1], product8[4*j]}),
+        .cout8_out    (cout8[4*j +: 4])
+      );
+    end
+  endgenerate
+`else
   // for add and sub instructions
   always_comb begin
     for(int i=0;i<`VLENB;i++) begin: VADDSUB_PROD8
@@ -1534,6 +1548,7 @@ module rvv_backend_alu_unit_addsub
     end
   end
 
+`endif
 //
 // submit result to ROB
 //

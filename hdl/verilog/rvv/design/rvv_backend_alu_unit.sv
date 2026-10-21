@@ -2,6 +2,9 @@
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_SVH
 `include "rvv_backend.svh"
 `endif
+`ifndef ALU_DEFINE_SVH
+`include "rvv_backend_alu.svh"
+`endif
 
 module rvv_backend_alu_unit
 (
@@ -120,7 +123,39 @@ module rvv_backend_alu_unit
       end
     endcase
   end
-  
+
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+  always_comb begin
+    alu_uop_p1_in = '0;
+    if (result_valid_addsub_p0) begin
+      alu_uop_p1_in                     = result_addsub_p0;
+    end else if (result_valid_shift_p0) begin
+    `ifdef TB_SUPPORT
+      alu_uop_p1_in.uop_pc              = result_shift_p0.uop_pc;
+    `endif
+      alu_uop_p1_in.rob_entry           = result_shift_p0.rob_entry;
+      alu_uop_p1_in.w_data              = result_shift_p0.w_data;
+      alu_uop_p1_in.w_valid             = result_shift_p0.w_valid;
+      alu_uop_p1_in.vsat_cout.vsaturate = result_shift_p0.vsaturate;
+    end else if (result_valid_other_p0) begin
+    `ifdef TB_SUPPORT
+      alu_uop_p1_in.uop_pc              = result_other_p0.uop_pc;
+    `endif
+      alu_uop_p1_in.rob_entry           = result_other_p0.rob_entry;
+      alu_uop_p1_in.w_data              = result_other_p0.w_data;
+      alu_uop_p1_in.w_valid             = result_other_p0.w_valid;
+      alu_uop_p1_in.vsat_cout.vsaturate = result_other_p0.vsaturate;
+    end else if (result_valid_mask_p0) begin
+    `ifdef TB_SUPPORT
+      alu_uop_p1_in.uop_pc              = result_mask_p0.uop_pc;
+    `endif
+      alu_uop_p1_in.rob_entry           = result_mask_p0.rob_entry;
+      alu_uop_p1_in.w_data              = result_mask_p0.w_data;
+      alu_uop_p1_in.w_valid             = result_mask_p0.w_valid;
+      alu_uop_p1_in.vsat_cout.vsaturate = result_mask_p0.vsaturate;
+    end
+  end
+`else
   always_comb begin
     alu_uop_p1_in = 'b0;
 
@@ -157,6 +192,7 @@ module rvv_backend_alu_unit
       end
     endcase
   end
+`endif
   
   cdffr
   uop_valid_p1

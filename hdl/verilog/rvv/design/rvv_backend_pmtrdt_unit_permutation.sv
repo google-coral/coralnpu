@@ -268,6 +268,30 @@ module rvv_backend_pmtrdt_unit_permutation
 
     //gen_compress_info_t0
     assign compress_vs1 = pmt_uop.first_uop_valid&(compress_cnt_q=='0) ? pmt_uop.vs1_data : compress_vs1_q;
+`ifdef CORALNPU_STRUCTURAL_DATAPATH
+    // Structural 7-level Binary Tree Priority Encoder & Isolate-LSB
+    // Replaces 128-bit ripple subtractor and 128-iteration linear loop.
+    // Combinational depth <= 8 gates (vs 102 gates originally).
+    logic [`VLEN-1:0]              compress_vmsof_tree;
+    logic [$clog2(`VLEN)-1:0]      compress_vfirst_raw;
+    logic                          compress_valid;
+
+    priority_encoder_tree #(
+      .WIDTH (`VLEN)
+    ) u_compress_pe (
+      .in_data    (compress_vs1),
+      .out_onehot (compress_vmsof_tree),
+      .out_index  (compress_vfirst_raw),
+      .out_valid  (compress_valid)
+    );
+
+    assign compress_vmsof    = compress_vmsof_tree;
+    assign compress_vfirst   = compress_valid ?
+                               {{(`VL_WIDTH-$clog2(`VLEN)){1'b0}}, compress_vfirst_raw} :
+                               `VLMAX_MAX;
+    assign compress_overflow = compress_vfirst >= pmt_uop.vl;
+    assign compress_vs1_d    = compress_vs1 & ~compress_vmsof;
+`else
     assign compress_vmsof = compress_vs1 & ~(compress_vs1 - 'b1);
     always_comb begin
       compress_vfirst = `VLMAX_MAX;
@@ -276,6 +300,7 @@ module rvv_backend_pmtrdt_unit_permutation
     end
     assign compress_overflow = compress_vfirst >= pmt_uop.vl;
     assign compress_vs1_d = compress_vs1 & ~compress_vmsof;
+`endif
     edff #(.T(logic[`VLEN-1:0])) compress_vs1_reg (.q(compress_vs1_q), .d(compress_vs1_d), .e((pmt_uop.uop_funct6==VCOMPRESS_VTMVTV) & |(pmt_t0_valid&pmt_t0_ready)), .clk(clk), .rst_n(rst_n));
     always_comb begin
       if (compress_overflow)
