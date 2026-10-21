@@ -28,12 +28,16 @@ def _check_folder_impl(rctx):
     # Generate conditional repositories.bzl inside @internal_check
     if folder_exists:
         repo_content = """
-load("@coralnpu_hw//internal:repositories.bzl", _real = "synthesis_internal_repo")
+load("@coralnpu_hw//internal:repositories.bzl", _internal_repos = "internal_repos", _real = "synthesis_internal_repo")
+def internal_repos():
+    _internal_repos()
 def synthesis_internal_repo():
     _real()
 """
     else:
         repo_content = """
+def internal_repos():
+    pass
 def synthesis_internal_repo():
     pass
 """

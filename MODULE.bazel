@@ -193,3 +193,5 @@ local_repository(
     name = "netlist_test",
     path = "internal/netlist_test",
 )
+
+use_extension("//rules:internal_ext.bzl", "internal_ext")

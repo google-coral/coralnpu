@@ -234,7 +234,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "iSghULExL+qSfRCmhbuDWJulP1ygEKiSq/GpbZborUY=",
+        "bzlTransitiveDigest": "IkHTexI/LraQ2h2Sq/ChMnMYp8SWdIlqgInExi3HIs4=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
