@@ -33,10 +33,17 @@ logger = logging.getLogger(__name__)
 class FtdiSpiMaster:
     """A class to manage SPI communication using the C++ nexus_loader utility."""
 
-    def __init__(self, usb_serial, ftdi_port=1, csr_base_addr=0x30000):
+    def __init__(
+        self,
+        usb_serial,
+        ftdi_port=1,
+        csr_base_addr=0x30000,
+        bitstream="/data/chip_nexus.bin",
+    ):
         self.usb_serial = usb_serial
         self.ftdi_port = ftdi_port
         self.csr_base_addr = csr_base_addr
+        self.bitstream = os.environ.get("NEXUS_BITSTREAM", bitstream)
         self._recovering = False
 
         self.nexus_loader_bin = None
@@ -165,8 +172,8 @@ class FtdiSpiMaster:
                 timeout=15.0,
             )
 
-            # 3. Load bitstream via SSH
-            bitstream = "chip_nexus.bin"
+            # 3. Load bitstream via SSH on Petalinux SOM
+            bitstream = self.bitstream
             logger.info(
                 f"Reloading bitstream {bitstream} on {som_host} via zturn..."
             )
@@ -175,12 +182,12 @@ class FtdiSpiMaster:
                 "-o",
                 "StrictHostKeyChecking=no",
                 f"root@{som_host}",
-                f"cd /mnt/mmcp1 && ./zturn -d a {bitstream}",
+                f"zturn -d {bitstream}",
             ]
             res = subprocess.run(
                 ssh_cmd, capture_output=True, text=True, timeout=30.0
             )
-            if res.returncode != 1:
+            if res.returncode != 0 or "download completed!" not in res.stdout:
                 logger.error(
                     f"zturn failed with exit code {res.returncode}. Output: {res.stdout}\n{res.stderr}"
                 )
@@ -210,18 +217,19 @@ class FtdiSpiMaster:
 
     def _is_responsive(self) -> bool:
         try:
-            # Try to read word at 0x0 (ITCM). Use a short timeout.
+            # Verify both ITCM (0x0) and CSR base address are readable.
             # We bypass _run_cmd to avoid recursion.
-            subprocess.run(
-                [
-                    self.nexus_loader_bin, "--serial", self.usb_serial,
-                    "--read_word_addr", "0x0"
-                ],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=2.0,
-            )
+            for addr in ("0x0", hex(self.csr_base_addr)):
+                subprocess.run(
+                    [
+                        self.nexus_loader_bin, "--serial", self.usb_serial,
+                        "--read_word_addr", addr
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=2.0,
+                )
             return True
         except subprocess.SubprocessError:
             return False

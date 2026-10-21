@@ -17,11 +17,10 @@ To load the bitstream, you must run `zturn` on the Zynq SOM Linux system.
 2. Run `zturn` to load the bitstream:
 
    ```bash
-   cd /mnt/mmcp1
-   ./zturn -d a chip_nexus.bin
+   zturn -d /data/chip_nexus.bin
    ```
 
-   *Note: `zturn` returns exit code `1` on success.*
+   *Note: `zturn` returns exit code `0` on success. Automated test runners use the `NEXUS_BITSTREAM` environment variable to override the default bitstream path (`/data/chip_nexus.bin`).*
 
 ## Reset Mechanisms: Hard vs. Soft Reset
 
@@ -96,7 +95,7 @@ If Phase 1 fails (meaning the FPGA is empty or in a fatal state), you must perfo
 nexus_loader --serial Nexus-FTDI-XX --reset
 
 # 2. Reload bitstream via SOM
-ssh root@nexusXX.mtv.corp.google.com "cd /mnt/mmcp1 && ./zturn -d a chip_nexus.bin"
+ssh root@nexusXX.mtv.corp.google.com "zturn -d /data/chip_nexus.bin"
 
 # 3. Wait 1 second for DDR calibration, then verify
 sleep 1
