@@ -22,7 +22,8 @@ from coralnpu_test_utils.coralflow.runner import coralflow_test
 @coralflow_test
 async def test_rvv_add_kernel(fixture: BaseCoralNPUFixture):
     await fixture.load_elf_and_lookup_symbols(
-t        ["in_buf_1", "in_buf_2", "out_buf"],
+        "tests/cocotb/rvv/arithmetics/rvv_add_int8_m1.elf",
+        ["in_buf_1", "in_buf_2", "out_buf"],
     )
 
     input_size = 16

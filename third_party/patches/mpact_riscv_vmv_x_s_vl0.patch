@@ -1,0 +1,12 @@
+--- a/riscv/riscv_vector_unary_instructions.cc
++++ b/riscv/riscv_vector_unary_instructions.cc
+@@ -39,7 +39,8 @@
+ void VmvToScalar(Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
+   if (rv_vector->vstart()) return;
+-  if (rv_vector->vector_length() == 0) return;
++  // vmv.x.s performs its operation even if vstart >= vl or vl=0,
++  // so do not skip the write on vl=0.
+   int sew = rv_vector->selected_element_width();
+   auto* dest_db = inst->Destination(0)->AllocateDataBuffer();
+   SignedXregType value;
