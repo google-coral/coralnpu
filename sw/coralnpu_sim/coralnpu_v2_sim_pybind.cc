@@ -23,9 +23,10 @@
 #include "absl/status/status.h"
 #include "sim/coralnpu_simulator.h"
 
-using coralnpu::sim::CoralNPUV2MemoryRegion;
+using coralnpu::sim::Architecture;
 using coralnpu::sim::CoralNPUSimulator;
 using coralnpu::sim::CoralNPUSimulatorOptions;
+using coralnpu::sim::CoralNPUV2MemoryRegion;
 using coralnpu::sim::MemoryPermission;
 
 namespace py = pybind11;
@@ -205,6 +206,12 @@ PYBIND11_MODULE(coralnpu_v2_sim_pybind, module) {
   module.doc() =
       "This module is created with pybind wrap on coralnpu simulator";
 
+  py::enum_<Architecture>(module, "Architecture")
+      .value("kV2", Architecture::kV2)
+      .value("kM3", Architecture::kM3)
+      .value("kM4", Architecture::kM4)
+      .export_values();
+
   py::enum_<MemoryPermission>(module, "MemoryPermission")
       .value("kNone", MemoryPermission::kNone)
       .value("kRead", MemoryPermission::kRead)
@@ -223,17 +230,13 @@ PYBIND11_MODULE(coralnpu_v2_sim_pybind, module) {
 
   py::class_<CoralNPUSimulatorOptions>(module, "CoralNPUSimulatorOptions")
       .def(py::init<>())
-      .def_readwrite("itcm_start_address",
-                     &CoralNPUSimulatorOptions::itcm_start_address)
+      .def_readwrite("architecture", &CoralNPUSimulatorOptions::architecture)
+      .def_readwrite("itcm_start_address", &CoralNPUSimulatorOptions::itcm_start_address)
       .def_readwrite("itcm_length", &CoralNPUSimulatorOptions::itcm_length)
-      .def_readwrite("initial_misa_value",
-                     &CoralNPUSimulatorOptions::initial_misa_value)
-      .def_readwrite("memory_regions",
-                     &CoralNPUSimulatorOptions::memory_regions)
-      .def_readwrite("exit_on_ebreak",
-                     &CoralNPUSimulatorOptions::exit_on_ebreak)
-      .def_readwrite("semihost_htif",
-                     &CoralNPUSimulatorOptions::semihost_htif);
+      .def_readwrite("initial_misa_value", &CoralNPUSimulatorOptions::initial_misa_value)
+      .def_readwrite("memory_regions", &CoralNPUSimulatorOptions::memory_regions)
+      .def_readwrite("exit_on_ebreak", &CoralNPUSimulatorOptions::exit_on_ebreak)
+      .def_readwrite("semihost_htif", &CoralNPUSimulatorOptions::semihost_htif);
 
   py::class_<CoralNPUV2SimulatorPy>(module, "CoralNPUSimulatorPy")
       .def(py::init<const CoralNPUSimulatorOptions>())

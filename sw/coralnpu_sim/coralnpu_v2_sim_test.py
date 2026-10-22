@@ -17,7 +17,7 @@ import time
 import unittest
 
 from bazel_tools.tools.python.runfiles import runfiles
-from coralnpu_v2_sim_utils import CoralNPUV2Simulator
+from coralnpu_v2_sim_utils import Architecture, CoralNPUV2Simulator
 import numpy as np
 
 
@@ -155,6 +155,15 @@ class TestCoralNPUV2SimPybind(unittest.TestCase):
         # If it finishes, it means EBREAK was hit (which semihosting uses for exit)
         # or the simulation reached its end.
         self.assertGreater(sim.get_cycle_count(), 0)
+
+    def test_architecture_option(self):
+        """Verifies configuring the simulator architecture."""
+        self.assertEqual(self.sim.options.architecture, Architecture.kM3)
+        sim = CoralNPUV2Simulator(architecture=Architecture.kM4)
+        self.assertEqual(sim.options.architecture, Architecture.kM4)
+        entry_point, _ = sim.get_elf_entry_and_symbol(self.elf_path, [])
+        sim.load_program(self.elf_path, entry_point)
+        self.assertEqual(sim.step(5), 5)
 
 
 class TestCoralNPUV2Vrgather(unittest.TestCase):

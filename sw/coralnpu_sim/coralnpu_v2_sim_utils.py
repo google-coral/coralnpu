@@ -16,14 +16,21 @@ import coralnpu_v2_sim_pybind
 from elftools.elf.elffile import ELFFile
 import numpy as np
 
+Architecture = coralnpu_v2_sim_pybind.Architecture
+
 
 class CoralNPUV2Simulator:
     """Wrapper for CoralNPUV2SimulatorPy providing helper methods."""
 
     def __init__(
-        self, highmem_ld=True, exit_on_ebreak=True, semihost_htif=True
+        self,
+        highmem_ld=True,
+        exit_on_ebreak=True,
+        semihost_htif=True,
+        architecture=Architecture.kM3,
     ):
         self.options = coralnpu_v2_sim_pybind.CoralNPUSimulatorOptions()
+        self.options.architecture = architecture
         self.options.semihost_htif = semihost_htif
         if highmem_ld:
             MP = coralnpu_v2_sim_pybind.MemoryPermission
