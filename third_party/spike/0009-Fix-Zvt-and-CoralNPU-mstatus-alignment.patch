@@ -193,7 +193,7 @@ index bc50449..36f5dfc 100644
    }
 @@ -50,15 +55,15 @@ void vectorUnit_t::msetmtype(reg_t newMType, reg_t newVType)
 -  if (twiden * vsew > ELEN)
-+  if (twiden * vsew > ELEN || (twiden && (newMType & ~reg_t(0x00fffcff)) != 0))
++  if (twiden * vsew > ELEN || (twiden && (newMType & ~reg_t(0x00fffce3)) != 0))
      set_vl(0, 1, 0, reg_t(-1));
  
    widen = vill ? 0 : twiden;

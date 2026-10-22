@@ -143,18 +143,19 @@ module RvvFrontEnd#(parameter N = 4,
   RVVConfigState inst_config_state [N:0];
   RegDataT avl [N-1:0];
   RegDataT vlmax [N-1:0];
-  logic is_setvl [N-1:0];
-  logic setvl_rs2_reserved [N-1:0];
+  logic vconfig_change [N-1:0];
+  logic setvl_reserved_bits [N-1:0];
   logic [`VL_WIDTH-1:0] vl_minus_one [N-1:0];
 `ifdef ZVT_ON
   // tm = min(tm, LMUL*EVE, ETE) = min(tm, 16)
   localparam logic [13:0] TILE_EDGE_DIM = 14'd16;
   // VME (Zvt) msettm / msettk write rd with the new field value (and do not
-  // set vl). msettn falls through the is_setvl path which already writes
+  // set vl). msettn falls through the vconfig_change path which already writes
   // vl-to-rd.
   logic mset_writes_rd [N-1:0];
   logic [31:0] mset_rd_data [N-1:0];
   logic mset_illegal_trap [N-1:0];
+  logic is_msettn [N-1:0];
 `endif
   always_comb begin
     inst_config_state[0] = config_state_q;
@@ -173,12 +174,13 @@ module RvvFrontEnd#(parameter N = 4,
       end
       avl[i] = 0;
       vlmax[i] = 0;
-      is_setvl[i] = 0;
-      setvl_rs2_reserved[i] = 0;
+      vconfig_change[i] = 0;
+      setvl_reserved_bits[i] = 0;
 `ifdef ZVT_ON
       mset_writes_rd[i] = 0;
       mset_rd_data[i] = 0;
       mset_illegal_trap[i] = 0;
+      is_msettn[i] = 0;
 `endif
 
       if (valid_inst_q[i] &&
@@ -198,7 +200,7 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].sew = RVVSEW'(inst_q[i].bits[18:16]);
           inst_config_state[i+1].ta = inst_q[i].bits[19];
           inst_config_state[i+1].ma = inst_q[i].bits[20];
-          setvl_rs2_reserved[i] = |inst_q[i].bits[23:22];
+          setvl_reserved_bits[i] = |inst_q[i].bits[23:22];
 `ifdef ZVT_ON
           // Zvt §12.1.1.4: vset[i]vl[i] instructions write zero to mtype CSR
           inst_config_state[i+1].mtwiden = 2'b00;
@@ -206,7 +208,7 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].tm     = 14'd0;
           inst_config_state[i+1].altfmt = inst_q[i].bits[21];
 `endif
-          is_setvl[i] = 1;
+          vconfig_change[i] = 1;
         end else if (inst_q[i].bits[24:23] == 2'b11) begin  // vsetivli
           avl[i] =
               {{(`VL_WIDTH - 5){1'b0}}, inst_q[i].bits[12:8]};
@@ -214,7 +216,7 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].sew = RVVSEW'(inst_q[i].bits[18:16]);
           inst_config_state[i+1].ta = inst_q[i].bits[19];
           inst_config_state[i+1].ma = inst_q[i].bits[20];
-          setvl_rs2_reserved[i] = inst_q[i].bits[22];
+          setvl_reserved_bits[i] = inst_q[i].bits[22];
 `ifdef ZVT_ON
           // Zvt §12.1.1.4: vset[i]vl[i] instructions write zero to mtype CSR
           inst_config_state[i+1].mtwiden = 2'b00;
@@ -222,7 +224,7 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].tm     = 14'd0;
           inst_config_state[i+1].altfmt = inst_q[i].bits[21];
 `endif
-          is_setvl[i] = 1;
+          vconfig_change[i] = 1;
         end else if (inst_q[i].bits[24:18] == 7'b1000000) begin  // vsetvl
           // Tightened from "bits[24:23] == 2'b10" so we don't accidentally
           // catch VME mset* instructions which share the bit24=1,bit23=0
@@ -241,7 +243,7 @@ module RvvFrontEnd#(parameter N = 4,
               RVVSEW'(reg_read_data_i[(2*i) + 1][5:3]);
           inst_config_state[i+1].ta = reg_read_data_i[(2*i) + 1][6];
           inst_config_state[i+1].ma = reg_read_data_i[(2*i) + 1][7];
-          setvl_rs2_reserved[i] = |reg_read_data_i[(2*i) + 1][31:9];
+          setvl_reserved_bits[i] = |reg_read_data_i[(2*i) + 1][31:9];
 `ifdef ZVT_ON
           // Zvt §12.1.1.4: vset[i]vl[i] instructions write zero to mtype CSR
           inst_config_state[i+1].mtwiden = 2'b00;
@@ -249,7 +251,7 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].tm     = 14'd0;
           inst_config_state[i+1].altfmt = reg_read_data_i[(2*i) + 1][8];
 `endif
-          is_setvl[i] = 1;
+          vconfig_change[i] = 1;
         end
 `ifdef ZVT_ON
         // VME (Zvt §12.1.1.4) mset* family.
@@ -260,8 +262,13 @@ module RvvFrontEnd#(parameter N = 4,
           inst_config_state[i+1].sew =
               RVVSEW'(reg_read_data_i[(2*i) + 1][5:3]);
           inst_config_state[i+1].altfmt = reg_read_data_i[(2*i) + 1][8];
-          setvl_rs2_reserved[i] = |reg_read_data_i[(2*i) + 1][31:9];
+          setvl_reserved_bits[i] = |reg_read_data_i[(2*i) + 1][31:9];
           if (reg_read_data_i[2*i][1:0] != 2'b00) begin
+            // Zvt §12.1.1.4: When mtwiden != 0, setting any reserved bit of rs1
+            // ([31:24], [9:8], [4:2]) is an unsupported configuration (vill = 1).
+            setvl_reserved_bits[i] |= |reg_read_data_i[2*i][31:24] ||
+                                     |reg_read_data_i[2*i][9:8] ||
+                                     |reg_read_data_i[2*i][4:2];
             // Zvt §12.1.1.4: When mtwiden != 0, vma and vta are set to 1,
             // and vlmul is derived:
             // LMUL = min(8/KMAX, 8/TWIDEN, ceil(ETE/EVE)).
@@ -304,8 +311,8 @@ module RvvFrontEnd#(parameter N = 4,
             inst_config_state[i+1].ta        = reg_read_data_i[(2*i) + 1][6];
             inst_config_state[i+1].ma        = reg_read_data_i[(2*i) + 1][7];
           end
-          // avl stays 0 -> setvl post-processing will set vl=0 (when not vill).
-          is_setvl[i] = 1;
+          // avl stays 0 -> vconfig_change post-processing will set vl=0 (when not vill).
+          vconfig_change[i] = 1;
         end else if ((inst_q[i].bits[24:22] == 3'b100) &&
                      (inst_q[i].bits[20:18] == 3'b100) &&
                      (inst_q[i].bits[15:13] == 3'b100) &&
@@ -331,17 +338,21 @@ module RvvFrontEnd#(parameter N = 4,
             inst_config_state[i+1].ta = 1'b0;
             inst_config_state[i+1].ma = 1'b0;
           end
-          is_setvl[i] = 1;
+          vconfig_change[i] = 1;
         end else if ((inst_q[i].bits[24:18] == 7'b1000100) &&
-                     (inst_q[i].bits[17:15] == 3'b000)) begin
+                     (inst_q[i].bits[17:15] == 3'b000)) begin  // msettn / msettm / msettk
           unique case (inst_q[i].bits[14:13])
             2'b00: begin  // msettn rd, rs1 - vl <- min(rs1, vlmax); rd <- vl
               avl[i] = reg_read_data_i[2*i];
-              is_setvl[i] = 1;
+              vconfig_change[i] = 1;
+              is_msettn[i] = 1;
             end
             2'b01: begin  // msettm rd, rs1 - mtype.tm <- min(rs1, TE)
               if (inst_config_state[i].mtwiden == 2'b00) begin
                 mset_illegal_trap[i] = 1'b1;
+                // TODO: Potentially remove if unreachable for coverage (tm/tk are already 0 when mtwiden == 0).
+                inst_config_state[i+1].tm = 14'd0;
+                inst_config_state[i+1].tk = 3'd0;
               end else begin
                 logic [13:0] msettm_new_tm;
                 msettm_new_tm = (reg_read_data_i[2*i] > {18'd0, TILE_EDGE_DIM}) ? TILE_EDGE_DIM
@@ -354,6 +365,9 @@ module RvvFrontEnd#(parameter N = 4,
             2'b10: begin  // msettk rd, rs1 - mtype.tk <- min(rs1, KMAX).
               if (inst_config_state[i].mtwiden == 2'b00) begin
                 mset_illegal_trap[i] = 1'b1;
+                // TODO: Potentially remove if unreachable for coverage (tm/tk are already 0 when mtwiden == 0).
+                inst_config_state[i+1].tm = 14'd0;
+                inst_config_state[i+1].tk = 3'd0;
               end else begin
                 logic [2:0] kmax;
                 logic [2:0] msettk_new_tk;
@@ -376,7 +390,7 @@ module RvvFrontEnd#(parameter N = 4,
 `endif  // ZVT_ON
       end
 
-      if (is_setvl[i]) begin
+      if (vconfig_change[i]) begin
         inst_config_state[i+1].vstart = 0;
         // Compute legality of vtype.
         unique case (inst_config_state[i+1].sew)
@@ -403,24 +417,29 @@ module RvvFrontEnd#(parameter N = 4,
             endcase
           default: inst_config_state[i+1].vill = 1;
         endcase
-        if (setvl_rs2_reserved[i]) begin
+        if (setvl_reserved_bits[i]) begin
           inst_config_state[i+1].vill = 1'b1;
         end
 
 `ifdef ZVT_ON
-        // Zvt §12.1.1.8: altfmt=1 is supported for SEW8 (Zvti8i32mm) and SEW16
-        // (Zvtbf16fmm), and is illegal for SEW >= SEW32.
-        if (inst_config_state[i+1].altfmt && (inst_config_state[i+1].sew >= SEW32)) begin
-          inst_config_state[i+1].vill = 1'b1;
-        end
-        // Zvt §12.1.1.4: vill |= (SEW * TWIDEN > ELEN). With ELEN=32:
-        // SEW16 with mtwiden=3 (TWIDEN=4) -> TEW=64 > 32
-        // SEW32 with mtwiden>=2 (TWIDEN>=2) -> TEW>=64 > 32
-        if (inst_config_state[i+1].mtwiden != 2'b00) begin
-          if ((inst_config_state[i+1].sew == SEW16 && inst_config_state[i+1].mtwiden == 2'd3) ||
-              (inst_config_state[i+1].sew == SEW32 && inst_config_state[i+1].mtwiden >= 2'd2) ||
-              (inst_config_state[i+1].sew > SEW32)) begin
+        if (is_msettn[i]) begin
+          // Zvt §12.1.1.4: msettn only updates vl; it preserves the existing vtype (including vill).
+          inst_config_state[i+1].vill = inst_config_state[i].vill;
+        end else begin
+          // Zvt §12.1.1.8: altfmt=1 is supported for SEW8 (Zvti8i32mm) and SEW16
+          // (Zvtbf16fmm), and is illegal for SEW >= SEW32.
+          if (inst_config_state[i+1].altfmt && (inst_config_state[i+1].sew >= SEW32)) begin
             inst_config_state[i+1].vill = 1'b1;
+          end
+          // Zvt §12.1.1.4: vill |= (SEW * TWIDEN > ELEN). With ELEN=32:
+          // SEW16 with mtwiden=3 (TWIDEN=4) -> TEW=64 > 32
+          // SEW32 with mtwiden>=2 (TWIDEN>=2) -> TEW>=64 > 32
+          if (inst_config_state[i+1].mtwiden != 2'b00) begin
+            if ((inst_config_state[i+1].sew == SEW16 && inst_config_state[i+1].mtwiden == 2'd3) ||
+                (inst_config_state[i+1].sew == SEW32 && inst_config_state[i+1].mtwiden >= 2'd2) ||
+                (inst_config_state[i+1].sew > SEW32)) begin
+              inst_config_state[i+1].vill = 1'b1;
+            end
           end
         end
 `endif
@@ -603,10 +622,10 @@ module RvvFrontEnd#(parameter N = 4,
       // violate vill are trapped in scalar decode to avoid hanging the scalar LSU.
       // Configuration instructions (vset*/mset*) do not trap on vill.
       unaligned_trap_valid[i] = valid_inst_q[i] && (
-          ((inst_q[i].opcode == RVV) && !is_setvl[i] && !is_whole_reg[i] && inst_config_state[i+1].vill)
+          ((inst_q[i].opcode == RVV) && !vconfig_change[i] && !is_whole_reg[i] && inst_config_state[i+1].vill)
 `ifdef ZVT_ON
           || mset_illegal_trap[i]
-          || ((inst_q[i].opcode == RVV) && !is_setvl[i] && (inst_config_state[i+1].mtwiden == 2'b00) && (
+          || ((inst_q[i].opcode == RVV) && !vconfig_change[i] && (inst_config_state[i+1].mtwiden == 2'b00) && (
               ((inst_q[i].bits[7:5] == 3'b110) && (inst_q[i].bits[24:19] == 6'b010000) && (inst_q[i].bits[17:13] == 5'b11111)) || // vtmv.v.t
               ((inst_q[i].bits[7:5] == 3'b110) && (inst_q[i].bits[24:19] == 6'b010111)) || // vtmv.t.v
               ((inst_q[i].bits[7:5] == 3'b110) && (inst_q[i].bits[24:19] == 6'b010000) && (inst_q[i].bits[17:13] == 5'b11110)) || // vtzero
@@ -615,7 +634,7 @@ module RvvFrontEnd#(parameter N = 4,
 `endif
       );
       unaligned_trap_data[i] = inst_q[i];
-      unaligned_cmd_valid[i] = valid_inst_q[i] && !is_setvl[i]
+      unaligned_cmd_valid[i] = valid_inst_q[i] && !vconfig_change[i]
 `ifdef ZVT_ON
           && !mset_writes_rd[i] && !mset_illegal_trap[i]
 `endif
@@ -646,7 +665,7 @@ module RvvFrontEnd#(parameter N = 4,
 
       // Write new value of vl into rd for configuration function.
       // For VME msettm/msettk, write the new field value to rd instead.
-      reg_write_valid_o[i] = (is_setvl[i]
+      reg_write_valid_o[i] = (vconfig_change[i]
 `ifdef ZVT_ON
                              || mset_writes_rd[i]
 `endif

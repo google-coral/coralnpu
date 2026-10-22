@@ -1195,6 +1195,26 @@ async def vme_altfmt_test(dut):
     # Case 7: vsetivli with zimm[8] (altfmt=1) set (uimm5=8, zimm10=0x1C9):
     #   Expected mtype: 0x0
     #   Expected vtype: 0x1C9
+    #
+    # Case 8: Matrix kernel + context restore with reserved rs1[31:24] != 0
+    #   and mtwiden != 0 (rs1=0x01004042, rs2=0x108):
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x80000000
+    #
+    # Case 9: Matrix layer reconfiguration with reserved rs1[9:8] != 0 and
+    #   mtwiden != 0 (rs1=0x00004142, rs2=0x008):
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x80000000
+    #
+    # Case 10: Matrix kernel prologue with reserved rs1[4:2] != 0 and
+    #   mtwiden != 0 (rs1=0x00004046, rs2=0x108):
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x80000000
+    #
+    # Case 11: Matrix-to-vector epilogue transition with mtwiden == 0 and
+    #   non-zero upper/reserved bits in rs1 (rs1=0x81004144, rs2=0x0C9):
+    #   Expected mtype: 0x0
+    #   Expected vtype: 0x0C9
     cases = [
         dict(
             desc="altfmt=1 with valid mtwiden=2 (sew=16)",
@@ -1251,6 +1271,37 @@ async def vme_altfmt_test(dut):
             vtype=0x0000,
             expected_mtype=0x0000,
             expected_vtype=0x1C9,
+        ),
+        dict(
+            desc=
+            "msetmtype reserved rs1[31:24] != 0 with mtwiden != 0 sets vill=1",
+            mtype=0x0000,
+            vtype=0x0000,
+            expected_mtype=0x0000,
+            expected_vtype=0x80000000,
+        ),
+        dict(
+            desc=
+            "msetmtype reserved rs1[9:8] != 0 with mtwiden != 0 sets vill=1",
+            mtype=0x0000,
+            vtype=0x0000,
+            expected_mtype=0x0000,
+            expected_vtype=0x80000000,
+        ),
+        dict(
+            desc=
+            "msetmtype reserved rs1[4:2] != 0 with mtwiden != 0 sets vill=1",
+            mtype=0x0000,
+            vtype=0x0000,
+            expected_mtype=0x0000,
+            expected_vtype=0x80000000,
+        ),
+        dict(
+            desc="msetmtype mtwiden == 0 ignores upper/reserved rs1 bits",
+            mtype=0x0000,
+            vtype=0x0000,
+            expected_mtype=0x0000,
+            expected_vtype=0x0C9,
         ),
     ]
 

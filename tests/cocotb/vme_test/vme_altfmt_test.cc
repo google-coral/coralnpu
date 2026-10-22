@@ -16,7 +16,7 @@
 
 #include "vme_test_utils.h"
 
-#define VME_MAX_ALTFMT_CASES 8
+#define VME_MAX_ALTFMT_CASES 12
 
 struct VmeAltfmtCase {
   uint32_t mtype_value;  // msetmtype rs1
@@ -28,7 +28,7 @@ struct VmeAltfmtResult {
   uint32_t vtype_readback;
 };
 
-volatile uint32_t vme_altfmt_num_cases __attribute__((section(".data"))) = 8;
+volatile uint32_t vme_altfmt_num_cases __attribute__((section(".data"))) = 12;
 volatile VmeAltfmtCase vme_altfmt_inputs[VME_MAX_ALTFMT_CASES] __attribute__((section(".data"))) = {
     {0x4042, 0x108},  // altfmt=1 with valid mtwiden=2 (sew=16) -> mtype=0x4042, vtype=0x1C9
     {0x4042, 0x008},  // altfmt=0 with valid mtwiden=2 (sew=16) -> mtype=0x4042, vtype=0x0C9
@@ -139,6 +139,117 @@ int main(int argc, char **argv) {
         : "vl", "vtype");
     vme_altfmt_results[7].mtype_readback = mt_out;
     vme_altfmt_results[7].vtype_readback = vt_out;
+  }
+
+  // Case 8: Matrix kernel + context restore with reserved rs1[31:24] != 0
+  // and mtwiden != 0 (Zvt §12.1.1.4). Execute an int8 outer-product kernel,
+  // then attempt to restore/reconfigure via msetmtype with rs1[24] = 1
+  // (0x01004042) and msettn. Must set vtype.vill = 1 and clear mtype = 0.
+  {
+    uint32_t int8_mtype = MtypeValue(/*tm=*/4, /*tk=*/2, /*mtwiden=*/3);
+    uint32_t int8_vtype = 0x000;  // vsew=8, altfmt=0
+    uint32_t dim        = 4;
+    uint32_t rsvd_rs1   = (1u << 24) | MtypeValue(/*tm=*/16, /*tk=*/2, /*mtwiden=*/2);
+    uint32_t vtype_in   = 0x108;
+    uint32_t tmp, mt_out, vt_out;
+    asm volatile(
+        ".insn r 0b1010111, 0b111, 0b1000010, x0, %[int8_mtype], %[int8_vtype]\n"  // msetmtype
+        ".insn r 0b1010111, 0b111, 0b1000100, %[tmp], %[dim], x0\n"                // msettn
+        ".word %[vtzero]\n"                                                        // vtzero.t mt0
+        ".word %[vtmmu]\n"                                                         // vtmmu.tvv mt0
+        ".insn r 0b1010111, 0b111, 0b1000010, x0, %[rsvd_rs1], %[vtype_in]\n"      // msetmtype
+        ".insn r 0b1010111, 0b111, 0b1000100, %[tmp], %[dim], x0\n"                // msettn
+        "csrr %[mt_out], 0xC23\n"
+        "csrr %[vt_out], vtype\n"
+        : [tmp] "=&r"(tmp), [mt_out] "=&r"(mt_out), [vt_out] "=r"(vt_out)
+        : [int8_mtype] "r"(int8_mtype), [int8_vtype] "r"(int8_vtype), [dim] "r"(dim),
+          [rsvd_rs1] "r"(rsvd_rs1), [vtype_in] "r"(vtype_in), [vtzero] "i"(ZvtVtzeroWord(0)),
+          [vtmmu] "i"(ZvtMatmulIntWord(0, /*signed_a=*/false))
+        : "vl", "vtype");
+    vme_altfmt_results[8].mtype_readback = mt_out;
+    vme_altfmt_results[8].vtype_readback = vt_out;
+  }
+
+  // Case 9: Matrix layer reconfiguration with reserved rs1[9:8] != 0 and
+  // mtwiden != 0 (e.g., altfmt bit 8 mistakenly placed in rs1 instead of rs2:
+  // rs1 = 0x00004142). Must set vtype.vill = 1 and clear mtype = 0.
+  {
+    uint32_t valid_mtype = MtypeValue(/*tm=*/16, /*tk=*/2, /*mtwiden=*/2);
+    uint32_t rsvd_rs1    = (1u << 8) | valid_mtype;
+    uint32_t vtype_alt   = 0x108;
+    uint32_t vtype_std   = 0x008;
+    uint32_t dim         = 8;
+    uint32_t tmp, mt_out, vt_out;
+    asm volatile(
+        ".insn r 0b1010111, 0b111, 0b1000010, x0, %[valid_mtype], %[vtype_alt]\n"  // msetmtype
+        ".insn r 0b1010111, 0b111, 0b1000100, %[tmp], %[dim], x0\n"                // msettn
+        ".word %[vtzero]\n"                                                        // vtzero.t mt0
+        ".insn r 0b1010111, 0b111, 0b1000010, x0, %[rsvd_rs1], %[vtype_std]\n"     // msetmtype
+        ".insn r 0b1010111, 0b111, 0b1000100, %[tmp], %[dim], x0\n"                // msettn
+        "csrr %[mt_out], 0xC23\n"
+        "csrr %[vt_out], vtype\n"
+        : [tmp] "=&r"(tmp), [mt_out] "=&r"(mt_out), [vt_out] "=r"(vt_out)
+        : [valid_mtype] "r"(valid_mtype), [rsvd_rs1] "r"(rsvd_rs1), [vtype_alt] "r"(vtype_alt),
+          [vtype_std] "r"(vtype_std), [dim] "r"(dim), [vtzero] "i"(ZvtVtzeroWord(0))
+        : "vl", "vtype");
+    vme_altfmt_results[9].mtype_readback = mt_out;
+    vme_altfmt_results[9].vtype_readback = vt_out;
+  }
+
+  // Case 10: Matrix kernel prologue with reserved rs1[4:2] != 0 and
+  // mtwiden != 0 (e.g., mispacked tk/mtwiden field setting bit 2:
+  // rs1 = 0x00004046). Must set vtype.vill = 1 and clear mtype = 0.
+  {
+    uint32_t valid_mtype = MtypeValue(/*tm=*/16, /*tk=*/2, /*mtwiden=*/2);
+    uint32_t rsvd_rs1    = (1u << 2) | valid_mtype;
+    uint32_t vtype_in    = 0x108;
+    uint32_t dim         = 8;
+    uint32_t tmp, mt_out, vt_out;
+    asm volatile(
+        ".insn r 0b1010111, 0b111, 0b1000010, x0, %[valid_mtype], %[vtype_in]\n"  // msetmtype
+        ".insn r 0b1010111, 0b111, 0b1000100, %[tmp], %[dim], x0\n"               // msettn
+        ".word %[vtzero]\n"                                                       // vtzero.t mt0
+        ".insn r 0b1010111, 0b111, 0b1000010, x0, %[rsvd_rs1], %[vtype_in]\n"     // msetmtype
+        ".insn r 0b1010111, 0b111, 0b1000100, %[tmp], %[dim], x0\n"               // msettn
+        "csrr %[mt_out], 0xC23\n"
+        "csrr %[vt_out], vtype\n"
+        : [tmp] "=&r"(tmp), [mt_out] "=&r"(mt_out), [vt_out] "=r"(vt_out)
+        : [valid_mtype] "r"(valid_mtype), [rsvd_rs1] "r"(rsvd_rs1), [vtype_in] "r"(vtype_in),
+          [dim] "r"(dim), [vtzero] "i"(ZvtVtzeroWord(0))
+        : "vl", "vtype");
+    vme_altfmt_results[10].mtype_readback = mt_out;
+    vme_altfmt_results[10].vtype_readback = vt_out;
+  }
+
+  // Case 11: Matrix-to-vector epilogue transition with mtwiden == 0 and
+  // non-zero upper/reserved bits in rs1 (rs1 = 0x81004144, rs2 = 0x0C9).
+  // Per Zvt §12.1.1.4, when mtwiden == 0, upper bits of rs1 are ignored,
+  // mtype is cleared to 0, and vtype is configured normally (vill = 0) so
+  // subsequent vector length configuration (msettn) sets vl = 8.
+  {
+    uint32_t valid_mtype = MtypeValue(/*tm=*/16, /*tk=*/2, /*mtwiden=*/2);
+    uint32_t uncfg_rs1 =
+        (0x81u << 24) | (1u << 8) | (1u << 2) | MtypeValue(/*tm=*/16, /*tk=*/2, /*mtwiden=*/0);
+    uint32_t vtype_alt = 0x108;
+    uint32_t vtype_vec = 0x0C9;
+    uint32_t dim       = 8;
+    uint32_t tmp, mt_out, vt_out;
+    asm volatile(
+        ".insn r 0b1010111, 0b111, 0b1000010, x0, %[valid_mtype], %[vtype_alt]\n"  // msetmtype
+        ".insn r 0b1010111, 0b111, 0b1000100, %[tmp], %[dim], x0\n"                // msettn
+        ".word %[vtzero]\n"                                                        // vtzero.t mt0
+        ".word %[vtdiscard]\n"                                                     // vtdiscard
+        ".insn r 0b1010111, 0b111, 0b1000010, x0, %[uncfg_rs1], %[vtype_vec]\n"    // msetmtype
+        ".insn r 0b1010111, 0b111, 0b1000100, %[tmp], %[dim], x0\n"                // msettn
+        "csrr %[mt_out], 0xC23\n"
+        "csrr %[vt_out], vtype\n"
+        : [tmp] "=&r"(tmp), [mt_out] "=&r"(mt_out), [vt_out] "=r"(vt_out)
+        : [valid_mtype] "r"(valid_mtype), [uncfg_rs1] "r"(uncfg_rs1), [vtype_alt] "r"(vtype_alt),
+          [vtype_vec] "r"(vtype_vec), [dim] "r"(dim), [vtzero] "i"(ZvtVtzeroWord(0)),
+          [vtdiscard] "i"(kZvtVtdiscardWord)
+        : "vl", "vtype");
+    vme_altfmt_results[11].mtype_readback = mt_out;
+    vme_altfmt_results[11].vtype_readback = vt_out;
   }
 
   return 0;
