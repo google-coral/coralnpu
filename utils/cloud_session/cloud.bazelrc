@@ -1,0 +1,8 @@
+# Extra Bazel flags for sandboxed environments (e.g. Claude Code cloud sessions)
+# whose network blocks GitHub archive downloads. Use as:
+#   bazel --bazelrc=utils/cloud_session/cloud.bazelrc test ...
+#
+# Archives seeded by fill_gh_archives.py are only found in the repository cache
+# when http_archive does not use its URLs as the default canonical id. The
+# sha256 of every archive is still checked.
+common --repo_env=BAZEL_HTTP_RULES_URLS_AS_DEFAULT_CANONICAL_ID=0
