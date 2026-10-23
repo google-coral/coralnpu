@@ -66,3 +66,29 @@ python3 -I utils/cloud_session/parse_cocotb_results.py /tmp/cocotb.log \
 
 `parse_cocotb_results.py` also lists targets that Bazel passed but that ran no
 testcase (a testcase name in `BUILD` the test module does not define).
+
+## Running the Verilator UVM regression
+
+Each `verilator_batch_uvm_test` target runs one program on the UVM testbench.
+Its runfiles tree holds thousands of symlinks into the hermetic Python, about
+20-30 MB each, so all 820 targets at once outgrow a cloud session's disk. Run
+them in batches and delete the runfiles trees in between (results stay in
+`bazel-testlogs`):
+
+```bash
+bazel query 'kind(verilator_batch_uvm_test, tests(//...)) except attr(tags, "\bmanual\b", //...)' \
+  | sort > /tmp/uvm_targets.txt
+split -l 40 -d /tmp/uvm_targets.txt /tmp/uvm_batch_
+for f in /tmp/uvm_batch_*; do
+  bazel --bazelrc=utils/cloud_session/cloud.bazelrc test --keep_going \
+    --target_pattern_file="$f" 2>&1 | tee -a /tmp/uvm.log
+  find bazel-bin/ -type d -name 'verilator_uvm_regression_*.runfiles' -prune \
+    -exec rm -rf {} +
+done
+python3 -I utils/cloud_session/parse_uvm_results.py /tmp/uvm.log \
+  /tmp/uvm_targets.txt "$(readlink -f bazel-testlogs)" /tmp/uvm_results
+```
+
+`parse_uvm_results.py` writes a CSV with one row per program (result, failure
+reason, simulated time in ps) and a readable log with a per-package summary and
+every failure's first errors.
