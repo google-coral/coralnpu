@@ -1,0 +1,742 @@
+=== batch_000 09:15:47
+WARNING: Repository '@@rules_cc+' will be fetched again since the file 'external/rules_cc+' has been modified externally. External modifications can lead to incorrect builds.
+WARNING: Repository '@@rules_cc++cc_configure_extension+local_config_cc' will be fetched again since the file 'module.modulemap' has been modified externally. External modifications can lead to incorrect builds.
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (5 packages loaded, 0 targets configured)
+Analyzing: 40 targets (5 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (309 packages loaded, 22548 targets configured, 157 aspect applications).
+INFO: From Verilate tests/cocotb/CoreMiniAxi_build/CoreMiniAxi [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 2.384 MB sources in 129 modules, into 11.766 MB in 18 C++ files needing 0.005 MB
+- Verilator: Walltime 8.506 s (elab=1.365, cvt=6.224, bld=0.000); cpu 6.967 s on 1 threads; allocated 124.219 MB
+INFO: From Verilate tests/cocotb/RvvCoreMiniAxi_build/RvvCoreMiniAxi [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 10.983 MB sources in 219 modules, into 115.278 MB in 93 C++ files needing 0.038 MB
+- Verilator: Walltime 85.683 s (elab=7.412, cvt=72.315, bld=0.000); cpu 84.776 s on 1 threads; allocated 1036.000 MB
+[3,188 / 3,221] 8 / 40 tests; Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemTestHarness_build/CoralNPUChiselSubsystemTestHarness [for tool]; 41s linux-sandbox ... (4 actions, 1 running)
+[3,188 / 3,221] 8 / 40 tests; Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemTestHarness_build/CoralNPUChiselSubsystemTestHarness [for tool]; 341s linux-sandbox ... (4 actions, 1 running)
+INFO: From Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemTestHarness_build/CoralNPUChiselSubsystemTestHarness [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 14.165 MB sources in 407 modules, into 310.767 MB in 203 C++ files needing 0.406 MB
+- Verilator: Walltime 210.068 s (elab=10.594, cvt=186.910, bld=0.000); cpu 207.958 s on 1 threads; allocated 7793.980 MB
+INFO: Found 40 test targets...
+INFO: Elapsed time: 759.528s, Critical Path: 703.01s
+INFO: 109 processes: 3121 action cache hit, 59 internal, 88 linux-sandbox, 2 worker.
+INFO: Build completed successfully, 109 total actions
+//tests/cocotb/csr_test:csr_test_csr_read_write_test                     PASSED in 2.7s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_align_error             PASSED in 2.3s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_back_to_back            PASSED in 2.6s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_cfg_error               PASSED in 2.4s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_cfg_error_area_size_zero PASSED in 2.5s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_error_gate              PASSED in 4.0s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_multi_chunk             PASSED in 2.5s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_multi_chunk_partial     PASSED in 3.6s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_partial_tail            PASSED in 2.6s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_randomized              PASSED in 3.3s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_single_chunk            PASSED in 2.7s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_smoke                   PASSED in 2.5s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_source_integrity        PASSED in 2.6s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_strided_randomized      PASSED in 7.4s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_strided_smoke           PASSED in 3.5s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_strided_tail            PASSED in 3.7s
+//tests/cocotb/dma:transpose_buffer_cocotb_test_test_transpose_buffer_memcopy PASSED in 2.5s
+//tests/cocotb/dma:transpose_buffer_cocotb_test_test_transpose_buffer_out_of_order PASSED in 2.2s
+//tests/cocotb/dma:transpose_buffer_cocotb_test_test_transpose_buffer_randomized PASSED in 2.3s
+//tests/cocotb/rvv/ml_ops/static_reference_tests:float_matmul_16x48x16_test_suite_float_matmul_16x48x16_test PASSED in 9.4s
+//tests/cocotb/rvv/ml_ops/static_reference_tests:int_matmul_16x48x16_test_suite_int_matmul_16x48x16_test PASSED in 4.9s
+//tests/cocotb/rvv/rvv_opt:cocotb_rvv_opt_test_rvv_memcpy_test           PASSED in 3.3s
+//tests/cocotb/rvv/rvv_opt:cocotb_rvv_opt_test_rvv_memset_test           PASSED in 7.3s
+//tests/cocotb/tlul:axi2tlul_cocotb_test_test_read_error                 PASSED in 1.8s
+//tests/cocotb/tlul:axi2tlul_cocotb_test_test_read_request               PASSED in 1.6s
+//tests/cocotb/tlul:axi2tlul_cocotb_test_test_write_request              PASSED in 1.9s
+//tests/cocotb/tlul:axi_addr_gen_cocotb_test_test_randomized_address_generator PASSED in 3.6s
+//tests/cocotb/tlul:banked_dtcm_cocotb_test_test_address_aliasing        PASSED in 1.8s
+//tests/cocotb/tlul:banked_dtcm_cocotb_test_test_basic_read_write        PASSED in 1.9s
+//tests/cocotb/tlul:banked_dtcm_cocotb_test_test_concurrency             PASSED in 1.9s
+//tests/cocotb/tlul:banked_dtcm_cocotb_test_test_isolation               PASSED in 1.6s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_boot_addr_override PASSED in 2.8s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_boot_addr_sram PASSED in 2.7s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_ddr_access     PASSED in 3.1s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_ddr_access_via_spi PASSED in 10.7s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_ddr_burst_pattern_repro PASSED in 4.3s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_ibus_fetch_from_sram PASSED in 2.8s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_plic           PASSED in 6.1s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_program_execution_via_host PASSED in 3.2s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_program_execution_via_spi PASSED in 13.0s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_001 09:29:08
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (3 packages loaded, 178 targets configured).
+[369 / 379] 31 / 40 tests; Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 221s linux-sandbox ... (4 actions, 1 running)
+INFO: From Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 14.220 MB sources in 405 modules, into 315.141 MB in 204 C++ files needing 0.412 MB
+- Verilator: Walltime 240.060 s (elab=11.030, cvt=216.075, bld=0.000); cpu 237.451 s on 1 threads; allocated 7847.879 MB
+[379 / 380] 39 / 40 tests; Testing //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos; 41s linux-sandbox
+INFO: Found 40 test targets...
+INFO: Elapsed time: 644.986s, Critical Path: 629.85s
+INFO: 98 processes: 268 action cache hit, 55 internal, 83 linux-sandbox.
+INFO: Build completed successfully, 98 total actions
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_software_interrupt PASSED in 8.3s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_timer_interrupt PASSED in 7.2s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_tlul_passthrough PASSED in 4.2s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_tlul_width_bridge_bug_reproduction PASSED in 5.8s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos PASSED in 44.3s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_16bit_writes_to_sram       PASSED in 2.4s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_coralnpu_core_to_coralnpu_device PASSED in 2.1s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_coralnpu_core_to_invalid_addr PASSED in 1.7s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_coralnpu_core_to_sram      PASSED in 1.8s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_coralnpu_core_to_uart1     PASSED in 1.8s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_interleaved_hosts_to_sram  PASSED in 1.9s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_test_host_32_to_coralnpu_device PASSED in 2.0s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_test_host_32_to_coralnpu_device_csr_read PASSED in 1.8s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_test_host_32_to_coralnpu_device_specific_addr PASSED in 1.7s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_wide_to_narrow_integrity   PASSED in 1.9s
+//tests/cocotb/tlul:dma_integration_cocotb_test_dma_csr_access           PASSED in 2.4s
+//tests/cocotb/tlul:dma_integration_cocotb_test_dma_descriptor_chain     PASSED in 3.0s
+//tests/cocotb/tlul:dma_integration_cocotb_test_dma_mem_to_mem           PASSED in 2.9s
+//tests/cocotb/tlul:gpio_integration_cocotb_test_gpio_integration        PASSED in 2.3s
+//tests/cocotb/tlul:secded_encoder_32_cocotb_test_test_secded_encoder    PASSED in 2.2s
+//tests/cocotb/tlul:secded_encoder_57_cocotb_test_test_secded_encoder    PASSED in 2.1s
+//tests/cocotb/tlul:secded_encoder_cocotb_test_test_secded_encoder       PASSED in 3.6s
+//tests/cocotb/tlul:spi_master_cocotb_test_spi_master_basic_tx           PASSED in 3.3s
+//tests/cocotb/tlul:spi_master_cocotb_test_spi_master_half_duplex_rx     PASSED in 4.1s
+//tests/cocotb/tlul:spi_master_cocotb_test_spi_master_half_duplex_tx     PASSED in 4.4s
+//tests/cocotb/tlul:tlul2axi_cocotb_test_test_backpressure               PASSED in 1.9s
+//tests/cocotb/tlul:tlul2axi_cocotb_test_test_get_request                PASSED in 2.7s
+//tests/cocotb/tlul:tlul2axi_cocotb_test_test_put_request                PASSED in 3.6s
+//tests/cocotb/tlul:tlul2axi_cocotb_test_test_put_then_get               PASSED in 2.7s
+//tests/cocotb/tlul:tlul_fifo_async_128_cocotb_test_test_async_crossing  PASSED in 2.2s
+//tests/cocotb/tlul:tlul_fifo_sync_cocotb_test_test_passthrough_with_spare PASSED in 2.3s
+//tests/cocotb/tlul:tlul_integrity_cocotb_test_test_request_integrity_check PASSED in 1.9s
+//tests/cocotb/tlul:tlul_integrity_cocotb_test_test_request_integrity_gen PASSED in 2.1s
+//tests/cocotb/tlul:tlul_integrity_cocotb_test_test_response_integrity_check PASSED in 2.3s
+//tests/cocotb/tlul:tlul_integrity_cocotb_test_test_response_integrity_gen PASSED in 2.4s
+//tests/cocotb/tlul:tlul_local_xbar_cocotb_test_test_concurrent_access   PASSED in 2.3s
+//tests/cocotb/tlul:tlul_local_xbar_cocotb_test_test_mixed_arbitration   PASSED in 2.5s
+//tests/cocotb/tlul:tlul_local_xbar_cocotb_test_test_random_backpressure PASSED in 2.7s
+//tests/cocotb/tlul:tlul_socket_1n_128_cocotb_test_test_error_response   PASSED in 2.3s
+//tests/cocotb/tlul:tlul_socket_1n_128_cocotb_test_test_random_backpressure PASSED in 2.4s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_002 09:40:17
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (4 packages loaded, 0 targets configured)
+Analyzing: 40 targets (4 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (34 packages loaded, 874 targets configured).
+INFO: From Verilate tests/cocotb/RvvCoreMiniHighmemAxi_build/RvvCoreMiniHighmemAxi [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 11.034 MB sources in 217 modules, into 122.502 MB in 91 C++ files needing 0.042 MB
+- Verilator: Walltime 83.400 s (elab=6.798, cvt=71.537, bld=0.000); cpu 82.535 s on 1 threads; allocated 1025.379 MB
+[786 / 811] 15 / 40 tests; Testing //tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv16to32stride2; 101s linux-sandbox ... (4 actions, 3 running)
+[795 / 811] 24 / 40 tests; Testing //tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x16; 257s linux-sandbox ... (4 actions running)
+[807 / 811] 36 / 40 tests; Testing //tests/cocotb/tutorial/tfmicro:cocotb_fully_connected_test_fc_256_256; 140s linux-sandbox ... (4 actions, 2 running)
+INFO: Found 40 test targets...
+INFO: Elapsed time: 1022.446s, Critical Path: 526.84s
+INFO: 112 processes: 692 action cache hit, 70 internal, 82 linux-sandbox.
+INFO: Build completed successfully, 112 total actions
+//tests/cocotb/tlul:tlul_socket_1n_128_cocotb_test_test_steering_and_locking PASSED in 2.1s
+//tests/cocotb/tlul:tlul_socket_m1_2_128_cocotb_test_test_arbitration_and_ordering PASSED in 1.9s
+//tests/cocotb/tlul:tlul_socket_m1_2_128_cocotb_test_test_directed_backpressure PASSED in 1.7s
+//tests/cocotb/tlul:tlul_socket_m1_2_128_cocotb_test_test_random_backpressure PASSED in 1.9s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_sram_masking           PASSED in 2.4s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_sram_pipelining        PASSED in 2.3s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_sram_read_write        PASSED in 2.5s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_tlul_to_sram_crv_balanced PASSED in 2.2s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_tlul_to_sram_crv_random_backpressure PASSED in 2.2s
+//tests/cocotb/tutorial:hello_world_float_core_mini_axi_core_mini_axi_tutorial PASSED in 2.9s
+//tests/cocotb/tutorial:tutorial_core_mini_axi_tutorial                  PASSED in 2.6s
+//tests/cocotb/tutorial/counters:cocotb_counter_test_inst_cycle_counter_test PASSED in 2.6s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x1           PASSED in 16.9s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x16          PASSED in 185.5s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x16_h2w8     PASSED in 160.2s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x3_s2        PASSED in 47.3s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_18x1           PASSED in 19.0s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_21x48_h8w8     PASSED in 114.3s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_37x1_h2w2      PASSED in 7.6s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_48x48_h2w2     PASSED in 57.5s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_4x1_h2w2       PASSED in 4.2s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_9x2            PASSED in 19.5s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv16to32stride2 PASSED in 55.2s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv32to32stride1 PASSED in 55.5s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv32to32stride2 PASSED in 57.2s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv64to64stride1 PASSED in 103.5s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv64to64stride2 PASSED in 113.3s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv8to8stride1 PASSED in 17.3s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv8to8stride2 PASSED in 19.6s
+//tests/cocotb/tutorial/tfmicro:cocotb_fully_connected_test_fc_16_16     PASSED in 4.6s
+//tests/cocotb/tutorial/tfmicro:cocotb_fully_connected_test_fc_256_256   PASSED in 191.4s
+//tests/cocotb/tutorial/tfmicro:cocotb_fully_connected_test_fc_64_64     PASSED in 16.1s
+//tests/cocotb/tutorial/tfmicro:cocotb_logistic_test_logistic_1024       PASSED in 129.9s
+//tests/cocotb/tutorial/tfmicro:cocotb_logistic_test_logistic_256        PASSED in 126.0s
+//tests/cocotb/tutorial/tfmicro:cocotb_pooling_test_maxpool16stride2     PASSED in 10.5s
+//tests/cocotb/tutorial/tfmicro:cocotb_pooling_test_maxpool32stride2     PASSED in 16.8s
+//tests/cocotb/tutorial/tfmicro:cocotb_pooling_test_maxpool64stride2     PASSED in 30.8s
+//tests/cocotb/vme_test:vme_test_vme_altfmt_test                         PASSED in 3.7s
+//tests/cocotb/vme_test:vme_test_vme_decode_test                         PASSED in 6.5s
+//tests/cocotb/vme_test:vme_test_vme_load_store_test                     PASSED in 11.2s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_003 09:57:44
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 2 targets configured)
+
+INFO: Analyzed 40 targets (20 packages loaded, 1615 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 199.810s, Critical Path: 87.27s
+INFO: 109 processes: 293 action cache hit, 69 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 109 total actions
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_abstract_access_nonexistent_register PASSED in 5.8s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_abstract_access_registers PASSED in 5.6s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_breakpoint PASSED in 6.1s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_dmactive   PASSED in 6.4s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_gdbserver  PASSED in 33.2s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_halt_resume PASSED in 6.0s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_hartsel    PASSED in 5.4s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_ndmreset   PASSED in 6.2s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_probe_impl PASSED in 6.0s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_scalar_registers PASSED in 6.7s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_single_step PASSED in 6.0s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_trigger_match PASSED in 5.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_backdoor_load_test PASSED in 3.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_basic_write_read_memory PASSED in 86.4s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_burst_types_test   PASSED in 55.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_cf_fault_retire_test PASSED in 3.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_coralnpu_isa_test  PASSED in 3.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_csr_behavior_test  PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_csr_illegal_write_test PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_csr_test           PASSED in 36.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_exceptions_test    PASSED in 3.2s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_fcsr_frm_hazard_test PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_finish_txn_before_halt_test PASSED in 3.3s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_float_csr_test     PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_float_hazard_test  PASSED in 2.6s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_frm_test           PASSED in 3.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_master_write_alignment PASSED in 3.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_minstret_test      PASSED in 2.8s
+//tests/cocotb/vme_test:vme_test_vme_matmul_bf16_test                    PASSED in 4.3s
+//tests/cocotb/vme_test:vme_test_vme_matmul_fp32_test                    PASSED in 3.7s
+//tests/cocotb/vme_test:vme_test_vme_matmul_int8_test                    PASSED in 5.6s
+//tests/cocotb/vme_test:vme_test_vme_mset_csr_test                       PASSED in 3.2s
+//tests/cocotb/vme_test:vme_test_vme_mset_retire_test                    PASSED in 3.3s
+//tests/cocotb/vme_test:vme_test_vme_mset_vtmmu_sequence_test            PASSED in 3.1s
+//tests/cocotb/vme_test:vme_test_vme_msettk_clamp_test                   PASSED in 2.9s
+//tests/cocotb/vme_test:vme_test_vme_msettm_clamp_test                   PASSED in 3.4s
+//tests/cocotb/vme_test:vme_test_vme_msettm_matmul_test                  PASSED in 3.3s
+//tests/cocotb/vme_test:vme_test_vme_mstatus_ms_test                     PASSED in 6.1s
+//tests/cocotb/vme_test:vme_test_vme_transpose_test                      PASSED in 5.2s
+//tests/cocotb/vme_test:vme_test_vme_vset_mtype_reset_test               PASSED in 3.3s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_004 10:01:36
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 92 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 199.814s, Critical Path: 93.85s
+INFO: 121 processes: 130 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_misa_test          PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_rand_instr_test    PASSED in 7.2s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_retire_buffer_full_illegal_inst_test PASSED in 3.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_riscv_dv           PASSED in 4.6s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_riscv_tests        PASSED in 5.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_run_wfi_in_all_slots PASSED in 3.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_slow_bready        PASSED in 3.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_wrap_burst_test    PASSED in 3.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_write_read_memory_stress_test PASSED in 29.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_fencei_test                      PASSED in 3.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_backdoor_load_test PASSED in 4.3s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_basic_write_read_memory PASSED in 93.4s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_burst_types_test PASSED in 58.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_cf_fault_retire_test PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_coralnpu_isa_test PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_behavior_test PASSED in 2.6s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_illegal_write_test PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_test      PASSED in 36.4s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_exceptions_test PASSED in 3.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_fcsr_frm_hazard_test PASSED in 3.3s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_finish_txn_before_halt_test PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_float_csr_test PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_float_hazard_test PASSED in 2.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_frm_test      PASSED in 3.2s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_master_write_alignment PASSED in 3.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_minstret_test PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_misa_test     PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_rand_instr_test PASSED in 6.4s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_retire_buffer_full_illegal_inst_test PASSED in 3.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_riscv_dv      PASSED in 4.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_riscv_tests   PASSED in 5.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_run_wfi_in_all_slots PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_slow_bready   PASSED in 3.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_wrap_burst_test PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_write_read_memory_stress_test PASSED in 24.6s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_fencei_test                 PASSED in 3.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_unreachable_prefetch_fault  PASSED in 3.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_unreachable_prefetch_fault       PASSED in 3.3s
+//tests/cocotb:isa_cycle_bench_test_isa_cycle_bench_test                 PASSED in 6.0s
+//tests/cocotb:nop_stress_test_nop_stress_test                           PASSED in 12.7s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_005 10:05:25
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (1 packages loaded, 2667 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 222.445s, Critical Path: 134.99s
+INFO: 121 processes: 2098 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//tests/cocotb:rvv_arithmetic_cocotb_test_arithmetic_m1_vanilla_ops      PASSED in 13.9s
+//tests/cocotb:rvv_arithmetic_cocotb_test_binary_op_vx                   PASSED in 133.7s
+//tests/cocotb:rvv_arithmetic_cocotb_test_carry_op_vx                    PASSED in 10.2s
+//tests/cocotb:rvv_arithmetic_cocotb_test_comparison_op_vv               PASSED in 16.6s
+//tests/cocotb:rvv_arithmetic_cocotb_test_comparison_op_vx               PASSED in 24.4s
+//tests/cocotb:rvv_arithmetic_cocotb_test_extension_op_test              PASSED in 3.6s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float32_arithmetic_m1_vanilla_ops PASSED in 8.4s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float32_reduction_m1_failure_ops PASSED in 3.0s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float32_reduction_m1_vanilla_ops PASSED in 3.4s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float_comparison_op            PASSED in 7.5s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float_convert_op               PASSED in 7.2s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float_misc_op                  PASSED in 10.3s
+//tests/cocotb:rvv_arithmetic_cocotb_test_immediate_op_test              PASSED in 19.1s
+//tests/cocotb:rvv_arithmetic_cocotb_test_merge_op_vv                    PASSED in 5.8s
+//tests/cocotb:rvv_arithmetic_cocotb_test_reduction_m1_failure_ops       PASSED in 4.2s
+//tests/cocotb:rvv_arithmetic_cocotb_test_reduction_m1_vanilla_ops       PASSED in 5.1s
+//tests/cocotb:rvv_arithmetic_cocotb_test_ternary_op_vx                  PASSED in 35.5s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnclip_test                    PASSED in 5.6s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnclip_vxsat_test              PASSED in 3.4s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnclipu_test                   PASSED in 5.0s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnsra_test                     PASSED in 4.8s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnsrl_test                     PASSED in 4.7s
+//tests/cocotb:rvv_arithmetic_cocotb_test_widen_math_ops_test_impl       PASSED in 3.5s
+//tests/cocotb:rvv_arithmetic_cocotb_test_widen_wide_math_ops_test       PASSED in 3.4s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_add                PASSED in 3.6s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_flush_race_test    PASSED in 3.2s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_load               PASSED in 3.5s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_lsu_indexed_short_vl_test PASSED in 3.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_small_loop_test    PASSED in 3.0s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vfrdiv_test        PASSED in 3.2s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vill_loop_trap_test PASSED in 2.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vill_trap_squashed_load_test PASSED in 3.4s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vl0_v0_corruption_test PASSED in 3.3s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vleff_test         PASSED in 2.9s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_dual_dispatch_lsu_test PASSED in 2.9s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_forwarding_debug_async_halt_test PASSED in 10.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_forwarding_debug_breakpoint_test PASSED in 4.6s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_forwarding_squash_test PASSED in 3.6s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_forwarding_whole_reg_control_test PASSED in 3.3s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_pipeline_test PASSED in 3.3s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_006 10:09:36
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (1 packages loaded, 94 targets configured).
+[251 / 252] 39 / 40 tests; Testing //tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_basic_write_read_memory; 122s linux-sandbox
+INFO: Found 40 test targets...
+INFO: Elapsed time: 351.248s, Critical Path: 133.07s
+INFO: 121 processes: 121 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_rob_test    PASSED in 3.3s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_trap_flush_test PASSED in 3.5s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_vmv_scalar_test PASSED in 3.2s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_vset_test   PASSED in 3.1s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vcompress_test         PASSED in 7.5s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vcpop_exception_test   PASSED in 8.1s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vcpop_test             PASSED in 4.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vcsr_test              PASSED in 8.6s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vfirst_test            PASSED in 8.3s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vill_test              PASSED in 3.3s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vill_whole_reg_test    PASSED in 4.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_viota_test             PASSED in 8.9s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vl_test                PASSED in 5.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vmsbf_test             PASSED in 8.2s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vmsif_test             PASSED in 9.1s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vmsof_test             PASSED in 9.4s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vstart_store           PASSED in 3.5s
+//tests/cocotb:rvv_assembly_cocotb_test_vgather_test                     PASSED in 6.0s
+//tests/cocotb:rvv_assembly_cocotb_test_vsetvl_test                      PASSED in 7.3s
+//tests/cocotb:rvv_assembly_cocotb_test_vslide1down_test                 PASSED in 8.5s
+//tests/cocotb:rvv_assembly_cocotb_test_vslide1up_test                   PASSED in 7.5s
+//tests/cocotb:rvv_assembly_cocotb_test_vslide_boundary_test             PASSED in 72.3s
+//tests/cocotb:rvv_assembly_cocotb_test_vslidedown_test                  PASSED in 29.6s
+//tests/cocotb:rvv_assembly_cocotb_test_vslideup_test                    PASSED in 25.9s
+//tests/cocotb:rvv_assembly_cocotb_test_vstart_test                      PASSED in 6.6s
+//tests/cocotb:rvv_bf16_ops_cocotb_test_rvv_bf16_ops_test                PASSED in 7.2s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_abstract_access_nonexistent_register PASSED in 6.4s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_abstract_access_registers PASSED in 6.6s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_breakpoint PASSED in 7.9s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_dmactive PASSED in 6.9s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_gdbserver PASSED in 72.4s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_halt_resume PASSED in 7.1s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_hartsel PASSED in 6.5s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_ndmreset PASSED in 7.7s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_probe_impl PASSED in 7.0s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_scalar_registers PASSED in 9.3s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_single_step PASSED in 7.6s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_trigger_match PASSED in 7.5s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_backdoor_load_test PASSED in 4.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_basic_write_read_memory PASSED in 132.3s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_007 10:16:02
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 80 targets configured).
+[251 / 252] 39 / 40 tests; Testing //tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_test; 17s linux-sandbox
+INFO: Found 40 test targets...
+INFO: Elapsed time: 389.874s, Critical Path: 136.47s
+INFO: 121 processes: 121 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_burst_types_test PASSED in 76.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_cf_fault_retire_test PASSED in 3.2s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_coralnpu_isa_test PASSED in 3.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_csr_illegal_write_test PASSED in 3.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_csr_test       PASSED in 98.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_exceptions_test PASSED in 3.5s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_fcsr_frm_hazard_test PASSED in 3.2s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_finish_txn_before_halt_test PASSED in 3.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_float_csr_test PASSED in 3.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_float_hazard_test PASSED in 3.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_frm_test       PASSED in 3.5s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_master_write_alignment PASSED in 3.5s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_misa_test      PASSED in 3.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_rand_instr_test PASSED in 12.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_retire_buffer_full_illegal_inst_test PASSED in 3.5s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_riscv_dv       PASSED in 7.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_riscv_tests    PASSED in 15.5s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_run_wfi_in_all_slots PASSED in 3.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_slow_bready    PASSED in 3.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_wrap_burst_test PASSED in 3.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_write_read_memory_stress_test PASSED in 51.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_fencei_test                  PASSED in 3.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_rvv_exceptions_test          PASSED in 3.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_rvv_frm_hazard_test          PASSED in 3.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_rvv_misa_test                PASSED in 3.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_backdoor_load_test PASSED in 5.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_basic_write_read_memory PASSED in 129.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_burst_types_test PASSED in 75.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_cf_fault_retire_test PASSED in 3.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_coralnpu_isa_test PASSED in 3.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_illegal_write_test PASSED in 3.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_test  PASSED in 98.2s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_exceptions_test PASSED in 3.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_fcsr_frm_hazard_test PASSED in 3.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_finish_txn_before_halt_test PASSED in 3.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_float_csr_test PASSED in 3.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_float_hazard_test PASSED in 4.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_frm_test  PASSED in 3.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_master_write_alignment PASSED in 3.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_misa_test PASSED in 3.1s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_008 10:23:07
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (2 packages loaded, 437 targets configured).
+INFO: From Verilate tests/cocotb/RvvCoreMini_ITCM512KB_DTCM512KBAxi_build/RvvCoreMini_ITCM512KB_DTCM512KBAxi [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 11.110 MB sources in 217 modules, into 122.565 MB in 91 C++ files needing 0.039 MB
+- Verilator: Walltime 86.107 s (elab=7.045, cvt=73.773, bld=0.000); cpu 85.332 s on 1 threads; allocated 1024.375 MB
+[472 / 492] 20 / 40 tests; Testing //tests/cocotb:rvv_load_store_test_load16_index16_seg; 26s linux-sandbox ... (4 actions running)
+INFO: Found 40 test targets...
+INFO: Elapsed time: 417.493s, Critical Path: 241.30s
+INFO: 124 processes: 358 action cache hit, 82 internal, 82 linux-sandbox.
+INFO: Build completed successfully, 124 total actions
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_rand_instr_test PASSED in 11.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_retire_buffer_full_illegal_inst_test PASSED in 3.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_riscv_dv  PASSED in 7.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_riscv_tests PASSED in 13.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_run_wfi_in_all_slots PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_slow_bready PASSED in 3.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_wrap_burst_test PASSED in 3.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_write_read_memory_stress_test PASSED in 53.5s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_fencei_test             PASSED in 3.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_rvv_exceptions_test     PASSED in 4.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_rvv_frm_hazard_test     PASSED in 4.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_rvv_misa_test           PASSED in 3.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_unreachable_prefetch_fault PASSED in 4.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_unreachable_prefetch_fault   PASSED in 3.5s
+//tests/cocotb:rvv_fflags_cocotb_test_rvv_fflags_test                    PASSED in 3.0s
+//tests/cocotb:rvv_highmem_tests_core_mini_axi_basic_write_read_memory   PASSED in 14.6s
+//tests/cocotb:rvv_highmem_tests_core_mini_axi_run_wfi_in_all_slots_highmem PASSED in 3.2s
+//tests/cocotb:rvv_highmem_tests_core_mini_axi_wrap_burst_highmem_test   PASSED in 3.1s
+//tests/cocotb:rvv_highmem_tests_core_mini_rvv_matmul_test               PASSED in 3.9s
+//tests/cocotb:rvv_highmem_tests_slow_core_mini_axi_basic_write_read_memory PASSED in 15.4s
+//tests/cocotb:rvv_highmem_tests_slow_core_mini_axi_run_wfi_in_all_slots_highmem PASSED in 3.0s
+//tests/cocotb:rvv_highmem_tests_slow_core_mini_axi_wrap_burst_highmem_test PASSED in 2.6s
+//tests/cocotb:rvv_highmem_tests_slow_core_mini_rvv_matmul_test          PASSED in 3.1s
+//tests/cocotb:rvv_itcm512kb_dtcm512kb_tests_core_mini_axi_basic_write_read_memory PASSED in 13.7s
+//tests/cocotb:rvv_itcm512kb_dtcm512kb_tests_core_mini_axi_run_wfi_in_all_slots_itcm512kb_dtcm512kb PASSED in 2.7s
+//tests/cocotb:rvv_itcm512kb_dtcm512kb_tests_core_mini_rvv_matmul_test   PASSED in 3.2s
+//tests/cocotb:rvv_load_store_test_load16_index16_seg                    PASSED in 51.4s
+//tests/cocotb:rvv_load_store_test_load16_index32_seg                    PASSED in 48.2s
+//tests/cocotb:rvv_load_store_test_load16_index8                         PASSED in 4.2s
+//tests/cocotb:rvv_load_store_test_load16_index8_seg                     PASSED in 8.4s
+//tests/cocotb:rvv_load_store_test_load16_seg_unit                       PASSED in 6.5s
+//tests/cocotb:rvv_load_store_test_load16_segment2_stride6_m1            PASSED in 3.8s
+//tests/cocotb:rvv_load_store_test_load16_stride4_m1                     PASSED in 3.1s
+//tests/cocotb:rvv_load_store_test_load16_stride4_m1_partial             PASSED in 3.3s
+//tests/cocotb:rvv_load_store_test_load16_stride4_mf2                    PASSED in 3.1s
+//tests/cocotb:rvv_load_store_test_load32_index16_seg                    PASSED in 27.5s
+//tests/cocotb:rvv_load_store_test_load32_index32_seg                    PASSED in 27.5s
+//tests/cocotb:rvv_load_store_test_load32_index8                         PASSED in 4.1s
+//tests/cocotb:rvv_load_store_test_load32_index8_seg                     PASSED in 6.9s
+//tests/cocotb:rvv_load_store_test_load32_seg_unit                       PASSED in 5.8s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_009 10:30:32
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 80 targets configured).
+[252 / 256] 36 / 40 tests; Testing //tests/cocotb:rvv_load_store_test_store16_index32; 15s linux-sandbox ... (4 actions, 2 running)
+INFO: Found 40 test targets...
+INFO: Elapsed time: 327.459s, Critical Path: 204.61s
+INFO: 121 processes: 122 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//tests/cocotb:rvv_load_store_test_load32_stride8_m1                     PASSED in 3.8s
+//tests/cocotb:rvv_load_store_test_load32_stride8_m1_partial             PASSED in 3.3s
+//tests/cocotb:rvv_load_store_test_load8_index16                         PASSED in 17.1s
+//tests/cocotb:rvv_load_store_test_load8_index16_seg                     PASSED in 68.6s
+//tests/cocotb:rvv_load_store_test_load8_index32                         PASSED in 14.0s
+//tests/cocotb:rvv_load_store_test_load8_index32_seg                     PASSED in 67.0s
+//tests/cocotb:rvv_load_store_test_load8_index8                          PASSED in 4.7s
+//tests/cocotb:rvv_load_store_test_load8_index8_seg                      PASSED in 11.1s
+//tests/cocotb:rvv_load_store_test_load8_seg_unit                        PASSED in 8.7s
+//tests/cocotb:rvv_load_store_test_load8_segment2_stride6_m1             PASSED in 3.1s
+//tests/cocotb:rvv_load_store_test_load8_stride0_m1                      PASSED in 2.9s
+//tests/cocotb:rvv_load_store_test_load8_stride0strict_m1                PASSED in 3.2s
+//tests/cocotb:rvv_load_store_test_load8_stride2_m1                      PASSED in 3.0s
+//tests/cocotb:rvv_load_store_test_load8_stride2_m1_partial              PASSED in 3.6s
+//tests/cocotb:rvv_load_store_test_load8_stride2_mf4                     PASSED in 3.2s
+//tests/cocotb:rvv_load_store_test_load_store16_unit_m2                  PASSED in 3.2s
+//tests/cocotb:rvv_load_store_test_load_store32_unit_m2                  PASSED in 3.0s
+//tests/cocotb:rvv_load_store_test_load_store8_test                      PASSED in 3.7s
+//tests/cocotb:rvv_load_store_test_load_store8_unit_m2                   PASSED in 2.8s
+//tests/cocotb:rvv_load_store_test_load_store_bits                       PASSED in 4.5s
+//tests/cocotb:rvv_load_store_test_load_store_stride_masked_param_test   PASSED in 200.8s
+//tests/cocotb:rvv_load_store_test_load_store_stride_masked_test         PASSED in 3.1s
+//tests/cocotb:rvv_load_store_test_load_store_whole_register_test        PASSED in 10.9s
+//tests/cocotb:rvv_load_store_test_load_strided_all_vtypes_test          PASSED in 49.4s
+//tests/cocotb:rvv_load_store_test_load_unit_all_vtypes_test             PASSED in 17.5s
+//tests/cocotb:rvv_load_store_test_load_unit_ff                          PASSED in 20.6s
+//tests/cocotb:rvv_load_store_test_load_unit_masked                      PASSED in 8.3s
+//tests/cocotb:rvv_load_store_test_lsu_fault_indexed_mid_vstart          PASSED in 4.1s
+//tests/cocotb:rvv_load_store_test_lsu_fault_negative_stride_mid_vstart  PASSED in 3.5s
+//tests/cocotb:rvv_load_store_test_lsu_fault_scalar_mixed_rs_flush       PASSED in 2.9s
+//tests/cocotb:rvv_load_store_test_lsu_fault_scalar_preserves_vstart     PASSED in 3.1s
+//tests/cocotb:rvv_load_store_test_lsu_fault_scalar_to_scalar_rs_flush   PASSED in 3.5s
+//tests/cocotb:rvv_load_store_test_lsu_fault_seg3_negative_stride_mid_vstart PASSED in 3.1s
+//tests/cocotb:rvv_load_store_test_lsu_fault_seg5_negative_stride_mid_vstart PASSED in 3.6s
+//tests/cocotb:rvv_load_store_test_lsu_fault_unit_stride_rs_flush        PASSED in 3.2s
+//tests/cocotb:rvv_load_store_test_lsu_fault_vector_load_rs_flush        PASSED in 3.6s
+//tests/cocotb:rvv_load_store_test_lsu_fault_vleff_rs_flush              PASSED in 3.1s
+//tests/cocotb:rvv_load_store_test_store16_index16                       PASSED in 30.2s
+//tests/cocotb:rvv_load_store_test_store16_index32                       PASSED in 22.3s
+//tests/cocotb:rvv_load_store_test_store16_index8                        PASSED in 4.7s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_010 10:36:26
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 112 targets configured).
+[266 / 283] 23 / 40 tests; Testing //tests/cocotb:vme_rvv_load_store_test_load8_index32; 22s linux-sandbox ... (4 actions, 3 running)
+[282 / 283] 39 / 40 tests; Testing //tests/cocotb:vme_rvv_load_store_test_load8_index32_seg; 125s linux-sandbox
+INFO: Found 40 test targets...
+INFO: Elapsed time: 671.598s, Critical Path: 206.29s
+INFO: 121 processes: 149 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//tests/cocotb:rvv_load_store_test_store16_seg_unit                      PASSED in 6.6s
+//tests/cocotb:rvv_load_store_test_store32_index16                       PASSED in 22.7s
+//tests/cocotb:rvv_load_store_test_store32_index32                       PASSED in 22.1s
+//tests/cocotb:rvv_load_store_test_store32_index8                        PASSED in 5.6s
+//tests/cocotb:rvv_load_store_test_store32_seg_unit                      PASSED in 4.5s
+//tests/cocotb:rvv_load_store_test_store8_index16                        PASSED in 29.9s
+//tests/cocotb:rvv_load_store_test_store8_index32                        PASSED in 24.8s
+//tests/cocotb:rvv_load_store_test_store8_index8                         PASSED in 5.2s
+//tests/cocotb:rvv_load_store_test_store8_index8_seg                     PASSED in 12.2s
+//tests/cocotb:rvv_load_store_test_store8_seg_unit                       PASSED in 8.6s
+//tests/cocotb:rvv_load_store_test_store_strided_all_vtypes_test         PASSED in 88.3s
+//tests/cocotb:rvv_load_store_test_store_unit_all_vtypes_test            PASSED in 18.2s
+//tests/cocotb:rvv_load_store_test_store_unit_masked                     PASSED in 7.6s
+//tests/cocotb:rvv_load_store_test_whole_reg_repro                       PASSED in 3.5s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_bf16_matmul_c_test   PASSED in 14.9s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_float_matmul_asm_test PASSED in 9.0s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_float_matmul_c_test  PASSED in 9.7s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_float_matmul_optimized_c_test PASSED in 7.0s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_matmul_asm_test      PASSED in 5.9s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_matmul_c_test        PASSED in 5.3s
+//tests/cocotb:vme_rvv_load_store_test_load16_index16_seg                PASSED in 134.7s
+//tests/cocotb:vme_rvv_load_store_test_load16_index32_seg                PASSED in 127.4s
+//tests/cocotb:vme_rvv_load_store_test_load16_index8                     PASSED in 8.4s
+//tests/cocotb:vme_rvv_load_store_test_load16_index8_seg                 PASSED in 21.6s
+//tests/cocotb:vme_rvv_load_store_test_load16_seg_unit                   PASSED in 15.1s
+//tests/cocotb:vme_rvv_load_store_test_load16_segment2_stride6_m1        PASSED in 3.4s
+//tests/cocotb:vme_rvv_load_store_test_load16_stride4_m1                 PASSED in 3.1s
+//tests/cocotb:vme_rvv_load_store_test_load16_stride4_m1_partial         PASSED in 3.5s
+//tests/cocotb:vme_rvv_load_store_test_load16_stride4_mf2                PASSED in 3.1s
+//tests/cocotb:vme_rvv_load_store_test_load32_index16_seg                PASSED in 69.3s
+//tests/cocotb:vme_rvv_load_store_test_load32_index32_seg                PASSED in 76.8s
+//tests/cocotb:vme_rvv_load_store_test_load32_index8                     PASSED in 6.6s
+//tests/cocotb:vme_rvv_load_store_test_load32_index8_seg                 PASSED in 14.3s
+//tests/cocotb:vme_rvv_load_store_test_load32_seg_unit                   PASSED in 10.8s
+//tests/cocotb:vme_rvv_load_store_test_load32_stride8_m1                 PASSED in 3.1s
+//tests/cocotb:vme_rvv_load_store_test_load32_stride8_m1_partial         PASSED in 3.8s
+//tests/cocotb:vme_rvv_load_store_test_load8_index16                     PASSED in 37.7s
+//tests/cocotb:vme_rvv_load_store_test_load8_index16_seg                 PASSED in 184.6s
+//tests/cocotb:vme_rvv_load_store_test_load8_index32                     PASSED in 31.5s
+//tests/cocotb:vme_rvv_load_store_test_load8_index32_seg                 PASSED in 172.3s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_011 10:48:03
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 80 targets configured).
+[246 / 256] 30 / 40 tests; Testing //tests/cocotb:vme_rvv_load_store_test_load_unit_ff; 39s linux-sandbox ... (4 actions, 2 running)
+[255 / 256] 39 / 40 tests; Testing //tests/cocotb:vme_rvv_load_store_test_load_store_stride_masked_param_test; 292s linux-sandbox
+INFO: Found 40 test targets...
+INFO: Elapsed time: 855.472s, Critical Path: 534.36s
+INFO: 121 processes: 122 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//tests/cocotb:vme_rvv_load_store_test_load8_index8                      PASSED in 8.8s
+//tests/cocotb:vme_rvv_load_store_test_load8_index8_seg                  PASSED in 25.4s
+//tests/cocotb:vme_rvv_load_store_test_load8_seg_unit                    PASSED in 17.7s
+//tests/cocotb:vme_rvv_load_store_test_load8_segment2_stride6_m1         PASSED in 3.6s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride0_m1                  PASSED in 3.2s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride0strict_m1            PASSED in 3.2s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride2_m1                  PASSED in 3.2s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride2_m1_partial          PASSED in 3.3s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride2_mf4                 PASSED in 2.9s
+//tests/cocotb:vme_rvv_load_store_test_load_store16_unit_m2              PASSED in 3.5s
+//tests/cocotb:vme_rvv_load_store_test_load_store32_unit_m2              PASSED in 3.0s
+//tests/cocotb:vme_rvv_load_store_test_load_store8_test                  PASSED in 3.5s
+//tests/cocotb:vme_rvv_load_store_test_load_store8_unit_m2               PASSED in 3.3s
+//tests/cocotb:vme_rvv_load_store_test_load_store_bits                   PASSED in 5.8s
+//tests/cocotb:vme_rvv_load_store_test_load_store_stride_masked_param_test PASSED in 533.8s
+//tests/cocotb:vme_rvv_load_store_test_load_store_stride_masked_test     PASSED in 3.6s
+//tests/cocotb:vme_rvv_load_store_test_load_store_whole_register_test    PASSED in 24.1s
+//tests/cocotb:vme_rvv_load_store_test_load_strided_all_vtypes_test      PASSED in 124.6s
+//tests/cocotb:vme_rvv_load_store_test_load_unit_all_vtypes_test         PASSED in 47.1s
+//tests/cocotb:vme_rvv_load_store_test_load_unit_ff                      PASSED in 45.9s
+//tests/cocotb:vme_rvv_load_store_test_load_unit_masked                  PASSED in 16.1s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_indexed_mid_vstart      PASSED in 3.3s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_negative_stride_mid_vstart PASSED in 3.5s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_scalar_mixed_rs_flush   PASSED in 3.1s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_scalar_preserves_vstart PASSED in 3.6s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_scalar_to_scalar_rs_flush PASSED in 3.7s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_seg3_negative_stride_mid_vstart PASSED in 3.0s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_seg5_negative_stride_mid_vstart PASSED in 3.3s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_unit_stride_rs_flush    PASSED in 3.8s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_vector_load_rs_flush    PASSED in 3.7s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_vleff_rs_flush          PASSED in 3.2s
+//tests/cocotb:vme_rvv_load_store_test_store16_index16                   PASSED in 63.3s
+//tests/cocotb:vme_rvv_load_store_test_store16_index32                   PASSED in 49.1s
+//tests/cocotb:vme_rvv_load_store_test_store16_index8                    PASSED in 7.5s
+//tests/cocotb:vme_rvv_load_store_test_store16_seg_unit                  PASSED in 13.7s
+//tests/cocotb:vme_rvv_load_store_test_store32_index16                   PASSED in 46.4s
+//tests/cocotb:vme_rvv_load_store_test_store32_index32                   PASSED in 50.1s
+//tests/cocotb:vme_rvv_load_store_test_store32_index8                    PASSED in 9.2s
+//tests/cocotb:vme_rvv_load_store_test_store32_seg_unit                  PASSED in 10.1s
+//tests/cocotb:vme_rvv_load_store_test_store8_index16                    PASSED in 67.4s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0
+=== batch_012 11:02:46
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 13 targets (1 packages loaded, 0 targets configured)
+Analyzing: 13 targets (1 packages loaded, 3 targets configured)
+
+INFO: Analyzed 13 targets (2 packages loaded, 34 targets configured).
+INFO: Found 13 test targets...
+INFO: Elapsed time: 272.610s, Critical Path: 223.48s
+INFO: 40 processes: 44 action cache hit, 27 internal, 26 linux-sandbox.
+INFO: Build completed successfully, 40 total actions
+//tests/cocotb:vme_rvv_load_store_test_store8_index32                    PASSED in 52.7s
+//tests/cocotb:vme_rvv_load_store_test_store8_index8                     PASSED in 9.0s
+//tests/cocotb:vme_rvv_load_store_test_store8_index8_seg                 PASSED in 29.8s
+//tests/cocotb:vme_rvv_load_store_test_store8_seg_unit                   PASSED in 18.1s
+//tests/cocotb:vme_rvv_load_store_test_store_strided_all_vtypes_test     PASSED in 208.4s
+//tests/cocotb:vme_rvv_load_store_test_store_unit_all_vtypes_test        PASSED in 46.8s
+//tests/cocotb:vme_rvv_load_store_test_store_unit_masked                 PASSED in 14.3s
+//tests/cocotb:vme_rvv_load_store_test_whole_reg_repro                   PASSED in 4.9s
+//tests/cocotb:zfbfmin_cocotb_test_zfbfmin_test                          PASSED in 3.5s
+//tests/cocotb:zvfbf_cocotb_test_zvfbf_test                              PASSED in 3.6s
+//tests/coralflow:test_matmul_verilator                                  PASSED in 4.4s
+//tests/coralflow:test_rvv_add_verilator                                 PASSED in 2.6s
+//tests/coralflow:test_rvv_ml_ops_verilator                              PASSED in 33.7s
+
+Executed 13 out of 13 tests: 13 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+exit=0

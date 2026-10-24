@@ -705,7 +705,7 @@ typedef struct packed {
   fpnew_pkg::fp_format_e                        fdstFmt; 
   fpnew_pkg::int_format_e                       idstFmt;    
   logic [$clog2(`NUM_MT)-1:0]                   readMtIdx; 
-  logic [$clog2(`PROCESS_DELAY)-1:0]            readMtId;        
+  logic [`ZVT_CNT_WIDTH-1:0]            readMtId;        
   logic                                         lastUopVld;
 } PEVAINFO_t;
 
@@ -728,7 +728,7 @@ typedef struct packed {
   fpnew_pkg::fp_format_e                        fdstFmt; 
   fpnew_pkg::int_format_e                       idstFmt; 
   logic [$clog2(`NUM_MT)-1:0]                   readMtIdx; 
-  logic [$clog2(`PROCESS_DELAY)-1:0]            readMtId;
+  logic [`ZVT_CNT_WIDTH-1:0]            readMtId;
   logic                                         lastUopVld;
 } MULBULKTAG_t;
 
@@ -745,7 +745,7 @@ typedef struct packed {
 `endif
   fpnew_pkg::status_t                                 status;
   logic [$clog2(`NUM_MT)-1:0]                         writeMtIdx;
-  logic [$clog2(`PROCESS_DELAY)-1:0]                  writeMtId;
+  logic [`ZVT_CNT_WIDTH-1:0]                  writeMtId;
   logic                                               lastUopVld;
 } ADDERTAG_t;
 

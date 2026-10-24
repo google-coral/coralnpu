@@ -650,6 +650,9 @@ object GenerateBackendConfig {
     if (p.enableVme) {
       config += "`ifndef ZVT_ON\n`define ZVT_ON\n`endif\n"
       config += "`ifndef ZVTBF16FMM_ON\n`define ZVTBF16FMM_ON\n`endif\n"
+      if (p.vmeProcessDelay != p.vmeTe / 4) {
+        config += s"`ifndef ZVT_PROCESS_DELAY\n`define ZVT_PROCESS_DELAY ${p.vmeProcessDelay}\n`endif\n"
+      }
     } else {
       config += "//`define ZVT_ON\n"
       config += "//`define ZVTBF16FMM_ON\n"
