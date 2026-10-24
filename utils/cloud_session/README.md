@@ -61,7 +61,10 @@ utils/cloud_session/run_regression.sh uvm /tmp/regression 40
 ```
 
 `REGRESSION_LIMIT=N` runs only the first N targets. The sections below show the
-same steps by hand. Results of a full run are kept in `results/`.
+same steps by hand. Results of a full run are kept in `results/`;
+`package_artifacts.py OUT_DIR [UVM_TARGETS_FILE]` packages the models, test
+programs and generated RTL a run used, with a UVM batch list that runs the UVM
+model without Bazel.
 
 ## Running the cocotb regression
 
