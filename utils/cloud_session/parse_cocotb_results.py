@@ -9,7 +9,9 @@ name in BUILD that the test module does not define); it is reported as
 NOT RUN.
 
 usage: parse_cocotb_results.py BAZEL_LOG TARGETS_FILE TESTLOGS_DIR OUT_PREFIX
-Writes OUT_PREFIX.csv and OUT_PREFIX.json.
+Writes OUT_PREFIX.csv and OUT_PREFIX.json (one row per testcase) and
+OUT_PREFIX.log (a readable summary: totals, a per-package table, every
+testcase that did not pass and every testcase's result).
 """
 import collections
 import csv
@@ -25,6 +27,59 @@ STATUS_RE = re.compile(
 ROW_RE = re.compile(
     r"\*\*\s+(\S+)\s+(PASS|FAIL|SKIP)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+\*\*"
 )
+
+
+def num(v):
+    return v if v != "" else 0
+
+
+def write_summary(path, targets, status, rows):
+    by_status = collections.Counter(
+        status.get(t, ("NOT RUN", ))[0] for t in targets
+    )
+    by_result = collections.Counter(r["cocotb_result"] for r in rows)
+    total_ns = sum(num(r["sim_time_ns"]) for r in rows)
+    total_s = sum(num(r["cocotb_real_time_s"]) for r in rows)
+    with open(path, "w") as f:
+        f.write("Verilator cocotb regression\n")
+        f.write(f"targets: {len(targets)}  bazel: {dict(by_status)}\n")
+        f.write(f"testcases: {len(rows)}  results: {dict(by_result)}\n")
+        f.write(
+            f"total simulated time: {total_ns:.2f} ns ({total_ns / 1e6:.3f} ms)  "
+            f"total cocotb real time: {total_s:.1f} s\n\n"
+        )
+        f.write("== By package ==\n")
+        f.write(
+            f"{'CASES':>6s} {'PASS':>5s} {'SIM TIME (ms)':>14s} {'REAL (s)':>9s}  PACKAGE\n"
+        )
+        packages = collections.defaultdict(lambda: [0, 0, 0.0, 0.0])
+        for r in rows:
+            p = packages[r["bazel_target"][2:].split(":")[0]]
+            p[0] += 1
+            p[1] += r["cocotb_result"] == "PASS"
+            p[2] += num(r["sim_time_ns"])
+            p[3] += num(r["cocotb_real_time_s"])
+        for pkg, (n, ok, ns, s) in sorted(packages.items(),
+                                          key=lambda kv: -kv[1][0]):
+            f.write(f"{n:6d} {ok:5d} {ns / 1e6:14.3f} {s:9.1f}  {pkg}\n")
+        f.write("\n== Not passed ==\n")
+        bad = [r for r in rows if r["cocotb_result"] != "PASS"]
+        if not bad:
+            f.write("(none)\n")
+        for r in bad:
+            f.write(
+                f"{r['cocotb_result']:8s} {r['bazel_target']}  testcase={r['testcase'] or '-'}  "
+                f"bazel={r['bazel_status']}\n"
+            )
+        f.write("\n== All testcases ==\n")
+        f.write(
+            f"{'RESULT':8s} {'SIM TIME (ns)':>14s} {'REAL (s)':>9s}  TARGET / TESTCASE\n"
+        )
+        for r in sorted(rows, key=lambda r: r["bazel_target"]):
+            f.write(
+                f"{r['cocotb_result']:8s} {str(r['sim_time_ns']):>14s} "
+                f"{str(r['cocotb_real_time_s']):>9s}  {r['bazel_target']}  {r['testcase']}\n"
+            )
 
 
 def main():
@@ -79,6 +134,7 @@ def main():
         w.writerows(rows)
     with open(out + ".json", "w") as f:
         json.dump(rows, f, indent=1)
+    write_summary(out + ".log", targets, status, rows)
 
     print(
         "targets:", len(targets),

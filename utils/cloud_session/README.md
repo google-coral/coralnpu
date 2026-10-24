@@ -50,6 +50,19 @@ python3 -I utils/cloud_session/local_zips.py --i-understand-this-skips-sha256 --
 # restores only the .bzl files it rewrote
 ```
 
+## Running the regressions
+
+`run_regression.sh` runs every cocotb or UVM target CI runs, in batches, and
+writes the targets, Bazel's log and the parsed results to an output directory:
+
+```bash
+utils/cloud_session/run_regression.sh cocotb /tmp/regression
+utils/cloud_session/run_regression.sh uvm /tmp/regression 40
+```
+
+`REGRESSION_LIMIT=N` runs only the first N targets. The sections below show the
+same steps by hand. Results of a full run are kept in `results/`.
+
 ## Running the cocotb regression
 
 This runs every Verilator cocotb target that CI runs (no `manual` or `vcs`
