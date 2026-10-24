@@ -56,8 +56,10 @@ differs between runs.
 ## Files
 
 As in `../2026-10-23`, plus `cocotb_results.json`, the per-testcase rows that
-`parse_cocotb_results.py` also writes. The build outputs were not committed
-again.
+`parse_cocotb_results.py` also writes. `artifacts/` holds the 256-PE models,
+test programs and generated RTL the runs used (see its README), and
+`CoralNPU_VME_方案B_256PE_实现与回归.docx` describes the change and these
+results.
 
 ## Reproducing
 
