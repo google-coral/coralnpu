@@ -6,6 +6,7 @@
 # usage: utils/cloud_session/run_regression.sh {cocotb|uvm} OUT_DIR [BATCH_SIZE]
 #
 # Set REGRESSION_LIMIT=N to run only the first N targets (a quick check).
+# Set REGRESSION_NOCACHE=1 to rerun tests whose results bazel has cached.
 #
 # Each batch's runfiles trees are deleted once it finishes: they hold thousands
 # of symlinks per target (20-30 MB each), and all of them at once outgrow a
@@ -26,6 +27,10 @@ cd "${repo}" || exit 1
 mkdir -p "${out_dir}"
 out_dir=$(realpath "${out_dir}")
 bazel=(bazel --bazelrc=utils/cloud_session/cloud.bazelrc)
+test_flags=()
+if ((${REGRESSION_NOCACHE:-0})); then
+  test_flags+=(--nocache_test_results)
+fi
 
 case "${kind}" in
   cocotb)
@@ -64,7 +69,7 @@ for batch in "${batches}"/batch_*; do
   now=$(date -u +%H:%M:%S)
   echo "=== ${batch##*/} ${now}" | tee -a "${log}"
   "${bazel[@]}" test --keep_going --curses=no --color=no \
-    --show_progress_rate_limit=300 --test_output=summary \
+    --show_progress_rate_limit=300 --test_output=summary "${test_flags[@]}" \
     --target_pattern_file="${batch}" >>"${log}" 2>&1
   echo "exit=$?" | tee -a "${log}"
   grep -E '^Executed' "${log}" | tail -n 1
