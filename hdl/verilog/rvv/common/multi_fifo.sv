@@ -68,7 +68,15 @@ module multi_fifo
   output  logic [DEPTH_BITS  :0]  entry_count;  // the number of occupied entry.
 
 // ---internal signal definition--------------------------------------
+`ifdef FPGA_XILINX
+  // Vivado distributed RAM (LUTRAM) inference.
+  // Kept under `ifdef FPGA_XILINX because ASIC synthesis (Design Compiler / Yosys)
+  // infers standard-cell DFFs with rst_n; exposing ram_style="distributed" to
+  // ASIC targets causes Yosys memory_libmap to error (no distributed RAM library cells).
   (* ram_style = "distributed" *) T mem[DEPTH-1:0];
+`else
+  T mem[DEPTH-1:0];
+`endif
 
   logic                           entry_count_en; 
   logic         [DEPTH_BITS  :0]  entry_count_now;
