@@ -21,6 +21,7 @@ it).
 | `uvm_results.csv` | One row per program: result, failure reason, simulated time (ps) |
 | `*_targets.txt` | The Bazel targets that were run |
 | `*_bazel.log` | Bazel's own output from the runs |
+| `artifacts/` | The models, test programs and generated RTL the runs used (see its README) |
 
 Simulated times come from the simulators: cocotb's `SIM TIME (ns)` column, and
 for UVM the time on the `** UVM TEST PASSED **` line, in ps (the testbench's
