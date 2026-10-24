@@ -100,6 +100,8 @@ object EmitCore extends App {
       p.enableRvv = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--enableVme")) {
       p.enableVme = arg.split("=")(1).toBoolean
+    } else if (arg.startsWith("--vmeProcessDelay")) {
+      p.vmeProcessDelay = arg.split("=")(1).toInt
     } else if (arg.startsWith("--enableFloat")) {
       p.enableFloat = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--enableZfbfmin")) {
@@ -131,6 +133,11 @@ object EmitCore extends App {
   }
   assert(!(useAxi && useTlul))
   require(!p.enableVme || p.enableRvv, "--enableVme requires --enableRvv=True")
+  require(
+    p.vmeProcessDelay >= 1 && p.vmeProcessDelay <= p.vmeTe / 4 &&
+      Integer.bitCount(p.vmeProcessDelay) == 1,
+    s"--vmeProcessDelay must be a power of two from 1 to ${p.vmeTe / 4}: ${p.vmeProcessDelay}"
+  )
 
   val finalModuleName =
     if (
@@ -180,6 +187,9 @@ object EmitCore extends App {
   }
   if (p.enableVme) {
     defines += "+define+ZVT_ON"
+    if (p.vmeProcessDelay != p.vmeTe / 4) {
+      defines += s"+define+ZVT_PROCESS_DELAY=${p.vmeProcessDelay}"
+    }
   }
   if (p.fpuPipeRegs != 4) {
     defines += s"+define+FPU_PIPEREGS=${p.fpuPipeRegs}"

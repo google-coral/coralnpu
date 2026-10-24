@@ -180,7 +180,7 @@ module zvt_pe_array (
   logic                                       hitRaw; 
   logic                                       canStart;
   logic [$clog2(`TE):0]                       tmsub1, tnsub1;
-  logic [$clog2(`PROCESS_DELAY)-1:0]          cnt, cntMax00, cntMax10;
+  logic [`ZVT_CNT_WIDTH-1:0]          cnt, cntMax00, cntMax10;
   logic                                       cntEn, cntCr;
   logic                                       vaHiActive, vbHiActive;
   logic                                       pipeLaEn, pipeHa0En, pipeHa1En, pipeLbEn, pipeHb0En, pipeHb1En;
@@ -208,12 +208,21 @@ module zvt_pe_array (
   assign peCmdRdy = {4{canStart && cntCr}};
 
   // counter
-  cdffr #(.T(logic [$clog2(`PROCESS_DELAY)-1:0]))
-  counter (.q(cnt), .clk(clk), .rst_n(rst_n), .e(cntEn), .c(cntCr), .d(cnt+($clog2(`PROCESS_DELAY))'('d1)));
+  cdffr #(.T(logic [`ZVT_CNT_WIDTH-1:0]))
+  counter (.q(cnt), .clk(clk), .rst_n(rst_n), .e(cntEn), .c(cntCr), .d(cnt+(`ZVT_CNT_WIDTH)'('d1)));
   
   assign tmsub1   = peCmd[0].tm - 'd1;
   assign tnsub1   = peCmd[0].vl - 'd1;
-  assign cntMax00 = tmsub1[$clog2(`TE)-1] ? ($clog2(`PROCESS_DELAY))'(`PROCESS_DELAY-1) : tmsub1[$clog2(`TE/2)-1:$clog2(`TE/2*`COMPRATIO)];
+  // cntMax00/cntMax10: last cnt for the low/high row half of the tile. With a
+  // single-cycle tile every row of a half fits in one cycle, so both are 0 (and
+  // the row-chunk slice below would be empty).
+  if (`PROCESS_DELAY == 1) begin : gen_single_cycle_tile
+    assign cntMax00 = '0;
+    assign cntMax10 = '0;
+  end else begin : gen_multi_cycle_tile
+    assign cntMax00 = tmsub1[$clog2(`TE)-1] ? (`ZVT_CNT_WIDTH)'(`PROCESS_DELAY-1) : tmsub1[$clog2(`TE/2)-1:$clog2(`TE/2*`COMPRATIO)];
+    assign cntMax10 = tmsub1[$clog2(`TE/2)-1:$clog2(`TE/2*`COMPRATIO)];
+  end
   assign cntCr    = cnt == cntMax00;
   assign cntEn    = canStart && blkCmdRdy[0];
 
@@ -223,7 +232,6 @@ module zvt_pe_array (
   assign pipeHb0En  = canStart & vbHiActive;
   // block 2
   assign vaHiActive = tmsub1[$clog2(`TE)-1];
-  assign cntMax10   = tmsub1[$clog2(`TE/2)-1:$clog2(`TE/2*`COMPRATIO)];
   assign pipeHa0En  = canStart & vaHiActive & (cnt<=cntMax10);
   assign pipeLbEn   = canStart & vaHiActive;
   // block 3
@@ -321,7 +329,11 @@ module zvt_pe_array (
   edff #(.T(PEVAINFO_t)) regHa1Data (.q(vaInfoHiD2), .clk(clk), .rst_n(rst_n), .e(pipeHa1En), .d(vaInfoHiD1));
   edff #(.T(PEVBINFO_t)) regLbData  (.q(vbInfoLoD1), .clk(clk), .rst_n(rst_n), .e(pipeLbEn  && (cnt=='d0)), .d(vbInfoLo));
   edff #(.T(PEVBINFO_t)) regHb0Data (.q(vbInfoHiD1), .clk(clk), .rst_n(rst_n), .e(pipeHb0En && (cnt=='d0)), .d(vbInfoHi));
-  edff #(.T(PEVBINFO_t)) regHb1Data (.q(vbInfoHiD2), .clk(clk), .rst_n(rst_n), .e(pipeHb1En && (cnt=='d1)), .d(vbInfoHiD1));
+  // vbInfoHiD1 is loaded at cnt 0 and forwarded to block 3 one cycle later,
+  // which is cnt 1 for a multi-cycle tile and the next tile's cnt 0 for a
+  // single-cycle one.
+  edff #(.T(PEVBINFO_t)) regHb1Data (.q(vbInfoHiD2), .clk(clk), .rst_n(rst_n),
+    .e(pipeHb1En && ((`PROCESS_DELAY == 1) || (cnt=='d1))), .d(vbInfoHiD1));
 
   // Block Command
   assign blkCmdVld[0] = canStart   && blkCmdRdy[0];
