@@ -62,17 +62,36 @@ export PYTHONPATH="${ROOT_DIR}:${PYTHONPATH:-}"
 export CORALFLOW_TARGET="nexus_fpga"
 export CORALFLOW_HIGHMEM="${CORALFLOW_HIGHMEM:-1}"
 
-FIND_OUT="$(find tests -name 'test_*.py')"
+SEARCH_DIRS=()
+[[ -d "tests" ]] && SEARCH_DIRS+=("tests")
+[[ -d "sw" ]] && SEARCH_DIRS+=("sw")
+if [[ "${#SEARCH_DIRS[@]}" -eq 0 ]]; then
+  echo "Error: Neither tests/ nor sw/ directory found under ${ROOT_DIR}" >&2
+  exit 1
+fi
+
+FIND_OUT="$(find "${SEARCH_DIRS[@]}" -type f -name '*.py' ! -path 'sw/utils/*' ! -name '__init__.py')"
 if [[ -z "${FIND_OUT}" ]]; then
-  echo "Error: No test_*.py script found under ${ROOT_DIR}/tests" >&2
+  echo "Error: No Python test script found under ${ROOT_DIR}/${SEARCH_DIRS[*]}" >&2
   exit 1
 fi
 SORTED_OUT="$(printf '%s\n' "${FIND_OUT}" | sort)"
 mapfile -t TEST_SCRIPTS <<< "${SORTED_OUT}"
 if [[ "${#TEST_SCRIPTS[@]}" -gt 1 ]]; then
-  echo "Error: Multiple test_*.py scripts found under ${ROOT_DIR}/tests (${TEST_SCRIPTS[*]}). Each test package must contain exactly one test script to avoid running the wrong test." >&2
-  exit 1
+  MAIN_SCRIPTS=()
+  for script in "${TEST_SCRIPTS[@]}"; do
+    if grep -q "coralflow_main" "${script}" 2>/dev/null; then
+      MAIN_SCRIPTS+=("${script}")
+    fi
+  done
+  if [[ "${#MAIN_SCRIPTS[@]}" -eq 1 ]]; then
+    TEST_SCRIPTS=("${MAIN_SCRIPTS[0]}")
+  else
+    echo "Error: Multiple test scripts found under ${ROOT_DIR} (${TEST_SCRIPTS[*]}). Each test package must contain a single entrypoint script." >&2
+    exit 1
+  fi
 fi
 TEST_SCRIPT="${TEST_SCRIPTS[0]}"
 
 exec "${PYTHON_EXEC}" "${TEST_SCRIPT}" "$@"
+

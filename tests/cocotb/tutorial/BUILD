@@ -49,6 +49,7 @@ coralflow_test(
     name = "hello_world_float_core_mini_axi",
     size = "medium",
     srcs = ["hello_world_float_core_mini_axi.py"],
+    data = ["//examples:coralnpu_v2_hello_world_add_floats_highmem.elf"],
     elf = "//examples:coralnpu_v2_hello_world_add_floats.elf",
     hdl_toplevel = "CoreMiniAxi",
     targets = [

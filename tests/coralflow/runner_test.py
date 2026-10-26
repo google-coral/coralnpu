@@ -527,7 +527,7 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
         os.environ["CORALFLOW_TARGET"] = "uvm"
         os.environ["CORALFLOW_UVM_BATCH"] = "1"
         os.environ["CORALFLOW_DATA_ELFS"] = (
-            "pkg/b_test.elf pkg/b_test.bin pkg/a_test.elf "
+            "pkg/b_test.elf pkg/b_test_highmem.elf pkg/b_test.bin pkg/a_test.elf "
             "pkg/rvv_bf16_add.elf pkg/fault_test.elf "
             "pkg/rv32ui-p-add pkg/rv32ui-p-add.dump"
         )

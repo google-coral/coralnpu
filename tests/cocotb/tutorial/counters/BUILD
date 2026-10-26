@@ -23,6 +23,14 @@ coralnpu_v2_binary(
     hdrs = ["//sw/utils:utils.h"],
 )
 
+coralnpu_v2_binary(
+    name = "inst_cycle_counter_example_highmem",
+    srcs = ["inst_cycle_counter_example.cc"],
+    hdrs = ["//sw/utils:utils.h"],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
+)
+
 TEST_CASES = [
     "inst_cycle_counter_test",
 ]
@@ -31,6 +39,7 @@ coralflow_test(
     name = "cocotb_counter_test",
     size = "medium",
     srcs = ["cocotb_counter_test.py"],
+    data = [":inst_cycle_counter_example_highmem.elf"],
     elf = ":inst_cycle_counter_example.elf",
     hdl_toplevel = "RvvCoreMiniAxi",
     targets = [

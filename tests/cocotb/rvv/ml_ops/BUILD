@@ -77,12 +77,30 @@ template_rule(
             "itcm_size_kbytes": 512,
             "dtcm_size_kbytes": 512,
         },
+        "rvv_bf16_matmul_highmem": {
+            "srcs": [
+                "bf16_matmul_runner.cc",
+                "rvv_bf16_matmul.cc",
+            ],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+        },
         "rvv_float_matmul": {
             "srcs": [
                 "float_matmul_runner.cc",
                 "rvv_float_matmul.cc",
             ],
             "hdrs": ["//sw/utils:utils.h"],
+        },
+        "rvv_float_matmul_highmem": {
+            "srcs": [
+                "float_matmul_runner.cc",
+                "rvv_float_matmul.cc",
+            ],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
         },
         "rvv_float_matmul_optimized": {
             "srcs": [
@@ -91,12 +109,30 @@ template_rule(
             ],
             "hdrs": ["//sw/utils:utils.h"],
         },
+        "rvv_float_matmul_optimized_highmem": {
+            "srcs": [
+                "float_matmul_runner.cc",
+                "rvv_float_matmul_optimized.cc",
+            ],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+        },
         "rvv_float_matmul_assembly": {
             "srcs": [
                 "float_matmul_runner.cc",
                 "rvv_float_matmul_assembly.cc",
             ],
             "hdrs": ["//sw/utils:utils.h"],
+        },
+        "rvv_float_matmul_assembly_highmem": {
+            "srcs": [
+                "float_matmul_runner.cc",
+                "rvv_float_matmul_assembly.cc",
+            ],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
         },
     },
 )
@@ -105,10 +141,16 @@ filegroup(
     name = "rvv_mlop_tests",
     srcs = [
         ":rvv_bf16_matmul.elf",
+        ":rvv_bf16_matmul_highmem.elf",
         ":rvv_float_matmul.elf",
         ":rvv_float_matmul_assembly.elf",
+        ":rvv_float_matmul_assembly_highmem.elf",
+        ":rvv_float_matmul_highmem.elf",
         ":rvv_float_matmul_optimized.elf",
+        ":rvv_float_matmul_optimized_highmem.elf",
         ":rvv_matmul.elf",
         ":rvv_matmul_assembly.elf",
+        ":rvv_matmul_assembly_highmem.elf",
+        ":rvv_matmul_highmem.elf",
     ],
 )

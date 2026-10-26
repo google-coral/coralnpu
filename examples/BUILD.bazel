@@ -22,6 +22,13 @@ coralnpu_v2_binary(
 )
 
 coralnpu_v2_binary(
+    name = "coralnpu_v2_hello_world_add_floats_highmem",
+    srcs = ["hello_world_add_floats.cc"],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
+)
+
+coralnpu_v2_binary(
     name = "coralnpu_v2_rvv_add_intrinsic",
     srcs = ["rvv_add_intrinsic.cc"],
 )

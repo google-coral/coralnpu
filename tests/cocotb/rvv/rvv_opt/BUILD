@@ -25,9 +25,21 @@ template_rule(
             "srcs": ["memcpy_test.cc"],
             "hdrs": ["//sw/opt:rvv_opt.h"],
         },
+        "rvv_memcpy_test_highmem": {
+            "srcs": ["memcpy_test.cc"],
+            "hdrs": ["//sw/opt:rvv_opt.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+        },
         "rvv_memset_test": {
             "srcs": ["memset_test.cc"],
             "hdrs": ["//sw/opt:rvv_opt.h"],
+        },
+        "rvv_memset_test_highmem": {
+            "srcs": ["memset_test.cc"],
+            "hdrs": ["//sw/opt:rvv_opt.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
         },
     },
 )
@@ -51,7 +63,9 @@ coralflow_test(
     srcs = ["cocotb_rvv_opt_test.py"],
     data = [
         ":rvv_memcpy_test.elf",
+        ":rvv_memcpy_test_highmem.elf",
         ":rvv_memset_test.elf",
+        ":rvv_memset_test_highmem.elf",
     ],
     targets = [
         "npusim",

@@ -318,6 +318,13 @@ template_rule(
     },
 )
 
+coralnpu_v2_binary(
+    name = "rvv_add_int8_m1_highmem",
+    srcs = ["template_add_int8_m1"],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
+)
+
 template_rule(
     coralnpu_v2_binary,
     {

@@ -390,6 +390,9 @@ def coralflow_test(*args: Any, **fixture_kwargs: Any) -> Any:
 def _is_batch_elf_path(path: str) -> bool:
     """Returns True if path is a runnable ELF binary in runfiles."""
     name = os.path.basename(path)
+    if (name.endswith("_highmem.elf")
+            and os.environ.get("CORALFLOW_HIGHMEM") != "1"):
+        return False
     if name.endswith(".elf"):
         return True
     if name.startswith("rv32u") and not name.endswith(".dump"):

@@ -679,12 +679,30 @@ coralnpu_v2_binary(
     ],
 )
 
+coralnpu_v2_binary(
+    name = "isa_cycle_bench_highmem",
+    srcs = [
+        "isa_cycle_bench.cc",
+    ],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
+)
+
 # This test is used for baseline vector power analysis.
 coralnpu_v2_binary(
     name = "nop_test",
     srcs = [
         "nop_test.cc",
     ],
+)
+
+coralnpu_v2_binary(
+    name = "nop_test_highmem",
+    srcs = [
+        "nop_test.cc",
+    ],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
 )
 
 coralnpu_v2_binary(
@@ -786,7 +804,6 @@ coralflow_test(
         "verilator",
         "vcs",
         "uvm",
-        "nexus_fpga",
     ],
     uvm_batch = True,
     deps = [
@@ -854,6 +871,7 @@ coralflow_test(
     name = "isa_cycle_bench_test",
     size = "large",
     srcs = ["isa_cycle_bench_test.py"],
+    data = [":isa_cycle_bench_highmem.elf"],
     elf = ":isa_cycle_bench.elf",
     targets = [
         "verilator",
@@ -871,6 +889,7 @@ coralflow_test(
     name = "nop_stress_test",
     size = "large",
     srcs = ["nop_test.py"],
+    data = [":nop_test_highmem.elf"],
     elf = ":nop_test.elf",
     targets = [
         "verilator",
@@ -891,10 +910,20 @@ coralnpu_v2_binary(
     ],
 )
 
+coralnpu_v2_binary(
+    name = "zvfbf_test_highmem",
+    srcs = [
+        "zvfbf_test.cc",
+    ],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
+)
+
 coralflow_test(
     name = "zvfbf_cocotb_test",
     size = "medium",
     srcs = ["zvfbf_test.py"],
+    data = [":zvfbf_test_highmem.elf"],
     elf = ":zvfbf_test.elf",
     targets = [
         "verilator",
@@ -914,10 +943,20 @@ coralnpu_v2_binary(
     ],
 )
 
+coralnpu_v2_binary(
+    name = "rvv_fflags_test_highmem",
+    srcs = [
+        "rvv_fflags_test.cc",
+    ],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
+)
+
 coralflow_test(
     name = "rvv_fflags_cocotb_test",
     size = "medium",
     srcs = ["rvv_fflags_test.py"],
+    data = [":rvv_fflags_test_highmem.elf"],
     elf = ":rvv_fflags_test.elf",
     targets = [
         "verilator",
@@ -954,7 +993,6 @@ coralflow_test(
         "verilator",
         "vcs",
         "uvm",
-        "nexus_fpga",
     ],
     deps = [
         requirement("ml_dtypes"),
@@ -969,10 +1007,20 @@ coralnpu_v2_binary(
     ],
 )
 
+coralnpu_v2_binary(
+    name = "zfbfmin_test_highmem",
+    srcs = [
+        "zfbfmin_test.cc",
+    ],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
+)
+
 coralflow_test(
     name = "zfbfmin_cocotb_test",
     size = "medium",
     srcs = ["zfbfmin_test.py"],
+    data = [":zfbfmin_test_highmem.elf"],
     elf = ":zfbfmin_test.elf",
     targets = [
         "verilator",

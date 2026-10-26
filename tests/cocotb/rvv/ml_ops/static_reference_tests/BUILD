@@ -29,6 +29,19 @@ coralnpu_v2_binary(
     ],
 )
 
+coralnpu_v2_binary(
+    name = "float_matmul_16x48x16_highmem",
+    srcs = [
+        "float_matmul_16x48x16_kernel.cc",
+        "float_matmul_16x48x16_runner.cc",
+    ],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
+    deps = [
+        "//sw/utils",
+    ],
+)
+
 # Integer matmul 16x48x16 static binary
 coralnpu_v2_binary(
     name = "int_matmul_16x48x16",
@@ -36,6 +49,19 @@ coralnpu_v2_binary(
         "int_matmul_16x48x16_kernel.cc",
         "int_matmul_16x48x16_runner.cc",
     ],
+    deps = [
+        "//sw/utils",
+    ],
+)
+
+coralnpu_v2_binary(
+    name = "int_matmul_16x48x16_highmem",
+    srcs = [
+        "int_matmul_16x48x16_kernel.cc",
+        "int_matmul_16x48x16_runner.cc",
+    ],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
     deps = [
         "//sw/utils",
     ],
@@ -50,6 +76,7 @@ coralflow_test(
     name = "float_matmul_16x48x16_test_suite",
     size = "enormous",
     srcs = ["static_reference_tests.py"],
+    data = [":float_matmul_16x48x16_highmem.elf"],
     elf = ":float_matmul_16x48x16.elf",
     targets = [
         "verilator",
@@ -70,6 +97,7 @@ coralflow_test(
     name = "int_matmul_16x48x16_test_suite",
     size = "enormous",
     srcs = ["static_reference_tests.py"],
+    data = [":int_matmul_16x48x16_highmem.elf"],
     elf = ":int_matmul_16x48x16.elf",
     targets = [
         "npusim",

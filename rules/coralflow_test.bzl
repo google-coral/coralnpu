@@ -189,22 +189,35 @@ def _emit_fpga_target(
         main_src,
         data,
         deps,
+        testcases,
+        excluded_testcases,
+        size,
         tags,
         kwargs):
+    if testcases != None and not testcases:
+        return
     fpga_kwargs = dict(kwargs)
     fpga_kwargs.pop("timeout", None)
     fpga_kwargs.pop("shard_count", None)
     fpga_tags = _unique(["nexus_fpga", "manual"] + tags)
+    fpga_env = {
+        "CORALFLOW_TARGET": "nexus_fpga",
+        # Physical Nexus FPGA bitstream (chip_nexus.bin) is Highmem by default.
+        "CORALFLOW_HIGHMEM": "1",
+    }
+    if testcases:
+        fpga_env["CORALFLOW_TESTCASE"] = ",".join([
+            _parse_testcase(tc, size)[0]
+            for tc in testcases
+        ])
+    if excluded_testcases:
+        fpga_env["CORALFLOW_EXCLUDE_TESTCASE"] = ",".join(excluded_testcases)
     native.py_binary(
         name = name + "_nexus_fpga",
         srcs = srcs,
         main = main_src,
         data = data,
-        env = {
-            "CORALFLOW_TARGET": "nexus_fpga",
-            # Physical Nexus FPGA bitstream (chip_nexus.bin) is Highmem by default.
-            "CORALFLOW_HIGHMEM": "1",
-        },
+        env = fpga_env,
         deps = _unique(deps + [
             "//coralnpu_test_utils/sim_backends:fpga_test_fixture",
         ]),
@@ -350,6 +363,9 @@ def coralflow_test(
             main_src = main_src,
             data = common_data,
             deps = base_deps,
+            testcases = _filter_testcases(testcases, "nexus_fpga", exclude_testcases),
+            excluded_testcases = exclude_testcases.get("nexus_fpga", []),
+            size = size,
             tags = tags,
             kwargs = kwargs,
         )

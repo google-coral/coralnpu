@@ -23,6 +23,7 @@ coralflow_test(
     name = "test_rvv_add",
     size = "large",
     srcs = ["test_rvv_add.py"],
+    data = ["//tests/cocotb/rvv/arithmetics:rvv_add_int8_m1_highmem.elf"],
     elf = "//tests/cocotb/rvv/arithmetics:rvv_add_int8_m1.elf",
 )
 
