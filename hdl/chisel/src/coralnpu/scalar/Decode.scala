@@ -634,7 +634,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   val rvvInterlock = if (p.enableRvv) {
     val isRvv      = decodedInsts.map(x => x.rvv.get.valid)
     val isRvvCount = isRvv.scan(0.U(4.W))(_ + _)
-    (0 until p.instructionLanes).map(i => isRvvCount(i) < io.rvvQueueCapacity.get)
+    (0 until p.instructionLanes).map(i => !isRvv(i) || isRvvCount(i) < io.rvvQueueCapacity.get)
   } else {
     Seq.fill(p.instructionLanes)(true.B)
   }
