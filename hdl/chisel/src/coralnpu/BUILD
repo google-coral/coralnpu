@@ -262,11 +262,13 @@ chisel_test(
     size = "medium",
     srcs = [
         "scalar/DecodeTest.scala",
+        "scalar/DispatchRvvInterlockTest.scala",
         "scalar/DispatchScoreboardTest.scala",
         "scalar/DispatchTestUtils.scala",
     ],
     deps = [
         ":coralnpu_base",
+        ":coralnpu_rvv",
         ":coralnpu_scalar",
         "//hdl/chisel/src/common:testing",
     ],
