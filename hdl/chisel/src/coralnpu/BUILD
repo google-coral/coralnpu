@@ -461,6 +461,9 @@ chisel_library(
         "Library.scala",
         "Parameters.scala",
     ],
+    exports = [
+        "//hdl/chisel/src/common:library",
+    ],
     deps = [
         ":clock_gate",
         "//hdl/chisel/src/bus",

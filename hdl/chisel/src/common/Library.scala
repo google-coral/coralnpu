@@ -17,6 +17,14 @@ package common
 import chisel3._
 import chisel3.util._
 
+// Ready/valid handshake for flat interfaces without a bits payload
+class Fireable extends Bundle {
+  val valid = Output(Bool())
+  val ready = Input(Bool())
+
+  def fire: Bool = valid && ready
+}
+
 object MuxOR {
   def apply(valid: Bool, data: UInt): UInt = {
     Mux(valid, data, 0.U(data.getWidth.W))
