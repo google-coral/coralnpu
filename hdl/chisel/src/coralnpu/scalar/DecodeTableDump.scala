@@ -58,7 +58,7 @@ object DecodeTableDump {
         FloatInstruction.table(p)
       else Seq()
 
-    val table = DecodeInstruction.table(p) ++ floatTable
+    val table = DecodeInstruction.table(p).map(entry => entry.name -> entry.pattern) ++ floatTable
 
     val machineCsrs = Seq(
       CsrAddress.MSTATUS,
