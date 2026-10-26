@@ -88,3 +88,75 @@ class DecodeInstructionSpec extends AnyFreeSpec with Matchers with ChiselSim {
     }
   }
 }
+
+object DispatchTestUtils {
+  import chisel3.simulator.PeekPokeAPI._
+
+  def initialize(dut: DispatchV2, p: Parameters): Unit = {
+    dut.io.halted.poke(false.B)
+    dut.io.lsuActive.poke(false.B)
+    dut.io.scoreboard.regd.poke(0.U)
+    dut.io.scoreboard.comb.poke(0.U)
+    dut.io.branchTaken.poke(false.B)
+    dut.io.interlock.poke(false.B)
+    dut.io.lsuQueueCapacity.poke(p.instructionLanes.U)
+    dut.io.retirement_buffer_nSpace.poke(p.retirementBufferSize.U)
+    dut.io.retirement_buffer_empty.poke(true.B)
+    dut.io.retirement_buffer_trap_pending.poke(false.B)
+    dut.io.single_step.poke(false.B)
+    dut.io.debug_mode.poke(false.B)
+    for (i <- 0 until p.instructionLanes) {
+      dut.io.inst(i).valid.poke(false.B)
+      dut.io.inst(i).bits.addr.poke((0x100 + 4 * i).U)
+      dut.io.inst(i).bits.inst.poke(0x13.U)
+      dut.io.inst(i).bits.brchFwd.poke(false.B)
+      dut.io.jalrTarget(i).data.poke(0.U)
+      dut.io.lsu(i).ready.poke(true.B)
+      dut.io.mlu(i).ready.poke(true.B)
+      dut.io.dvu(i).ready.poke(true.B)
+    }
+    dut.io.rvv.foreach(_.foreach(_.ready.poke(true.B)))
+    dut.io.rvvIdle.foreach(_.poke(true.B))
+    dut.io.rvvQueueCapacity.foreach(_.poke(p.instructionLanes.U))
+    dut.io.rvvState.foreach { state =>
+      state.valid.poke(true.B)
+      state.bits.vl.poke(4.U)
+      state.bits.vstart.poke(0.U)
+      state.bits.ma.poke(false.B)
+      state.bits.ta.poke(false.B)
+      state.bits.xrm.poke(0.U)
+      state.bits.sew.poke(0.U)
+      state.bits.lmul.poke(0.U)
+      state.bits.lmul_orig.poke(0.U)
+      state.bits.vill.poke(false.B)
+    }
+  }
+}
+
+class DispatchLsuInterlockSpec extends AnyFreeSpec with ChiselSim {
+  "LSU capacity gates only memory instructions" in {
+    val p = new Parameters()
+    simulate(new DispatchV2(p)) { dut =>
+      DispatchTestUtils.initialize(dut, p)
+      dut.io.inst(0).valid.poke(true.B)
+      dut.io.inst(0).bits.inst.poke(0x93.U) // addi x1, x0, 0
+      dut.io.lsuQueueCapacity.poke(0.U)
+      dut.io.inst(0).ready.expect(true.B)
+
+      // Scalar lane can follow final load admission, next load must wait.
+      dut.io.inst(0).bits.inst.poke(0x52083.U) // lw x1, 0(x10)
+      dut.io.inst(1).valid.poke(true.B)
+      dut.io.inst(1).bits.inst.poke(0x113.U) // addi x2, x0, 0
+      dut.io.inst(2).valid.poke(true.B)
+      dut.io.inst(2).bits.inst.poke(0x52183.U) // lw x3, 0(x10)
+      dut.io.inst(0).ready.expect(false.B)
+      dut.io.inst(1).ready.expect(false.B)
+      dut.io.lsuQueueCapacity.poke(1.U)
+      dut.io.inst(0).ready.expect(true.B)
+      dut.io.inst(1).ready.expect(true.B)
+      dut.io.inst(2).ready.expect(false.B)
+      dut.io.lsuQueueCapacity.poke(2.U)
+      dut.io.inst(2).ready.expect(true.B)
+    }
+  }
+}

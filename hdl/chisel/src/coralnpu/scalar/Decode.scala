@@ -644,7 +644,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   val isLsu        = decodedInsts.map(x => x.isLsu())
   val isLsuCount   = isLsu.scan(0.U(4.W))(_ + _)
   val lsuInterlock =
-    (0 until p.instructionLanes).map(i => isLsuCount(i) < io.lsuQueueCapacity)
+    (0 until p.instructionLanes).map(i => !isLsu(i) || isLsuCount(i) < io.lsuQueueCapacity)
 
   // ---------------------------------------------------------------------------
   // Undef
