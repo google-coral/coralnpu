@@ -22,14 +22,14 @@ class CircularBufferMulti[T <: Data](t: T, n: Int, capacity: Int) extends Module
   assert(isPow2(n))
   assert(isPow2(capacity))
   val io = IO(new Bundle {
-    val enqValid = Input(UInt(log2Ceil(n + 1).W))
+    val enqValid = Input(UInt(BitWidthForInt(n)))
     val enqData  = Input(Vec(n, t))
 
-    val nEnqueued = Output(UInt(log2Ceil(capacity + 1).W))
-    val nSpace    = Output(UInt(log2Ceil(capacity + 1).W))
+    val nEnqueued = Output(UInt(BitWidthForInt(capacity)))
+    val nSpace    = Output(UInt(BitWidthForInt(capacity)))
 
     val dataOut  = Output(Vec(n, t))
-    val deqReady = Input(UInt(log2Ceil(n + 1).W))
+    val deqReady = Input(UInt(BitWidthForInt(n)))
 
     val flush = Input(Bool())
   })

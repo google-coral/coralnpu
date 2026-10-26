@@ -186,7 +186,7 @@ class LsuUOp(p: Parameters) extends Bundle {
   val emul_data_orig = Option.when(p.enableRvv) { UInt(3.W) }
   val nfields        = Option.when(p.enableRvv) { UInt(3.W) }
   val strict         = Option.when(p.enableRvv) { Bool() }
-  val vl             = Option.when(p.enableRvv) { UInt(log2Ceil(p.rvvVlen + 1).W) }
+  val vl             = Option.when(p.enableRvv) { UInt(BitWidthForInt(p.rvvVlen)) }
   val vstart         = Option.when(p.enableRvv) { UInt(log2Ceil(p.rvvVlen).W) }
   // Whether or not a vector L/S instruction is masked. Unused in other ops.
   val masked = Option.when(p.enableRvv) { Bool() }
@@ -2036,7 +2036,7 @@ class LsuV3(p: Parameters) extends Lsu(p) {
   val flushCmd = RegInit(MakeInvalid(new FlushCmd))
 
   // Accept instructions based on available space.
-  val validSums = io.req.map(_.valid).scan(0.U(log2Ceil(p.instructionLanes + 1).W))(_ + _)
+  val validSums = io.req.map(_.valid).scan(0.U(BitWidthForInt(p.instructionLanes)))(_ + _)
   for (i <- 0 until p.instructionLanes) {
     io.req(i).ready := (validSums(i) < rs.io.nSpace) && !flushCmd.valid
   }

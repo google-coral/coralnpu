@@ -18,6 +18,7 @@ import bus._
 
 import chisel3._
 import chisel3.util._
+import common.BitWidthForInt
 
 object BufState extends ChiselEnum {
   val sIdle, sFilling, sDraining = Value
@@ -193,7 +194,7 @@ class TransposeBuffer(p: TLULParameters) extends Module {
   val eIdxWidth = gMax + sWidth
   val e         = VecInit.tabulate(N)(k => (reg_cfg.s * k.U + phase).pad(eIdxWidth))
 
-  val gc    = gMax.U(log2Ceil(gMax + 1).W) - reg_cfg.E
+  val gc    = gMax.U(BitWidthForInt(gMax)) - reg_cfg.E
   val cMask = VecInit((0 to eMax).map(ec => ((1 << (gMax - ec)) - 1).U(gMax.W)))(reg_cfg.E)
 
   val r_k = VecInit.tabulate(N)(k => (e(k) >> gc)(gMax - 1, 0))

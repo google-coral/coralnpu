@@ -16,6 +16,7 @@ package coralnpu.rvv
 
 import chisel3._
 import chisel3.util._
+import common.BitWidthForInt
 import coralnpu.{
   MtypeWriteDataIO,
   Parameters,
@@ -24,8 +25,9 @@ import coralnpu.{
   TileWriteDataIO
 }
 
+
 class RvvConfigState(p: Parameters) extends Bundle {
-  val vl     = Output(UInt(log2Ceil(p.rvvVlen + 1).W))
+  val vl     = Output(UInt(BitWidthForInt(p.rvvVlen)))
   val vstart = Output(UInt(log2Ceil(p.rvvVlen).W))
   val ma     = Output(Bool())
   val ta     = Output(Bool())
@@ -62,7 +64,7 @@ class Lsu2Rvv(p: Parameters) extends Bundle {
   val addr          = UInt(p.rvvRegCountWidth.W)
   val data          = UInt(p.rvvVlen.W)
   val last          = Bool()
-  val ff_tail_index = UInt(log2Ceil(p.rvvVlenb + 1).W)
+  val ff_tail_index = UInt(BitWidthForInt(p.rvvVlenb))
 }
 
 class Rvv2Lsu(p: Parameters) extends Bundle {

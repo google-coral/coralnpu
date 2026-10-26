@@ -86,7 +86,7 @@ class Dvu(p: Parameters) extends Module {
   val divide2  = RegInit(false.B)
   val isWord2  = RegInit(false.B)
 
-  val count = RegInit(0.U(log2Ceil(p.xlen + 1).W))
+  val count = RegInit(0.U(BitWidthForInt(p.xlen)))
 
   val divide = RegInit(0.U(p.xlen.W))
   val remain = RegInit(0.U(p.xlen.W))
