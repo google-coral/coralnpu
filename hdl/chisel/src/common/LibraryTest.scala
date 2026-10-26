@@ -112,6 +112,13 @@ class CircularVectorWindowTester(
 }
 
 class LibrarySpec extends AnyFreeSpec with ChiselSim {
+  "BitWidthForInt includes maximum count" in {
+    for ((maximum, bits) <- Seq(0 -> 0, 1 -> 1, 3 -> 2, 4 -> 3, Int.MaxValue -> 31)) {
+      assert(UInt(BitWidthForInt(maximum)).getWidth == bits)
+    }
+    intercept[IllegalArgumentException] { BitWidthForInt(-1) }
+  }
+
   "ForceZero" in {
     simulate(new ForceZeroTester) { dut =>
       // ForceZero when invalid

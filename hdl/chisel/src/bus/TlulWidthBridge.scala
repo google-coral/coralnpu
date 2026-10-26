@@ -16,7 +16,7 @@ package bus
 
 import chisel3._
 import chisel3.util._
-import common.{FifoX, MakeWireBundle}
+import common.{BitWidthForInt, FifoX, MakeWireBundle}
 
 class TlulWidthBridge(val host_p: TLULParameters, val device_p: TLULParameters) extends Module {
   val io = IO(new Bundle {
@@ -49,7 +49,7 @@ class TlulWidthBridge(val host_p: TLULParameters, val device_p: TLULParameters) 
       new Queue(
         new Bundle {
           val source = UInt(host_p.o.W)
-          val beats  = UInt(log2Ceil(ratio + 1).W)
+          val beats  = UInt(BitWidthForInt(ratio))
           val size   = UInt(host_p.z.W)
         },
         8
