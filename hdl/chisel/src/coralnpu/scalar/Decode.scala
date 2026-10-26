@@ -431,7 +431,11 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   )
 
   val rdScoreboard = (0 until p.instructionLanes).map(i =>
-    Mux(writesRd(i), UIntToOH(rdAddr(i), p.scalarRegCount), 0.U(p.scalarRegCount.W))
+    Mux(
+      writesRd(i) && rdAddr(i) =/= 0.U,
+      UIntToOH(rdAddr(i), p.scalarRegCount),
+      0.U(p.scalarRegCount.W)
+    )
   )
   val scoreboardScan = rdScoreboard.scan(0.U(p.scalarRegCount.W))(_ | _)
   // Note: regd comes from directly from registers, accessible on the same cycle
