@@ -1,5 +1,4 @@
 import os
-import sys
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
 from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
@@ -37,6 +36,8 @@ async def run_test_case(fixture, input_shape):
     out_h = (input_shape[1] - filter_height) // stride_height + 1
     out_w = (input_shape[2] - filter_width) // stride_width + 1
     output_shape = [input_shape[0], out_h, out_w, input_shape[3]]
+    out_size = int(np.prod(output_shape))
+    zero_out = np.zeros(out_size, dtype=np.int8)
 
     # VALID padding means no padding needed if dimensions fit perfectly
     pad_h = 0
@@ -53,6 +54,8 @@ async def run_test_case(fixture, input_shape):
     await fixture.write("input_dims", np.array(input_shape, dtype=np.int32))
     await fixture.write("input_data", input_data)
     await fixture.write("output_dims", np.array(output_shape, dtype=np.int32))
+    await fixture.write("output_data", zero_out)
+    await fixture.write("output_data_ref", zero_out)
 
     await fixture.write_word("params_stride_width", stride_width)
     await fixture.write_word("params_stride_height", stride_height)
@@ -71,7 +74,6 @@ async def run_test_case(fixture, input_shape):
                                                     8)).tobytes(), "little")
     print(f"  Ref Cycles: {ref_cycles}")
 
-    out_size = int(np.prod(output_shape))
     ref_out = await fixture.read(
         "output_data_ref", dtype=np.int8, shape=(out_size, )
     )
@@ -90,8 +92,13 @@ async def run_test_case(fixture, input_shape):
     # Verify
     mismatches = np.sum(opt_out != ref_out)
     if mismatches > 0:
-        print(f"  FAILED: {mismatches} mismatches found!", flush=True)
-        sys.exit(1)
+        idx = np.where(opt_out != ref_out)[0][0]
+        msg = (
+            f"FAILED: {mismatches} mismatches found! "
+            f"First mismatch at index {idx}: Opt {opt_out[idx]}, Ref {ref_out[idx]}"
+        )
+        print(f"  {msg}", flush=True)
+        raise AssertionError(msg)
     else:
         print("  SUCCESS: Outputs match.", flush=True)
 

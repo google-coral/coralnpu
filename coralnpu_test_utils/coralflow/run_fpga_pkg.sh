@@ -16,7 +16,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -d "${SCRIPT_DIR}/tests" ]]; then
+if [[ -d "${SCRIPT_DIR}/tests" || -d "${SCRIPT_DIR}/sw" ]]; then
   ROOT_DIR="${SCRIPT_DIR}"
 else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"

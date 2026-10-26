@@ -241,33 +241,31 @@ def _emit_fpga_target(
     )
 
     pkg_tar(
-        name = name + "_nexus_fpga_files",
+        name = name + "_nexus_fpga_pkg",
         srcs = _unique(srcs + data + [
             "//sw/utils:metrics",
             "//sw/utils/nexus_loader:nexus_loader",
             "//coralnpu_test_utils:ftdi_spi_master.py",
             "//coralnpu_test_utils:spi_constants.py",
             "//coralnpu_test_utils/coralflow:base_fixture.py",
+            "//coralnpu_test_utils/coralflow:run_fpga_pkg.sh",
             "//coralnpu_test_utils/coralflow:runner.py",
+            "//coralnpu_test_utils/coralflow:standalone_runfiles.py",
             "//coralnpu_test_utils/sim_backends:common_utils.py",
             "//coralnpu_test_utils/sim_backends:fpga_test_fixture.py",
         ]),
         mode = "0644",
         modes = {
+            "run.sh": "0755",
             "sw/utils/nexus_loader/nexus_loader": "0755",
         },
-        strip_prefix = "/",
-        tags = fpga_tags,
-    )
-
-    pkg_tar(
-        name = name + "_nexus_fpga_pkg",
-        srcs = ["//coralnpu_test_utils/coralflow:run_fpga_pkg.sh"],
-        deps = [":" + name + "_nexus_fpga_files"],
-        mode = "0755",
         remap_paths = {
-            "/run_fpga_pkg.sh": "run.sh",
+            "coralnpu_test_utils/coralflow/run_fpga_pkg.sh": "run.sh",
+            "/coralnpu_test_utils/coralflow/run_fpga_pkg.sh": "run.sh",
+            "coralnpu_test_utils/coralflow/standalone_runfiles.py": "bazel_tools/tools/python/runfiles.py",
+            "/coralnpu_test_utils/coralflow/standalone_runfiles.py": "bazel_tools/tools/python/runfiles.py",
         },
+        strip_prefix = "/",
         tags = fpga_tags,
     )
 

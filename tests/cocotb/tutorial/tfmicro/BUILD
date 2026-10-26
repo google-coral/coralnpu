@@ -77,7 +77,7 @@ coralflow_test(
     name = "cocotb_run_mobilenet_v1",
     size = "enormous",
     srcs = ["cocotb_run_mobilenet_v1.py"],
-    elf = ":run_mobilenet_v1_025_partial_binary",
+    elf = ":run_mobilenet_v1_025_partial_binary.elf",
     highmem = True,
     tags = ["manual"],
     targets = [
@@ -104,7 +104,7 @@ coralflow_test(
     name = "cocotb_depthwise_conv",
     size = "large",
     srcs = ["cocotb_depthwise_conv.py"],
-    elf = ":depthwise_conv_test",
+    elf = ":depthwise_conv_test.elf",
     exclude_testcases = {
         "verilator": [
             "test_dwconv64to64stride1",
@@ -133,7 +133,7 @@ coralflow_test(
 py_binary(
     name = "npusim_depthwise_conv",
     srcs = ["npusim_depthwise_conv.py"],
-    data = [":depthwise_conv_test"],
+    data = [":depthwise_conv_test.elf"],
     deps = [
         "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
@@ -144,7 +144,7 @@ py_binary(
 py_binary(
     name = "npusim_conv2d",
     srcs = ["npusim_conv2d.py"],
-    data = [":conv2d_test"],
+    data = [":conv2d_test.elf"],
     deps = [
         "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
@@ -167,7 +167,7 @@ coralflow_test(
     name = "cocotb_conv2d",
     size = "enormous",
     srcs = ["cocotb_conv2d.py"],
-    elf = ":conv2d_test",
+    elf = ":conv2d_test.elf",
     exclude_testcases = {
         "verilator": [
             "test_conv2d_16x16",
@@ -209,7 +209,7 @@ coralflow_test(
     name = "cocotb_pooling",
     size = "enormous",
     srcs = ["cocotb_pooling.py"],
-    elf = ":pooling_test",
+    elf = ":pooling_test.elf",
     exclude_testcases = {
         "verilator": [
             "test_maxpool64stride2",
@@ -240,7 +240,7 @@ coralflow_test(
     name = "cocotb_fully_connected",
     size = "enormous",
     srcs = ["cocotb_fully_connected.py"],
-    elf = ":fully_connected_test",
+    elf = ":fully_connected_test.elf",
     highmem = True,
     targets = [
         "npusim",
@@ -270,7 +270,7 @@ coralflow_test(
     name = "cocotb_logistic",
     size = "enormous",
     srcs = ["cocotb_logistic.py"],
-    elf = ":logistic_test",
+    elf = ":logistic_test.elf",
     highmem = True,
     targets = [
         "npusim",

@@ -62,6 +62,9 @@ def resolve_runfile_path(path: str | os.PathLike) -> str:
     def _try_resolve(p: str) -> str | None:
         if os.path.exists(p):
             return p
+        stripped = p.removeprefix("coralnpu_hw/")
+        if stripped != p and os.path.exists(stripped):
+            return stripped
         if r and not os.path.isabs(p):
             for candidate in (
                     p if p.startswith("coralnpu_hw/") else f"coralnpu_hw/{p}",

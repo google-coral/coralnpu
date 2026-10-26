@@ -12,26 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
+from bazel_tools.tools.python.runfiles import runfiles
+from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
 import numpy as np
 
-from coralnpu_test_utils.sim_backends.mpact_npusim_test_fixture import (
-    MpactNpuSimTestFixture,
-)
 
-
-async def _run_full_mobilenet():
+@coralflow_test(highmem=True)
+async def run_full_mobilenet(fixture):
     print("Running full mobilenet...")
-    fixture = await MpactNpuSimTestFixture.Create(
-        highmem=True, exit_on_ebreak=True
-    )
+    r = runfiles.Create()
     symbols = await fixture.load_elf_and_lookup_symbols(
-        "tests/npusim_examples/run_full_mobilenet_v1_binary.elf",
+        r.Rlocation(
+            "coralnpu_hw/tests/npusim_examples/run_full_mobilenet_v1_binary.elf"
+        ),
         symbols=["inference_status", "inference_input", "inference_output"],
         optional=True,
     )
 
-    if symbols.get("inference_input"):
+    if "inference_input" in symbols:
         input_data = np.random.randint(
             -128, 127, size=(224 * 224 * 3, ), dtype=np.int8
         )
@@ -41,7 +39,7 @@ async def _run_full_mobilenet():
     await fixture.run_to_halt()
     print(f"cycles taken by the simulation {fixture.get_cycle_count()}")
 
-    if symbols.get("inference_output"):
+    if "inference_output" in symbols:
         output_data = await fixture.read(
             "inference_output", size=5, dtype=np.int8, shape=(5, )
         )
@@ -50,16 +48,15 @@ async def _run_full_mobilenet():
             f"Output info: Top index {max_idx} with value {output_data[max_idx]} from {output_data}"
         )
 
-    if symbols.get("inference_status"):
-        inference_status = (
-            await fixture.read("inference_status", size=1, dtype=np.uint8)
-        )[0]
+    if "inference_status" in symbols:
+        inference_status = int(
+            (await fixture.read("inference_status", size=1, dtype=np.int8))[0]
+        )
         print(f"inference_status {inference_status}")
-
-
-def run_full_mobilenet():
-    asyncio.run(_run_full_mobilenet())
+        assert inference_status == 0, (
+            f"MobileNet inference failed with status {inference_status}"
+        )
 
 
 if __name__ == "__main__":
-    run_full_mobilenet()
+    coralflow_main()

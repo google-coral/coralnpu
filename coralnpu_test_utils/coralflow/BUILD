@@ -34,4 +34,5 @@ exports_files([
     "base_fixture.py",
     "run_fpga_pkg.sh",
     "runner.py",
+    "standalone_runfiles.py",
 ])

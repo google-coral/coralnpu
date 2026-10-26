@@ -233,7 +233,6 @@ async def vme_mset_csr_test(fixture):
             logging.info(
                 f"  {name:<22s} expected=0x{exp:08x} actual=0x{act:08x}"
             )
-        for name, exp, act in zip(field_names, expected, actual):
             assert act == exp, (
                 f"case {i} field `{name}` mismatch: "
                 f"got 0x{act:08x}, expected 0x{exp:08x}"
@@ -1134,7 +1133,6 @@ async def vme_msettk_clamp_test(fixture):
             logging.info(
                 f"  {name:<22s} expected=0x{exp:08x} actual=0x{act:08x}"
             )
-        for name, exp, act in zip(field_names, expected, actual):
             assert act == exp, (
                 f"case {i} field `{name}` mismatch: "
                 f"got 0x{act:08x}, expected 0x{exp:08x}"
@@ -1239,7 +1237,6 @@ async def vme_msettm_clamp_test(fixture):
             logging.info(
                 f"  {name:<22s} expected=0x{exp:08x} actual=0x{act:08x}"
             )
-        for name, exp, act in zip(field_names, expected, actual):
             assert act == exp, (
                 f"case {i} ({case['desc']}) field `{name}` mismatch: "
                 f"got 0x{act:08x}, expected 0x{exp:08x}"
@@ -1484,10 +1481,6 @@ async def vme_altfmt_test(fixture):
             f"  mtype expected=0x{case['expected_mtype']:08x} actual=0x{actual_mtype:08x}\n"
             f"  vtype expected=0x{case['expected_vtype']:08x} actual=0x{actual_vtype:08x}"
         )
-
-    for i, case in enumerate(cases):
-        actual_mtype = int(results[i][0])
-        actual_vtype = int(results[i][1])
         assert actual_mtype == case["expected_mtype"], (
             f"case {i} ({case['desc']}) mtype mismatch: "
             f"got 0x{actual_mtype:08x}, expected 0x{case['expected_mtype']:08x}"

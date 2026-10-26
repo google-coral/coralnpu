@@ -116,12 +116,6 @@ def reference_fredosum(x, y):
     return np.array([res])
 
 
-async def _setup_fixture(fixture):
-    r = runfiles.Create()
-    rng = np.random.default_rng(seed=42)
-    return fixture, r, rng
-
-
 def _get_math_result(
     x: np.array, y: np.array, symbol: str, dtype=None, z=None, rm="rne"
 ):
@@ -441,7 +435,7 @@ async def reduction_m1_vanilla_ops_test(
 
     r = runfiles.Create()
     with tqdm.tqdm(m1_vanilla_op_elfs) as t:
-        for elf_name in tqdm.tqdm(m1_vanilla_op_elfs):
+        for elf_name in t:
             t.set_postfix({"binary": os.path.basename(elf_name)})
             elf_path = r.Rlocation(
                 f"coralnpu_hw/tests/cocotb/rvv/arithmetics/{elf_name}"
@@ -524,7 +518,7 @@ async def float32_reduction_m1_vanilla_ops(fixture):
 
 
 async def reduction_m1_failure_test(
-    fixture, dtypes, math_ops: str, num_bytes: int
+    fixture, dtypes, math_ops: list[str], num_bytes: int
 ):
     """RVV reduction test template.
 
@@ -605,7 +599,7 @@ async def float32_reduction_m1_failure_ops(fixture):
 async def _widen_math_ops_test_impl(
     fixture,
     dtypes,
-    math_ops: str,
+    math_ops: list[str],
     num_test_values: int = 256,
 ):
     """RVV widen arithmetic test template.
@@ -621,7 +615,7 @@ async def _widen_math_ops_test_impl(
 
     r = runfiles.Create()
     with tqdm.tqdm(widen_op_elfs) as t:
-        for elf_name in tqdm.tqdm(widen_op_elfs):
+        for elf_name in t:
             t.set_postfix({"binary": os.path.basename(elf_name)})
             elf_path = r.Rlocation(
                 "coralnpu_hw/tests/cocotb/rvv/arithmetics/" + elf_name
@@ -2103,7 +2097,8 @@ async def binary_op_vx(fixture):
 
 @coralflow_test
 async def float_comparison_op(fixture):
-    fixture, r, rng = await _setup_fixture(fixture)
+    r = runfiles.Create()
+    rng = np.random.default_rng(seed=42)
     test_binaries = [
         (
             "vmfeq_vv_test.elf",
@@ -2214,7 +2209,8 @@ async def float_comparison_op(fixture):
 
 @coralflow_test
 async def float_misc_op(fixture):
-    fixture, r, rng = await _setup_fixture(fixture)
+    r = runfiles.Create()
+    rng = np.random.default_rng(seed=42)
     test_binaries = [
         (
             "vfclass_v_test.elf",
@@ -2395,7 +2391,8 @@ async def float_misc_op(fixture):
 
 @coralflow_test
 async def float_convert_op(fixture):
-    fixture, r, rng = await _setup_fixture(fixture)
+    r = runfiles.Create()
+    rng = np.random.default_rng(seed=42)
     test_binaries = [
         (
             "vfcvt_f_x_v_test.elf",

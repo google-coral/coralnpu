@@ -1,6 +1,5 @@
 # Copyright 2026 Google LLC
 import os
-import sys
 import numpy as np
 from bazel_tools.tools.python.runfiles import runfiles
 from coralnpu_test_utils.coralflow.runner import coralflow_main, coralflow_test
@@ -63,6 +62,8 @@ async def run_test_case(
         pad_w = 0
 
     output_shape = [input_shape[0], out_h, out_w, output_depth]
+    out_size = int(np.prod(output_shape))
+    zero_out = np.zeros(out_size, dtype=np.int8)
 
     print(
         f"Testing: Input {input_shape}, Filter {filter_shape}, Stride {stride}, Padding {padding_type} -> Output {output_shape}",
@@ -91,6 +92,8 @@ async def run_test_case(
     await fixture.write("bias_dims", np.array([output_depth], dtype=np.int32))
     await fixture.write("bias_data", bias_data)
     await fixture.write("output_dims", np.array(output_shape, dtype=np.int32))
+    await fixture.write("output_data", zero_out)
+    await fixture.write("output_data_ref", zero_out)
 
     await fixture.write_word("params_stride_width", stride_width)
     await fixture.write_word("params_stride_height", stride_height)
@@ -111,7 +114,6 @@ async def run_test_case(
                                                     8)).tobytes(), "little")
     print(f"  Ref Cycles: {ref_cycles}")
 
-    out_size = int(np.prod(output_shape))
     ref_out = await fixture.read(
         "output_data_ref", dtype=np.int8, shape=(out_size, )
     )
@@ -130,12 +132,13 @@ async def run_test_case(
     # Verify
     mismatches = np.sum(opt_out != ref_out)
     if mismatches > 0:
-        print(f"  FAILED: {mismatches} mismatches found!", flush=True)
         idx = np.where(opt_out != ref_out)[0][0]
-        print(
-            f"  First mismatch at index {idx}: Opt {opt_out[idx]}, Ref {ref_out[idx]}"
+        msg = (
+            f"FAILED: {mismatches} mismatches found! "
+            f"First mismatch at index {idx}: Opt {opt_out[idx]}, Ref {ref_out[idx]}"
         )
-        sys.exit(1)
+        print(f"  {msg}", flush=True)
+        raise AssertionError(msg)
     else:
         print("  SUCCESS: Outputs match.", flush=True)
 

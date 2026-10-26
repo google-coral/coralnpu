@@ -45,68 +45,79 @@ Inside `main()`, the script uses `memcpy` to bridge the exposed symbols and the 
 
 ## 2. The Python Host Script (`npusim_run_mobilenet.py`)
 
-The Python script uses `CoralNPUV2Simulator` to launch the ELF binary and interacts with the C++ symbols via memory manipulation.
+The Python script uses CoralFlow (`@coralflow_test` and `coralflow_main`) to instantiate the target fixture, load the ELF binary, and interact with the C++ symbols in memory.
 
-### Simulator Initialization and ELF Loading
-
-```python
-npu_sim = CoralNPUV2Simulator(highmem_ld=True, exit_on_ebreak=True)
-r = runfiles.Create()
-elf_file = r.Rlocation('coralnpu_hw/tests/npusim_examples/run_full_mobilenet_v1_binary.elf')
-```
-
-The script uses Bazel's `runfiles` utility to locate the compiled `.elf` binary regardless of the host environment.
-
-### Symbol Resolution
-
-To communicate with the C++ symbols, Python must find their specific memory addresses:
+### Fixture Decorator, ELF Loading, and Symbol Resolution
 
 ```python
-entry_point, symbol_map = npu_sim.get_elf_entry_and_symbol(
-    elf_file,
-    ['inference_status', 'inference_input', 'inference_output']
-)
+@coralflow_test(highmem=True)
+async def run_full_mobilenet(fixture):
+    r = runfiles.Create()
+    symbols = await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation(
+            "coralnpu_hw/tests/npusim_examples/run_full_mobilenet_v1_binary.elf"
+        ),
+        symbols=["inference_status", "inference_input", "inference_output"],
+        optional=True,
+    )
 ```
 
-`get_elf_entry_and_symbol` parses the ELF file and returns a dictionary (`symbol_map`) mapping strings like `'inference_input'` to their internal 32-bit RISC-V memory addresses.
+`load_elf_and_lookup_symbols` resolves the `.elf` binary path, loads the program into the simulator, and returns a dictionary (`symbols`) mapping symbol names like `"inference_input"` to their 32-bit RISC-V memory addresses.
 
 ### Injecting Inputs
 
-Before starting the simulator, the script populates the input buffer:
+Before running the simulation, the script populates the input buffer:
 
 ```python
-if symbol_map.get('inference_input'):
-    input_data = np.random.randint(-128, 127, size=(224 * 224 * 3,), dtype=np.int8)
-    npu_sim.write_memory(symbol_map['inference_input'], input_data)
+if "inference_input" in symbols:
+    input_data = np.random.randint(
+        -128, 127, size=(224 * 224 * 3,), dtype=np.int8
+    )
+    await fixture.write("inference_input", input_data)
 ```
 
-This directly overwrites the bytes at the `inference_input` pointer in the simulator's memory space.
+This directly writes the bytes into the `inference_input` symbol in the target's memory space.
 
 ### Execution and Extraction
 
 ```python
-npu_sim.run()
-npu_sim.wait()
+await fixture.run_to_halt()
 ```
 
-The simulator runs until the C++ application exits or hits a breakpoint.
+The simulator runs until the C++ application exits or hits `ebreak`.
 
-Once complete, the host script reads the output array directly from memory:
+Once complete, the host script reads the output array and status directly from memory:
 
 ```python
-if symbol_map.get('inference_output'):
-    output_data = npu_sim.read_memory(symbol_map['inference_output'], 5)
-    output_data = np.array(output_data, dtype=np.int8)
+if "inference_output" in symbols:
+    output_data = await fixture.read(
+        "inference_output", size=5, dtype=np.int8, shape=(5,)
+    )
+
+if "inference_status" in symbols:
+    inference_status = int(
+        (await fixture.read("inference_status", size=1, dtype=np.int8))[0]
+    )
+    assert inference_status == 0, (
+        f"MobileNet inference failed with status {inference_status}"
+    )
 ```
 
-Finally, `npu_sim.read_memory` is used to check the final `inference_status` value to ensure execution succeeded.
+Finally, `fixture.read` verifies that `inference_status == 0` to confirm execution succeeded.
 
 ## How to Run
 
-To run the simulation with the updated Python script, run the Bazel target from the repository root:
+To run the simulation on NPUSim or on Nexus FPGA hardware from the repository root:
 
 ```bash
-bazel run tests/npusim_examples:npusim_run_mobilenet
+# Run on NPUSim (functional simulator):
+bazel test //tests/npusim_examples:npusim_run_mobilenet_npusim
+
+# Or via the convenience alias:
+bazel run //tests/npusim_examples:npusim_run_mobilenet
+
+# Run on Nexus FPGA hardware:
+bazel run //tests/npusim_examples:npusim_run_mobilenet_nexus_fpga -- --usb-serial <device> --highmem --verify
 ```
 
 ## Summary of the Plumbing Flow

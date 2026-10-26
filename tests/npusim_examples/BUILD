@@ -12,21 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@coralnpu_hw//rules:coralflow_test.bzl", "coralflow_test")
 load("@coralnpu_hw//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_binary")
 
-py_binary(
+coralflow_test(
     name = "npusim_run_mobilenet",
+    size = "enormous",
     srcs = ["npusim_run_mobilenet.py"],
-    data = [
-        ":run_full_mobilenet_v1_binary",
+    elf = ":run_full_mobilenet_v1_binary.elf",
+    highmem = True,
+    tags = ["manual"],
+    targets = [
+        "npusim",
+        "nexus_fpga",
     ],
     deps = [
-        "//coralnpu_test_utils/sim_backends:mpact_npusim_test_fixture",
         "@bazel_tools//tools/python/runfiles",
         requirement("numpy"),
     ],
+)
+
+alias(
+    name = "npusim_run_mobilenet",
+    actual = ":npusim_run_mobilenet_npusim",
 )
 
 coralnpu_v2_binary(
@@ -36,7 +45,6 @@ coralnpu_v2_binary(
     ],
     dtcm_size_kbytes = 1024,  # Highmem
     itcm_size_kbytes = 1024,  # Highmem
-    semihosting = True,
     visibility = ["//visibility:public"],
     deps = [
         "//sw/opt:rvv_opt",
