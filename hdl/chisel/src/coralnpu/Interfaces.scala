@@ -48,17 +48,13 @@ class RegfileBusPortIO(p: Parameters) extends Bundle {
 
 // When `valid` as asserted, `addr` must remain constant
 // until `ready` is fired.
-class IBusIO(p: Parameters) extends Bundle {
+class IBusIO(p: Parameters) extends Fireable {
   // Control Phase.
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-  val addr  = Output(UInt(p.fetchAddrBits.W))
+  val addr = Output(UInt(p.fetchAddrBits.W))
   // Read Phase.
   val rdata = Input(UInt(p.fetchDataBits.W))
   // Fault information.
   val fault = Input(Valid(new FaultInfo(p)))
-
-  def fire: Bool = valid && ready
 }
 
 class FetchInstruction(p: Parameters) extends Bundle {
@@ -133,10 +129,8 @@ object LsuFaultInfo {
   }
 }
 
-class DBusIO(p: Parameters, bank: Boolean = false) extends Bundle {
+class DBusIO(p: Parameters, bank: Boolean = false) extends Fireable {
   // Control Phase.
-  val valid = Output(Bool())
-  val ready = Input(Bool())
   val write = Output(Bool())
   val pc    = Output(UInt(p.programCounterBits.W))
   val addr  = Output(UInt((p.lsuAddrBits - (if (bank) 1 else 0)).W))
@@ -176,21 +170,13 @@ class EBusIO(p: Parameters) extends Bundle {
   val fault    = Flipped(Valid(new FaultInfo(p)))
 }
 
-class IFlushIO(p: Parameters) extends Bundle {
-  val valid  = Output(Bool())
+class IFlushIO(p: Parameters) extends Fireable {
   val pcNext = Output(UInt(p.programCounterBits.W))
-  val ready  = Input(Bool())
-
-  def fire: Bool = valid && ready
 }
 
-class DFlushIO(p: Parameters) extends Bundle {
-  val valid = Output(Bool())
-  val ready = Input(Bool())
+class DFlushIO(p: Parameters) extends Fireable {
   val all   = Output(Bool()) // all=0, see io.dbus.addr for line address.
   val clean = Output(Bool()) // clean and flush
-
-  def fire: Bool = valid && ready
 }
 
 class TileWrite(p: Parameters) extends Bundle {
