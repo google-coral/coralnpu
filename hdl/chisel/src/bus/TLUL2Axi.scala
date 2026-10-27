@@ -89,7 +89,9 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   // TODO: Consider gating these signals (on get/put)? Especially address.
   // Drive AXI write channels for Put requests
   val aw_q = Module(new Queue(new AxiAddress(axiAddrBits, axiDataBits, axiIdBits), 1))
-  aw_q.io.enq.valid       := tl_a_q_remapped.valid && is_put
+  val w_q  = Module(new Queue(new AxiWriteData(axiDataBits, axiIdBits), 1))
+
+  aw_q.io.enq.valid := tl_a_q_remapped.valid && is_put && w_q.io.enq.ready && write_tx_info_q.io.enq.ready
   aw_q.io.enq.bits.addr   := tl_a_q_remapped.bits.address
   aw_q.io.enq.bits.id     := tl_a_q_remapped.bits.source
   aw_q.io.enq.bits.len    := 0.U
@@ -101,8 +103,7 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   aw_q.io.enq.bits.qos    := 0.U
   aw_q.io.enq.bits.region := 0.U
 
-  val w_q = Module(new Queue(new AxiWriteData(axiDataBits, axiIdBits), 1))
-  w_q.io.enq.valid     := tl_a_q_remapped.valid && is_put
+  w_q.io.enq.valid := tl_a_q_remapped.valid && is_put && aw_q.io.enq.ready && write_tx_info_q.io.enq.ready
   w_q.io.enq.bits.data := tl_a_q_remapped.bits.data
   w_q.io.enq.bits.strb := tl_a_q_remapped.bits.mask
   w_q.io.enq.bits.last := true.B
