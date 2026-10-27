@@ -27,6 +27,10 @@ import common.CoralNPURRArbiter
   *
   * @param p
   *   The CoralNPU parameters.
+  * @param maxReadTx
+  *   Maximum number of in-flight read transactions.
+  * @param maxWriteTx
+  *   Maximum number of in-flight write transactions.
   */
 class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   val p_tl: TLULParameters,
@@ -34,8 +38,12 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   val axiAddrBits: Int,
   val axiIdBits: Int,
   userAGen: () => A_USER,
-  userDGen: () => D_USER
+  userDGen: () => D_USER,
+  val maxReadTx: Int = 8,
+  val maxWriteTx: Int = 8
 ) extends Module {
+  require(maxReadTx > 0, "maxReadTx must be positive")
+  require(maxWriteTx > 0, "maxWriteTx must be positive")
   val tlul_p = p_tl
   val io     = IO(new Bundle {
     val tl_a = Flipped(Decoupled(new TileLink_A_ChannelBase(tlul_p, userAGen))) // TileLink Input
@@ -77,8 +85,8 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   class TxInfo extends Bundle {
     val size = UInt(p_tl_remapped.z.W)
   }
-  val read_tx_info_q  = Module(new Queue(new TxInfo, entries = 2))
-  val write_tx_info_q = Module(new Queue(new TxInfo, entries = 2))
+  val read_tx_info_q  = Module(new Queue(new TxInfo, entries = maxReadTx))
+  val write_tx_info_q = Module(new Queue(new TxInfo, entries = maxWriteTx))
 
   // --- Queue for incoming TileLink A-Channel requests ---
   val is_get = tl_a_q_remapped.bits.opcode === TLULOpcodesA.Get.asUInt

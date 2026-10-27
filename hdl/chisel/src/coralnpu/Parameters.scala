@@ -189,6 +189,9 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   val csrInCount  = 13
   val csrOutCount = 9
 
+  val tlul2AxiMaxReadTx: Int  = lsuSlotTxidEntries
+  val tlul2AxiMaxWriteTx: Int = lsuSlotTxidEntries
+
   def toTLUL(): TLULParameters = {
     new TLULParameters(
       dataBits = axi2DataBits,

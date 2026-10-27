@@ -60,7 +60,9 @@ class CoreTlul(p: Parameters, coreModuleName: String) extends RawModule {
         p.axi2AddrBits,
         p.axi2IdBits,
         () => new OpenTitanTileLink_A_User,
-        () => new OpenTitanTileLink_D_User
+        () => new OpenTitanTileLink_D_User,
+        maxReadTx = p.tlul2AxiMaxReadTx,
+        maxWriteTx = p.tlul2AxiMaxWriteTx
       )
     )
   }

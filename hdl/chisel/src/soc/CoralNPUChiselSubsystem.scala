@@ -391,7 +391,9 @@ class CoralNPUChiselSubsystem(
         ddr_ctrl_axi_p.axi2AddrBits,
         ddr_ctrl_axi_p.axi2IdBits,
         () => new OpenTitanTileLink_A_User,
-        () => new OpenTitanTileLink_D_User
+        () => new OpenTitanTileLink_D_User,
+        maxReadTx = ddr_ctrl_axi_p.tlul2AxiMaxReadTx,
+        maxWriteTx = ddr_ctrl_axi_p.tlul2AxiMaxWriteTx
       )
     )
     ddr_ctrl_axi_conv.clock := ddr_clk
@@ -443,7 +445,9 @@ class CoralNPUChiselSubsystem(
         ddr_mem_axi_p.axi2AddrBits,
         ddr_mem_axi_p.axi2IdBits,
         () => new OpenTitanTileLink_A_User,
-        () => new OpenTitanTileLink_D_User
+        () => new OpenTitanTileLink_D_User,
+        maxReadTx = ddr_mem_axi_p.tlul2AxiMaxReadTx,
+        maxWriteTx = ddr_mem_axi_p.tlul2AxiMaxWriteTx
       )
     )
 
