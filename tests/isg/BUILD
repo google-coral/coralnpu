@@ -14,7 +14,6 @@
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//rules:coralnpu_v2.bzl", "collect_coralnpu_elfs")
 load(":isg_rules.bzl", "isg_batch")
 
 package(default_visibility = ["//visibility:public"])
@@ -132,8 +131,4 @@ isg_batch(
     length = 64,
     seed = "20260924_trap",
     trap_rate = 0.1,
-)
-
-collect_coralnpu_elfs(
-    tags = ["manual"],
 )

@@ -16,9 +16,8 @@
 
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
+load("//rules:coralflow_test.bzl", "coralflow_test")
 load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
-load("//rules:vcs.bzl", "vcs_batch_uvm_test")
-load("//rules:verilator.bzl", "verilator_batch_uvm_test")
 
 def isg_program(
         name,
@@ -109,7 +108,7 @@ def isg_batch(
         binary_macro = coralnpu_v2_binary,
         tags = [],
         **kwargs):
-    """Generates a batch of ISG programs and registers a batch UVM regression test.
+    """Generates a batch of ISG programs and registers a CoralFlow test suite.
 
     Args:
         name: Base name of the generated test batch.
@@ -130,8 +129,6 @@ def isg_batch(
 
     elf_targets = []
     asm_targets = []
-    labels = []
-    timeouts = []
 
     if batch_size > 1000:
         fail("isg_batch supports at most 1000 programs (3-digit program index)")
@@ -153,8 +150,6 @@ def isg_batch(
         )
         elf_targets.append(":{}.elf".format(prog_name))
         asm_targets.append(":{}.S".format(prog_name))
-        labels.append("//{}:{}".format(native.package_name(), prog_name))
-        timeouts.append(100000)
 
     native.filegroup(
         name = name + "_elfs",
@@ -201,22 +196,19 @@ def isg_batch(
         tags = batch_tags,
     )
 
-    verilator_batch_uvm_test(
-        name = "verilator_uvm_regression_" + name,
-        model = "//tests/uvm:uvm_sim_verilator",
-        coralnpu_tests = elf_targets,
-        timeouts = timeouts,
-        labels = labels,
-        run_spike = "@coralnpu_hw//rules:uvm_run_spike_cosim",
-        tags = batch_tags + ["verilator-uvm-regression", "verilator-uvm-regression-coralnpu-tests"],
-    )
-
-    vcs_batch_uvm_test(
-        name = "vcs_uvm_regression_" + name,
-        model = "//tests/uvm:uvm_sim_vcs",
-        coralnpu_tests = elf_targets,
-        timeouts = timeouts,
-        labels = labels,
-        run_spike = "@coralnpu_hw//rules:uvm_run_spike_cosim",
-        tags = batch_tags + ["vcs", "vcs-uvm-regression", "vcs-uvm-regression-coralnpu-tests"],
+    coralflow_test(
+        name = name,
+        size = "medium",
+        srcs = ["isg_coralflow_test.py"],
+        data = elf_targets,
+        hdl_toplevel = "CoreMiniAxi",
+        targets = [
+            "verilator",
+            "vcs",
+            "uvm",
+        ],
+        deps = [
+            "@bazel_tools//tools/python/runfiles",
+        ],
+        tags = batch_tags,
     )
