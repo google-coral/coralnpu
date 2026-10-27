@@ -16,6 +16,25 @@ load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("//rules:coralflow_test.bzl", "coralflow_test")
 load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 
+VME_TEST_TESTCASES = [
+    "vme_mset_csr_test",
+    "vme_matmul_int8_test",
+    "vme_matmul_bf16_test",
+    "vme_matmul_fp32_test",
+    "vme_decode_test",
+    "vme_load_store_test",
+    "vme_transpose_test",
+    "vme_msettk_clamp_test",
+    "vme_msettm_clamp_test",
+    "vme_msettm_matmul_test",
+    "vme_altfmt_test",
+    "vme_vset_mtype_reset_test",
+    "vme_mset_retire_test",
+    "vme_mset_vtmmu_sequence_test",
+    "vme_mstatus_ms_test",
+    "vme_msettn_msettype_test",
+]
+
 coralflow_test(
     name = "vme_test",
     size = "large",

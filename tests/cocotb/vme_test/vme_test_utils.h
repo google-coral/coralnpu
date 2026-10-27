@@ -49,6 +49,43 @@ static inline __attribute__((always_inline)) uint32_t vme_msettn(uint32_t avl) {
   return t0_out;
 }
 
+// msettn rd, x0  (rd = t0 != x0, rs1 = x0)
+//   When mtwiden == 0: vl <- VLMAX; rd <- vl (vsetvl AVL=~0 semantics)
+//   When mtwiden != 0: vl <- 0;     rd <- 0  (uses x[x0] = 0)
+static inline __attribute__((always_inline)) uint32_t vme_msettn_rd_x0(void) {
+  register uint32_t t0_out asm("t0");
+  asm volatile(".insn r 0b1010111, 0b111, 0b1000100, t0, x0, x0" : "=r"(t0_out));
+  return t0_out;
+}
+
+// msettn x0, x0  (rd = x0, rs1 = x0)
+//   When mtwiden == 0: keep existing vl (vsetvl keep-vl semantics)
+//   When mtwiden != 0: vl <- 0          (uses x[x0] = 0)
+static inline __attribute__((always_inline)) void vme_msettn_x0_x0(void) {
+  asm volatile(".insn r 0b1010111, 0b111, 0b1000100, x0, x0, x0" ::: "memory");
+}
+
+// msetmtype probe helper to verify msetmtype sets vl=0 and mtype without corrupting XRF.
+static inline __attribute__((always_inline)) uint32_t vme_msetmtype_probe_rd(uint32_t mtype_value,
+                                                                             uint32_t vtype_value,
+                                                                             uint32_t rd_sentinel) {
+  register uint32_t a0_arg asm("a0") = mtype_value;
+  register uint32_t a1_arg asm("a1") = vtype_value;
+  register uint32_t t0_reg asm("t0") = rd_sentinel;
+  asm volatile(".insn r 0b1010111, 0b111, 0b1000010, x0, a0, a1"
+               : "+r"(t0_reg)
+               : "r"(a0_arg), "r"(a1_arg));
+  return t0_reg;
+}
+
+// msetmtypei probe helper to verify msetmtypei sets vl=0 and mtype without corrupting XRF.
+static inline __attribute__((always_inline)) uint32_t
+vme_msetmtypei_mtwiden3_sew8_probe_rd(uint32_t rd_sentinel) {
+  register uint32_t t0_reg asm("t0") = rd_sentinel;
+  asm volatile(".insn r 0b1010111, 0b111, 0b1000100, x0, x3, x4" : "+r"(t0_reg)::"memory");
+  return t0_reg;
+}
+
 // msettm rd, rs1
 //   mtype.tm <- min(rs1, LMUL*EVE, ETE);  rd <- tm
 // Encoding: funct7=0b1000100; sub-funct (rs2 field) = 1 (msettm).
@@ -90,10 +127,17 @@ static inline __attribute__((always_inline)) uint32_t vme_read_mtype(void) {
   return out;
 }
 
-// vtype CSR (0xC21) read helper.
+// vl CSR read helper.
+static inline __attribute__((always_inline)) uint32_t vme_read_vl(void) {
+  uint32_t out;
+  asm volatile("csrr %0, vl" : "=r"(out));
+  return out;
+}
+
+// vtype CSR read helper.
 static inline __attribute__((always_inline)) uint32_t vme_read_vtype(void) {
   uint32_t out;
-  asm volatile("csrr %0, 0xC21" : "=r"(out));
+  asm volatile("csrr %0, vtype" : "=r"(out));
   return out;
 }
 

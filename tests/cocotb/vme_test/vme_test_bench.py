@@ -1603,5 +1603,82 @@ async def vme_mstatus_ms_test(fixture):
     logging.info("✓ mstatus.MS, VS, and FS transitions verified successfully")
 
 
+@coralflow_test
+async def vme_msettn_msettype_test(fixture):
+    """Verify msetmtype/msetmtypei XRF writeback suppression and msettn behavior:
+    1. msetmtype / msetmtypei must not write back vl to XRF.
+    2. msettn behavior when mtwiden == 0 (vsetvl semantics including rs1 == x0
+       Table 46 AVL encoding and vill preservation) vs mtwiden != 0
+       (min(rs1, LMUL*EVE, ETE) with x[x0] == 0).
+    """
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_mset_test.elf"
+    )
+    if not elf_path:
+        raise ValueError("Could not find ELF file. Build the target first.")
+
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        [
+            "vme_run_msettn_msettype",
+            "vme_msettn_msettype_result",
+        ],
+    )
+
+    await fixture.write(
+        "vme_run_msettn_msettype", np.array([1], dtype=np.uint32)
+    )
+
+    await fixture.run_to_halt()
+
+    num_words = 22
+    raw = await fixture.read("vme_msettn_msettype_result", num_words * 4)
+    vals = [int(x) for x in np.frombuffer(raw, dtype=np.uint32)]
+
+    checks = [
+        # Issue 1: msetmtype / msetmtypei must not write back vl to XRF
+        ("msetmtype_rd_probe", vals[0], 0xDEADBEEF),
+        ("msetmtype_vl_csr", vals[1], 0),
+        ("msetmtype_mtype_csr", vals[2], _pack_mtype(tm=4, tk=1, mtwiden=1)),
+        ("msetmtypei_rd_probe", vals[3], 0xCAFEBABE),
+        ("msetmtypei_vl_csr", vals[4], 0),
+        ("msetmtypei_mtype_csr", vals[5], 3),
+        # Issue 2a: msettn when mtwiden == 0 (SEW8, LMUL1 -> VLMAX = 16)
+        ("mtwiden0_rd_x0_rd", vals[6], 16),
+        ("mtwiden0_rd_x0_vl", vals[7], 16),
+        ("mtwiden0_x0_x0_vl_before", vals[8], 7),
+        ("mtwiden0_x0_x0_vl_after", vals[9], 7),
+        # Issue 2b: msettn when mtwiden == 0 (SEW8, LMUL2 -> VLMAX = 32 > ETE = 16)
+        ("mtwiden0_lmul2_rs1_24_rd", vals[10], 24),
+        ("mtwiden0_lmul2_rs1_24_vl", vals[11], 24),
+        ("mtwiden0_lmul2_rd_x0_rd", vals[12], 32),
+        ("mtwiden0_lmul2_rd_x0_vl", vals[13], 32),
+        # Issue 2c: msettn when mtwiden != 0 (mtwiden = 1, SEW8 -> LMUL*EVE = 16, ETE = 16)
+        ("mtwiden1_rs1_24_rd", vals[14], 16),
+        ("mtwiden1_rs1_24_vl", vals[15], 16),
+        ("mtwiden1_rd_x0_rd", vals[16], 0),
+        ("mtwiden1_rd_x0_vl", vals[17], 0),
+        ("mtwiden1_x0_x0_vl_after", vals[18], 0),
+        # Issue 2d: msettn when mtwiden == 0 and vtype.vill == 1
+        ("mtwiden0_vill_rd", vals[19], 0),
+        ("mtwiden0_vill_vl", vals[20], 0),
+        ("mtwiden0_vill_vtype", vals[21], 0x80000000),
+    ]
+
+    mismatches = []
+    for name, act, exp in checks:
+        logging.info(
+            f"[msettn_msettype] {name:<28s} expected=0x{exp:08x} actual=0x{act:08x}"
+        )
+        if act != exp:
+            mismatches.append(f"{name}: got 0x{act:08x}, expected 0x{exp:08x}")
+
+    assert not mismatches, "msettn/msettype check failures:\n  " + "\n  ".join(
+        mismatches
+    )
+    logging.info("✓ All msetmtype/msetmtypei/msettn checks passed")
+
+
 if __name__ == "__main__":
     coralflow_main()

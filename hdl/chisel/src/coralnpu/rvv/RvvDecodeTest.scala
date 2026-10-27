@@ -60,21 +60,25 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
 
   class TesterMset(p: Parameters) extends Module {
     val io = IO(new Bundle {
-      val inst            = Input(UInt(32.W))
-      val rawWritesMtype  = Output(Bool())
-      val rawWritesVtype  = Output(Bool())
-      val compWritesMtype = Output(Bool())
-      val compWritesVtype = Output(Bool())
-      val compIsMsettn    = Output(Bool())
+      val inst             = Input(UInt(32.W))
+      val rawWritesMtype   = Output(Bool())
+      val rawWritesVtype   = Output(Bool())
+      val compWritesMtype  = Output(Bool())
+      val compWritesVtype  = Output(Bool())
+      val compIsMsettn     = Output(Bool())
+      val compWritesRd     = Output(Bool())
+      val compWritesVecReg = Output(Bool())
     })
 
     io.rawWritesMtype := RvvCompressedInstruction.isMsetWritesMtype(io.inst)
     io.rawWritesVtype := RvvCompressedInstruction.isMsetWritesVtype(io.inst)
 
     val comp = RvvCompressedInstruction.from_uncompressed(p, io.inst, 0.U)
-    io.compWritesMtype := comp.valid && comp.bits.isMsetWritesMtype()
-    io.compWritesVtype := comp.valid && comp.bits.isMsetWritesVtype()
-    io.compIsMsettn    := comp.valid && comp.bits.isMsettn()
+    io.compWritesMtype  := comp.valid && comp.bits.isMsetWritesMtype()
+    io.compWritesVtype  := comp.valid && comp.bits.isMsetWritesVtype()
+    io.compIsMsettn     := comp.valid && comp.bits.isMsettn()
+    io.compWritesRd     := comp.valid && comp.bits.writesRd()
+    io.compWritesVecReg := comp.valid && comp.bits.writesVectorRegister()
   }
 
   private def test_decode(
@@ -497,20 +501,24 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
         inst: Long,
         writesMtype: Boolean,
         writesVtype: Boolean,
-        isMsettn: Boolean
+        isMsettn: Boolean,
+        writesRd: Boolean = true,
+        writesVecReg: Boolean = false
       )
       val cases = Seq(
         TestCase(
           0x84007057L,
           writesMtype = true,
           writesVtype = true,
-          isMsettn = false
+          isMsettn = false,
+          writesRd = false
         ), // msetmtype
         TestCase(
           0x84b57057L,
           writesMtype = true,
           writesVtype = true,
-          isMsettn = false
+          isMsettn = false,
+          writesRd = false
         ), // msetmtype with rs1/rs2
         TestCase(0x88007057L, writesMtype = false, writesVtype = false, isMsettn = true), // msettn
         TestCase(
@@ -537,7 +545,8 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
           0x88407057L,
           writesMtype = true,
           writesVtype = true,
-          isMsettn = false
+          isMsettn = false,
+          writesRd = false
         ), // msetmtypei
         // Standard vset* (do not count as msetWritesMtype/Vtype)
         TestCase(
@@ -554,7 +563,14 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
         ), // vsetivli
         TestCase(0x80007057L, writesMtype = false, writesVtype = false, isMsettn = false), // vsetvl
         // Non-vset instruction
-        TestCase(0x02000057L, writesMtype = false, writesVtype = false, isMsettn = false) // vadd.vv
+        TestCase(
+          0x02000057L,
+          writesMtype = false,
+          writesVtype = false,
+          isMsettn = false,
+          writesRd = false,
+          writesVecReg = true
+        ) // vadd.vv
       )
 
       for (c <- cases) {
@@ -564,6 +580,8 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
         dut.io.compWritesMtype.expect(c.writesMtype.B)
         dut.io.compWritesVtype.expect(c.writesVtype.B)
         dut.io.compIsMsettn.expect(c.isMsettn.B)
+        dut.io.compWritesRd.expect(c.writesRd.B)
+        dut.io.compWritesVecReg.expect(c.writesVecReg.B)
       }
     }
   }

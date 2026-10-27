@@ -73,7 +73,96 @@ uint32_t vme_msetmtypei_altfmt1_result __attribute__((section(".data")))       =
 uint32_t vme_msetmtypei_altfmt1_vtype_result __attribute__((section(".data"))) = 0;
 uint32_t vme_vsetvl_mtype_result __attribute__((section(".data")))             = 0xFFFFFFFF;
 
+struct VmeMsettnMsettypeResult {
+  // Issue 1: msetmtype / msetmtypei must not write back vl to XRF.
+  uint32_t msetmtype_rd_probe;
+  uint32_t msetmtype_vl_csr;
+  uint32_t msetmtype_mtype_csr;
+  uint32_t msetmtypei_rd_probe;
+  uint32_t msetmtypei_vl_csr;
+  uint32_t msetmtypei_mtype_csr;
+
+  // Issue 2a: msettn when mtwiden == 0 (SEW8, LMUL1 -> VLMAX = 16).
+  uint32_t mtwiden0_rd_x0_rd;
+  uint32_t mtwiden0_rd_x0_vl;
+  uint32_t mtwiden0_x0_x0_vl_before;
+  uint32_t mtwiden0_x0_x0_vl_after;
+
+  // Issue 2b: msettn when mtwiden == 0 (SEW8, LMUL2 -> VLMAX = 32 > ETE = 16).
+  uint32_t mtwiden0_lmul2_rs1_24_rd;
+  uint32_t mtwiden0_lmul2_rs1_24_vl;
+  uint32_t mtwiden0_lmul2_rd_x0_rd;
+  uint32_t mtwiden0_lmul2_rd_x0_vl;
+
+  // Issue 2c: msettn when mtwiden != 0 (mtwiden = 1, SEW8 -> LMUL*EVE = 16, ETE = 16).
+  uint32_t mtwiden1_rs1_24_rd;
+  uint32_t mtwiden1_rs1_24_vl;
+  uint32_t mtwiden1_rd_x0_rd;
+  uint32_t mtwiden1_rd_x0_vl;
+  uint32_t mtwiden1_x0_x0_vl_after;
+
+  // Issue 2d: msettn when mtwiden == 0 and vtype.vill == 1.
+  uint32_t mtwiden0_vill_rd;
+  uint32_t mtwiden0_vill_vl;
+  uint32_t mtwiden0_vill_vtype;
+};
+
+volatile uint32_t vme_run_msettn_msettype __attribute__((section(".data")))          = 0;
+VmeMsettnMsettypeResult vme_msettn_msettype_result __attribute__((section(".data"))) = {};
+
 int main(int argc, char **argv) {
+  if (vme_run_msettn_msettype) {
+    // 1. Verify msetmtype and msetmtypei do not write back vl to XRF.
+    vme_msetmtype(MtypeValue(8, 2, 1), 0x00);
+    (void)vme_msettn(8);
+    vme_msettn_msettype_result.msetmtype_rd_probe =
+        vme_msetmtype_probe_rd(MtypeValue(4, 1, 1), 0x00, 0xDEADBEEFu);
+    vme_msettn_msettype_result.msetmtype_vl_csr    = vme_read_vl();
+    vme_msettn_msettype_result.msetmtype_mtype_csr = vme_read_mtype();
+
+    (void)vme_msettn(8);
+    vme_msettn_msettype_result.msetmtypei_rd_probe =
+        vme_msetmtypei_mtwiden3_sew8_probe_rd(0xCAFEBABEu);
+    vme_msettn_msettype_result.msetmtypei_vl_csr    = vme_read_vl();
+    vme_msettn_msettype_result.msetmtypei_mtype_csr = vme_read_mtype();
+
+    // 2a. msettn when mtwiden == 0 (SEW8, LMUL1 -> VLMAX = 16).
+    vme_msetmtype(0x0000, 0x00);
+    vme_msettn_msettype_result.mtwiden0_rd_x0_rd = vme_msettn_rd_x0();
+    vme_msettn_msettype_result.mtwiden0_rd_x0_vl = vme_read_vl();
+
+    (void)vme_msettn(7);
+    vme_msettn_msettype_result.mtwiden0_x0_x0_vl_before = vme_read_vl();
+    vme_msettn_x0_x0();
+    vme_msettn_msettype_result.mtwiden0_x0_x0_vl_after = vme_read_vl();
+
+    // 2b. msettn when mtwiden == 0 (SEW8, LMUL2 -> VLMAX = 32 > ETE = 16).
+    vme_msetmtype(0x0000, 0x01);
+    vme_msettn_msettype_result.mtwiden0_lmul2_rs1_24_rd = vme_msettn(24);
+    vme_msettn_msettype_result.mtwiden0_lmul2_rs1_24_vl = vme_read_vl();
+    vme_msettn_msettype_result.mtwiden0_lmul2_rd_x0_rd  = vme_msettn_rd_x0();
+    vme_msettn_msettype_result.mtwiden0_lmul2_rd_x0_vl  = vme_read_vl();
+
+    // 2c. msettn when mtwiden != 0 (mtwiden = 1, SEW8 -> LMUL*EVE = 16, ETE = 16).
+    vme_msetmtype(MtypeValue(16, 1, 1), 0x01);
+    vme_msettn_msettype_result.mtwiden1_rs1_24_rd = vme_msettn(24);
+    vme_msettn_msettype_result.mtwiden1_rs1_24_vl = vme_read_vl();
+    vme_msettn_msettype_result.mtwiden1_rd_x0_rd  = vme_msettn_rd_x0();
+    vme_msettn_msettype_result.mtwiden1_rd_x0_vl  = vme_read_vl();
+
+    (void)vme_msettn(9);
+    vme_msettn_x0_x0();
+    vme_msettn_msettype_result.mtwiden1_x0_x0_vl_after = vme_read_vl();
+
+    // 2d. msettn when mtwiden == 0 and vtype.vill == 1.
+    vme_msetmtype(0x0000, 0x38);  // reserved vsew=111 -> vill = 1
+    vme_msettn_msettype_result.mtwiden0_vill_rd    = vme_msettn(8);
+    vme_msettn_msettype_result.mtwiden0_vill_vl    = vme_read_vl();
+    vme_msettn_msettype_result.mtwiden0_vill_vtype = vme_read_vtype();
+
+    return 0;
+  }
+
   // Each row sets mtype + vtype via msetmtype, then exercises msettn/m/k with
   // the per-row operand and snapshots mtype after the m/k updates.
   for (uint32_t i = 0; i < vme_num_cases; i++) {

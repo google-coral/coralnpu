@@ -156,6 +156,7 @@ module RvvFrontEnd#(parameter N = 4,
   logic [31:0] mset_rd_data [N-1:0];
   logic mset_illegal_trap [N-1:0];
   logic is_msettn [N-1:0];
+  logic is_msettype [N-1:0];
 `endif
   always_comb begin
     inst_config_state[0] = config_state_q;
@@ -181,6 +182,7 @@ module RvvFrontEnd#(parameter N = 4,
       mset_rd_data[i] = 0;
       mset_illegal_trap[i] = 0;
       is_msettn[i] = 0;
+      is_msettype[i] = 0;
 `endif
 
       if (valid_inst_q[i] &&
@@ -313,6 +315,7 @@ module RvvFrontEnd#(parameter N = 4,
           end
           // avl stays 0 -> vconfig_change post-processing will set vl=0 (when not vill).
           vconfig_change[i] = 1;
+          is_msettype[i] = 1;
         end else if ((inst_q[i].bits[24:22] == 3'b100) &&
                      (inst_q[i].bits[20:18] == 3'b100) &&
                      (inst_q[i].bits[15:13] == 3'b100) &&
@@ -339,11 +342,26 @@ module RvvFrontEnd#(parameter N = 4,
             inst_config_state[i+1].ma = 1'b0;
           end
           vconfig_change[i] = 1;
+          is_msettype[i] = 1;
         end else if ((inst_q[i].bits[24:18] == 7'b1000100) &&
                      (inst_q[i].bits[17:15] == 3'b000)) begin  // msettn / msettm / msettk
           unique case (inst_q[i].bits[14:13])
-            2'b00: begin  // msettn rd, rs1 - vl <- min(rs1, vlmax); rd <- vl
-              avl[i] = reg_read_data_i[2*i];
+            2'b00: begin  // msettn rd, rs1
+              if (inst_config_state[i].mtwiden == 2'b00) begin
+                // Zvt §12.1.1.5: When mtwiden == 0, msettn sets vl and writes rd
+                // as if by vsetvli/vsetvl (including rs1 == x0 Table 46 semantics).
+                unique case (inst_q[i].bits[12:8])
+                  0: unique case (inst_q[i].bits[4:0])
+                    0:  avl[i] = inst_config_state[i].vl;  // rd = x0, rs1 = x0
+                    default: avl[i] = 32'hFFFFFFFF;        // rd != x0, rs1 = x0
+                  endcase
+                  default: avl[i] = reg_read_data_i[2*i];  // rs1 != x0
+                endcase
+              end else begin
+                // Zvt §12.1.1.5: When mtwiden != 0, vl <- min(rs1, LMUL*EVE, ETE)
+                // using x[rs1] directly (x[x0] == 0).
+                avl[i] = reg_read_data_i[2*i];
+              end
               vconfig_change[i] = 1;
               is_msettn[i] = 1;
             end
@@ -663,11 +681,14 @@ module RvvFrontEnd#(parameter N = 4,
                                                 : reg_read_data_i[2*i])
             : 0;
 
-      // Write new value of vl into rd for configuration function.
+      // Write new value of vl into rd for configuration function (excluding
+      // msetmtype / msetmtypei which do not have an rd operand).
       // For VME msettm/msettk, write the new field value to rd instead.
-      reg_write_valid_o[i] = (vconfig_change[i]
+      reg_write_valid_o[i] = (
 `ifdef ZVT_ON
-                             || mset_writes_rd[i]
+                             (vconfig_change[i] && !is_msettype[i]) || mset_writes_rd[i]
+`else
+                             vconfig_change[i]
 `endif
                              ) && !unaligned_trap_valid[i];
       reg_write_addr_o[i] = inst_q[i].bits[4:0];

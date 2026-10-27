@@ -238,7 +238,7 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
   }
 
   def writesRd(): Bool = {
-    isVset() ||
+    (isVset() && !isMsetmtype() && !isMsetmtypei()) ||
     // OP MVV, VWXUNARY0 (all): vmv.x.s, vcpop, vfirst.
     (opcode === RvvCompressedOpcode.RVVALU && funct3() === "b010".U && funct6() === "b010000".U)
   }
@@ -334,10 +334,11 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
 
   def writesVectorRegister(): Bool = {
     // A vector instruction writes to a vector register if it's an ALU operation
-    // or a load operation, unless it writes to a scalar register (rd/frd) or tile memory.
+    // or a load operation, unless it is a config instruction (vset*/mset*) or
+    // writes to a scalar register (rd/frd) or tile memory.
     // Store operations do not write to a vector register.
     (opcode.isOneOf(RvvCompressedOpcode.RVVLOAD, RvvCompressedOpcode.RVVALU)) &&
-    !writesRd() && !writesFrd() && !writesTile()
+    !isVset() && !writesRd() && !writesFrd() && !writesTile()
   }
 
   override def toPrintable: Printable = {
