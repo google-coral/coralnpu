@@ -169,7 +169,7 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   def dbusSize                = log2Ceil(lsuDataBytes + 1)
   def dbusOffsetBits          = log2Ceil(lsuDataBytes)
   def dbusRowAddrBits         = lsuAddrBits - dbusOffsetBits
-  val lsuSlotTxidEntries: Int = 4
+  val lsuSlotTxidEntries: Int = 8
   def lsuSlotTxidWidth: Int   = log2Ceil(lsuSlotTxidEntries)
 
   // TCM Size Configuration
