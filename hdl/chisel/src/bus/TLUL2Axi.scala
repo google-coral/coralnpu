@@ -96,8 +96,12 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   // --- AXI Channel Generation ---
   // TODO: Consider gating these signals (on get/put)? Especially address.
   // Drive AXI write channels for Put requests
-  val aw_q = Module(new Queue(new AxiAddress(axiAddrBits, axiDataBits, axiIdBits), 1))
-  val w_q  = Module(new Queue(new AxiWriteData(axiDataBits, axiIdBits), 1))
+  val aw_q = Module(
+    new Queue(new AxiAddress(axiAddrBits, axiDataBits, axiIdBits), entries = 1, pipe = true)
+  )
+  val w_q = Module(
+    new Queue(new AxiWriteData(axiDataBits, axiIdBits), entries = 1, pipe = true)
+  )
 
   aw_q.io.enq.valid := tl_a_q_remapped.valid && is_put && w_q.io.enq.ready && write_tx_info_q.io.enq.ready
   aw_q.io.enq.bits.addr   := tl_a_q_remapped.bits.address
