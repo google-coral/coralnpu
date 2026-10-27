@@ -1680,5 +1680,31 @@ async def vme_msettn_msettype_test(fixture):
     logging.info("✓ All msetmtype/msetmtypei/msettn checks passed")
 
 
+@coralflow_test
+async def vme_rvvi_mtype_retire_test(fixture):
+    """Verify per-ROB-slot mtype CSR retirement tracking under overlapping mset* ops."""
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_rvvi_mtype_retire_test.elf"
+    )
+    await fixture.load_elf_and_lookup_symbols(elf_path, ["tohost"])
+    await fixture.run_to_halt()
+    tohost = await fixture.read_word("tohost")
+    assert tohost == 1, f"Expected tohost == 1, got 0x{tohost:08x}"
+
+
+@coralflow_test
+async def vme_rvvi_v0_writeback_test(fixture):
+    """Verify vtdiscard and de2rt w_valid=0 uops do not emit spurious v0 RVVI writebacks."""
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_rvvi_v0_writeback_test.elf"
+    )
+    await fixture.load_elf_and_lookup_symbols(elf_path, ["tohost"])
+    await fixture.run_to_halt()
+    tohost = await fixture.read_word("tohost")
+    assert tohost == 1, f"Expected tohost == 1, got 0x{tohost:08x}"
+
+
 if __name__ == "__main__":
     coralflow_main()

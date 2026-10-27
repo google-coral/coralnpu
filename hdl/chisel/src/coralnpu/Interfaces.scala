@@ -209,6 +209,11 @@ class TileWriteDataIO(p: Parameters) extends Bundle {
   val pc = Option.when(p.enableVerification)(UInt(p.programCounterBits.W))
 }
 
+class MtypeWriteDataIO(p: Parameters) extends Bundle {
+  val rob_tag = UInt(log2Ceil(p.retirementBufferSize).W)
+  val data    = UInt(p.xlen.W)
+}
+
 class RetirementBufferDebugIO(p: Parameters) extends Bundle {
   val inst = Vec(
     p.retirementLanes,
@@ -310,6 +315,7 @@ class FloatRegfileWriteDataIO(p: Parameters) extends Bundle {
 }
 
 class VectorWriteDataIO(p: Parameters) extends Bundle {
+  val w_valid        = Input(Bool())
   val addr           = Input(UInt(p.rvvRegCountWidth.W))
   val data           = Option.when(p.enableVerification)(Input(UInt(p.lsuDataBits.W)))
   val uop_pc         = Option.when(p.enableVerification)(Input(UInt(p.programCounterBits.W)))

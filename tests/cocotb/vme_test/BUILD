@@ -47,6 +47,8 @@ coralflow_test(
         ":vme_mset_test",
         ":vme_mset_vtmmu_sequence_test",
         ":vme_mstatus_ms_test",
+        ":vme_rvvi_mtype_retire_test",
+        ":vme_rvvi_v0_writeback_test",
         ":vme_transpose_test",
         ":vme_vset_mtype_reset_test",
     ],
@@ -59,6 +61,40 @@ coralflow_test(
         requirement("tqdm"),
         "@bazel_tools//tools/python/runfiles",
     ],
+)
+
+coralflow_test(
+    name = "vme_rvvi_retire_test",
+    size = "medium",
+    srcs = ["vme_test_bench.py"],
+    data = [
+        ":vme_rvvi_mtype_retire_test",
+        ":vme_rvvi_v0_writeback_test",
+    ],
+    hdl_toplevel = "VmeCoreMiniAxi",
+    targets = [
+        "verilator",
+        "vcs",
+        "uvm",
+    ],
+    testcases = [
+        "vme_rvvi_mtype_retire_test",
+        "vme_rvvi_v0_writeback_test",
+    ],
+    deps = [
+        requirement("tqdm"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+coralnpu_v2_binary(
+    name = "vme_rvvi_mtype_retire_test",
+    srcs = ["vme_rvvi_mtype_retire_test.S"],
+)
+
+coralnpu_v2_binary(
+    name = "vme_rvvi_v0_writeback_test",
+    srcs = ["vme_rvvi_v0_writeback_test.S"],
 )
 
 coralnpu_v2_binary(

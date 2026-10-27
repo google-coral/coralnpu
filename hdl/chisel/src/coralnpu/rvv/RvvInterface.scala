@@ -16,7 +16,13 @@ package coralnpu.rvv
 
 import chisel3._
 import chisel3.util._
-import coralnpu.{Parameters, RegfileReadDataIO, RegfileWriteDataIO, TileWriteDataIO}
+import coralnpu.{
+  MtypeWriteDataIO,
+  Parameters,
+  RegfileReadDataIO,
+  RegfileWriteDataIO,
+  TileWriteDataIO
+}
 
 class RvvConfigState(p: Parameters) extends Bundle {
   val vl     = Output(UInt(log2Ceil(p.rvvVlen + 1).W))
@@ -117,7 +123,10 @@ class RvvCoreIO(p: Parameters) extends Bundle {
   val rd_rob2rt_o = Vec(p.rvvRetireLanes, new Rob2Rt(p))
 
   // VME matrix tile retirement
-  val vmeRt = Option.when(p.enableVme)(Valid(new TileWriteDataIO(p)))
+  val vmeRt      = Option.when(p.enableVme)(Valid(new TileWriteDataIO(p)))
+  val vmeMtypeWb = Option.when(p.enableVme)(
+    Vec(p.instructionLanes, Valid(new MtypeWriteDataIO(p)))
+  )
 }
 
 class Rob2Rt(p: Parameters) extends Bundle {

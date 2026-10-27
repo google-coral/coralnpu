@@ -89,6 +89,11 @@ module RvvCore #(parameter N = 4,
   output RVVConfigState config_state,
   output logic [31:0] next_config_mtype_o,
 
+  // VME configuration writeback per lane
+  output logic [N-1:0] vme_mtype_valid_o,
+  output RegDataT [N-1:0] vme_mtype_data_o,
+  output logic [N-1:0][`ROB_TAG_WIDTH-1:0] vme_mtype_tag_o,
+
   // Idle
   output logic rvv_idle,
   output logic [$clog2(2*N + 1)-1:0] queue_capacity,
@@ -155,7 +160,10 @@ module RvvCore #(parameter N = 4,
       .trap_data_o(trap_data_o),
       .config_state_valid(config_state_valid),
       .config_state(config_state),
-      .next_config_mtype_o(next_config_mtype_o)
+      .next_config_mtype_o(next_config_mtype_o),
+      .vme_mtype_valid_o(vme_mtype_valid_o),
+      .vme_mtype_data_o(vme_mtype_data_o),
+      .vme_mtype_tag_o(vme_mtype_tag_o)
   );
 
   // Backpressure from backend fifo

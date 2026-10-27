@@ -84,6 +84,7 @@ class SCore(p: Parameters) extends Module {
     rvvRdPipedBits := io.rvvcore.get.rd_rob2rt_o
     (0 until p.rvvRetireLanes).foreach(i => {
       rob_io.writeDataVector.get(i).valid        := rvvRdPipedValid(i)
+      rob_io.writeDataVector.get(i).bits.w_valid := rvvRdPipedBits(i).w_valid
       rob_io.writeDataVector.get(i).bits.addr    := rvvRdPipedBits(i).w_index
       rob_io.writeDataVector.get(i).bits.rob_tag := rvvRdPipedBits(i).rob_tag
       if (p.enableVerification) {
@@ -95,6 +96,7 @@ class SCore(p: Parameters) extends Module {
     if (p.enableVme) {
       rob_io.isTile.get        := dispatch.io.isTile.get
       rob_io.writeDataTile.get := io.rvvcore.get.vmeRt.get
+      rob_io.vmeMtypeWb.get    := io.rvvcore.get.vmeMtypeWb.get
       rob_io.mtype.get         := io.rvvcore.get.nextConfigMtype
         .getOrElse(io.rvvcore.get.configState.bits.mtype.get)
       dispatch.io.mstatusMs.get := csr.io.mstatus_ms.get

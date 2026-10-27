@@ -49,6 +49,9 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
   val writeDataTile = Option.when(p.enableVme)(
     Input(Valid(new TileWriteDataIO(p)))
   )
+  val vmeMtypeWb = Option.when(p.enableVme)(
+    Input(Vec(p.instructionLanes, Valid(new MtypeWriteDataIO(p))))
+  )
   val mtype = Option.when(p.enableVme)(Input(UInt(p.xlen.W)))
   val debug = Option.when(p.shouldExposeDebugPorts)(Output(new RetirementBufferDebugIO(p)))
 }
@@ -178,6 +181,19 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     }
     val store = scalarStore || floatStore || vectorStore
 
+    // RVV/Zvt configuration instructions (opcode 0x57, funct3 0b111) with
+    // rd = x0 still perform scalar register writeback from RvvFrontEnd (with
+    // addr = 0) when non-trapping, and may trap 1 cycle after dispatch in
+    // RvvFrontEnd (e.g. msettm/msettk when mtwiden == 0). Tracking idx = 0.U
+    // prevents RetirementBuffer from treating them as nonWritingInstr and
+    // retiring them a cycle early before faultRetire or RvvFrontEnd writeback.
+    val isRvvConfigX0Write = if (p.enableRvv) {
+      sValid && (sAddr === 0.U) && (finst.inst(6, 0) === "b1010111".U) &&
+      (finst.inst(14, 12) === "b111".U)
+    } else {
+      false.B
+    }
+
     val instr = Wire(new Instruction)
     instr.addr := finst.addr
     if (mini) {
@@ -191,6 +207,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         floatValid                -> (fAddr +& p.floatRegfileBaseAddr.U),
         (vectorValid)             -> (vAddr +& p.rvvRegfileBaseAddr.U),
         (sValid && sAddr =/= 0.U) -> sAddr,
+        isRvvConfigX0Write        -> 0.U,
         store                     -> storeRegIdx
       )
     )
@@ -391,6 +408,9 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       )
     )
   )
+  val mtypeAccumulator = Option.when(!mini && p.enableVme && p.enableVerification)(
+    RegInit(VecInit.fill(bufferSize)(0.U(p.xlen.W)))
+  )
   val tileAccumulatorNext = Option.when(!mini && p.enableVme && p.enableVerification)(
     Wire(Vec(bufferSize, Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p)))))
   )
@@ -489,7 +509,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
 
       for (j <- 0 until p.rvvRetireLanes) {
         val port = io.writeDataVector.get(j)
-        portMatches(j) := vectorWriteIdxMap(j)
+        portMatches(j) := vectorWriteIdxMap(j) && port.bits.w_valid
         val absAddr = port.bits.addr +& p.rvvRegfileBaseAddr.U
         val offset  = absAddr - bufferEntry.idx
         portTargets(j) := offset(2, 0)
@@ -733,6 +753,19 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
               (k.U < instBuffer.io.enqValid) && (x.U === slotIdx)
             }
             .reduce(_ || _)
+          val wbHits = (0 until p.instructionLanes).map { k =>
+            io.vmeMtypeWb.get(k).valid && (io.vmeMtypeWb.get(k).bits.rob_tag === x.U)
+          }
+          val hasWbHit = VecInit(wbHits).asUInt.orR
+          val wbData   = PriorityMux(wbHits, io.vmeMtypeWb.get.map(_.bits.data))
+          mtypeAccumulator.get(x) := MuxCase(
+            mtypeAccumulator.get(x),
+            Seq(
+              trapRetired -> 0.U,
+              isEnqueuing -> 0.U,
+              hasWbHit    -> wbData
+            )
+          )
           tileWriteAccumulator.get(x) := Mux(
             trapRetired || isEnqueuing,
             0.U.asTypeOf(tileWriteAccumulator.get(0)),
@@ -812,9 +845,21 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         debug.inst(i).bits.mtype.get.valid := valid && !resultUpdate(
           i
         ).bits.trap && isMsetWritesMtype
+        val mtypeVal = if (!mini && p.enableVerification) {
+          val tagWidth     = log2Ceil(bufferSize)
+          val pIdx         = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
+          val retireWbHits = (0 until p.instructionLanes).map { k =>
+            io.vmeMtypeWb.get(k).valid && (io.vmeMtypeWb.get(k).bits.rob_tag === pIdx)
+          }
+          val hasRetireWbHit = VecInit(retireWbHits).asUInt.orR
+          val retireWbData   = PriorityMux(retireWbHits, io.vmeMtypeWb.get.map(_.bits.data))
+          Mux(hasRetireWbHit, retireWbData, mtypeAccumulator.get(pIdx))
+        } else {
+          io.mtype.getOrElse(0.U)
+        }
         debug.inst(i).bits.mtype.get.bits := Mux(
           valid && !resultUpdate(i).bits.trap && isMsetWritesMtype,
-          io.mtype.getOrElse(0.U),
+          mtypeVal,
           0.U
         )
       }

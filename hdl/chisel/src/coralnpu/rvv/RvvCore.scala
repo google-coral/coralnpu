@@ -16,7 +16,7 @@ package coralnpu.rvv
 
 import chisel3._
 import chisel3.util._
-import coralnpu.{Parameters, RegfileReadDataIO, RegfileWriteDataIO}
+import coralnpu.{MtypeWriteDataIO, Parameters, RegfileReadDataIO, RegfileWriteDataIO}
 
 object RvvCore {
   def apply(p: Parameters): RvvCoreShim = {
@@ -166,6 +166,14 @@ object GenerateCoreShimSource {
         |    output logic rvv_idle,
         |    output logic [3:0] queue_capacity,
         |""".stripMargin
+    if (p.enableVme) {
+      for (i <- 0 until instructionLanes) {
+        moduleInterface += s"""    output vmeMtypeWb_${i}_valid,
+              |    output [${xlenMinus1}:0] vmeMtypeWb_${i}_bits_data,
+              |    output [${robTagMsb}:0] vmeMtypeWb_${i}_bits_rob_tag,
+              |""".stripMargin
+      }
+    }
 
     // Add rd_rob2rt_o interface outputs
     for (i <- 0 until numRetireLanes) {
@@ -393,6 +401,11 @@ object GenerateCoreShimSource {
     coreInstantiation += s"  ROB2RT_t [${numRetireLanes - 1}:0] rd_rob2rt_o;\n"
     coreInstantiation += s"  logic [${numRetireLanes - 1}:0] rd_valid_rob2rt_o;\n"
     coreInstantiation += "  RVVInstruction trap_data;\n"
+    coreInstantiation +=
+      s"""  logic [${instructionLanes}-1:0] vme_mtype_valid_o;
+         |  logic [${instructionLanes}-1:0][${xlenMinus1}:0] vme_mtype_data_o;
+         |  logic [${instructionLanes}-1:0][${robTagMsb}:0] vme_mtype_tag_o;
+         |""".stripMargin
     if (p.enableVme) {
       coreInstantiation +=
         """`ifdef ZVT_ON
@@ -453,6 +466,9 @@ object GenerateCoreShimSource {
         |      .config_state_valid(configStateValid),
         |      .config_state(config_state),
         |      .next_config_mtype_o(nextConfigMtype),
+        |      .vme_mtype_valid_o(vme_mtype_valid_o),
+        |      .vme_mtype_data_o(vme_mtype_data_o),
+        |      .vme_mtype_tag_o(vme_mtype_tag_o),
         |      .rvv_idle(rvv_idle),
         |      .queue_capacity(queue_capacity),
         |      .rd_valid_rob2rt_o(rd_valid_rob2rt_o),
@@ -594,6 +610,14 @@ object GenerateCoreShimSource {
       |  assign rd_GENI_bits_addr = reg_write_addr[GENI];
       |  assign rd_GENI_bits_data = reg_write_data[GENI];
       |""".stripMargin.replaceAll("GENI", i.toString)
+    }
+    if (enableVme) {
+      for (i <- 0 until instructionLanes) {
+        coreInstantiation += s"""  assign vmeMtypeWb_${i}_valid = vme_mtype_valid_o[${i}];
+              |  assign vmeMtypeWb_${i}_bits_data = vme_mtype_data_o[${i}];
+              |  assign vmeMtypeWb_${i}_bits_rob_tag = vme_mtype_tag_o[${i}];
+              |""".stripMargin
+      }
     }
     coreInstantiation += "  assign configVl = config_state.vl;\n"
     coreInstantiation += "  assign configVstart = config_state.vstart;\n"
@@ -737,6 +761,10 @@ class RvvCoreWrapper(p: Parameters)
     val rvv_idle        = Output(Bool())
 
     val queue_capacity = Output(UInt(4.W))
+
+    val vmeMtypeWb = Option.when(p.enableVme)(
+      Vec(p.instructionLanes, Valid(new MtypeWriteDataIO(p)))
+    )
 
     val vmeRt_valid    = Option.when(p.enableVme)(Output(Bool()))
     val vmeRt_rob_tag  = Option.when(p.enableVme)(Output(UInt(log2Ceil(p.retirementBufferSize).W)))
@@ -969,6 +997,7 @@ class RvvCoreShim(p: Parameters) extends Module {
   io.rvv2lsu <> rvvCoreWrapper.io.rvv2lsu
   io.lsu2rvv <> rvvCoreWrapper.io.lsu2rvv
   if (p.enableVme) {
+    io.vmeMtypeWb.get <> rvvCoreWrapper.io.vmeMtypeWb.get
     io.vme2lsu.get <> rvvCoreWrapper.io.vme2lsu.get
     io.lsu2vme.get <> rvvCoreWrapper.io.lsu2vme.get
   }

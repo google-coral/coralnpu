@@ -274,7 +274,7 @@ class RvviTrace(p: Parameters) extends Module {
     rvviTraceBlackBox.io.pc_rdata_i(i) := MuxOR(valid, pc_rdata)
 
     for (j <- 0 until p.scalarRegCount) {
-      val x_wb_valid = valid && (wb_idx === j.U)
+      val x_wb_valid = if (j == 0) false.B else (valid && (wb_idx === j.U) && !trap)
       x_wdata(i)(j) := MuxOR(x_wb_valid, wdata)
       x_wb(i)(j)    := x_wb_valid
     }
