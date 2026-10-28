@@ -19,7 +19,7 @@ GCP_PROJECT="${PROJECT:-cerebra-shodan-ci-public}"
 GCP_LOCATION="${LOCATION:-us}"
 AR_REPO="${REPO:-coralnpu-artifacts}"
 AR_PACKAGE="${PACKAGE:-coralnpu-bitstreams}"
-TARGET_FILE="${TARGET:-chip_nexus_matrix.bin}"
+TARGET_FILE="${TARGET:-chip_nexus.bin}"
 LIMIT=10
 START_REF=""
 
@@ -31,8 +31,6 @@ usage() {
     echo "  -r, --ref      The git reference to start searching from"
     echo "  -n, --limit    Number of git commits to check back (default: ${LIMIT})"
     echo "  --target       The name of the file to fetch (default: ${TARGET_FILE})"
-    echo "  --matrix       Fetch the 30MHz RVV+VME bitstream (chip_nexus_matrix.bin)"
-    echo "  --vector       Fetch the 50MHz RVV-only bitstream (chip_nexus_vector.bin)"
     echo "  -h, --help     Display this help message and exit"
     echo ""
     exit 1
@@ -44,10 +42,6 @@ while [[ "$#" -gt 0 ]]; do
             LIMIT="$2"; shift 2 ;;
         --target)
             TARGET_FILE="chip_${2}.bin"; shift 2 ;;
-        --matrix)
-            TARGET_FILE="chip_nexus_matrix.bin"; shift ;;
-        --vector)
-            TARGET_FILE="chip_nexus_vector.bin"; shift ;;
         -r|--ref)
             START_REF="$2"; shift 2 ;;
         -h|--help)
