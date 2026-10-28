@@ -99,11 +99,11 @@ module zvt_ctrl (
 
 // -------------- code start --------------------
   // decode
-  logic                 isVme2Lsu, isLsu2Vme, isMv2Rvv, isMv2Vme, isZero; 
+  logic                 isStore, isLoad, isMv2Rvv, isMv2Vme, isZero; 
   logic [`ZVT_LMUL-1:0] isPe;
 
-  assign isVme2Lsu = !peBusy && uopVld[0] && uop[0].is_lsu &&  uop[0].is_store && vmelsuRdy && (!uop[0].first_uop_valid || rtCmdRdy);
-  assign isLsu2Vme = !peBusy && uopVld[0] && uop[0].is_lsu && !uop[0].is_store && vmelsuresVld && (!uop[0].first_uop_valid || rtCmdRdy);
+  assign isStore = !peBusy && uopVld[0] && uop[0].is_lsu &&  uop[0].is_store && vmelsuRdy && (!uop[0].first_uop_valid || rtCmdRdy);
+  assign isLoad  = !peBusy && uopVld[0] && uop[0].is_lsu && !uop[0].is_store && vmelsuresVld && (!uop[0].first_uop_valid || rtCmdRdy);
 
   always_comb begin
     isPe = 'b0;
@@ -182,7 +182,7 @@ module zvt_ctrl (
   assign index     = uop[0].tss.index;
   assign vstart    = uop[0].vstart;
   assign tm        = uop[0].tm[$clog2(`TE):0];
-  assign tn        = (isVme2Lsu||isLsu2Vme) & (uop[0].vl>`TE) ? `TE : uop[0].vl;
+  assign tn        = (isStore||isLoad) & (uop[0].vl>`TE) ? `TE : uop[0].vl;
   assign uop_index = uop[0].uop_index;
   
   // element type
@@ -208,7 +208,7 @@ module zvt_ctrl (
       isMv2Vme : begin
         vsrc = uop[0].vs2_data;
       end
-      isLsu2Vme: begin
+      isLoad: begin
         vsrc = vmelsures.w_data;
       end
       isMv2Rvv : begin
@@ -223,7 +223,7 @@ module zvt_ctrl (
         resVme2rvv.fpexp     = 'b0;
       `endif
       end
-      isVme2Lsu: begin
+      isStore: begin
       `ifdef TB_SUPPORT
         vmelsu.uop_pc    = uop[0].uop_pc;
         vmelsu.uop_index = uop_index;
@@ -594,11 +594,11 @@ module zvt_ctrl (
     vmelsuresRdy  = 'b0;
 
     case(1'b1)
-      isVme2Lsu: begin
+      isStore: begin
         vmelsuVld = 1'b1;
         uopRdy[0] = 1'b1;
       end
-      isLsu2Vme: begin
+      isLoad: begin
         uopRdy[0]     = 1'b1;
         vmelsuresRdy  = 1'b1;
       end
@@ -630,7 +630,7 @@ module zvt_ctrl (
   always_comb begin
     case(1'b1)
       isMv2Rvv,
-      isVme2Lsu: begin
+      isStore: begin
       `ifdef TB_SUPPORT
         readMtPc[0] = uop[0].uop_pc;
         readMtPc[1] = uop[0].uop_pc;
@@ -646,7 +646,7 @@ module zvt_ctrl (
         writeData   = 'b0;
       end
       isMv2Vme,
-      isLsu2Vme: begin
+      isLoad: begin
       `ifdef TB_SUPPORT
         readMtPc     = 'b0;
         writeMtPc[0] = uop[0].uop_pc;
@@ -697,8 +697,8 @@ module zvt_ctrl (
   assign rtCmd.inst_pc    = uop[0].uop_pc;
 `endif
   assign rtCmd.rob_tag    = uop[0].rob_tag;
-  assign rtCmd.isStore    = isVme2Lsu;
-  assign rtCmd.isLoad     = isLsu2Vme;
+  assign rtCmd.isStore    = isStore;
+  assign rtCmd.isLoad     = isLoad;
   assign rtCmd.isMv2Vme   = isMv2Vme;
   assign rtCmd.isZero     = isZero;
   assign rtCmd.isPe       = isPe[0];
@@ -718,8 +718,8 @@ module zvt_ctrl (
   // through miscRtVld, on the same cycle its rtCmd entry is pushed.
   always_comb begin
     case(1'b1) 
-      isVme2Lsu,
-      isLsu2Vme,
+      isStore,
+      isLoad,
       isMv2Vme: miscRtVld = uopVld[0]&uopRdy[0]&uop[0].last_uop_valid;
       isZero:   miscRtVld = uopVld[0]&uopRdy[0]&cntCr;
       // isMv2Rvv: miscRtVld = 'b0;

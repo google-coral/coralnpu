@@ -355,14 +355,14 @@ endmodule
  * zvt_ctrl_fpga: 2-Cycle Request/Response Handshake for Synchronous URAM Reads
  *
  * Delegates the uopRdy / valid handshake block in zvt_ctrl.sv so that
- * vtmv.v.t (isMv2Rvv) and matrix tile store (isVme2Lsu) wait 1 clock cycle
+ * vtmv.v.t (isMv2Rvv) and matrix tile store (isStore) wait 1 clock cycle
  * for synchronous UltraRAM readData to arrive before asserting valid/ready.
  */
 module zvt_ctrl_fpga (
   input  logic                 clk,
   input  logic                 rst_n,
-  input  logic                 isVme2Lsu,
-  input  logic                 isLsu2Vme,
+  input  logic                 isStore,
+  input  logic                 isLoad,
   input  logic                 isMv2Rvv,
   input  logic                 isMv2Vme,
   input  logic                 isZero,
@@ -381,7 +381,7 @@ module zvt_ctrl_fpga (
     if (!rst_n) begin
       mvlsuReadPending <= 1'b0;
     end else begin
-      mvlsuReadPending <= (isMv2Rvv || isVme2Lsu) && !uopRdy[0];
+      mvlsuReadPending <= (isMv2Rvv || isStore) && !uopRdy[0];
     end
   end
 
@@ -392,11 +392,11 @@ module zvt_ctrl_fpga (
     vmelsuresRdy  = 'b0;
 
     case (1'b1)
-      isVme2Lsu: begin
+      isStore: begin
         vmelsuVld = mvlsuReadPending;
         uopRdy[0] = mvlsuReadPending;
       end
-      isLsu2Vme: begin
+      isLoad: begin
         uopRdy[0]    = 1'b1;
         vmelsuresRdy = 1'b1;
       end

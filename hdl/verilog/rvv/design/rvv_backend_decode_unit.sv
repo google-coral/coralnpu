@@ -90,10 +90,10 @@ module rvv_backend_decode_unit
       end
     end
     ReserveInstCheck_Info: `rvv_forbid(inst_valid && !lcmd_valid)
-    else $info("PC(0x%h) is a reserved/nop instruction. RvvBackend.Decoder retired it directly.\n",$sampled(inst.inst_pc));
+    else $info("PC(0x%h) is a nop instruction. RvvBackend.Decoder retired it directly.\n",$sampled(inst.inst_pc));
 
     ReserveInstCheck_Error: `rvv_forbid(inst_valid && !lcmd_valid)
-    else $error("PC(0x%h) is a reserved/nop instruction. RvvBackend.Decoder retired it directly.\n",$sampled(inst.inst_pc));
+    else $error("PC(0x%h) is a nop instruction. RvvBackend.Decoder retired it directly.\n",$sampled(inst.inst_pc));
   `endif
 
 endmodule

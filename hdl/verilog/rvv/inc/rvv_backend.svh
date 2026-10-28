@@ -80,11 +80,13 @@ typedef struct packed {
   RVVLMUL                       lmul;
   RVVLMUL                       lmul_orig;
 `ifdef ZVT_ON
-  // VME (Zvt) non-tile state. Packed mtype view assembled from {tm, tk,
-  // mtwiden} per ?5.1.1.2; widths follow the literal spec bit allocation
-  // (tk in [7:5] = 3 bits, mtwiden in [1:0] = 2 bits, tm in [23:10] = 14
-  // bits).
+  // Construct the vtype CSR value. See section 3.4 of the RISC-V Vector Specification v1.0, and
+  // section 12.1.1.4 of the Zvt Specification (bit 8 = altfmt).
   logic                         altfmt;
+  // VME (Zvt) non-tile state. Packed mtype view assembled from {tm, tk,
+  // mtwiden} per 12.1.1.2.
+  // Note: The spec defines tk as tk[2:0] (3 bits, values 0-4) in bits 7:5.
+  // tm is in [23:10] (14 bits), mtwiden is in [1:0] (2 bits).
   logic [1:0]                   mtwiden;
   logic [13:0]                  tm;
   logic [2:0]                   tk;
@@ -117,7 +119,7 @@ typedef struct packed {
   logic [`ROB_TAG_WIDTH-1:0] rob_tag;
   RVVOpCode                  opcode;
   logic [24:0]               bits;
-  logic [`XLEN-1:0]               rs1;
+  logic [`XLEN-1:0]          rs1;
   RVVConfigState             arch_state;
 } RVVCmd;
 

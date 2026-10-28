@@ -31,6 +31,7 @@ module rvv_backend_decode_unit_lsu
   RVVOpCode                       inst_opcode;      // inst original encoding[6:0]
 
   logic   [`XLEN-1:0]             rs1;    
+  logic                           csr_vill;
   logic   [`VSTART_WIDTH-1:0]     csr_vstart;
   logic   [`VL_WIDTH-1:0]         csr_vl;
   logic   [`VL_WIDTH-1:0]         evl;
@@ -99,6 +100,7 @@ module rvv_backend_decode_unit_lsu
   assign inst_vd        = inst_valid ? inst.bits[4:0] : 'b0;
   assign inst_opcode    = inst_valid ? inst.opcode : LOAD;
   assign rs1            = inst_valid ? inst.rs1 : 'b0;
+  assign csr_vill       = inst_valid ? inst.arch_state.vill : 'b0;
   assign csr_vstart     = inst_valid ? inst.arch_state.vstart : 'b0;
   assign csr_vl         = inst_valid ? inst.arch_state.vl : 'b0;
   assign csr_sew        = inst_valid ? inst.arch_state.sew : SEW8;
@@ -3397,7 +3399,8 @@ module rvv_backend_decode_unit_lsu
   end
 
   //check common requirements for all instructions
-  assign check_common = check_vd_align&check_vs2_align&check_vd_in_range&check_sew&check_lmul
+  assign check_common = (!csr_vill || (funct6_lsu.lsu_funct6.lsu_umop==US_WR))
+                        &check_vd_align&check_vs2_align&check_vd_in_range&check_sew&check_lmul
                       `ifdef RVVCHECK_VSTART_VL
                         &check_evl_not_0&check_vstart_sle_evl
                       `endif

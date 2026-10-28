@@ -87,7 +87,8 @@ module zvt_pe_block (
 `ifdef TB_SUPPORT
   assign mulbulkTagIn.uop_pc     = blkCmd.vaInfo.uop_pc;
 `endif    
-  assign mulbulkTagIn.rndMode    = blkCmd.vaInfo.rndMode;
+  assign mulbulkTagIn.rndMode    = (blkCmd.vaInfo.op==FPMUL)&&(blkCmd.vaInfo.fsrcFmt!=fpnew_pkg::FP32) ? fpnew_pkg::ROD 
+                                                                                                       : blkCmd.vaInfo.rndMode;
   assign mulbulkTagIn.op         = blkCmd.vaInfo.op;
   assign mulbulkTagIn.fdstFmt    = blkCmd.vaInfo.fdstFmt;
   assign mulbulkTagIn.idstFmt    = blkCmd.vaInfo.idstFmt;

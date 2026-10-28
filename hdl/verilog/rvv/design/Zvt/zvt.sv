@@ -241,7 +241,10 @@ module zvt (
 
 // Retire Cmd
   logic         vmeRtCmdVld;
+  logic         vmeRtCmdVldD1;
   VME_RTCMD_t   vmeRtCmd;
+  VME_RTCMD_t   vmeRtCmdD1;
+  logic         vmeRtCmdPop;
   logic         rtCmdAempty;
 
   // cmd queue
@@ -257,7 +260,7 @@ module zvt (
     .push         (rtCmdVld),
     .datain       (rtCmd),
     .pushRdy      (rtCmdRdy),
-    .pop          (vmeRtVld&vmeRtRdy),   
+    .pop          (vmeRtCmdPop),   
     .dataout      (vmeRtCmd),
     .full         (),
     .almost_full  (),
@@ -272,6 +275,17 @@ module zvt (
 
   assign vmeRtCmdVld = ~rtCmdAempty;
 
+  always_comb begin
+    if(vmeRtCmdVld) 
+      vmeRtCmdPop = vmeRtCmd.isPe ? blkRtVld[3] : miscRtVldD1;
+    else 
+      vmeRtCmdPop = 'b0;
+  end
+  
+  // delay 1 cycle for retiring.
+  dff                     regVmeRtCmdVldD1 (.q(vmeRtCmdVldD1), .d(vmeRtCmdPop), .clk(clk), .rst_n(rst_n));
+  edff #(.T(VME_RTCMD_t)) regVmeRtCmdD1    (.q(vmeRtCmdD1), .d(vmeRtCmd), .e(vmeRtCmdPop), .clk(clk), .rst_n(rst_n));
+
   // register rt valid
   dff regMiscRtVld (.q(miscRtVldD1), .clk(clk), .rst_n(rst_n), .d(miscRtVld));
   dff regBlk0RtVld (.q(blkRtVld[0]), .clk(clk), .rst_n(rst_n), .d(peRtVld[0]));
@@ -282,7 +296,11 @@ module zvt (
 
 `ifdef RVVI_ON
   // Block pc
+  logic [`PC_WIDTH-1:0]               miscRtInfoPcD1;
   logic [`NUM_BLK-1:0][`PC_WIDTH-1:0] pcBlkD1;
+
+  dff #(.WIDTH(`PC_WIDTH)) regMiscRtInfoPc (.q(miscRtInfoPcD1), .clk(clk), .rst_n(rst_n), .d(miscRtInfo.uop_pc));
+
   for(genvar i=0; i<`NUM_BLK; i++) begin
       dff #(.WIDTH(`PC_WIDTH)) regBlk0Pc (.q(pcBlkD1[i]), .clk(clk), .rst_n(rst_n), .d(peRtInfo[i].uop_pc));
   end
@@ -330,7 +348,7 @@ module zvt (
   localparam BLKID3 = 3;
 
   always_comb begin
-    rvviMtIdx = 'x;
+    rvviMtIdx  = 'x;
     rvviSubVld = 'b0;
     rvviSubIdx = 'x;
 
@@ -524,7 +542,7 @@ module zvt (
     assign mtInfo[i].Vld        = blkRtVld[i] || miscRtVldD1;
 
   `ifdef RVVI_ON
-    assign mtInfo[i].inst_pc    = miscRtVldD1 ? miscRtInfo.uop_pc : pcBlkD1[i];
+    assign mtInfo[i].inst_pc    = miscRtVldD1 ? miscRtInfoPcD1 : pcBlkD1[i];
     assign mtInfo[i].status     = statusBlkD1[i];
     assign mtInfo[i].rvviMtIdx  = rvviMtIdx[i];
     assign mtInfo[i].rvviSubVld = rvviSubVld[i];
@@ -567,41 +585,41 @@ module zvt (
   end
 
   // all info is ready
-  assign vmeRtVld = vmeRtCmdVld && (&mtRtInfoVld);
+  assign vmeRtVld = vmeRtCmdVldD1 && (&mtRtInfoVld);
 
 `ifdef TB_SUPPORT
-  assign vmeRt.inst_pc = vmeRtCmd.inst_pc;
+  assign vmeRt.inst_pc = vmeRtCmdD1.inst_pc;
 `endif
-  assign vmeRt.rob_tag = vmeRtCmd.rob_tag;
-  assign vmeRt.isStore = vmeRtCmd.isStore;
+  assign vmeRt.rob_tag = vmeRtCmdD1.rob_tag;
+  assign vmeRt.isStore = vmeRtCmdD1.isStore;
   // mt_index
   always_comb begin
-    case(vmeRtCmd.eew_mt)
+    case(vmeRtCmdD1.eew_mt)
       EEW8: begin   
-        vmeRt.mtIdxVld = vmeRtCmd.isStore ? 'b0 : 4'b0001;
+        vmeRt.mtIdxVld = vmeRtCmdD1.isStore ? 'b0 : 4'b0001;
       end
       EEW16: begin  
-        if(vmeRtCmd.isStore)
+        if(vmeRtCmdD1.isStore)
           vmeRt.mtIdxVld = 'b0;
-        else if(vmeRtCmd.isMv2Vme && !vmeRtCmd.tssPattern)
-          vmeRt.mtIdxVld = vmeRtCmd.tssIndex[1] ? 4'b0010 : 4'b0001;
+        else if(vmeRtCmdD1.isMv2Vme && !vmeRtCmdD1.tssPattern)
+          vmeRt.mtIdxVld = vmeRtCmdD1.tssIndex[1] ? 4'b0010 : 4'b0001;
         else 
           vmeRt.mtIdxVld = 4'b0011;
       end
       default: begin
-        if(vmeRtCmd.isStore)
+        if(vmeRtCmdD1.isStore)
           vmeRt.mtIdxVld = 'b0;
-        else if(vmeRtCmd.isMv2Vme && !vmeRtCmd.tssPattern)
-          vmeRt.mtIdxVld = vmeRtCmd.tssIndex[$clog2(`TE/2)] ? 4'b1100 : 4'b0011;
-        else if(vmeRtCmd.isMv2Vme && vmeRtCmd.tssPattern)
-          vmeRt.mtIdxVld = vmeRtCmd.tssIndex[1] ? 4'b1010 : 4'b0101;
+        else if(vmeRtCmdD1.isMv2Vme && !vmeRtCmdD1.tssPattern)
+          vmeRt.mtIdxVld = vmeRtCmdD1.tssIndex[$clog2(`TE/2)] ? 4'b1100 : 4'b0011;
+        else if(vmeRtCmdD1.isMv2Vme && vmeRtCmdD1.tssPattern)
+          vmeRt.mtIdxVld = vmeRtCmdD1.tssIndex[1] ? 4'b1010 : 4'b0101;
         else
           vmeRt.mtIdxVld = 4'b1111;
       end
     endcase
   end
 
-  assign vmeRt.mtIdx = vmeRtCmd.mtIdx;
+  assign vmeRt.mtIdx = vmeRtCmdD1.mtIdx;
 
 `ifdef RVVI_ON
   // status
@@ -631,7 +649,7 @@ module zvt (
   for(genvar i=0;i<4;i++) begin
     for(genvar j=0;j<`NUM_SUBTILE;j++) begin
       `rvv_forbid(vmeRtVld && vmeRt.mtIdxVld[i] && ($isunknown(vmeRt.mtData[i][j])))
-      else $error("Pc(%0d) retiring Mt[%0d][%0d] is undriven.\n", vmeRt.inst_pc, i, j);
+      else $error("Pc(0x%0h) retiring Mt[%0d][%0d] is undriven.\n", vmeRt.inst_pc, i, j);
     end
   end
   `endif
