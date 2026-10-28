@@ -51,7 +51,7 @@ def vcs_resource_estimator(os, input_size):
 
 def _verilator_cocotb_model_impl(ctx):
     hdl_toplevel = ctx.attr.hdl_toplevel
-    outdir_name = hdl_toplevel + "_build"
+    outdir_name = ctx.attr.name + "_build"
 
     cc_toolchain = find_cc_toolchain(ctx)
     compiler_executable = cc_toolchain.compiler_executable
@@ -155,7 +155,7 @@ def _verilator_cocotb_model_impl(ctx):
         add_input(f)
         verilog_paths.append(f.path)
 
-    vlt_file = ctx.actions.declare_file(hdl_toplevel + ".vlt")
+    vlt_file = ctx.actions.declare_file(ctx.attr.name + ".vlt")
     ctx.actions.expand_template(
         output = vlt_file,
         template = ctx.file.vlt_tpl,

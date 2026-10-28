@@ -255,6 +255,8 @@ def coralflow_test(
         test_args = [],
         size = "medium",
         tags = [],
+        verilator_model = None,
+        vcs_model = None,
         **kwargs):
     """Generates multi-backend test targets for a single-source CoralFlow test.
 
@@ -268,6 +270,10 @@ def coralflow_test(
     Args:
       exclude_testcases: Optional dict mapping backend name (e.g. "uvm", "npusim")
         to a list of testcase names to skip on that backend.
+      verilator_model: Optional target label for the Verilator simulation model.
+        If omitted, the macro uses the default model for `hdl_toplevel`.
+      vcs_model: Optional target label for the VCS simulation model.
+        If omitted, the macro uses the default model for `hdl_toplevel`.
     """
     if targets == None:
         if highmem:
@@ -275,21 +281,33 @@ def coralflow_test(
         else:
             targets = ["npusim", "verilator", "vcs", "uvm", "nexus_fpga"]
 
-    actual_toplevel = (
+    resolved_toplevel = (
         "RvvCoreMiniHighmemAxi" if (highmem and hdl_toplevel == "RvvCoreMiniAxi") else hdl_toplevel
     )
-    if actual_toplevel not in _TOPLEVEL_MODELS:
-        fail("Unsupported hdl_toplevel '{}' for coralflow_test. Supported: {}".format(
-            actual_toplevel,
+    if resolved_toplevel in _TOPLEVEL_MODELS:
+        default_verilator_model, default_vcs_model = _TOPLEVEL_MODELS[resolved_toplevel]
+    else:
+        default_verilator_model, default_vcs_model = None, None
+
+    verilator_model = verilator_model or default_verilator_model
+    vcs_model = vcs_model or default_vcs_model
+
+    if "verilator" in targets and not verilator_model:
+        fail("Unsupported hdl_toplevel '{}' for coralflow_test (no verilator_model provided). Supported: {}".format(
+            resolved_toplevel,
             sorted(_TOPLEVEL_MODELS.keys()),
         ))
-    verilator_model, vcs_model = _TOPLEVEL_MODELS[actual_toplevel]
+    if "vcs" in targets and not vcs_model:
+        fail("Unsupported hdl_toplevel '{}' for coralflow_test (no vcs_model provided). Supported: {}".format(
+            resolved_toplevel,
+            sorted(_TOPLEVEL_MODELS.keys()),
+        ))
 
     common_data = _unique(list(data) + ([elf] if elf else []))
     base_deps = _unique(list(deps) + [
         "//coralnpu_test_utils/coralflow",
     ])
-    is_highmem_map = highmem or actual_toplevel in (
+    is_highmem_map = highmem or resolved_toplevel in (
         "RvvCoreMiniHighmemAxi",
         "RvvCoreMini_ITCM512KB_DTCM512KBAxi",
     )
@@ -335,7 +353,7 @@ def coralflow_test(
             sim = "verilator",
             rule_fn = verilator_cocotb_test,
             model = verilator_model,
-            hdl_toplevel = actual_toplevel,
+            hdl_toplevel = resolved_toplevel,
             test_modules = test_module_names,
             testcases = _filter_testcases(testcases, "verilator", exclude_testcases),
             excluded_testcases = exclude_testcases.get("verilator", []),
@@ -357,7 +375,7 @@ def coralflow_test(
             sim = "vcs",
             rule_fn = vcs_cocotb_test,
             model = vcs_model,
-            hdl_toplevel = actual_toplevel,
+            hdl_toplevel = resolved_toplevel,
             test_modules = test_module_names,
             testcases = _filter_testcases(testcases, "vcs", exclude_testcases),
             excluded_testcases = exclude_testcases.get("vcs", []),
@@ -378,7 +396,7 @@ def coralflow_test(
 
     if "uvm" in targets:
         uvm_testcases = _filter_testcases(testcases, "uvm", exclude_testcases)
-        if actual_toplevel == "VmeCoreMiniAxi":
+        if resolved_toplevel == "VmeCoreMiniAxi":
             uvm_sim_dep = select({
                 "//tests/uvm:use_vcs_uvm": ["//tests/uvm:uvm_sim_vcs_vme"],
                 "//conditions:default": ["//tests/uvm:uvm_sim_verilator_vme"],

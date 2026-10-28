@@ -91,6 +91,20 @@ verilator_cocotb_model(
 )
 
 verilator_cocotb_model(
+    name = "rvv_core_mini_axi_openroad_arithmetic_model",
+    cflags = VERILATOR_BUILD_ARGS + [
+        "-DCORALNPU_STRUCTURAL_DATAPATH=1",
+    ],
+    hdl_toplevel = "RvvCoreMiniAxi",
+    trace = False,
+    verilog_source = "//hdl/chisel/src/coralnpu:RvvCoreMiniAxi.sv",
+    vlt_tpl = "//coralnpu_test_utils:dispatch.vlt.tpl",
+    deps = [
+        "//hdl/verilog:sram_backdoor",
+    ],
+)
+
+verilator_cocotb_model(
     name = "rvv_core_mini_highmem_axi_model",
     cflags = VERILATOR_BUILD_ARGS,
     hdl_toplevel = "RvvCoreMiniHighmemAxi",
@@ -352,6 +366,25 @@ coralflow_test(
         "verilator",
         "vcs",
     ],
+    deps = [
+        "//coralnpu_test_utils:core_mini_axi_sim_interface",
+        "//coralnpu_test_utils:dispatch_verifier",
+        "//coralnpu_test_utils:rvv_type_util",
+        requirement("tqdm"),
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
+coralflow_test(
+    name = "rvv_assembly_openroad_arithmetic_test",
+    size = "large",
+    srcs = ["rvv_assembly_cocotb_test.py"],
+    data = ["//tests/cocotb/rvv:rvv_assem_tests"],
+    hdl_toplevel = "RvvCoreMiniAxi",
+    targets = [
+        "verilator",
+    ],
+    verilator_model = ":rvv_core_mini_axi_openroad_arithmetic_model",
     deps = [
         "//coralnpu_test_utils:core_mini_axi_sim_interface",
         "//coralnpu_test_utils:dispatch_verifier",
@@ -702,6 +735,32 @@ coralflow_test(
     deps = [
         "@bazel_tools//tools/python/runfiles",
         requirement("tqdm"),
+    ],
+)
+
+coralflow_test(
+    name = "rvv_arithmetic_openroad_arithmetic_test",
+    size = "large",
+    srcs = ["rvv_arithmetic_cocotb_test.py"],
+    data = [
+        "//tests/cocotb/rvv/arithmetics:rvv_arith_tests",
+    ],
+    hdl_toplevel = "RvvCoreMiniAxi",
+    targets = [
+        "verilator",
+    ],
+    verilator_model = ":rvv_core_mini_axi_openroad_arithmetic_model",
+    deps = [
+        "@bazel_tools//tools/python/runfiles",
+        requirement("tqdm"),
+    ],
+)
+
+test_suite(
+    name = "rvv_openroad_arithmetic_tests",
+    tests = [
+        ":rvv_arithmetic_openroad_arithmetic_test_verilator",
+        ":rvv_assembly_openroad_arithmetic_test_verilator",
     ],
 )
 
