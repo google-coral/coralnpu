@@ -101,8 +101,7 @@ class RvvCoreIO(p: Parameters) extends Bundle {
   val lsu2vme = Option.when(p.enableVme)(Flipped(Decoupled(new Lsu2Vme(p))))
 
   // Config state.
-  val configState     = Output(Valid(new RvvConfigState(p)))
-  val nextConfigMtype = Option.when(p.enableVme)(Output(UInt(p.xlen.W)))
+  val configState = Output(Valid(new RvvConfigState(p)))
 
   // Async scalar regfile writes.
   val async_rd  = Decoupled(new RegfileWriteDataIO(p))

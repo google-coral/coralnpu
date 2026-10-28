@@ -170,7 +170,7 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     RvvAddressingMode(bits(20, 19))
   }
 
-  // Is vsetvli, vsetivli or vsetvl
+  // Is vset*/mset* configuration opcode (1010111, funct3=111)
   def isVset(): Bool = {
     (opcode === RvvCompressedOpcode.RVVALU && funct3() === "b111".U)
   }
@@ -425,6 +425,17 @@ object RvvCompressedInstruction {
     }
   }
 
+  def isVsetvl(inst: UInt): Bool = {
+    val opcode     = inst(6, 0)
+    val funct3     = inst(14, 12)
+    val funct7     = inst(31, 25)
+    val isCfg      = opcode === "b1010111".U && funct3 === "b111".U
+    val isVsetvli  = !inst(31)
+    val isVsetivli = inst(31, 30) === "b11".U
+    val isVsetvl   = funct7 === "b1000000".U
+    isCfg && (isVsetvli || isVsetivli || isVsetvl)
+  }
+
   def isMsetWritesMtype(inst: UInt): Bool = {
     val opcode       = inst(6, 0)
     val funct3       = inst(14, 12)
@@ -451,6 +462,9 @@ object RvvCompressedInstruction {
       (inst(22, 20) === "b100".U) && (inst(19, 17) === "b000".U) && (rd === 0.U)
     isVset && (isMsetmtype || isMsetmtypei)
   }
+
+  def writesMtype(inst: UInt): Bool =
+    isVsetvl(inst) || isMsetWritesMtype(inst)
 }
 
 class RvvS1DecodeInstructionBase {

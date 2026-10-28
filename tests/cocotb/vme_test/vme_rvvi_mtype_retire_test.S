@@ -280,6 +280,36 @@ _start:
     li       x6, 2
     bne      x29, x6, test_fail
 
+    # 3c: multi-cycle scalar write to x0 (mul x0) completing concurrently with
+    # trapping msettm x0, x10 (mtwiden == 0) must not prematurely retire msettm
+    # or suppress its illegal-instruction exception.
+    li       x28, 0
+    li       x29, 0
+    li       x10, 16
+    mul      x0, x10, x10
+3:
+    .insn r 0b1010111, 0b111, 0b1000100, x0, x10, x1   # zvt: msettm x0, x10 (traps)
+    addi     x5, x0, 3
+    la       x6, 3b
+    bne      x28, x6, test_fail
+    li       x6, 2
+    bne      x29, x6, test_fail
+
+    # 3d: multi-cycle scalar write to x0 (mul x0) completing concurrently with
+    # trapping msettk x0, x10 (mtwiden == 0) must not prematurely retire msettk
+    # or suppress its illegal-instruction exception.
+    li       x28, 0
+    li       x29, 0
+    li       x10, 4
+    mul      x0, x10, x10
+4:
+    .insn r 0b1010111, 0b111, 0b1000100, x0, x10, x2   # zvt: msettk x0, x10 (traps)
+    addi     x5, x0, 4
+    la       x6, 4b
+    bne      x28, x6, test_fail
+    li       x6, 2
+    bne      x29, x6, test_fail
+
     # Test completion: write PASS (1) to tohost and mpause
     li   x1, 1
 .option push

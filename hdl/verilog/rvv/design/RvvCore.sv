@@ -87,7 +87,6 @@ module RvvCore #(parameter N = 4,
   // Config state
   output config_state_valid,
   output RVVConfigState config_state,
-  output logic [31:0] next_config_mtype_o,
 
   // VME configuration writeback per lane
   output logic [N-1:0] vme_mtype_valid_o,
@@ -160,7 +159,6 @@ module RvvCore #(parameter N = 4,
       .trap_data_o(trap_data_o),
       .config_state_valid(config_state_valid),
       .config_state(config_state),
-      .next_config_mtype_o(next_config_mtype_o),
       .vme_mtype_valid_o(vme_mtype_valid_o),
       .vme_mtype_data_o(vme_mtype_data_o),
       .vme_mtype_tag_o(vme_mtype_tag_o)

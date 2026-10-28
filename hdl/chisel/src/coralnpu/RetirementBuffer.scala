@@ -52,7 +52,6 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
   val vmeMtypeWb = Option.when(p.enableVme)(
     Input(Vec(p.instructionLanes, Valid(new MtypeWriteDataIO(p))))
   )
-  val mtype = Option.when(p.enableVme)(Input(UInt(p.xlen.W)))
   val debug = Option.when(p.shouldExposeDebugPorts)(Output(new RetirementBufferDebugIO(p)))
 }
 
@@ -80,10 +79,11 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     val isVector      = Bool()
     val resetsVstart  = Bool()
     // Target storage removed in favor of linkOk check for area optimization
-    val linkOk   = Bool()
-    val isEcall  = Bool()
-    val isMpause = Bool()
-    val isTile   = Bool()
+    val linkOk       = Bool()
+    val isEcall      = Bool()
+    val isMpause     = Bool()
+    val isTile       = Bool()
+    val isMtypeWrite = Bool()
   }
 
   val storeComplete = Pipe(io.storeComplete)
@@ -181,19 +181,6 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     }
     val store = scalarStore || floatStore || vectorStore
 
-    // RVV/Zvt configuration instructions (opcode 0x57, funct3 0b111) with
-    // rd = x0 still perform scalar register writeback from RvvFrontEnd (with
-    // addr = 0) when non-trapping, and may trap 1 cycle after dispatch in
-    // RvvFrontEnd (e.g. msettm/msettk when mtwiden == 0). Tracking idx = 0.U
-    // prevents RetirementBuffer from treating them as nonWritingInstr and
-    // retiring them a cycle early before faultRetire or RvvFrontEnd writeback.
-    val isRvvConfigX0Write = if (p.enableRvv) {
-      sValid && (sAddr === 0.U) && (finst.inst(6, 0) === "b1010111".U) &&
-      (finst.inst(14, 12) === "b111".U)
-    } else {
-      false.B
-    }
-
     val instr = Wire(new Instruction)
     instr.addr := finst.addr
     if (mini) {
@@ -207,7 +194,6 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         floatValid                -> (fAddr +& p.floatRegfileBaseAddr.U),
         (vectorValid)             -> (vAddr +& p.rvvRegfileBaseAddr.U),
         (sValid && sAddr =/= 0.U) -> sAddr,
-        isRvvConfigX0Write        -> 0.U,
         store                     -> storeRegIdx
       )
     )
@@ -220,6 +206,8 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     instr.isEcall       := (finst.inst === 0x73.U)
     instr.isMpause      := (finst.inst === 0x08000073.U)
     instr.isTile        := isTile
+    instr.isMtypeWrite  := (if (p.enableVme) RvvCompressedInstruction.writesMtype(finst.inst)
+                           else false.B)
     instr
   }
 
@@ -411,6 +399,15 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   val mtypeAccumulator = Option.when(!mini && p.enableVme && p.enableVerification)(
     RegInit(VecInit.fill(bufferSize)(0.U(p.xlen.W)))
   )
+  val mtypeAccValid = Option.when(p.enableVme)(
+    RegInit(VecInit.fill(bufferSize)(false.B))
+  )
+  val mtypeWbDone = Option.when(p.enableVme)(
+    Wire(Vec(bufferSize, Bool()))
+  )
+  val debugMtypeData = Option.when(!mini && p.enableVme && p.enableVerification)(
+    Wire(Vec(bufferSize, UInt(p.xlen.W)))
+  )
   val tileAccumulatorNext = Option.when(!mini && p.enableVme && p.enableVerification)(
     Wire(Vec(bufferSize, Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p)))))
   )
@@ -420,24 +417,34 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   val tileAccValid = Option.when(!mini && p.enableVme && p.enableVerification)(
     Wire(Vec(bufferSize, Bool()))
   )
-  if (!mini && p.enableVme && p.enableVerification) {
-    val tilePort = io.writeDataTile.get
+  if (p.enableVme) {
     for (x <- 0 until bufferSize) {
-      val tileTagMatch =
-        tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === x.U)
-      val nextTileEntry = Wire(Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p))))
-      for (k <- 0 until p.vmeMaxTileWrites) {
-        val hit      = tileTagMatch && tilePort.bits.mask(k)
-        val hitEntry = Wire(Valid(new TileWrite(p)))
-        hitEntry.valid     := true.B
-        hitEntry.bits.idx  := tilePort.bits.idx + k.U
-        hitEntry.bits.data := tilePort.bits.data.get(k)
-
-        nextTileEntry(k) := Mux(hit, hitEntry, tileWriteAccumulator.get(x)(k))
+      val wbHits = (0 until p.instructionLanes).map { k =>
+        io.vmeMtypeWb.get(k).valid && (io.vmeMtypeWb.get(k).bits.rob_tag === x.U)
       }
-      tileAccumulatorNext.get(x) := nextTileEntry
-      debugTileWrites.get(x)     := nextTileEntry
-      tileAccValid.get(x)        := tileWriteAccumulator.get(x).map(_.valid).reduce(_ || _)
+      val hasWbHit = VecInit(wbHits).asUInt.orR
+      mtypeWbDone.get(x) := hasWbHit || mtypeAccValid.get(x)
+      if (!mini && p.enableVerification) {
+        val wbData = PriorityMux(wbHits, io.vmeMtypeWb.get.map(_.bits.data.get))
+        debugMtypeData.get(x) := Mux(hasWbHit, wbData, mtypeAccumulator.get(x))
+
+        val tilePort     = io.writeDataTile.get
+        val tileTagMatch =
+          tilePort.valid && !tilePort.bits.is_store && (tilePort.bits.rob_tag === x.U)
+        val nextTileEntry = Wire(Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p))))
+        for (k <- 0 until p.vmeMaxTileWrites) {
+          val hit      = tileTagMatch && tilePort.bits.mask(k)
+          val hitEntry = Wire(Valid(new TileWrite(p)))
+          hitEntry.valid     := true.B
+          hitEntry.bits.idx  := tilePort.bits.idx + k.U
+          hitEntry.bits.data := tilePort.bits.data.get(k)
+
+          nextTileEntry(k) := Mux(hit, hitEntry, tileWriteAccumulator.get(x)(k))
+        }
+        tileAccumulatorNext.get(x) := nextTileEntry
+        debugTileWrites.get(x)     := nextTileEntry
+        tileAccValid.get(x)        := tileWriteAccumulator.get(x).map(_.valid).reduce(_ || _)
+      }
     }
   }
 
@@ -447,9 +454,14 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
 
   for (i <- 0 until bufferSize) {
     val bufferEntry = instBuffer.io.dataOut(i)
+    val tagWidth    = log2Ceil(bufferSize)
+    val pIdx        = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
+    val mtypeReady  = if (p.enableVme) mtypeWbDone.get(pIdx) else true.B
     // Check if this entry is an operation that doesn't require a register write, but is not a store.
-    val nonWritingInstr = (bufferEntry.idx === noWriteRegIdx) && !bufferEntry.isTile
-    val storeInstr      = bufferEntry.idx === storeRegIdx
+    val nonWritingInstr =
+      (bufferEntry.idx === noWriteRegIdx) && !bufferEntry.isTile &&
+        (!bufferEntry.isMtypeWrite || mtypeReady)
+    val storeInstr = bufferEntry.idx === storeRegIdx
 
     // Check which incoming (scalar,float) write port matches this entry's needed address.
     val scalarWriteIdxMap =
@@ -462,8 +474,6 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         )
       )
       .getOrElse(Seq(false.B))
-    val tagWidth = log2Ceil(bufferSize)
-    val pIdx     = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
 
     val vectorWriteIdxMap = io.writeDataVector
       .map(y =>
@@ -730,7 +740,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     ).asUInt.orR
     io.clearVstart.get := clearVstart
 
-    if (!mini) {
+    if (!mini || p.enableVme) {
       val tagWidth = log2Ceil(bufferSize)
       for (x <- 0 until bufferSize) {
         val isEnqueuing = (0 until p.instructionLanes)
@@ -739,38 +749,31 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
             (k.U < instBuffer.io.enqValid) && (x.U === slotIdx)
           }
           .reduce(_ || _)
-        vectorWriteAccumulator.get(x) := Mux(
-          trapRetired || isEnqueuing,
-          0.U.asTypeOf(vectorWriteAccumulator.get(0)),
-          vectorAccumulatorNext.get(x)
-        )
-      }
-      if (p.enableVme && p.enableVerification) {
-        for (x <- 0 until bufferSize) {
-          val isEnqueuing = (0 until p.instructionLanes)
-            .map { k =>
-              val slotIdx = if (bufferSize > 1) (accEnqPtr +& k.U)(tagWidth - 1, 0) else 0.U
-              (k.U < instBuffer.io.enqValid) && (x.U === slotIdx)
-            }
-            .reduce(_ || _)
-          val wbHits = (0 until p.instructionLanes).map { k =>
-            io.vmeMtypeWb.get(k).valid && (io.vmeMtypeWb.get(k).bits.rob_tag === x.U)
-          }
-          val hasWbHit = VecInit(wbHits).asUInt.orR
-          val wbData   = PriorityMux(wbHits, io.vmeMtypeWb.get.map(_.bits.data))
-          mtypeAccumulator.get(x) := MuxCase(
-            mtypeAccumulator.get(x),
-            Seq(
-              trapRetired -> 0.U,
-              isEnqueuing -> 0.U,
-              hasWbHit    -> wbData
-            )
-          )
-          tileWriteAccumulator.get(x) := Mux(
+        if (!mini) {
+          vectorWriteAccumulator.get(x) := Mux(
             trapRetired || isEnqueuing,
-            0.U.asTypeOf(tileWriteAccumulator.get(0)),
-            tileAccumulatorNext.get(x)
+            0.U.asTypeOf(vectorWriteAccumulator.get(0)),
+            vectorAccumulatorNext.get(x)
           )
+        }
+        if (p.enableVme) {
+          mtypeAccValid.get(x) := Mux(
+            trapRetired || isEnqueuing,
+            false.B,
+            mtypeWbDone.get(x)
+          )
+          if (!mini && p.enableVerification) {
+            mtypeAccumulator.get(x) := Mux(
+              trapRetired || isEnqueuing,
+              0.U,
+              debugMtypeData.get(x)
+            )
+            tileWriteAccumulator.get(x) := Mux(
+              trapRetired || isEnqueuing,
+              0.U.asTypeOf(tileWriteAccumulator.get(0)),
+              tileAccumulatorNext.get(x)
+            )
+          }
         }
       }
     }
@@ -809,9 +812,9 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         Mux(resultUpdate(i).bits.trap, noWriteRegIdx, instBuffer.io.dataOut(i).idx)
       )
       debug.inst(i).bits.trap := MuxOR(valid, resultUpdate(i).bits.trap)
+      val tagWidth = log2Ceil(bufferSize)
+      val pIdx     = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
       if (p.enableRvv) {
-        val tagWidth = log2Ceil(bufferSize)
-        val pIdx     = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
         if (!mini) {
           val maskedVecWrites = Wire(Vec(8, Valid(new VectorWrite)))
           for (k <- 0 until 8) {
@@ -826,9 +829,9 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         }
       }
       if (p.enableVme) {
+        val mtypeValid = valid && !resultUpdate(i).bits.trap && mtypeWbDone.get(pIdx)
+        debug.inst(i).bits.mtype.get.valid := mtypeValid
         if (!mini && p.enableVerification) {
-          val tagWidth         = log2Ceil(bufferSize)
-          val pIdx             = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
           val maskedTileWrites = Wire(Vec(p.vmeMaxTileWrites, Valid(new TileWrite(p))))
           for (k <- 0 until p.vmeMaxTileWrites) {
             maskedTileWrites(k).valid := debugTileWrites.get(pIdx)(k).valid && !resultUpdate(
@@ -837,31 +840,11 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
             maskedTileWrites(k).bits := debugTileWrites.get(pIdx)(k).bits
           }
           debug.inst(i).bits.tileWrites.get := maskedTileWrites
+          debug.inst(i).bits.mtype.get.bits := Mux(mtypeValid, debugMtypeData.get(pIdx), 0.U)
         } else {
           debug.inst(i).bits.tileWrites.get := 0.U.asTypeOf(debug.inst(i).bits.tileWrites.get)
+          debug.inst(i).bits.mtype.get.bits := 0.U
         }
-        val inst              = instBuffer.io.dataOut(i).inst
-        val isMsetWritesMtype = RvvCompressedInstruction.isMsetWritesMtype(inst)
-        debug.inst(i).bits.mtype.get.valid := valid && !resultUpdate(
-          i
-        ).bits.trap && isMsetWritesMtype
-        val mtypeVal = if (!mini && p.enableVerification) {
-          val tagWidth     = log2Ceil(bufferSize)
-          val pIdx         = if (bufferSize > 1) (accDeqPtr +& i.U)(tagWidth - 1, 0) else 0.U
-          val retireWbHits = (0 until p.instructionLanes).map { k =>
-            io.vmeMtypeWb.get(k).valid && (io.vmeMtypeWb.get(k).bits.rob_tag === pIdx)
-          }
-          val hasRetireWbHit = VecInit(retireWbHits).asUInt.orR
-          val retireWbData   = PriorityMux(retireWbHits, io.vmeMtypeWb.get.map(_.bits.data))
-          Mux(hasRetireWbHit, retireWbData, mtypeAccumulator.get(pIdx))
-        } else {
-          io.mtype.getOrElse(0.U)
-        }
-        debug.inst(i).bits.mtype.get.bits := Mux(
-          valid && !resultUpdate(i).bits.trap && isMsetWritesMtype,
-          mtypeVal,
-          0.U
-        )
       }
     }
   }

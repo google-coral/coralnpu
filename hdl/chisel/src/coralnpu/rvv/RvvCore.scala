@@ -162,16 +162,16 @@ object GenerateCoreShimSource {
         |    output configVill,
         |    output configAltfmt,
         |    output [${xlenMinus1}:0] configMtype,
-        |    output [${xlenMinus1}:0] nextConfigMtype,
         |    output logic rvv_idle,
         |    output logic [3:0] queue_capacity,
         |""".stripMargin
     if (p.enableVme) {
       for (i <- 0 until instructionLanes) {
-        moduleInterface += s"""    output vmeMtypeWb_${i}_valid,
-              |    output [${xlenMinus1}:0] vmeMtypeWb_${i}_bits_data,
-              |    output [${robTagMsb}:0] vmeMtypeWb_${i}_bits_rob_tag,
-              |""".stripMargin
+        moduleInterface += s"    output vmeMtypeWb_${i}_valid,\n"
+        if (enableVerification) {
+          moduleInterface += s"    output [${xlenMinus1}:0] vmeMtypeWb_${i}_bits_data,\n"
+        }
+        moduleInterface += s"    output [${robTagMsb}:0] vmeMtypeWb_${i}_bits_rob_tag,\n"
       }
     }
 
@@ -465,7 +465,6 @@ object GenerateCoreShimSource {
         |      .vcsr_ready(vcsr_ready),
         |      .config_state_valid(configStateValid),
         |      .config_state(config_state),
-        |      .next_config_mtype_o(nextConfigMtype),
         |      .vme_mtype_valid_o(vme_mtype_valid_o),
         |      .vme_mtype_data_o(vme_mtype_data_o),
         |      .vme_mtype_tag_o(vme_mtype_tag_o),
@@ -613,10 +612,11 @@ object GenerateCoreShimSource {
     }
     if (enableVme) {
       for (i <- 0 until instructionLanes) {
-        coreInstantiation += s"""  assign vmeMtypeWb_${i}_valid = vme_mtype_valid_o[${i}];
-              |  assign vmeMtypeWb_${i}_bits_data = vme_mtype_data_o[${i}];
-              |  assign vmeMtypeWb_${i}_bits_rob_tag = vme_mtype_tag_o[${i}];
-              |""".stripMargin
+        coreInstantiation += s"  assign vmeMtypeWb_${i}_valid = vme_mtype_valid_o[${i}];\n"
+        if (enableVerification) {
+          coreInstantiation += s"  assign vmeMtypeWb_${i}_bits_data = vme_mtype_data_o[${i}];\n"
+        }
+        coreInstantiation += s"  assign vmeMtypeWb_${i}_bits_rob_tag = vme_mtype_tag_o[${i}];\n"
       }
     }
     coreInstantiation += "  assign configVl = config_state.vl;\n"
@@ -754,11 +754,10 @@ class RvvCoreWrapper(p: Parameters)
     // This is the original one set in vset(i)vl(i)
     val configLmulOrig = Output(UInt(3.W))
 
-    val configVill      = Output(Bool())
-    val configAltfmt    = Output(Bool())
-    val configMtype     = Output(UInt(p.xlen.W))
-    val nextConfigMtype = Output(UInt(p.xlen.W))
-    val rvv_idle        = Output(Bool())
+    val configVill   = Output(Bool())
+    val configAltfmt = Output(Bool())
+    val configMtype  = Output(UInt(p.xlen.W))
+    val rvv_idle     = Output(Bool())
 
     val queue_capacity = Output(UInt(4.W))
 
@@ -1056,7 +1055,6 @@ class RvvCoreShim(p: Parameters) extends Module {
     io.configState.bits.mtwiden.get := mt(1, 0)
     io.configState.bits.tk.get      := mt(7, 5)
     io.configState.bits.tm.get      := mt(23, 10)
-    io.nextConfigMtype.get          := rvvCoreWrapper.io.nextConfigMtype
   }
   io.rvv_idle       := rvvCoreWrapper.io.rvv_idle
   io.queue_capacity := rvvCoreWrapper.io.queue_capacity

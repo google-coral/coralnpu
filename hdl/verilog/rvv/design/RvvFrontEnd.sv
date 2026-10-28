@@ -67,7 +67,6 @@ module RvvFrontEnd#(parameter N = 4,
   // Config state
   output config_state_valid,
   output RVVConfigState config_state,
-  output logic [31:0] next_config_mtype_o,
 
   // VME configuration writeback per lane
   output logic [N-1:0] vme_mtype_valid_o,
@@ -158,7 +157,6 @@ module RvvFrontEnd#(parameter N = 4,
   // set vl). msettn falls through the vconfig_change path which already writes
   // vl-to-rd.
   logic mset_writes_rd [N-1:0];
-  logic mset_writes_mtype [N-1:0];
   logic [31:0] mset_rd_data [N-1:0];
   logic mset_illegal_trap [N-1:0];
   logic is_msettn [N-1:0];
@@ -185,7 +183,6 @@ module RvvFrontEnd#(parameter N = 4,
       setvl_reserved_bits[i] = 0;
 `ifdef ZVT_ON
       mset_writes_rd[i] = 0;
-      mset_writes_mtype[i] = 0;
       mset_rd_data[i] = 0;
       mset_illegal_trap[i] = 0;
       is_msettn[i] = 0;
@@ -323,7 +320,6 @@ module RvvFrontEnd#(parameter N = 4,
           // avl stays 0 -> vconfig_change post-processing will set vl=0 (when not vill).
           vconfig_change[i] = 1;
           is_msettype[i] = 1;
-          mset_writes_mtype[i] = 1;
         end else if ((inst_q[i].bits[24:22] == 3'b100) &&
                      (inst_q[i].bits[20:18] == 3'b100) &&
                      (inst_q[i].bits[15:13] == 3'b100) &&
@@ -351,7 +347,6 @@ module RvvFrontEnd#(parameter N = 4,
           end
           vconfig_change[i] = 1;
           is_msettype[i] = 1;
-          mset_writes_mtype[i] = 1;
         end else if ((inst_q[i].bits[24:18] == 7'b1000100) &&
                      (inst_q[i].bits[17:15] == 3'b000)) begin  // msettn / msettm / msettk
           unique case (inst_q[i].bits[14:13])
@@ -386,7 +381,6 @@ module RvvFrontEnd#(parameter N = 4,
                                                                                 : reg_read_data_i[2*i][13:0];
                 inst_config_state[i+1].tm = msettm_new_tm;
                 mset_writes_rd[i] = 1;
-                mset_writes_mtype[i] = 1;
                 mset_rd_data[i] = {18'd0, msettm_new_tm};
               end
             end
@@ -409,7 +403,6 @@ module RvvFrontEnd#(parameter N = 4,
                                                                        : reg_read_data_i[2*i][2:0];
                 inst_config_state[i+1].tk = msettk_new_tk;
                 mset_writes_rd[i] = 1;
-                mset_writes_mtype[i] = 1;
                 mset_rd_data[i] = {29'd0, msettk_new_tk};
               end
             end
@@ -596,6 +589,14 @@ module RvvFrontEnd#(parameter N = 4,
     end
   end
 
+  // Propagate outputs
+  logic [N-1:0] unaligned_cmd_valid;
+  RVVCmd [N-1:0] unaligned_cmd_data;
+  logic [N-1:0] unaligned_trap_valid;  // Should this instruction trap
+  RVVInstruction [N-1:0] unaligned_trap_data;
+  logic [N-1:0] is_whole_reg;
+  RVVConfigState next_config_state;
+
   always_ff @(posedge clk or negedge rstn) begin
     if (!rstn) begin
       // Per Section 3.11 of RVV spec, the recommended state on reset is
@@ -622,21 +623,18 @@ module RvvFrontEnd#(parameter N = 4,
       config_state_q.tm     <= 14'd0;
 `endif
     end else begin
-      // Update config state next cycle
-      config_state_q <= inst_config_state[N];
+      // Update config state next cycle, stopping before the first trapping lane.
+      config_state_q <= next_config_state;
       if (flush_i || vstart_valid_i) begin
         config_state_q.vstart <= vstart_i;
       end
     end
   end
 
-  // Propagate outputs
-  logic [N-1:0] unaligned_cmd_valid;
-  RVVCmd [N-1:0] unaligned_cmd_data;
-  logic [N-1:0] unaligned_trap_valid;  // Should this instruction trap
-  RVVInstruction [N-1:0] unaligned_trap_data;
-  logic [N-1:0] is_whole_reg;
   always_comb begin
+    logic seen_trap;
+    seen_trap = 1'b0;
+    next_config_state = inst_config_state[0];
     for (int i = 0; i < N; i++) begin
       // Whole-register moves (vmv<nr>r.v: opcode=RVV, funct3=OPIVI, funct6=VSMUL_VMVNRR, vm=1, vs1[4:3]=00)
       // ignore vtype and execute even when vill is set (RVV 1.0 §16.6).
@@ -662,13 +660,16 @@ module RvvFrontEnd#(parameter N = 4,
           ))
 `endif
       );
+      seen_trap = seen_trap || unaligned_trap_valid[i];
+      if (!seen_trap) begin
+        next_config_state = inst_config_state[i+1];
+      end
       unaligned_trap_data[i] = inst_q[i];
       unaligned_cmd_valid[i] = valid_inst_q[i] && !vconfig_change[i]
 `ifdef ZVT_ON
-          && !mset_writes_rd[i] && !mset_illegal_trap[i]
+          && !mset_writes_rd[i]
 `endif
-          && ((inst_q[i].opcode != RVV) || !inst_config_state[i+1].vill || is_whole_reg[i])
-          && !unaligned_trap_valid[i];
+          && !seen_trap;
 
       // Combine instruction + arch state into command
       unaligned_cmd_data[i].rob_tag = inst_q[i].rob_tag;
@@ -701,26 +702,16 @@ module RvvFrontEnd#(parameter N = 4,
 `else
                              vconfig_change[i]
 `endif
-                             ) && !unaligned_trap_valid[i];
+                             ) && !seen_trap;
       reg_write_addr_o[i] = inst_q[i].bits[4:0];
       reg_write_data_o[i] =
 `ifdef ZVT_ON
           mset_writes_rd[i] ? mset_rd_data[i] :
 `endif
           {{(`XLEN-(`VL_WIDTH)){1'b0}}, inst_config_state[i+1].vl};
-    end
-  end
 
 `ifdef ZVT_ON
-  assign next_config_mtype_o = {8'd0, inst_config_state[N].tm, 2'd0, inst_config_state[N].tk, 3'd0, inst_config_state[N].mtwiden};
-`else
-  assign next_config_mtype_o = 32'd0;
-`endif
-
-  always_comb begin
-    for (int i = 0; i < N; i++) begin
-`ifdef ZVT_ON
-      vme_mtype_valid_o[i] = valid_inst_q[i] && !unaligned_trap_valid[i] && mset_writes_mtype[i];
+      vme_mtype_valid_o[i] = ((vconfig_change[i] && !is_msettn[i]) || mset_writes_rd[i]) && !seen_trap;
       vme_mtype_data_o[i]  = {8'd0, inst_config_state[i+1].tm, 2'd0, inst_config_state[i+1].tk, 3'd0, inst_config_state[i+1].mtwiden};
       vme_mtype_tag_o[i]   = inst_q[i].rob_tag;
 `else

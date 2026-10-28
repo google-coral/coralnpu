@@ -211,7 +211,7 @@ class TileWriteDataIO(p: Parameters) extends Bundle {
 
 class MtypeWriteDataIO(p: Parameters) extends Bundle {
   val rob_tag = UInt(log2Ceil(p.retirementBufferSize).W)
-  val data    = UInt(p.xlen.W)
+  val data    = Option.when(p.enableVerification)(UInt(p.xlen.W))
 }
 
 class RetirementBufferDebugIO(p: Parameters) extends Bundle {

@@ -94,11 +94,9 @@ class SCore(p: Parameters) extends Module {
       rob_io.writeDataVector.get(i).bits.last_uop_valid := rvvRdPipedBits(i).last_uop_valid
     })
     if (p.enableVme) {
-      rob_io.isTile.get        := dispatch.io.isTile.get
-      rob_io.writeDataTile.get := io.rvvcore.get.vmeRt.get
-      rob_io.vmeMtypeWb.get    := io.rvvcore.get.vmeMtypeWb.get
-      rob_io.mtype.get         := io.rvvcore.get.nextConfigMtype
-        .getOrElse(io.rvvcore.get.configState.bits.mtype.get)
+      rob_io.isTile.get         := dispatch.io.isTile.get
+      rob_io.writeDataTile.get  := io.rvvcore.get.vmeRt.get
+      rob_io.vmeMtypeWb.get     := io.rvvcore.get.vmeMtypeWb.get
       dispatch.io.mstatusMs.get := csr.io.mstatus_ms.get
       val vmeEventValid = !(rob_io.trapRetired || rvvFlushReg.get || io.rvvcore.get.trap.valid)
       csr.io.vme_discard.get  := RegNext(dispatch.io.vmeDiscard.get, false.B) && vmeEventValid
