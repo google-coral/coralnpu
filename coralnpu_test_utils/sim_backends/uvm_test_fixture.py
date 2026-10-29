@@ -456,3 +456,188 @@ class UvmTestFixture(BaseCoralNPUFixture):
                 except KeyError:
                     pass
         return self.cycle_count
+
+    async def run_batch(
+        self,
+        elf_paths: list[str | os.PathLike],
+        timeout_cycles: int = 100000,
+        timeout_sec: float = 600.0,
+    ) -> bool:
+        """Executes a batch of self-contained ELFs in a single UVM simulator invocation."""
+        if not elf_paths:
+            raise ValueError("elf_paths must not be empty.")
+        if len(elf_paths) == 1:
+            return await super().run_batch(
+                elf_paths, timeout_cycles=timeout_cycles
+            )
+
+        resolved_entries: list[tuple[str, int, int, str]] = []
+        for elf_path in elf_paths:
+            resolved = resolve_runfile_path(elf_path)
+            if not os.path.exists(resolved):
+                raise FileNotFoundError(
+                    f"ELF file not found: {elf_path} (resolved: {resolved})"
+                )
+            entry_point, symbols, _ = parse_elf_symbols(
+                resolved,
+                symbols=["tohost"],
+                strict=True,
+                require_symtab=False,
+            )
+            tohost_addr = symbols["tohost"]
+            resolved_entries.append((
+                os.path.abspath(resolved),
+                tohost_addr,
+                entry_point,
+                os.path.basename(resolved),
+            ))
+
+        reg_list_file: str | None = None
+        process = None
+        timeout_ns = int(timeout_cycles) * 10
+
+        try:
+            spike_opt = (
+                "SPIKE"
+                if getattr(self, "enable_spike_cosim", True) else "NONE"
+            )
+            with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    prefix="uvm_regression_list_",
+                    suffix=".txt",
+                    delete=False,
+                    encoding="utf-8",
+            ) as reg_tmp:
+                for abs_elf, tohost_addr, entry_point, elf_name in resolved_entries:
+                    reg_tmp.write(
+                        f"{abs_elf} {tohost_addr:08x} {entry_point:08x} "
+                        f"{timeout_ns} {spike_opt} {elf_name}\n"
+                    )
+                reg_list_file = reg_tmp.name
+
+            verbose = os.environ.get("CORALFLOW_VERBOSE", "").strip() in (
+                "1",
+                "true",
+                "True",
+            )
+            cmd = [
+                self._get_simulator_binary(),
+                f"+TEST_ELF={resolved_entries[0][0]}",
+                "+UVM_TESTNAME=coralnpu_regression_test",
+                f"+REGRESSION_LIST={reg_list_file}",
+            ]
+            if verbose:
+                cmd.append("+COSIM_TRACE_LOG")
+
+            logger.info(
+                "Launching UVM Batch Simulator (%d ELFs): %s",
+                len(resolved_entries),
+                " ".join(cmd),
+            )
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+
+            try:
+                stdout, _ = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout_sec
+                )
+            except asyncio.TimeoutError as err:
+                partial_log = ""
+                if process is not None:
+                    if process.returncode is None:
+                        try:
+                            process.kill()
+                        except ProcessLookupError:
+                            pass
+                        await process.wait()
+                    if process.stdout is not None:
+                        try:
+                            raw_partial = await process.stdout.read()
+                            if isinstance(raw_partial, (bytes, bytearray)):
+                                partial_log = raw_partial.decode(
+                                    "utf-8", errors="replace"
+                                )
+                        except Exception:  # noqa: BLE001
+                            pass
+                reason = (
+                    f"UVM Batch Simulation timed out after {timeout_sec}s "
+                    f"({len(resolved_entries)} ELFs, sim={cmd[0]})"
+                )
+                raise RuntimeError(
+                    self._dump_sim_log(
+                        partial_log
+                        or f"Process timed out running: {' '.join(cmd)}\n",
+                        reason=reason,
+                    )
+                ) from err
+
+            stdout_str = stdout.decode("utf-8", errors="replace")
+            if verbose:
+                print(stdout_str, flush=True)
+            self._parse_uvm_logs(stdout_str, returncode=process.returncode)
+
+            total = len(resolved_entries)
+            summary_marker = f"REGRESSION COMPLETE. Passed: {total}/{total}"
+            if summary_marker not in stdout_str:
+                raise RuntimeError(
+                    self._dump_sim_log(
+                        stdout_str,
+                        reason=(
+                            f"UVM batch regression did not report "
+                            f"'{summary_marker}'."
+                        ),
+                    )
+                )
+
+            for _, _, _, elf_name in resolved_entries:
+                block_match = re.search(
+                    rf"--- STARTING TEST: {re.escape(elf_name)} ---"
+                    r"(.*?)"
+                    rf"--- FINISHED TEST: {re.escape(elf_name)} ---",
+                    stdout_str,
+                    re.DOTALL,
+                )
+                if not block_match:
+                    raise RuntimeError(
+                        self._dump_sim_log(
+                            stdout_str,
+                            reason=
+                            f"Missing execution block for {elf_name} in UVM batch log.",
+                        )
+                    )
+                block = block_match.group(1)
+                if "tohost write detected" not in block:
+                    raise RuntimeError(
+                        self._dump_sim_log(
+                            stdout_str,
+                            reason=
+                            f"{elf_name}: expected tohost == 1, but no tohost write was detected.",
+                        )
+                    )
+                if "** UVM TEST PASSED **" not in block:
+                    raise RuntimeError(
+                        self._dump_sim_log(
+                            stdout_str,
+                            reason=
+                            f"{elf_name}: did not report UVM TEST PASSED.",
+                        )
+                    )
+
+            return True
+        finally:
+            if process is not None and process.returncode is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
+
+            if reg_list_file and os.path.exists(reg_list_file):
+                try:
+                    os.remove(reg_list_file)
+                except OSError:
+                    pass

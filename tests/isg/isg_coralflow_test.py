@@ -65,16 +65,7 @@ async def isg_batch_test(fixture):
     """Executes every ELF in the ISG batch and verifies clean termination."""
     elf_paths = _discover_batch_elfs()
     assert elf_paths, "No ISG ELF binaries found in runfiles."
-
-    for elf_path in elf_paths:
-        elf_name = os.path.basename(elf_path)
-        logging.info("Running ISG program: %s", elf_name)
-        await fixture.load_elf_and_lookup_symbols(elf_path, ["tohost"])
-        await fixture.run_to_halt(timeout_cycles=100000)
-        tohost = await fixture.read_word("tohost")
-        assert tohost == 1, (
-            f"{elf_name}: expected tohost == 1, got 0x{tohost:08x}"
-        )
+    await fixture.run_batch(elf_paths, timeout_cycles=100000)
 
 
 if __name__ == "__main__":
