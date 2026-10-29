@@ -142,6 +142,15 @@ class CsrSpec extends AnyFreeSpec with ChiselSim {
         dut.clock.step()
         assert(dut.io.rd.bits.data.peek().litValue == 0, "vl must remain 0")
 
+        // Read vl (0xc20) at VLMAX = rvvVlen (128) - must not truncate bit 7
+        dut.io.rvv.get.vl.poke(p.rvvVlen.U)
+        dut.clock.step()
+        assert(
+          dut.io.rd.bits.data.peek().litValue == p.rvvVlen,
+          s"vl at VLMAX must read back ${p.rvvVlen}, got ${dut.io.rd.bits.data.peek().litValue}"
+        )
+        dut.io.rvv.get.vl.poke(0.U)
+
         // Read vlenb (0xc22) - must remain 16 (0x10)
         dut.io.req.bits.index.poke(0xc22.U)
         dut.clock.step()

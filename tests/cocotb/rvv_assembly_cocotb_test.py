@@ -665,7 +665,7 @@ async def vsetvl_test(fixture):
             await fixture.run_to_halt()
 
             actual_vl1 = await fixture.read_word('vl_out1')
-            actual_vl2 = await fixture.read_word('vl_out1')
+            actual_vl2 = await fixture.read_word('vl_out2')
             actual_vtype = await fixture.read_word('vtype_out')
 
             assert (actual_vl1 == expected_vl)
