@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_python//python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
@@ -36,12 +35,4 @@ py_binary(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = ["@bazel_tools//tools/python/runfiles"],
-)
-
-# Enable Spike co-simulation for UVM tests
-# specifying --//rules:uvm_run_spike_cosim=true
-bool_flag(
-    name = "uvm_run_spike_cosim",
-    build_setting_default = True,
-    visibility = ["//visibility:public"],
 )

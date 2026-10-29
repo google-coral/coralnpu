@@ -26,6 +26,12 @@ from bazel_tools.tools.python.runfiles import runfiles
 from cocotb.triggers import ClockCycles
 
 
+def _is_rvv_core(fixture) -> bool:
+    if hasattr(fixture, "core_mini_axi"):
+        return "Rvv" in fixture.core_mini_axi.dut._name
+    return True
+
+
 @coralflow_test
 async def core_mini_axi_basic_write_read_memory(fixture):
     """Basic test to check if TCM memory can be written and read back."""
@@ -73,19 +79,18 @@ async def core_mini_axi_basic_write_read_memory(fixture):
 @coralflow_test
 async def core_mini_axi_run_wfi_in_all_slots(fixture):
     """Tests the WFI instruction in each of the 4 issue slots."""
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     for slot in range(0, 4):
-        with open(r.Rlocation(f"coralnpu_hw/tests/cocotb/wfi_slot_{slot}.elf"),
-                  "rb") as f:
-            await core_mini_axi.reset()
-            entry_point = await core_mini_axi.load_elf(f)
-            await core_mini_axi.execute_from(entry_point)
-
-            await core_mini_axi.wait_for_wfi()
-            await core_mini_axi.raise_irq()
-            await core_mini_axi.wait_for_halted()
+        await fixture.load_elf_and_lookup_symbols(
+            r.Rlocation(f"coralnpu_hw/tests/cocotb/wfi_slot_{slot}.elf"), []
+        )
+        if hasattr(fixture, "core_mini_axi"):
+            await fixture.run_to_wfi()
+            await fixture.core_mini_axi.raise_irq()
+            await fixture.core_mini_axi.wait_for_halted()
+        else:
+            await fixture.run_to_halt()
 
 
 @coralflow_test
@@ -150,30 +155,26 @@ async def core_mini_axi_write_read_memory_stress_test(fixture):
 @coralflow_test
 async def core_mini_axi_master_write_alignment(fixture):
     """Test data alignment during AXI master writes"""
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
-    with open(r.Rlocation("coralnpu_hw/tests/cocotb/align_test.elf"),
-              "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-        await core_mini_axi.execute_from(entry_point)
-
-        await core_mini_axi.wait_for_halted()
-        assert core_mini_axi.dut.io_fault.value == 0
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation("coralnpu_hw/tests/cocotb/align_test.elf"), []
+    )
+    await fixture.run_to_halt()
+    assert not fixture.fault()
 
 
 @coralflow_test
 async def core_mini_axi_finish_txn_before_halt_test(fixture):
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
-    with open(
-            r.Rlocation("coralnpu_hw/tests/cocotb/finish_txn_before_halt.elf"),
-            "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-        await core_mini_axi.execute_from(entry_point)
-        await core_mini_axi.wait_for_halted()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation("coralnpu_hw/tests/cocotb/finish_txn_before_halt.elf"), []
+    )
+    await fixture.run_to_halt()
 
+    if hasattr(fixture, "core_mini_axi"):
+        core_mini_axi = fixture.core_mini_axi
         assert (core_mini_axi.master_arfifo.qsize() + \
                 core_mini_axi.master_rfifo.qsize() + \
                 core_mini_axi.master_awfifo.qsize() + \
@@ -183,7 +184,6 @@ async def core_mini_axi_finish_txn_before_halt_test(fixture):
 
 @coralflow_test
 async def core_mini_axi_riscv_tests(fixture):
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     riscv_test_path_template = "coralnpu_hw/third_party/riscv-tests/copy_riscv_tests_rv32{suffix}/riscv_tests_rv32{suffix}/isa"
@@ -201,12 +201,9 @@ async def core_mini_axi_riscv_tests(fixture):
     with tqdm.tqdm(riscv_test_elfs) as t:
         for elf in t:
             t.set_postfix({"binary": os.path.basename(elf)})
-            with open(elf, "rb") as f:
-                await core_mini_axi.reset()
-                entry_point = await core_mini_axi.load_elf(f)
-                await core_mini_axi.execute_from(entry_point)
-                await core_mini_axi.wait_for_halted(timeout_cycles=100_000)
-                assert core_mini_axi.dut.io_fault.value == 0
+            await fixture.load_elf_and_lookup_symbols(elf, [])
+            await fixture.run_to_halt(timeout_cycles=100_000)
+            assert not fixture.fault()
 
 
 @coralflow_test
@@ -275,7 +272,6 @@ async def core_mini_axi_csr_test(fixture):
 
 @coralflow_test
 async def core_mini_axi_exceptions_test(fixture):
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     exceptions_path = r.Rlocation("coralnpu_hw/tests/cocotb/exceptions")
@@ -287,35 +283,26 @@ async def core_mini_axi_exceptions_test(fixture):
     with tqdm.tqdm(exceptions_elfs) as t:
         for elf in tqdm.tqdm(exceptions_elfs):
             t.set_postfix({"binary": os.path.basename(elf)})
-            with open(elf, "rb") as f:
-                await core_mini_axi.reset()
-                entry_point = await core_mini_axi.load_elf(f)
-                await core_mini_axi.execute_from(entry_point)
-                await core_mini_axi.wait_for_halted()
-                assert core_mini_axi.dut.io_fault.value == 0
+            await fixture.load_elf_and_lookup_symbols(elf, [])
+            await fixture.run_to_halt()
+            assert not fixture.fault()
 
 
 @coralflow_test
 async def rvv_exceptions_test(fixture):
-    core_mini_axi = fixture.core_mini_axi
-    dut = core_mini_axi.dut
-    if "Rvv" not in dut._name:
+    if not _is_rvv_core(fixture):
         logging.info("Skipping rvv_exceptions_test on non-RVV core")
         return
     r = runfiles.Create()
 
     elf = r.Rlocation("coralnpu_hw/tests/cocotb/vector_store_fault.elf")
-    with open(elf, "rb") as f:
-        await core_mini_axi.reset()
-        entry_point = await core_mini_axi.load_elf(f)
-        await core_mini_axi.execute_from(entry_point)
-        await core_mini_axi.wait_for_halted(timeout_cycles=50000)
-        assert core_mini_axi.dut.io_fault.value == 0
+    await fixture.load_elf_and_lookup_symbols(elf, [])
+    await fixture.run_to_halt(timeout_cycles=50000)
+    assert not fixture.fault()
 
 
 @coralflow_test
 async def core_mini_axi_coralnpu_isa_test(fixture):
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     coralnpu_isa_path = r.Rlocation("coralnpu_hw/tests/cocotb/coralnpu_isa")
@@ -325,12 +312,9 @@ async def core_mini_axi_coralnpu_isa_test(fixture):
         if f.endswith(".elf")
     ]
     for elf in tqdm.tqdm(coralnpu_isa_elfs):
-        with open(elf, "rb") as f:
-            await core_mini_axi.reset()
-            entry_point = await core_mini_axi.load_elf(f)
-            await core_mini_axi.execute_from(entry_point)
-            await core_mini_axi.wait_for_halted()
-            assert core_mini_axi.dut.io_fault.value == 0
+        await fixture.load_elf_and_lookup_symbols(elf, [])
+        await fixture.run_to_halt()
+        assert not fixture.fault()
 
 
 @coralflow_test
@@ -393,31 +377,25 @@ async def core_mini_axi_burst_types_test(fixture):
 
 @coralflow_test
 async def core_mini_axi_float_csr_test(fixture):
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
-    with open(r.Rlocation(
-            "coralnpu_hw/tests/cocotb/float_csr_interlock_test.elf"),
-              "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-        await core_mini_axi.execute_from(entry_point)
-
-        await core_mini_axi.wait_for_halted()
-        assert core_mini_axi.dut.io_fault.value == 0
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation("coralnpu_hw/tests/cocotb/float_csr_interlock_test.elf"),
+        []
+    )
+    await fixture.run_to_halt()
+    assert not fixture.fault()
 
 
 @coralflow_test
 async def core_mini_axi_float_hazard_test(fixture):
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
-    with open(r.Rlocation("coralnpu_hw/tests/cocotb/float_hazard_tests.elf"),
-              "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-        await core_mini_axi.execute_from(entry_point)
-
-        await core_mini_axi.wait_for_halted()
-        assert core_mini_axi.dut.io_fault.value == 0
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation("coralnpu_hw/tests/cocotb/float_hazard_tests.elf"), []
+    )
+    await fixture.run_to_halt()
+    assert not fixture.fault()
 
 
 @coralflow_test
@@ -453,8 +431,7 @@ async def unreachable_prefetch_fault(fixture):
 
     for c in tqdm.tqdm(['wfi']):
         await fixture.write_ptr('impl', c)
-        await fixture.core_mini_axi.execute_from(fixture.entry_point)
-        await fixture.core_mini_axi.wait_for_wfi()
+        await fixture.run_to_wfi()
         iaf_count = await fixture.read_word('iaf_count')
         other_count = await fixture.read_word('other_count')
         assert iaf_count == 0
@@ -486,6 +463,8 @@ async def core_mini_axi_frm_test(fixture):
 @coralflow_test
 async def core_mini_axi_backdoor_load_test(fixture):
     """Compares front-door AXI load vs backdoor load for the same ELF."""
+    if not hasattr(fixture, "core_mini_axi"):
+        return
     core_mini_axi = fixture.core_mini_axi
     dut = core_mini_axi.dut
     r = runfiles.Create()
@@ -574,8 +553,7 @@ async def core_mini_axi_fcsr_frm_hazard_test(fixture):
 @coralflow_test
 async def rvv_frm_hazard_test(fixture):
     """Tests the FRM/FCSR write to FRM RAW hazard for vector float."""
-    dut = fixture.core_mini_axi.dut
-    if "Rvv" not in dut._name:
+    if not _is_rvv_core(fixture):
         logging.info("Skipping rvv_frm_hazard_test on non-RVV core")
         return
     r = runfiles.Create()
@@ -691,7 +669,6 @@ def check_misa_value(misa_val: int, is_rvv: bool, has_float: bool = True):
 @coralflow_test
 async def core_mini_axi_misa_test(fixture):
     """Validates MISA CSR contents and WARL read/write behavior on CoreMiniAxi."""
-    dut = fixture.core_mini_axi.dut
     r = runfiles.Create()
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/misa_test.elf")
 
@@ -724,9 +701,9 @@ async def core_mini_axi_misa_test(fixture):
     )
 
     assert faulted == 0, f"Test faulted with mcause=0x{mcause:08x}"
-    assert dut.io_fault.value == 0, "DUT reported hardware fault"
+    assert not fixture.fault(), "DUT reported hardware fault"
 
-    is_rvv = "Rvv" in dut._name
+    is_rvv = _is_rvv_core(fixture)
     has_float = True
 
     # 1. Validate MISA extension contents per RTL configuration
@@ -749,8 +726,7 @@ async def core_mini_axi_misa_test(fixture):
 @coralflow_test
 async def rvv_misa_test(fixture):
     """Validates MISA CSR contents and WARL read/write behavior on RvvCoreMiniAxi."""
-    dut = fixture.core_mini_axi.dut
-    if "Rvv" not in dut._name:
+    if not _is_rvv_core(fixture):
         logging.info("Skipping rvv_misa_test on non-RVV core")
         return
     r = runfiles.Create()
@@ -785,7 +761,7 @@ async def rvv_misa_test(fixture):
     )
 
     assert faulted == 0, f"Test faulted with mcause=0x{mcause:08x}"
-    assert dut.io_fault.value == 0, "DUT reported hardware fault"
+    assert not fixture.fault(), "DUT reported hardware fault"
 
     # 1. Validate MISA extension contents for RVV core (V=1, F=1, X=1, M=1, I=1, MXL=1)
     check_misa_value(initial_misa, is_rvv=True, has_float=True)
@@ -807,6 +783,8 @@ async def rvv_misa_test(fixture):
 @coralflow_test(read_delay_cycles=50)
 async def core_mini_axi_retire_buffer_full_illegal_inst_test(fixture):
     """Verifies that an illegal instruction does not push into a full RetirementBuffer."""
+    if not hasattr(fixture, "core_mini_axi"):
+        return
     core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
@@ -848,41 +826,42 @@ async def core_mini_axi_cf_fault_retire_test(fixture):
     with trap=0 and link register writeback when targeting or preceding a decode fault,
     and that the decode fault instruction retires independently at slot 0 with trap=1.
     """
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/cf_fault_retire_test.elf")
     if not elf_path:
         raise ValueError("elf_path must be a valid path")
 
-    with open(elf_path, "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        [
+            "jump_jal",
+            "fault_jal",
+            "jump_jalr",
+            "fault_jalr",
+            "branch_inst",
+            "fault_branch",
+            "trap_record",
+            "total_traps",
+            "test_failed_flag",
+        ],
+    )
+    jump_jal = fixture.symbols["jump_jal"]
+    fault_jal = fixture.symbols["fault_jal"]
+    jump_jalr = fixture.symbols["jump_jalr"]
+    fault_jalr = fixture.symbols["fault_jalr"]
+    branch_inst = fixture.symbols["branch_inst"]
+    fault_branch = fixture.symbols["fault_branch"]
 
-    with open(elf_path, "rb") as f:
-        jump_jal = core_mini_axi.lookup_symbol(f, "jump_jal")
-        fault_jal = core_mini_axi.lookup_symbol(f, "fault_jal")
-        jump_jalr = core_mini_axi.lookup_symbol(f, "jump_jalr")
-        fault_jalr = core_mini_axi.lookup_symbol(f, "fault_jalr")
-        branch_inst = core_mini_axi.lookup_symbol(f, "branch_inst")
-        fault_branch = core_mini_axi.lookup_symbol(f, "fault_branch")
-        trap_record_addr = core_mini_axi.lookup_symbol(f, "trap_record")
-        total_traps_addr = core_mini_axi.lookup_symbol(f, "total_traps")
-        failed_flag_addr = core_mini_axi.lookup_symbol(f, "test_failed_flag")
+    await fixture.run_to_wfi()
 
-    await core_mini_axi.execute_from(entry_point)
-    await core_mini_axi.wait_for_wfi()
-
-    failed_flag = (await
-                   core_mini_axi.read_word(failed_flag_addr)).view(np.uint32
-                                                                   )[0]
+    failed_flag = int(await fixture.read_word("test_failed_flag"))
     assert failed_flag == 0, "Test execution reached test_fail!"
 
-    total_traps = (await
-                   core_mini_axi.read_word(total_traps_addr)).view(np.uint32
-                                                                   )[0]
+    total_traps = int(await fixture.read_word("total_traps"))
     assert total_traps == 3, f"Expected exactly 3 traps, got {total_traps}"
 
-    records = (await core_mini_axi.read(trap_record_addr, 48)).view(np.uint32)
+    records = (await fixture.read("trap_record", 48)).view(np.uint32)
 
     # Trap 0: JAL
     mcause0, mepc0, mtval0, ra0 = records[0:4]
@@ -917,6 +896,8 @@ async def core_mini_axi_cf_fault_retire_test(fixture):
 @coralflow_test
 async def core_mini_axi_wrap_burst_test(fixture):
     """Test for AXI slave WRAP boundary calculation."""
+    if not hasattr(fixture, "core_mini_axi"):
+        return
     core_mini_axi = fixture.core_mini_axi
 
     # DTCM in default memory map is 0x00010000..0x00017FFF.
@@ -958,22 +939,17 @@ async def core_mini_axi_wrap_burst_test(fixture):
 @coralflow_test
 async def core_mini_axi_csr_illegal_write_test(fixture):
     """Verifies that writes to read-only CSRs (vl, vlenb, vtype) raise illegal-instruction exceptions."""
-    core_mini_axi = fixture.core_mini_axi
-    dut = core_mini_axi.dut
     r = runfiles.Create()
 
     elf_path = r.Rlocation(
         "coralnpu_hw/tests/cocotb/csr_illegal_write_test.elf"
     )
-    with open(elf_path, "rb") as f:
-        trap_info_addr = core_mini_axi.lookup_symbol(f, "trap_info")
-        entry_point = await core_mini_axi.load_elf(f)
+    await fixture.load_elf_and_lookup_symbols(elf_path, ["trap_info"])
 
-    await core_mini_axi.write(trap_info_addr, np.zeros(6, dtype=np.uint32))
-    await core_mini_axi.execute_from(entry_point)
-    await core_mini_axi.wait_for_halted()
+    await fixture.write("trap_info", np.zeros(6, dtype=np.uint32))
+    await fixture.run_to_halt()
 
-    trap_info = (await core_mini_axi.read(trap_info_addr, 24)).view(np.uint32)
+    trap_info = (await fixture.read("trap_info", 24)).view(np.uint32)
     trap_count, last_mcause, last_mtval, vl_val, vlenb_val, vtype_val = [
         int(x) for x in trap_info
     ]
@@ -993,9 +969,9 @@ async def core_mini_axi_csr_illegal_write_test(fixture):
     assert last_mtval == 0xC2105073, (
         f"Expected mtval=0xC2105073 (csrwi vtype, 0), got 0x{last_mtval:08x}"
     )
-    assert dut.io_fault.value == 0, "DUT halted with unexpected fault (ebreak)"
+    assert not fixture.fault(), "DUT halted with unexpected fault (ebreak)"
 
-    if "Rvv" in dut._name:
+    if _is_rvv_core(fixture):
         assert vl_val == 0, f"Expected vl=0, got {vl_val}"
         assert vlenb_val == 16, f"Expected vlenb=16, got {vlenb_val}"
         assert vtype_val == 0x80000000, (
@@ -1006,19 +982,18 @@ async def core_mini_axi_csr_illegal_write_test(fixture):
 @coralflow_test
 async def core_mini_axi_csr_behavior_test(fixture):
     """Tests verify misc CSR behaviors (e.g. MIE fields)."""
-    core_mini_axi = fixture.core_mini_axi
     r = runfiles.Create()
 
-    with open(r.Rlocation("coralnpu_hw/tests/cocotb/csr_behavior.elf"),
-              "rb") as f:
-        entry_point = await core_mini_axi.load_elf(f)
-        await core_mini_axi.execute_from(entry_point)
-        await core_mini_axi.wait_for_wfi()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation("coralnpu_hw/tests/cocotb/csr_behavior.elf"), []
+    )
+    fixture.symbols["mie_result"] = 0x10000
+    await fixture.run_to_wfi()
 
-        # Read address 0x10000 (DTCM) where we stored the mie value
-        mie_val = (await core_mini_axi.read(0x10000, 4)).view(np.uint32)[0]
-        # We expect 0x888 (MEIE | MTIE | MSIE).
-        assert mie_val == 0x888, f"MIE register incorrect! Expecting 0x888, got Read value: {hex(mie_val)}"
+    # Read address 0x10000 (DTCM) where we stored the mie value
+    mie_val = int(await fixture.read_word("mie_result"))
+    # We expect 0x888 (MEIE | MTIE | MSIE).
+    assert mie_val == 0x888, f"MIE register incorrect! Expecting 0x888, got Read value: {hex(mie_val)}"
 
 
 if __name__ == "__main__":

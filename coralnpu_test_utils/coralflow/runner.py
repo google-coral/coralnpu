@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import functools
 import importlib
+import logging
 import os
 import sys
 import time
@@ -473,7 +474,23 @@ def coralflow_main(argv: list[str] | None = None) -> None:
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--testcase", default=None)
+    parser.add_argument("-v", "--verbose", action="store_true", default=False)
     ns, _ = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
+
+    verbose = ns.verbose or os.environ.get("CORALFLOW_VERBOSE",
+                                           "").strip() in (
+                                               "1",
+                                               "true",
+                                               "True",
+                                           )
+    if verbose:
+        os.environ["CORALFLOW_VERBOSE"] = "1"
+        logging.basicConfig(
+            level=logging.INFO,
+            format="[%(levelname)s] %(message)s",
+            stream=sys.stdout,
+            force=True,
+        )
 
     excl_filter = os.environ.get("CORALFLOW_EXCLUDE_TESTCASE", "").strip()
     excluded = {t.strip() for t in excl_filter.split(",") if t.strip()}

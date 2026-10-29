@@ -177,7 +177,21 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
  
  namespace {
  
-@@ -81,6 +84,8 @@
+@@ -54,6 +57,13 @@
+            .length = cosim_config->itcm_length,
+            .permissions =
+                ::coralnpu::sim::MemoryPermission::kReadWriteExecute});
++      for (auto& region : options_.memory_regions) {
++        if (region.start_address ==
++            ::coralnpu::sim::kCoralNPUV2DefaultExtmemStartAddress) {
++          region.permissions =
++              ::coralnpu::sim::MemoryPermission::kReadWriteExecute;
++        }
++      }
+       options_.initial_misa_value = cosim_config->initial_misa_value;
+     }
+     simulator_ = std::make_unique<CoralNPUSimulator>(options_);
+@@ -81,6 +91,8 @@
  
    coralnpu_architecture_t architecture() const {
      switch (options_.architecture) {
@@ -186,7 +200,7 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
        case Architecture::kM3:
          return kCoralNPUM3;
        case Architecture::kV2:
-@@ -344,6 +349,186 @@
+@@ -344,6 +356,186 @@
    return 0;
  }
  

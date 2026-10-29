@@ -1,29 +1,1052 @@
+diff --git a/riscv/riscv_instruction_helpers.h b/riscv/riscv_instruction_helpers.h
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_instruction_helpers.h
++++ b/riscv/riscv_instruction_helpers.h
+@@ -45,34 +45,150 @@ using ::mpact::sim::generic::FPTypeInfo;
+ 
+ // Templated helper function for convert instruction semantic functions.
+ template <typename From, typename To>
+-inline std::tuple<To, uint32_t> CvtHelper(From value) {
+-  constexpr From kMax = static_cast<From>(std::numeric_limits<To>::max());
+-  constexpr From kMin = static_cast<From>(std::numeric_limits<To>::min());
+-
+-  if (FPTypeInfo<From>::IsNaN(value)) {
+-    return std::make_tuple(std::numeric_limits<To>::max(),
+-                           *FPExceptions::kInvalidOp);
+-  }
+-  if (value > kMax) {
+-    return std::make_tuple(std::numeric_limits<To>::max(),
+-                           *FPExceptions::kInvalidOp);
+-  }
+-  if (value < kMin) {
+-    if (std::is_unsigned<To>::value && (value > -1.0)) {
+-      using SignedTo = typename std::make_signed<To>::type;
+-      SignedTo signed_val = static_cast<SignedTo>(value);
+-      if (signed_val == 0) {
+-        return std::make_tuple(0, *FPExceptions::kInexact);
+-      }
+-    }
+-    return std::make_tuple(std::numeric_limits<To>::min(),
+-                           *FPExceptions::kInvalidOp);
+-  }
+-
+-  auto output_value = static_cast<To>(value);
+-  return std::make_tuple(output_value, 0);
++inline std::tuple<To, uint32_t> CvtHelper(
++    From lhs, uint32_t rm = *FPRoundingMode::kRoundTowardsZero) {
++  constexpr To kMax = std::numeric_limits<To>::max();
++  constexpr To kMin = std::numeric_limits<To>::min();
++
++  using FromUint = typename FPTypeInfo<From>::UIntType;
++  FromUint lhs_u = *reinterpret_cast<FromUint*>(&lhs);
++  auto constexpr kExpMask = FPTypeInfo<From>::kExpMask;
++  auto constexpr kSigMask = FPTypeInfo<From>::kSigMask;
++  uint32_t flags = 0;
++  To value = 0;
++  if (FPTypeInfo<From>::IsNaN(lhs) || lhs_u == FPTypeInfo<From>::kPosInf) {
++    value = std::numeric_limits<To>::max();
++    flags = *FPExceptions::kInvalidOp;
++  } else if (lhs_u == FPTypeInfo<From>::kNegInf) {
++    value = std::numeric_limits<To>::min();
++    flags = *FPExceptions::kInvalidOp;
++  } else if ((lhs_u & (kExpMask | kSigMask)) == 0) {  // lhs == 0.0
++    value = 0;
++  } else {
++    auto constexpr kBias = FPTypeInfo<From>::kExpBias;
++    auto constexpr kSigSize = FPTypeInfo<From>::kSigSize;
++    auto constexpr kBitSize = FPTypeInfo<From>::kBitSize;
++    const bool sign = (lhs_u & (1ULL << (kBitSize - 1))) != 0;
++    FromUint exp = kExpMask & lhs_u;
++    int exp_value = exp >> kSigSize;
++    int unbiased_exp = exp_value - kBias;
++    FromUint sig = kSigMask & lhs_u;
++
++    int right_shift = exp ? kSigSize - 1 - unbiased_exp : 1;
++    uint64_t base = sig;
++    bool rightshift_compressed = false;
++    if (exp == 0) {
++      rightshift_compressed = base != 0;
++      base = 0;
++      flags = *FPExceptions::kInexact;
++    } else {
++      base |= 1ULL << kSigSize;
++      if (right_shift > (kBitSize - 1)) {
++        rightshift_compressed = base != 0;
++        flags = *FPExceptions::kInexact;
++        base = 0;
++      } else if (right_shift > 0) {
++        right_shift = std::min(right_shift, kBitSize);
++        uint64_t right_shifted_sig_mask = (1ULL << right_shift) - 1;
++        rightshift_compressed = (base & right_shifted_sig_mask) != 0;
++        base >>= right_shift;
++      }
++    }
++
++    if (right_shift >= 0) {
++      switch (rm) {
++        case *FPRoundingMode::kRoundToNearest:
++          if (rightshift_compressed == 0 && (base & 0b1)) {
++            if ((base & 0b11) == 0b11) {
++              flags = *FPExceptions::kInexact;
++              base += 0b01;
++            }
++          } else if ((base & 0b1) || rightshift_compressed) {
++            base += 0b01;
++          }
++          break;
++        case *FPRoundingMode::kRoundTowardsZero:
++          break;
++        case *FPRoundingMode::kRoundDown:
++          if (sign && ((base & 0b1) || rightshift_compressed)) {
++            base += 0b10;
++          }
++          break;
++        case *FPRoundingMode::kRoundUp:
++          if (!sign && ((base & 0b1) || rightshift_compressed)) {
++            base += 0b10;
++          }
++          break;
++        case *FPRoundingMode::kRoundToNearestTiesToMax:
++          if ((base & 0b1) || rightshift_compressed) {
++            base += 0b1;
++          }
++          break;
++        default:
++          break;
++      }
++    }
++    uint64_t unsigned_value;
++    if (right_shift >= 0) {
++      if ((base & 0b1) || rightshift_compressed) {
++        flags = *FPExceptions::kInexact;
++      }
++      unsigned_value = base >> 1;
++    } else {
++      int left_shift = -right_shift - 1;
++      auto prev = unsigned_value = base;
++      while (left_shift) {
++        unsigned_value <<= 1;
++        if (prev > unsigned_value) {
++          flags = *FPExceptions::kInvalidOp;
++          unsigned_value = std::numeric_limits<uint64_t>::max();
++          break;
++        }
++        prev = unsigned_value;
++        --left_shift;
++      }
++    }
++
++    if (std::is_signed<To>::value) {
++      if (!sign && unsigned_value > static_cast<uint64_t>(kMax)) {
++        flags = *FPExceptions::kInvalidOp;
++        value = kMax;
++      } else if (sign && unsigned_value > static_cast<uint64_t>(kMax) + 1ULL) {
++        flags = *FPExceptions::kInvalidOp;
++        value = kMin;
++      } else {
++        value = sign ? static_cast<To>(-unsigned_value)
++                     : static_cast<To>(unsigned_value);
++      }
++    } else {
++      if (!sign && unsigned_value > static_cast<uint64_t>(kMax)) {
++        flags = *FPExceptions::kInvalidOp;
++        value = kMax;
++      } else if (sign && unsigned_value != 0) {
++        flags = *FPExceptions::kInvalidOp;
++        value = kMin;
++      } else {
++        value = static_cast<To>(unsigned_value);
++      }
++    }
++  }
++  return std::make_tuple(value, flags);
+ }
+ 
++inline void TrapInvalidRoundingMode(const Instruction* instruction) {
++  auto* state = static_cast<RiscVState*>(instruction->state());
++  uint32_t inst_word = 0;
++  if (state->memory() != nullptr) {
++    auto* db = state->db_factory()->Allocate<uint32_t>(1);
++    state->memory()->Load(instruction->address(), db, nullptr, nullptr);
++    inst_word = db->Get<uint32_t>(0);
++    db->DecRef();
++  }
++  state->Trap(/*is_interrupt=*/false, inst_word,
++              *ExceptionCode::kIllegalInstruction, instruction->address(),
++              instruction);
++}
++
+ // Generic helper function for floating op instructions that do not require
+ // NaN boxing since they produce non fp-values, but set fflags.
+ template <typename Result, typename From, typename To>
+@@ -91,7 +221,7 @@ inline void RiscVConvertFloatWithFflagsOp(const Instruction* instruction) {
+   if (rm == *FPRoundingMode::kDynamic) {
+     auto* rv_fp = static_cast<RiscVState*>(instruction->state())->rv_fp();
+     if (!rv_fp->rounding_mode_valid()) {
+-      LOG(ERROR) << "Invalid rounding mode";
++      TrapInvalidRoundingMode(instruction);
+       return;
+     }
+     rm = *rv_fp->GetRoundingMode();
+@@ -505,7 +635,7 @@ inline void RiscVUnaryFloatNaNBoxOp(const Instruction* instruction,
+   auto* rv_fp = static_cast<RiscVState*>(instruction->state())->rv_fp();
+   if (rm_value == *FPRoundingMode::kDynamic) {
+     if (!rv_fp->rounding_mode_valid()) {
+-      LOG(ERROR) << "Invalid rounding mode";
++      TrapInvalidRoundingMode(instruction);
+       return;
+     }
+     rm_value = *(rv_fp->GetRoundingMode());
+@@ -555,7 +685,7 @@ inline void RiscVUnaryFloatOp(const Instruction* instruction,
+   // If the rounding mode is dynamic, read it from the current state.
+   if (rm_value == *FPRoundingMode::kDynamic) {
+     if (!rv_fp->rounding_mode_valid()) {
+-      LOG(ERROR) << "Invalid rounding mode";
++      TrapInvalidRoundingMode(instruction);
+       return;
+     }
+     rm_value = *rv_fp->GetRoundingMode();
+@@ -588,7 +718,7 @@ inline void RiscVUnaryFloatWithFflagsOp(
+   // If the rounding mode is dynamic, read it from the current state.
+   if (rm_value == *FPRoundingMode::kDynamic) {
+     if (!rv_fp->rounding_mode_valid()) {
+-      LOG(ERROR) << "Invalid rounding mode";
++      TrapInvalidRoundingMode(instruction);
+       return;
+     }
+     rm_value = *rv_fp->GetRoundingMode();
+@@ -652,8 +782,8 @@ inline void RiscVBinaryFloatNaNBoxOp(const Instruction* instruction,
+   auto* rv_fp = static_cast<RiscVState*>(instruction->state())->rv_fp();
+   // If the rounding mode is dynamic, read it from the current state.
+   if (rm_value == *FPRoundingMode::kDynamic) {
+     if (!rv_fp->rounding_mode_valid()) {
+-      LOG(ERROR) << "Invalid rounding mode";
++      TrapInvalidRoundingMode(instruction);
+       return;
+     }
+     rm_value = *rv_fp->GetRoundingMode();
+@@ -709,7 +839,7 @@ inline void RiscVTernaryFloatNaNBoxOp(const Instruction* instruction,
+   // If the rounding mode is dynamic, read it from the current state.
+   if (rm_value == *FPRoundingMode::kDynamic) {
+     if (!rv_fp->rounding_mode_valid()) {
+-      LOG(ERROR) << "Invalid rounding mode";
++      TrapInvalidRoundingMode(instruction);
+       return;
+     }
+     rm_value = *rv_fp->GetRoundingMode();
+diff --git a/riscv/riscv_top.cc b/riscv/riscv_top.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_top.cc
++++ b/riscv/riscv_top.cc
+@@ -76,6 +76,22 @@ static inline bool ExecuteInstruction(Instruction* inst) {
+   }
+   */
+   inst->Execute(nullptr);
++  auto* state = static_cast<RiscVState*>(inst->state());
++  if (state != nullptr && state->rv_vector() != nullptr &&
++      state->rv_vector()->vector_exception()) {
++    state->rv_vector()->clear_vector_exception();
++    if (!state->branch()) {
++      uint32_t inst_word = 0;
++      if (state->memory() != nullptr) {
++        auto* db = state->db_factory()->Allocate<uint32_t>(1);
++        state->memory()->Load(inst->address(), db, nullptr, nullptr);
++        inst_word = db->Get<uint32_t>(0);
++        db->DecRef();
++      }
++      state->Trap(/*is_interrupt=*/false, inst_word,
++                  *ExceptionCode::kIllegalInstruction, inst->address(), inst);
++    }
++  }
+   // Comment out instruction logging during execution.
+   // LOG(INFO) << "[" << std::hex << inst->address() << "] " <<
+   // inst->AsString();
+@@ -673,6 +689,7 @@ absl::StatusOr<size_t> RiscVTop::WriteMemory(uint64_t address,
+   // Store bypassing any watch points/semihosting.
+   state_->memory()->Store(address, db);
+   db->DecRef();
++  rv_decode_cache_->InvalidateRange(address, address + length);
+   return length;
+ }
+ 
+diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instruction_helpers.h
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_vector_instruction_helpers.h
++++ b/riscv/riscv_vector_instruction_helpers.h
+@@ -251,6 +251,10 @@ void RiscVMaskNullaryVectorOp(RiscVVectorState* rv_vector,
+ template <typename Vd, typename Vs2>
+ void RiscVUnaryVectorOp(RiscVVectorState* rv_vector, const Instruction* inst,
+                         std::function<Vd(Vs2)> op) {
++  if (static_cast<int>(sizeof(Vd) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs2) * 8) > rv_vector->max_elen()) {
++    rv_vector->set_vector_exception();
++  }
+   if (rv_vector->vector_exception()) return;
+   int num_elements = rv_vector->vector_length();
+   int lmul = rv_vector->vector_length_multiplier();
+@@ -322,6 +326,10 @@ template <typename Vd, typename Vs2>
+ void RiscVUnaryVectorOpWithFflags(
+     RiscVVectorState* rv_vector, const Instruction* inst,
+     std::function<std::tuple<Vd, uint32_t>(Vs2)> op) {
++  if (static_cast<int>(sizeof(Vd) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs2) * 8) > rv_vector->max_elen()) {
++    rv_vector->set_vector_exception();
++  }
+   if (rv_vector->vector_exception()) return;
+   int num_elements = rv_vector->vector_length();
+   int lmul = rv_vector->vector_length_multiplier();
+@@ -400,6 +408,11 @@ template <typename Vd, typename Vs2, typename Vs1>
+ void RiscVMaskBinaryVectorOp(
+     RiscVVectorState* rv_vector, const Instruction* inst,
+     std::function<std::optional<Vd>(Vs2, Vs1, bool)> op) {
++  if (static_cast<int>(sizeof(Vd) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs2) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs1) * 8) > rv_vector->max_elen()) {
++    rv_vector->set_vector_exception();
++  }
+   if (rv_vector->vector_exception()) return;
+   int num_elements = rv_vector->vector_length();
+   int lmul = rv_vector->vector_length_multiplier();
+@@ -500,6 +513,11 @@ template <typename Vd, typename Vs2, typename Vs1>
+ void RiscVBinaryVectorOpWithFflags(
+     RiscVVectorState* rv_vector, const Instruction* inst,
+     std::function<std::tuple<Vd, uint32_t>(Vs2, Vs1)> op) {
++  if (static_cast<int>(sizeof(Vd) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs2) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs1) * 8) > rv_vector->max_elen()) {
++    rv_vector->set_vector_exception();
++  }
+   if (rv_vector->vector_exception()) return;
+   int num_elements = rv_vector->vector_length();
+   int lmul = rv_vector->vector_length_multiplier();
+@@ -588,6 +606,11 @@ void RiscVBinaryVectorOpWithFflags(
+ template <typename Vd, typename Vs2, typename Vs1>
+ void RiscVTernaryVectorOp(RiscVVectorState* rv_vector, const Instruction* inst,
+                           std::function<Vd(Vs2, Vs1, Vd)> op) {
++  if (static_cast<int>(sizeof(Vd) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs2) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs1) * 8) > rv_vector->max_elen()) {
++    rv_vector->set_vector_exception();
++  }
+   if (rv_vector->vector_exception()) return;
+   int num_elements = rv_vector->vector_length();
+   int lmul = rv_vector->vector_length_multiplier();
+@@ -666,9 +689,14 @@ void RiscVTernaryVectorOp(RiscVVectorState* rv_vector, const Instruction* inst,
+ template <typename Vd, typename Vs2, typename Vs1>
+ void RiscVBinaryReductionVectorOp(RiscVVectorState* rv_vector,
+                                   const Instruction* inst,
+                                   std::function<Vd(Vd, Vs2)> op) {
++  if (static_cast<int>(sizeof(Vd) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs2) * 8) > rv_vector->max_elen() ||
++      static_cast<int>(sizeof(Vs1) * 8) > rv_vector->max_elen()) {
++    rv_vector->set_vector_exception();
++  }
+   if (rv_vector->vector_exception()) return;
+   if (rv_vector->vstart()) {
+-    rv_vector->vector_exception();
++    rv_vector->set_vector_exception();
+     return;
+   }
+diff --git a/riscv/riscv_vector_permute_instructions.cc b/riscv/riscv_vector_permute_instructions.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_vector_permute_instructions.cc
++++ b/riscv/riscv_vector_permute_instructions.cc
+@@ -479,6 +479,10 @@ void VCompressHelper(RiscVVectorState* rv_vector, Instruction* inst) {
+ 
+ void Vcompress(Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (rv_vector->vstart()) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int sew = rv_vector->selected_element_width();
+   switch (sew) {
+     case 1:
 diff --git a/riscv/riscv_vector_unary_instructions.cc b/riscv/riscv_vector_unary_instructions.cc
 index 9183614..fb5b989 100644
 --- a/riscv/riscv_vector_unary_instructions.cc
 +++ b/riscv/riscv_vector_unary_instructions.cc
-@@ -102,6 +102,10 @@ void Vcpop(Instruction* inst) {
+@@ -38,8 +38,7 @@ using SignedXregType =
+ // Move scalar to vector register.
+ void VmvToScalar(Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
+-  if (rv_vector->vstart()) return;
+-  if (rv_vector->vector_length() == 0) return;
++  if (rv_vector->vector_exception()) return;
+   int sew = rv_vector->selected_element_width();
+   auto* dest_db = inst->Destination(0)->AllocateDataBuffer();
+   SignedXregType value;
+@@ -65,12 +64,16 @@ void VmvToScalar(Instruction* inst) {
+   }
+   dest_db->Set<SignedXregType>(0, value);
+   dest_db->Submit();
++  rv_vector->clear_vstart();
+ }
+ 
+ void VmvFromScalar(Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
+-  if (rv_vector->vstart()) return;
+-  if (rv_vector->vector_length() == 0) return;
++  if (rv_vector->vector_exception()) return;
++  if (rv_vector->vstart() || (rv_vector->vector_length() == 0)) {
++    rv_vector->clear_vstart();
++    return;
++  }
+   int sew = rv_vector->selected_element_width();
+   auto* dest_db = inst->Destination(0)->CopyDataBuffer();
+   switch (sew) {
+@@ -91,14 +94,15 @@ void VmvFromScalar(Instruction* inst) {
+       return;
+   }
+   dest_db->Submit();
++  rv_vector->clear_vstart();
+ }
+ 
+ // Population count of vector mask register. The value is written to a scalar
+ // register.
+ void Vcpop(Instruction* inst) {
    auto* rv_state = static_cast<RiscVState*>(inst->state());
    auto* rv_vector = rv_state->rv_vector();
-   if (rv_vector->vstart()) {
-+    // WARNING: This is a localized fix for vstart exceptions on single-scalar result instructions.
-+    // Other instructions (e.g. vmv, vmsbf) also require traps on non-zero vstart, but are not patched here.
-+    // A cleaner long-term fix would be to modify set_vector_exception() to call Trap() globally.
-+    rv_state->Trap(/*is_interrupt=*/false, 0, static_cast<uint64_t>(ExceptionCode::kIllegalInstruction), inst->address(), inst);
+-  if (rv_vector->vstart()) {
++  if (rv_vector->is_vill() || rv_vector->vstart()) {
      rv_vector->set_vector_exception();
      return;
    }
-@@ -138,8 +142,12 @@ void Vcpop(Instruction* inst) {
+@@ -137,8 +137,8 @@ void Vcpop(Instruction* inst) {
  // register.
  void Vfirst(Instruction* inst) {
    auto* rv_state = static_cast<RiscVState*>(inst->state());
 -  auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
+-  if (rv_vector->vstart()) {
 +  auto* rv_vector = rv_state->rv_vector();
-   if (rv_vector->vstart()) {
-+    // WARNING: This is a localized fix for vstart exceptions on single-scalar result instructions.
-+    // Other instructions (e.g. vmv, vmsbf) also require traps on non-zero vstart, but are not patched here.
-+    // A cleaner long-term fix would be to modify set_vector_exception() to call Trap() globally.
-+    rv_state->Trap(/*is_interrupt=*/false, 0, static_cast<uint64_t>(ExceptionCode::kIllegalInstruction), inst->address(), inst);
++  if (rv_vector->is_vill() || rv_vector->vstart()) {
      rv_vector->set_vector_exception();
      return;
    }
+@@ -295,7 +295,7 @@ void Vsext8(Instruction* inst) {
+ // Vector mask set-before-first mask bit.
+ void Vmsbf(Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
+-  if (rv_vector->vstart()) {
++  if (rv_vector->is_vill() || rv_vector->vstart()) {
+     rv_vector->set_vector_exception();
+     return;
+   }
+@@ -337,7 +337,7 @@ void Vmsbf(Instruction* inst) {
+ // Vector mask set-including-first mask bit.
+ void Vmsif(Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
+-  if (rv_vector->vstart()) {
++  if (rv_vector->is_vill() || rv_vector->vstart()) {
+     rv_vector->set_vector_exception();
+     return;
+   }
+@@ -374,7 +374,7 @@ void Vmsif(Instruction* inst) {
+ // Vector maks set-only-first mask bit.
+ void Vmsof(Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
+-  if (rv_vector->vstart()) {
++  if (rv_vector->is_vill() || rv_vector->vstart()) {
+     rv_vector->set_vector_exception();
+     return;
+   }
+@@ -413,6 +413,10 @@ void Vmsof(Instruction* inst) {
+ // element. This is subject to masking.
+ void Viota(Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (rv_vector->vstart()) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int sew = rv_vector->selected_element_width();
+   int count = 0;
+   switch (sew) {
+diff --git a/riscv/riscv_zicsr_instructions.cc b/riscv/riscv_zicsr_instructions.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_zicsr_instructions.cc
++++ b/riscv/riscv_zicsr_instructions.cc
+@@ -52,7 +52,8 @@ bool CheckCsrPermission(int csr_index, Instruction* instruction,
+   auto* state = static_cast<RiscVState*>(instruction->state());
+   auto current_mode = state->privilege_mode();
+   // If the privilege mode is too low, or writing a read-only CSR, throw an exception.
+-  if ((*current_mode < required_mode) || (is_write && is_read_only)) {
++  if ((*current_mode < required_mode) || (is_write && is_read_only) ||
++      (is_read_only && !state->csr_set()->GetCsr(csr_index).ok())) {
+     uint64_t address = instruction->address();
+     auto db = state->db_factory()->Allocate<uint32_t>(1);
+     state->LoadMemory(instruction, address, db, nullptr, nullptr);
+diff --git a/riscv/riscv_vector_fp_unary_instructions.cc b/riscv/riscv_vector_fp_unary_instructions.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_vector_fp_unary_instructions.cc
++++ b/riscv/riscv_vector_fp_unary_instructions.cc
+@@ -189,18 +189,19 @@ void Vfcvtxufv(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   switch (sew) {
+     case 4:
+       return RiscVUnaryVectorOpWithFflags<uint32_t, float>(
+-          rv_vector, inst, [](float vs2) -> std::tuple<uint32_t, uint32_t> {
+-            return CvtHelper<float, uint32_t>(vs2);
++          rv_vector, inst, [rm](float vs2) -> std::tuple<uint32_t, uint32_t> {
++            return CvtHelper<float, uint32_t>(vs2, rm);
+           });
+     case 8:
+       return RiscVUnaryVectorOpWithFflags<uint64_t, double>(
+-          rv_vector, inst, [](double vs2) -> std::tuple<uint64_t, uint32_t> {
+-            return CvtHelper<double, uint64_t>(vs2);
++          rv_vector, inst, [rm](double vs2) -> std::tuple<uint64_t, uint32_t> {
++            return CvtHelper<double, uint64_t>(vs2, rm);
+           });
+     default:
+       LOG(ERROR) << "Vfcvt.xu.fv: Illegal sew (" << sew << ")";
+       rv_vector->set_vector_exception();
+@@ -217,18 +218,19 @@ void Vfcvtxfv(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   switch (sew) {
+     case 4:
+       return RiscVUnaryVectorOpWithFflags<int32_t, float>(
+-          rv_vector, inst, [](float vs2) -> std::tuple<int32_t, uint32_t> {
+-            return CvtHelper<float, int32_t>(vs2);
++          rv_vector, inst, [rm](float vs2) -> std::tuple<int32_t, uint32_t> {
++            return CvtHelper<float, int32_t>(vs2, rm);
+           });
+     case 8:
+       return RiscVUnaryVectorOpWithFflags<int64_t, double>(
+-          rv_vector, inst, [](double vs2) -> std::tuple<int64_t, uint32_t> {
+-            return CvtHelper<double, int64_t>(vs2);
++          rv_vector, inst, [rm](double vs2) -> std::tuple<int64_t, uint32_t> {
++            return CvtHelper<double, int64_t>(vs2, rm);
+           });
+     default:
+       LOG(ERROR) << "Vfcvt.x.fv: Illegal sew (" << sew << ")";
+       rv_vector->set_vector_exception();
+@@ -246,12 +248,19 @@ void Vfcvtfxuv(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVUnaryVectorOp<float, uint32_t>(
+           rv_vector, inst,
+-          [](uint32_t vs2) -> float { return static_cast<float>(vs2); });
++          [rm](uint32_t vs2) -> float {
++            float res = static_cast<float>(vs2);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, static_cast<double>(vs2));
++            }
++            return res;
++          });
+     case 8:
+       return RiscVUnaryVectorOp<double, uint64_t>(
+@@ -273,12 +282,19 @@ void Vfcvtfxv(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVUnaryVectorOp<float, int32_t>(
+           rv_vector, inst,
+-          [](int32_t vs2) -> float { return static_cast<float>(vs2); });
++          [rm](int32_t vs2) -> float {
++            float res = static_cast<float>(vs2);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, static_cast<double>(vs2));
++            }
++            return res;
++          });
+     case 8:
+       return RiscVUnaryVectorOp<double, int64_t>(
+@@ -345,13 +361,14 @@ void Vfwcvtxufv(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   switch (sew) {
+     case 4:
+       return RiscVUnaryVectorOpWithFflags<uint64_t, float>(
+-          rv_vector, inst, [](float vs2) -> std::tuple<uint64_t, uint32_t> {
+-            return CvtHelper<float, uint64_t>(vs2);
++          rv_vector, inst, [rm](float vs2) -> std::tuple<uint64_t, uint32_t> {
++            return CvtHelper<float, uint64_t>(vs2, rm);
+           });
+     default:
+       LOG(ERROR) << "Vfwcvt.xu.fv: Illegal sew (" << sew << ")";
+       rv_vector->set_vector_exception();
+@@ -368,13 +385,14 @@ void Vfwcvtxfv(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   switch (sew) {
+     case 4:
+       return RiscVUnaryVectorOpWithFflags<int64_t, float>(
+-          rv_vector, inst, [](float vs2) -> std::tuple<int64_t, uint32_t> {
+-            return CvtHelper<float, int64_t>(vs2);
++          rv_vector, inst, [rm](float vs2) -> std::tuple<int64_t, uint32_t> {
++            return CvtHelper<float, int64_t>(vs2, rm);
+           });
+     default:
+       LOG(ERROR) << "Vfwcvt.x.fv: Illegal sew (" << sew << ")";
+       rv_vector->set_vector_exception();
+@@ -497,18 +515,19 @@ void Vfncvtxufw(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   switch (sew) {
+     case 2:
+       return RiscVUnaryVectorOpWithFflags<uint16_t, float>(
+-          rv_vector, inst, [](float vs2) -> std::tuple<uint16_t, uint32_t> {
+-            return CvtHelper<float, uint16_t>(vs2);
++          rv_vector, inst, [rm](float vs2) -> std::tuple<uint16_t, uint32_t> {
++            return CvtHelper<float, uint16_t>(vs2, rm);
+           });
+     case 4:
+       return RiscVUnaryVectorOpWithFflags<uint32_t, double>(
+-          rv_vector, inst, [](double vs2) -> std::tuple<uint32_t, uint32_t> {
+-            return CvtHelper<double, uint32_t>(vs2);
++          rv_vector, inst, [rm](double vs2) -> std::tuple<uint32_t, uint32_t> {
++            return CvtHelper<double, uint32_t>(vs2, rm);
+           });
+     default:
+       LOG(ERROR) << "Vfncvt.xu.fw: Illegal sew (" << sew << ")";
+       rv_vector->set_vector_exception();
+@@ -525,18 +544,19 @@ void Vfncvtxfw(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   switch (sew) {
+     case 2:
+       return RiscVUnaryVectorOpWithFflags<int16_t, float>(
+-          rv_vector, inst, [](float vs2) -> std::tuple<int16_t, uint32_t> {
+-            return CvtHelper<float, int16_t>(vs2);
++          rv_vector, inst, [rm](float vs2) -> std::tuple<int16_t, uint32_t> {
++            return CvtHelper<float, int16_t>(vs2, rm);
+           });
+     case 4:
+       return RiscVUnaryVectorOpWithFflags<int32_t, double>(
+-          rv_vector, inst, [](double vs2) -> std::tuple<int32_t, uint32_t> {
+-            return CvtHelper<double, int32_t>(vs2);
++          rv_vector, inst, [rm](double vs2) -> std::tuple<int32_t, uint32_t> {
++            return CvtHelper<double, int32_t>(vs2, rm);
+           });
+     default:
+       LOG(ERROR) << "Vfncvt.x.fw: Illegal sew (" << sew << ")";
+       rv_vector->set_vector_exception();
+@@ -722,17 +742,22 @@ void Vfsqrtv(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   uint32_t flags = 0;
+   {
+     ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+     switch (sew) {
+       case 4:
+-        RiscVUnaryVectorOp<float, float>(rv_vector, inst,
+-                                         [&flags](float vs2) -> float {
+-                                           auto [res, f] = SqrtHelper(vs2);
+-                                           flags |= f;
+-                                           return res;
+-                                         });
++        RiscVUnaryVectorOp<float, float>(
++            rv_vector, inst, [&flags, rm](float vs2) -> float {
++              auto [res, f] = SqrtHelper(vs2);
++              if (rm == *FPRoundingMode::kRoundToNearestTiesToMax &&
++                  vs2 > 0.0f && !FPTypeInfo<float>::IsNaN(vs2)) {
++                res = CorrectRMMTie(res, std::sqrt(static_cast<double>(vs2)));
++              }
++              flags |= f;
++              return res;
++            });
+         break;
+       case 8:
+diff --git a/riscv/riscv_vector_fp_instructions.cc b/riscv/riscv_vector_fp_instructions.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_vector_fp_instructions.cc
++++ b/riscv/riscv_vector_fp_instructions.cc
+@@ -24,6 +24,7 @@
+ #include "riscv/riscv_fp_host.h"
+ #include "riscv/riscv_fp_info.h"
+ #include "riscv/riscv_fp_state.h"
++#include "riscv/riscv_instruction_helpers.h"
+ #include "riscv/riscv_state.h"
+ #include "riscv/riscv_vector_instruction_helpers.h"
+ #include "riscv/riscv_vector_state.h"
+@@ -43,13 +44,21 @@ void Vfadd(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVBinaryVectorOp<float, float, float>(
+           rv_vector, inst,
+-          [](float vs2, float vs1) -> float { return vs2 + vs1; });
++          [rm](float vs2, float vs1) -> float {
++            float res = vs2 + vs1;
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(
++                  res, static_cast<double>(vs2) + static_cast<double>(vs1));
++            }
++            return res;
++          });
+     case 8:
+       return RiscVBinaryVectorOp<double, double, double>(
+           rv_vector, inst,
+@@ -70,13 +79,21 @@ void Vfsub(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVBinaryVectorOp<float, float, float>(
+           rv_vector, inst,
+-          [](float vs2, float vs1) -> float { return vs2 - vs1; });
++          [rm](float vs2, float vs1) -> float {
++            float res = vs2 - vs1;
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(
++                  res, static_cast<double>(vs2) - static_cast<double>(vs1));
++            }
++            return res;
++          });
+     case 8:
+       return RiscVBinaryVectorOp<double, double, double>(
+           rv_vector, inst,
+@@ -97,13 +114,21 @@ void Vfrsub(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVBinaryVectorOp<float, float, float>(
+           rv_vector, inst,
+-          [](float vs2, float vs1) -> float { return vs1 - vs2; });
++          [rm](float vs2, float vs1) -> float {
++            float res = vs1 - vs2;
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(
++                  res, static_cast<double>(vs1) - static_cast<double>(vs2));
++            }
++            return res;
++          });
+     case 8:
+       return RiscVBinaryVectorOp<double, double, double>(
+           rv_vector, inst,
+@@ -226,13 +251,21 @@ void Vfmul(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVBinaryVectorOp<float, float, float>(
+           rv_vector, inst,
+-          [](float vs2, float vs1) -> float { return vs2 * vs1; });
++          [rm](float vs2, float vs1) -> float {
++            float res = vs2 * vs1;
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(
++                  res, static_cast<double>(vs2) * static_cast<double>(vs1));
++            }
++            return res;
++          });
+     case 8:
+       return RiscVBinaryVectorOp<double, double, double>(
+           rv_vector, inst,
+@@ -253,13 +286,21 @@ void Vfdiv(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVBinaryVectorOp<float, float, float>(
+           rv_vector, inst,
+-          [](float vs2, float vs1) -> float { return vs2 / vs1; });
++          [rm](float vs2, float vs1) -> float {
++            float res = vs2 / vs1;
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(
++                  res, static_cast<double>(vs2) / static_cast<double>(vs1));
++            }
++            return res;
++          });
+     case 8:
+       return RiscVBinaryVectorOp<double, double, double>(
+           rv_vector, inst,
+@@ -280,13 +321,21 @@ void Vfrdiv(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVBinaryVectorOp<float, float, float>(
+           rv_vector, inst,
+-          [](float vs2, float vs1) -> float { return vs1 / vs2; });
++          [rm](float vs2, float vs1) -> float {
++            float res = vs1 / vs2;
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(
++                  res, static_cast<double>(vs1) / static_cast<double>(vs2));
++            }
++            return res;
++          });
+     case 8:
+       return RiscVBinaryVectorOp<double, double, double>(
+           rv_vector, inst,
+@@ -333,13 +382,20 @@ void Vfmadd(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVTernaryVectorOp<float, float, float>(
+-          rv_vector, inst, [](float vs2, float vs1, float vd) -> float {
+-            return std::fma(vs1, vd, vs2);
++          rv_vector, inst, [rm](float vs2, float vs1, float vd) -> float {
++            float res = std::fma(vs1, vd, vs2);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, std::fma(static_cast<double>(vs1),
++                                                static_cast<double>(vd),
++                                                static_cast<double>(vs2)));
++            }
++            return res;
+           });
+     case 8:
+       return RiscVTernaryVectorOp<double, double, double>(
+@@ -362,13 +418,20 @@ void Vfnmadd(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVTernaryVectorOp<float, float, float>(
+-          rv_vector, inst, [](float vs2, float vs1, float vd) -> float {
+-            return std::fma(-vs1, vd, -vs2);
++          rv_vector, inst, [rm](float vs2, float vs1, float vd) -> float {
++            float res = std::fma(-vs1, vd, -vs2);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, std::fma(static_cast<double>(-vs1),
++                                                static_cast<double>(vd),
++                                                static_cast<double>(-vs2)));
++            }
++            return res;
+           });
+     case 8:
+       return RiscVTernaryVectorOp<double, double, double>(
+@@ -391,13 +454,20 @@ void Vfmsub(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVTernaryVectorOp<float, float, float>(
+-          rv_vector, inst, [](float vs2, float vs1, float vd) -> float {
+-            return std::fma(vs1, vd, -vs2);
++          rv_vector, inst, [rm](float vs2, float vs1, float vd) -> float {
++            float res = std::fma(vs1, vd, -vs2);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, std::fma(static_cast<double>(vs1),
++                                                static_cast<double>(vd),
++                                                static_cast<double>(-vs2)));
++            }
++            return res;
+           });
+     case 8:
+       return RiscVTernaryVectorOp<double, double, double>(
+@@ -420,13 +490,20 @@ void Vfnmsub(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVTernaryVectorOp<float, float, float>(
+-          rv_vector, inst, [](float vs2, float vs1, float vd) -> float {
+-            return std::fma(-vs1, vd, vs2);
++          rv_vector, inst, [rm](float vs2, float vs1, float vd) -> float {
++            float res = std::fma(-vs1, vd, vs2);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, std::fma(static_cast<double>(-vs1),
++                                                static_cast<double>(vd),
++                                                static_cast<double>(vs2)));
++            }
++            return res;
+           });
+     case 8:
+       return RiscVTernaryVectorOp<double, double, double>(
+@@ -449,13 +526,20 @@ void Vfmacc(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVTernaryVectorOp<float, float, float>(
+-          rv_vector, inst, [](float vs2, float vs1, float vd) -> float {
+-            return std::fma(vs1, vs2, vd);
++          rv_vector, inst, [rm](float vs2, float vs1, float vd) -> float {
++            float res = std::fma(vs1, vs2, vd);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, std::fma(static_cast<double>(vs1),
++                                                static_cast<double>(vs2),
++                                                static_cast<double>(vd)));
++            }
++            return res;
+           });
+     case 8:
+       return RiscVTernaryVectorOp<double, double, double>(
+@@ -478,13 +562,20 @@ void Vfnmacc(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVTernaryVectorOp<float, float, float>(
+-          rv_vector, inst, [](float vs2, float vs1, float vd) -> float {
+-            return std::fma(-vs1, vs2, -vd);
++          rv_vector, inst, [rm](float vs2, float vs1, float vd) -> float {
++            float res = std::fma(-vs1, vs2, -vd);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, std::fma(static_cast<double>(-vs1),
++                                                static_cast<double>(vs2),
++                                                static_cast<double>(-vd)));
++            }
++            return res;
+           });
+     case 8:
+       return RiscVTernaryVectorOp<double, double, double>(
+@@ -507,13 +598,20 @@ void Vfmsac(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVTernaryVectorOp<float, float, float>(
+-          rv_vector, inst, [](float vs2, float vs1, float vd) -> float {
+-            return std::fma(vs1, vs2, -vd);
++          rv_vector, inst, [rm](float vs2, float vs1, float vd) -> float {
++            float res = std::fma(vs1, vs2, -vd);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, std::fma(static_cast<double>(vs1),
++                                                static_cast<double>(vs2),
++                                                static_cast<double>(-vd)));
++            }
++            return res;
+           });
+     case 8:
+       return RiscVTernaryVectorOp<double, double, double>(
+@@ -536,13 +634,20 @@ void Vfnmsac(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVTernaryVectorOp<float, float, float>(
+-          rv_vector, inst, [](float vs2, float vs1, float vd) -> float {
+-            return std::fma(-vs1, vs2, vd);
++          rv_vector, inst, [rm](float vs2, float vs1, float vd) -> float {
++            float res = std::fma(-vs1, vs2, vd);
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(res, std::fma(static_cast<double>(-vs1),
++                                                static_cast<double>(vs2),
++                                                static_cast<double>(vd)));
++            }
++            return res;
+           });
+     case 8:
+       return RiscVTernaryVectorOp<double, double, double>(
+diff --git a/riscv/riscv_vector_fp_reduction_instructions.cc b/riscv/riscv_vector_fp_reduction_instructions.cc
+index 1234567..89abcdef 100644
+--- a/riscv/riscv_vector_fp_reduction_instructions.cc
++++ b/riscv/riscv_vector_fp_reduction_instructions.cc
+@@ -20,6 +20,7 @@
+ #include "mpact/sim/generic/type_helpers.h"
+ #include "riscv/riscv_fp_host.h"
+ #include "riscv/riscv_fp_state.h"
++#include "riscv/riscv_instruction_helpers.h"
+ #include "riscv/riscv_state.h"
+ #include "riscv/riscv_vector_instruction_helpers.h"
+ #include "riscv/riscv_vector_state.h"
+@@ -43,13 +44,21 @@ void Vfredosum(const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  uint32_t rm = *rv_fp->GetRoundingMode();
+   int sew = rv_vector->selected_element_width();
+   ScopedFPStatus set_fpstatus(rv_fp->host_fp_interface());
+   switch (sew) {
+     case 4:
+       return RiscVBinaryReductionVectorOp<float, float, float>(
+           rv_vector, inst,
+-          [](float acc, float vs2) -> float { return acc + vs2; });
++          [rm](float acc, float vs2) -> float {
++            float res = acc + vs2;
++            if (rm == *FPRoundingMode::kRoundToNearestTiesToMax) {
++              res = CorrectRMMTie(
++                  res, static_cast<double>(acc) + static_cast<double>(vs2));
++            }
++            return res;
++          });
+       return;
+     case 8:
+       return RiscVBinaryReductionVectorOp<double, double, double>(
+

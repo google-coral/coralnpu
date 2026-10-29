@@ -279,6 +279,7 @@ RVV_CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_misa_test",
     "rvv_misa_test",
     "core_mini_axi_wrap_burst_test",
+    "core_mini_axi_csr_behavior_test",
 ]
 # END_TESTCASES_FOR_rvv_core_mini_axi_sim_cocotb
 
@@ -770,7 +771,7 @@ coralflow_test(
 
 coralflow_test(
     name = "rvv_arithmetic_cocotb_test",
-    size = "large",
+    size = "enormous",
     srcs = ["rvv_arithmetic_cocotb_test.py"],
     data = [
         "//tests/cocotb/rvv/arithmetics:rvv_arith_tests",
@@ -898,6 +899,7 @@ coralflow_test(
     targets = [
         "verilator",
         "vcs",
+        "uvm",
         "nexus_fpga",
     ],
     deps = [
@@ -951,6 +953,7 @@ coralflow_test(
     targets = [
         "verilator",
         "vcs",
+        "uvm",
         "nexus_fpga",
     ],
     deps = [

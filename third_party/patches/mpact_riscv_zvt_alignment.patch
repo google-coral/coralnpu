@@ -81,18 +81,41 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
 index 5366199..ed71e41 100644
 --- a/riscv/riscv_vector_memory_instructions.cc
 +++ b/riscv/riscv_vector_memory_instructions.cc
-@@ -160,6 +160,10 @@ absl::Status WriteBackSegmentLoadData(int vector_register_byte_length,
+@@ -160,27 +160,18 @@ absl::Status WriteBackSegmentLoadData(int vector_register_byte_length,
  void Vsetvl(bool rd_zero, bool rs1_zero, const Instruction* inst) {
    auto* rv_state = static_cast<RiscVState*>(inst->state());
    auto* rv_vector = rv_state->rv_vector();
 -  uint32_t vtype = GetInstructionSource<uint32_t>(inst, 1) & 0b1'1'111'111;
+-  // Get previous vtype.
+-  uint32_t prev_vtype = rv_vector->vtype();
+-  // Get previous max length.
+-  int old_max_length = rv_vector->max_vector_length();
 +  if (auto mtype_csr = rv_state->csr_set()->GetCsr(0xC23); mtype_csr.ok()) {
 +    (*mtype_csr)->Set(uint32_t{0});
 +  }
 +  rv_vector->clear_vstart();
 +  uint32_t vtype = GetInstructionSource<uint32_t>(inst, 1);
-   // Get previous vtype.
-   uint32_t prev_vtype = rv_vector->vtype();
++  uint32_t old_vl = rv_vector->vector_length();
+   // Set the new vector type.
+   rv_vector->SetVectorType(vtype);
+   auto new_max_length = rv_vector->max_vector_length();
+   uint32_t vl = new_max_length;
+   if (rs1_zero && rd_zero) {  // If rs1 and rd are both zero.
+-    // If max_length changed, then there's an error, otherwise, vector length
+-    // is now vl.
+-    if (old_max_length != new_max_length) {
+-      // ERROR: cannot change max_vector_length.
+-      // Revert, then set error flag.
+-      rv_vector->SetVectorType(prev_vtype);
+-      rv_vector->set_vector_exception();
+-      return;
+-    }
+-
+-    // When both rs1 and rd are zero, the vector length remains unchanged.
++    rv_vector->set_vector_length(std::min<uint32_t>(old_vl, new_max_length));
+     return;
+   }
+   if (!rs1_zero) {  // There is a requested vector length.
 diff --git a/riscv/riscv_vector_state.cc b/riscv/riscv_vector_state.cc
 index 563370e..6cade7a 100644
 --- a/riscv/riscv_vector_state.cc
@@ -878,7 +901,7 @@ index 9a7965b..1c70e2e 100644
    matrix_state->set_tile_k(std::min(matrix_state->tile_k(), kmax));
    matrix_state->set_tile_m(std::min(
        {matrix_state->tile_m(), kLmulElements, kEffectiveTileElements}));
-@@ -179,16 +694,24 @@ void RiscVZvtMsetTn(const Instruction* inst) {
+@@ -179,16 +694,37 @@ void RiscVZvtMsetTn(const Instruction* inst) {
    auto* vector_state = matrix_state->riscv_state()->rv_vector();
    const uint32_t kRs1 = GetInstructionSource<uint32_t>(inst, 0);
  
@@ -897,8 +920,21 @@ index 9a7965b..1c70e2e 100644
 +  uint32_t kTileN = 0;
 +  if (!vector_state->is_vill()) {
 +    if (matrix_state->mtwiden() == 0) {
-+      // Degenerates to vsetvl using the current vtype: vl = min(rs1, VLMAX).
-+      kTileN = std::min<uint32_t>(kRs1, vector_state->max_vector_length());
++      // Degenerates to vsetvl using the current vtype, including Table 46
++      // rs1 == x0 AVL handling.
++      const std::string kRs1Name = inst->Source(0)->AsString();
++      const std::string kRdName = inst->Destination(0)->AsString();
++      const bool kRs1Zero =
++          (kRs1Name == "0" || kRs1Name == "x0" || kRs1Name == "zero");
++      const bool kRdZero =
++          (kRdName == "X0Dest" || kRdName == "x0" || kRdName == "zero");
++      if (kRs1Zero && kRdZero) {
++        kTileN = vector_state->vector_length();
++      } else if (kRs1Zero) {
++        kTileN = vector_state->max_vector_length();
++      } else {
++        kTileN = std::min<uint32_t>(kRs1, vector_state->max_vector_length());
++      }
 +    } else {
 +      const int kBound = std::min(vector_state->max_vector_length(),
 +                                  matrix_state->effective_tile_edge());
@@ -911,7 +947,7 @@ index 9a7965b..1c70e2e 100644
    WriteScalar(inst, 0, kTileN);
  }
  
-@@ -198,15 +721,17 @@ void RiscVZvtMsetTm(const Instruction* inst) {
+@@ -198,15 +732,17 @@ void RiscVZvtMsetTm(const Instruction* inst) {
    auto* vector_state = matrix_state->riscv_state()->rv_vector();
    const uint32_t kRs1 = GetInstructionSource<uint32_t>(inst, 0);
  
@@ -936,7 +972,7 @@ index 9a7965b..1c70e2e 100644
    WriteScalar(inst, 0, kTileM);
  }
  
-@@ -216,17 +741,70 @@ void RiscVZvtMsetTk(const Instruction* inst) {
+@@ -216,17 +752,70 @@ void RiscVZvtMsetTk(const Instruction* inst) {
    auto* vector_state = matrix_state->riscv_state()->rv_vector();
    const uint32_t kRs1 = GetInstructionSource<uint32_t>(inst, 0);
  
@@ -1013,7 +1049,7 @@ index 9a7965b..1c70e2e 100644
  // ----------------------------------------------------------------------------
  // Tile manipulation
  // ----------------------------------------------------------------------------
-@@ -234,13 +812,27 @@ void RiscVZvtMsetTk(const Instruction* inst) {
+@@ -234,13 +823,27 @@ void RiscVZvtMsetTk(const Instruction* inst) {
  void RiscVZvtVtZero(const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;
@@ -1045,7 +1081,7 @@ index 9a7965b..1c70e2e 100644
    const int kTileN =
        std::min(vector_state->vector_length(), kEffectiveTileEdge);
    for (int row = 0; row < kTileM; row++) {
-@@ -250,18 +842,30 @@ void RiscVZvtVtZero(const Instruction* inst) {
+@@ -250,18 +853,30 @@ void RiscVZvtVtZero(const Instruction* inst) {
    }
  }
  
@@ -1082,7 +1118,7 @@ index 9a7965b..1c70e2e 100644
    return std::min(vector_state->vector_length(), kEffectiveTileEdge);
  }
  
-@@ -270,23 +874,46 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
+@@ -270,23 +885,46 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
    // SEW.
    auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;
@@ -1135,7 +1171,7 @@ index 9a7965b..1c70e2e 100644
        const uint64_t kVal =
            (kTss.pattern == kTssPatternCol)
                ? LoadTileBits(matrix_state, kTss.kTile, kElem, kTss.index,
-@@ -300,20 +927,38 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
+@@ -300,20 +938,38 @@ void RiscVZvtVtmvVt(const Instruction* inst) {
  }
  
  void RiscVZvtVtmvTv(const Instruction* inst) {
@@ -1178,7 +1214,7 @@ index 9a7965b..1c70e2e 100644
      const int kReg = kElem / kElementsPerVector;
      const int kE = kElem % kElementsPerVector;
      auto bytes = vs->GetRegister(kReg)->data_buffer()->Get<uint8_t>();
-@@ -330,21 +975,38 @@ void RiscVZvtVtmvTv(const Instruction* inst) {
+@@ -330,21 +986,38 @@ void RiscVZvtVtmvTv(const Instruction* inst) {
  }
  
  void RiscVZvtVtle(int eew_bits, const Instruction* inst) {
@@ -1224,7 +1260,7 @@ index 9a7965b..1c70e2e 100644
      if (kTss.pattern == kTssPatternCol) {
        StoreTileBits(matrix_state, kTss.kTile, kE, kTss.index, eew_bits, kVal);
      } else {
-@@ -359,20 +1021,36 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+@@ -359,20 +1032,36 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
    auto* matrix_state = *m_result;
    auto* state = matrix_state->riscv_state();
    auto* vector_state = state->rv_vector();
@@ -1267,7 +1303,7 @@ index 9a7965b..1c70e2e 100644
  }
  
  // ----------------------------------------------------------------------------
-@@ -382,90 +1060,208 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+@@ -382,90 +1071,208 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
  void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;

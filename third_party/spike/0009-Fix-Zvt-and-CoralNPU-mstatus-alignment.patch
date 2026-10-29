@@ -57,6 +57,31 @@ index 89cb6e4..d760c3e 100644
           | 0;  // initial value for mstatus
  }
  
+diff --git a/riscv/insns/msettn.h b/riscv/insns/msettn.h
+index 1234567..89abcdef 100644
+--- a/riscv/insns/msettn.h
++++ b/riscv/insns/msettn.h
+@@ -1,6 +1,6 @@
+ require_extension(EXT_ZVTBASE);
+ require_vector_novtype(false);
+ 
+-WRITE_RD(P.VU.msettn(RS1));
++WRITE_RD(P.VU.msettn(insn.rd(), insn.rs1(), RS1));
+ 
+ VECTOR_END;
+diff --git a/riscv/insns/vmvnfr_v.h b/riscv/insns/vmvnfr_v.h
+index 1234567..89abcdef 100644
+--- a/riscv/insns/vmvnfr_v.h
++++ b/riscv/insns/vmvnfr_v.h
+@@ -1,5 +1,7 @@
+ // vmv<nf>r.v vd, vs2
+-require_vector(true);
++require_vector_novtype(true);
++if (!P.VU.vstart_alu)
++  require(P.VU.vstart->read() == 0);
+ const reg_t vd = insn.rd();
+ const reg_t vs2 = insn.rs2();
+ const reg_t len = insn.rs1() + 1;
 diff --git a/riscv/insns/vtfmm_alt_tvv.h b/riscv/insns/vtfmm_alt_tvv.h
 index a8c92d8..5864c7b 100644
 --- a/riscv/insns/vtfmm_alt_tvv.h
@@ -147,6 +172,33 @@ index 1234567..89abcdef 100644
    reg_t satp = proc->get_state()->satp->readvirt(virt);
    if (proc->extension_enabled_const(EXT_SSPMP)) {
      if ((satp == SATP_MODE_OFF) && (mode < PRV_M) && !spmp_ok(paddr, len, type, mode))
+diff --git a/riscv/processor.cc b/riscv/processor.cc
+index 1234567..89abcdef 100644
+--- a/riscv/processor.cc
++++ b/riscv/processor.cc
+@@ -532,6 +532,21 @@ void processor_t::take_trap(trap_t& t, reg_t epc)
+     state.pc = !nmie ? rnmi_trap_handler_address : trap_handler_address;
+     state.mepc->write(epc);
+     state.mcause->write(supv_double_trap ? CAUSE_DOUBLE_TRAP : t.cause());
+-    state.mtval->write(t.get_tval());
++    reg_t mtval = t.get_tval();
++    if (!interrupt &&
++        (t.cause() == CAUSE_LOAD_ACCESS || t.cause() == CAUSE_STORE_ACCESS)) {
++      try {
++        insn_bits_t bits = mmu->load_insn(epc).insn.bits();
++        insn_bits_t opcode = bits & 0x7f;
++        insn_bits_t funct3 = (bits >> 12) & 0x7;
++        if (((opcode == 0x07 || opcode == 0x27) &&
++             (funct3 == 0 || funct3 >= 5)) ||
++            opcode == 0x77) {
++          mtval &= ~(reg_t)0xf;
++        }
++      } catch (trap_t&) {
++      }
++    }
++    state.mtval->write(mtval);
+     state.mtval2->write(supv_double_trap ? t.cause() : t.get_tval2());
+     state.mtinst->write(t.get_tinst());
 diff --git a/riscv/v_ext_macros.h b/riscv/v_ext_macros.h
 index f10d703..9830732 100644
 --- a/riscv/v_ext_macros.h
@@ -191,7 +243,7 @@ index bc50449..36f5dfc 100644
      newVType = (newVType & ~reg_t(7)) | new_vlmul;
      newVType |= 0xc0; // vta=vma=1;
    }
-@@ -50,15 +55,15 @@ void vectorUnit_t::msetmtype(reg_t newMType, reg_t newVType)
+@@ -50,28 +55,28 @@ void vectorUnit_t::msetmtype(reg_t newMType, reg_t newVType)
 -  if (twiden * vsew > ELEN)
 +  if (twiden * vsew > ELEN || (twiden && (newMType & ~reg_t(0x00fffce3)) != 0))
      set_vl(0, 1, 0, reg_t(-1));
@@ -211,10 +263,52 @@ index bc50449..36f5dfc 100644
      (tk << 5) |
      (tm << 10);
  }
+ 
+-reg_t vectorUnit_t::msettn(reg_t atn)
++reg_t vectorUnit_t::msettn(int rd, int rs1, reg_t atn)
+ {
+   if (widen) {
+     reg_t tn = std::min(atn, std::min(reg_t(vflmul) * eve(), ete()));
+     vl->write_raw(tn);
+     return tn;
+   }
+ 
+-  return set_vl(0, 1, atn, vtype->read());
++  return set_vl(rd, rs1, atn, vtype->read());
+ }
+ 
+ reg_t vectorUnit_t::msettm(reg_t atm)
+@@ -134,8 +139,8 @@ reg_t vectorUnit_t::set_vl(int rd, int rs1, reg_t reqVL, reg_t newType)
+     vill = !(vflmul >= 0.125 && vflmul <= 8)
+            || vsew > std::min(vflmul, 1.0f) * ELEN
+            || (newType >> 9) != 0
+-           || (altfmt && ill_altfmt)
+-           || (rd == 0 && rs1 == 0 && old_vlmax != vlmax);
++           || (altfmt && ill_altfmt);
++    (void)old_vlmax;
+ 
+     if (vill) {
+       vlmax = 0;
+@@ -156,5 +161,5 @@ reg_t vectorUnit_t::set_vl(int rd, int rs1, reg_t reqVL, reg_t newType)
+   if (vlmax == 0) {
+     vl->write_raw(0);
+   } else if (rd == 0 && rs1 == 0) {
+-    ; // retain current VL
++    vl->write_raw(std::min(vl->read(), vlmax));
+   } else if (rd != 0 && rs1 == 0) {
 diff --git a/riscv/vector_unit.h b/riscv/vector_unit.h
 index 05b910b..7d8d8c6 100644
 --- a/riscv/vector_unit.h
 +++ b/riscv/vector_unit.h
+@@ -211,7 +211,7 @@ public:
+ 
+   reg_t read_mtype() const;
+   void msetmtype(reg_t newMType, reg_t newType);
+-  reg_t msettn(reg_t atn);
++  reg_t msettn(int rd, int rs1, reg_t atn);
+   reg_t msettm(reg_t atm);
+   reg_t msettk(reg_t atk);
+ 
 @@ -293,14 +293,14 @@ public:
          major_offset = (row / 4) * (TE / 4) + (col / 4);
          break;

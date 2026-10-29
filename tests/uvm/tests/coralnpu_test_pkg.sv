@@ -162,7 +162,6 @@ package coralnpu_test_pkg;
     protected bit dut_halted_flag = 1'b0;
     protected bit dut_faulted_flag = 1'b0;
     protected bit tohost_written_flag = 1'b0;
-    protected bit spike_enabled = 1'b0;
     protected logic [127:0] final_tohost_data;
 
     virtual coralnpu_irq_if.DUT_IRQ_PORT irq_vif;
@@ -174,6 +173,7 @@ package coralnpu_test_pkg;
     string test_elf;
     string mem_patch_file = "";
     string mem_dump_file = "";
+    bit halt_on_wfi = 1'b0;
 
     function new(string name = "coralnpu_base_test", uvm_component parent = null);
       super.new(name, parent);
@@ -188,9 +188,6 @@ package coralnpu_test_pkg;
 
       super.build_phase(phase);
       `uvm_info(get_type_name(), "Build phase starting", UVM_MEDIUM)
-      if ($test$plusargs("SPIKE_LOG")) begin
-        spike_enabled = 1'b1;
-      end
 
       if (!clp.get_arg_value("+TEST_ELF=", test_elf)) begin
         `uvm_fatal(get_type_name(), "+TEST_ELF plusarg not specified.")
@@ -235,6 +232,12 @@ package coralnpu_test_pkg;
 
       void'(clp.get_arg_value("+MEM_PATCH=", mem_patch_file));
       void'(clp.get_arg_value("+MEM_DUMP=", mem_dump_file));
+      begin
+        string halt_on_wfi_str;
+        if (clp.get_arg_value("+HALT_ON_WFI=", halt_on_wfi_str)) begin
+          halt_on_wfi = (halt_on_wfi_str == "1");
+        end
+      end
 
       env = coralnpu_env::type_id::create("env", this);
 
@@ -243,7 +246,6 @@ package coralnpu_test_pkg;
       uvm_config_db#(int unsigned)::set(this, "*.m_cosim_checker", "entry_point", entry_point);
       uvm_config_db#(int unsigned)::set(this, "*.m_cosim_checker", "initial_misa_value",
                                         initial_misa_value);
-      uvm_config_db#(bit)::set(this, "*.m_cosim_checker", "spike_enabled", spike_enabled);
 
       // Get the event handle that was created and set by tb_top
       if (!uvm_config_db#(uvm_event)::get(
@@ -307,24 +309,29 @@ package coralnpu_test_pkg;
           tohost_written_flag = 1'b1;
         end
         begin  // Wait for DUT halted/faulted (backup termination)
-          wait (irq_vif.halted == 1'b1 || irq_vif.fault == 1'b1);
-          dut_halted_flag  = irq_vif.halted;
+          wait (irq_vif.halted == 1'b1 || irq_vif.fault == 1'b1 ||
+                (halt_on_wfi && irq_vif.wfi == 1'b1));
+          dut_halted_flag  = irq_vif.halted || (halt_on_wfi && irq_vif.wfi);
           dut_faulted_flag = irq_vif.fault;
         end
         begin
-          forever begin
-            irq_delay_helper delay_rand = irq_delay_helper::type_id::create("delay_rand");
-            int delay;
+          if (halt_on_wfi) begin
+            wait (1'b0);
+          end else begin
+            forever begin
+              irq_delay_helper delay_rand = irq_delay_helper::type_id::create("delay_rand");
+              int delay;
 
-            wait (irq_vif.wfi == 1'b1);
-            if (!delay_rand.randomize()) begin
-              `uvm_error(get_type_name(), "Randomization of IRQ delay failed")
+              wait (irq_vif.wfi == 1'b1);
+              if (!delay_rand.randomize()) begin
+                `uvm_error(get_type_name(), "Randomization of IRQ delay failed")
+              end
+              delay = delay_rand.delay % 1001;
+              if (delay < 0) delay = -delay;
+              #(delay * 1ns);
+              pulse_irq_seq = coralnpu_pulse_irq_seq::type_id::create("pulse_irq_seq");
+              pulse_irq_seq.start(env.m_irq_agent.sequencer);
             end
-            delay = delay_rand.delay % 1001;
-            if (delay < 0) delay = -delay;
-            #(delay * 1ns);
-            pulse_irq_seq = coralnpu_pulse_irq_seq::type_id::create("pulse_irq_seq");
-            pulse_irq_seq.start(env.m_irq_agent.sequencer);
           end
         end
         begin  // Timeout mechanism
@@ -401,36 +408,18 @@ package coralnpu_test_pkg;
           test_passed = 1'b0;
         end
       end else if (test_timed_out) begin
-        if (spike_enabled) begin
-          `uvm_error(
-              get_type_name(),
-              $sformatf(
-                  "Test timed out after %t. Spike was enabled, so this is a failure (divergence/stall).",
-                  test_timeout))
-          test_passed = 1'b0;
-        end else if (rs.get_severity_count(
-                UVM_ERROR
-            ) == 0 && rs.get_severity_count(
-                UVM_FATAL
-            ) == 0) begin
-          `uvm_info(
-              get_type_name(),
-              $sformatf(
-                  "Test timed out after %t, but no Co-Simulation mismatches were detected. Assuming PASS.",
-                  test_timeout), UVM_LOW)
-          test_passed = 1'b1;
-        end else begin
-          `uvm_error(get_type_name(), $sformatf(
-                     "Test timed out after %t with errors/mismatches.", test_timeout))
-          test_passed = 1'b0;
-        end
+        `uvm_error(get_type_name(), $sformatf("Test timed out after %t (divergence/stall).",
+                                              test_timeout))
+        test_passed = 1'b0;
       end else begin
         `uvm_error(get_type_name(), "Test ended with no clear pass/fail.")
         test_passed = 1'b0;
       end
 
-      if (test_passed) `uvm_info(get_type_name(), "** UVM TEST PASSED **", UVM_NONE)
-      else `uvm_error(get_type_name(), "** UVM TEST FAILED **")
+      if (test_passed) begin
+        `uvm_info(get_type_name(), $sformatf("Cycle count: %0d", $time / clk_period), UVM_LOW)
+        `uvm_info(get_type_name(), "** UVM TEST PASSED **", UVM_NONE)
+      end else `uvm_error(get_type_name(), "** UVM TEST FAILED **")
     endfunction
 
   endclass
@@ -465,14 +454,21 @@ package coralnpu_test_pkg;
       int current_timeout;
       string current_spike_log;
       string current_target;
+      int current_halt_on_wfi;
+      string current_patch;
+      string current_dump;
       string line;
       bit parsed;
+      time test_start_time;
+      int start_errors;
+      uvm_report_server rs;
 
       uvm_event pulse_reset_event;
       coralnpu_kickoff_write_seq kickoff_seq;
       coralnpu_pulse_irq_seq pulse_irq_seq;
 
       phase.raise_objection(this, "Regression running");
+      rs = uvm_report_server::get_server();
 
       if (!uvm_config_db#(uvm_event)::get(this, "", "test_start_event", test_start_event)) begin
         `uvm_fatal(get_type_name(), "test_start_event handle not found!")
@@ -496,10 +492,31 @@ package coralnpu_test_pkg;
       )) begin
         if ($fgets(line, fd)) begin
           if (line == "" || line.substr(0, 0) == "#") continue;
+          if (line.len() >= 4 && line.substr(0, 3) == "QUIT") break;
 
           parsed = 0;
-          // Format: ELF TOHOST ENTRY TIMEOUT SPIKE_OPTION TARGET (6 fields)
+          current_halt_on_wfi = 0;
+          current_patch = "";
+          current_dump = "";
+          // Format: ELF TOHOST ENTRY TIMEOUT SPIKE_OPTION TARGET HALT_ON_WFI PATCH_FILE DUMP_FILE (9 fields)
           if ($sscanf(
+                  line,
+                  "%s %h %h %d %s %s %d %s %s",
+                  current_elf,
+                  current_tohost,
+                  current_entry,
+                  current_timeout,
+                  current_spike_log,
+                  current_target,
+                  current_halt_on_wfi,
+                  current_patch,
+                  current_dump
+              ) == 9) begin
+            if (current_patch == "NONE") current_patch = "";
+            if (current_dump == "NONE") current_dump = "";
+            parsed = 1;
+            // Format: ELF TOHOST ENTRY TIMEOUT SPIKE_OPTION TARGET (6 fields)
+          end else if ($sscanf(
                   line,
                   "%s %h %h %d %s %s",
                   current_elf,
@@ -526,7 +543,9 @@ package coralnpu_test_pkg;
           if (parsed) begin
             `uvm_info(get_type_name(), $sformatf("--- STARTING TEST: %s ---", current_target),
                       UVM_NONE)
+            $fflush();
             total_tests++;
+            start_errors = rs.get_severity_count(UVM_ERROR) + rs.get_severity_count(UVM_FATAL);
 
             // Reset state for new test
             test_passed = 1'b0;
@@ -538,21 +557,8 @@ package coralnpu_test_pkg;
             cosim_mismatch_event.reset();
             test_timeout = current_timeout * 1ns;
             entry_point  = current_entry;
-            if (current_spike_log != "NONE" && current_spike_log != "0") spike_enabled = 1'b1;
-            else spike_enabled = 1'b0;
 
-            // Teardown and Re-load
-            sram_clear();
-            sram_load_elf(current_elf);
-
-            // Pass configuration to checker
-            uvm_config_db#(string)::set(null, "*", "current_test_elf", current_elf);
-            uvm_config_db#(int unsigned)::set(null, "*", "entry_point", current_entry);
-            uvm_config_db#(logic [31:0])::set(null, "*", "tohost_addr", current_tohost);
-            uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 0);
-            uvm_config_db#(bit)::set(null, "*", "spike_enabled", spike_enabled);
-
-            // Pulse Reset for tests AFTER the first one
+            // Pulse Reset for tests AFTER the first one before reloading SRAM
             if (total_tests > 1) begin
               pulse_reset_event.trigger();
               @(posedge irq_vif.clk iff irq_vif.resetn == 1'b0);
@@ -564,6 +570,26 @@ package coralnpu_test_pkg;
               @(posedge irq_vif.clk iff (irq_vif.halted == 1'b0 && irq_vif.fault == 1'b0));
             end
 
+            // Teardown and Re-load
+            sram_clear();
+            sram_load_elf(current_elf);
+            if (current_patch != "") begin
+              `uvm_info(get_type_name(), $sformatf("Applying memory patch to RTL SRAM: %s",
+                                                   current_patch), UVM_LOW)
+              if (sram_backdoor_apply_patch(current_patch) != 0) begin
+                `uvm_error(get_type_name(),
+                           $sformatf("Failed to apply memory patch to RTL SRAM: %s", current_patch))
+              end
+            end
+
+            // Pass configuration to checker
+            uvm_config_db#(string)::set(null, "*", "current_test_elf", current_elf);
+            uvm_config_db#(string)::set(null, "*", "mem_patch_file", current_patch);
+            uvm_config_db#(int unsigned)::set(null, "*", "entry_point", current_entry);
+            uvm_config_db#(logic [31:0])::set(null, "*", "tohost_addr", current_tohost);
+            uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 0);
+
+            test_start_time = $time;
             test_start_event.trigger();
 
             kickoff_seq = coralnpu_kickoff_write_seq::type_id::create("kickoff_seq");
@@ -577,24 +603,29 @@ package coralnpu_test_pkg;
                 tohost_written_flag = 1'b1;
               end
               begin  // Wait for DUT halted/faulted (backup termination)
-                wait (irq_vif.halted == 1'b1 || irq_vif.fault == 1'b1);
-                dut_halted_flag  = irq_vif.halted;
+                wait (irq_vif.halted == 1'b1 || irq_vif.fault == 1'b1 ||
+                      (current_halt_on_wfi != 0 && irq_vif.wfi == 1'b1));
+                dut_halted_flag  = irq_vif.halted || (current_halt_on_wfi != 0 && irq_vif.wfi);
                 dut_faulted_flag = irq_vif.fault;
               end
               begin
-                forever begin
-                  irq_delay_helper delay_rand = irq_delay_helper::type_id::create("delay_rand");
-                  int delay;
-                  wait (irq_vif.wfi == 1'b1);
-                  if (!delay_rand.randomize()) begin
-                    `uvm_error(get_type_name(), "Randomization of IRQ delay failed")
+                if (current_halt_on_wfi != 0) begin
+                  wait (1'b0);
+                end else begin
+                  forever begin
+                    irq_delay_helper delay_rand = irq_delay_helper::type_id::create("delay_rand");
+                    int delay;
+                    wait (irq_vif.wfi == 1'b1);
+                    if (!delay_rand.randomize()) begin
+                      `uvm_error(get_type_name(), "Randomization of IRQ delay failed")
+                    end
+                    delay = delay_rand.delay % 1001;
+                    if (delay < 0) delay = -delay;
+                    #(delay * 1ns);
+                    pulse_irq_seq = coralnpu_pulse_irq_seq::type_id::create("pulse_irq_seq");
+                    pulse_irq_seq.start(env.m_irq_agent.sequencer);
+                    wait (irq_vif.wfi == 1'b0);
                   end
-                  delay = delay_rand.delay % 1001;
-                  if (delay < 0) delay = -delay;
-                  #(delay * 1ns);
-                  pulse_irq_seq = coralnpu_pulse_irq_seq::type_id::create("pulse_irq_seq");
-                  pulse_irq_seq.start(env.m_irq_agent.sequencer);
-                  wait (irq_vif.wfi == 1'b0);
                 end
               end
               begin  // Timeout mechanism
@@ -608,13 +639,26 @@ package coralnpu_test_pkg;
               end
             join_any
             disable fork;
+            env.m_irq_agent.sequencer.stop_sequences();
 
             #(clk_period / 2);
 
-            evaluate_batch_test_result(current_target);
+            if (current_dump != "") begin
+              `uvm_info(get_type_name(), $sformatf("Dumping SRAM post-halt: %s", current_dump),
+                        UVM_LOW)
+              if (sram_backdoor_dump_memory(current_dump) != 0) begin
+                `uvm_error(get_type_name(), $sformatf("Failed to dump SRAM memory to: %s",
+                                                      current_dump))
+              end
+            end
+
+            `uvm_info(get_type_name(), $sformatf("Cycle count: %0d",
+                                                 ($time - test_start_time) / clk_period), UVM_LOW)
+            evaluate_batch_test_result(current_target, start_errors);
 
             `uvm_info(get_type_name(), $sformatf("--- FINISHED TEST: %s ---\n", current_target),
                       UVM_NONE)
+            $fflush();
           end
         end
       end
@@ -622,12 +666,16 @@ package coralnpu_test_pkg;
 
       `uvm_info(get_type_name(), $sformatf("REGRESSION COMPLETE. Passed: %0d/%0d", passed_tests,
                                            total_tests), UVM_NONE)
+      $fflush();
       phase.drop_objection(this, "Regression finished");
     endtask
 
-    virtual function void evaluate_batch_test_result(string target_name);
+    virtual function void evaluate_batch_test_result(string target_name, int start_errors = 0);
       logic [31:1] status_code;
       bit mismatch;
+      uvm_report_server rs = uvm_report_server::get_server();
+      int end_errors = rs.get_severity_count(UVM_ERROR) + rs.get_severity_count(UVM_FATAL);
+      bit has_uvm_errors = (end_errors > start_errors);
       if (!uvm_config_db#(bit)::get(null, "*", "cosim_mismatch_detected", mismatch)) mismatch = 0;
 
       if (tohost_written_flag) begin
@@ -635,8 +683,9 @@ package coralnpu_test_pkg;
                 this, "", "final_tohost_data", final_tohost_data
             )) begin
           status_code = final_tohost_data[31:1];
-          if (status_code == 0 && !mismatch) begin
+          if (status_code == 0 && !mismatch && !has_uvm_errors) begin
             test_passed = 1'b1;
+            `uvm_info(get_type_name(), "tohost write detected with PASS status (0).", UVM_LOW)
           end else begin
             test_passed = 1'b0;
             `uvm_info(get_type_name(), $sformatf(
@@ -646,27 +695,17 @@ package coralnpu_test_pkg;
           test_passed = 1'b0;
           `uvm_info(get_type_name(), "tohost triggered but no data", UVM_NONE)
         end
-      end else if (dut_halted_flag && !dut_faulted_flag && !mismatch) begin
+      end else if (dut_halted_flag && !dut_faulted_flag && !mismatch && !has_uvm_errors) begin
         test_passed = 1'b1;
-      end else if (dut_faulted_flag && !mismatch) begin
+      end else if (dut_faulted_flag && !mismatch && !has_uvm_errors) begin
         `uvm_info(
             get_type_name(),
             "Test ended on DUT fault, but no Co-Simulation mismatches were detected. Assuming consistent behavior (PASS).",
             UVM_LOW)
         test_passed = 1'b1;
       end else if (test_timed_out) begin
-        if (spike_enabled) begin
-          test_passed = 1'b0;
-          `uvm_info(get_type_name(), "FAILED: Timeout with Spike enabled", UVM_NONE)
-        end else if (!mismatch) begin
-          `uvm_info(get_type_name(),
-                    "Test timed out, but no Co-Simulation mismatches were detected. Assuming PASS.",
-                    UVM_LOW)
-          test_passed = 1'b1;
-        end else begin
-          test_passed = 1'b0;
-          `uvm_info(get_type_name(), "FAILED: Timeout with co-sim mismatches", UVM_NONE)
-        end
+        test_passed = 1'b0;
+        `uvm_info(get_type_name(), "FAILED: Timeout (divergence/stall)", UVM_NONE)
       end else if (mismatch) begin
         test_passed = 1'b0;
         `uvm_info(get_type_name(), "FAILED: Co-Simulation mismatch detected", UVM_NONE)

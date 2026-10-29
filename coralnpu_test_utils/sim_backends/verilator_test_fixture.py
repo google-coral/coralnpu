@@ -134,6 +134,15 @@ class VerilatorTestFixture(BaseCoralNPUFixture):
         )
         return self.cycle_count
 
+    async def run_to_wfi(
+        self,
+        timeout_sec: float = 60.0,
+        timeout_cycles: int | None = None,
+    ) -> int:
+        del timeout_sec, timeout_cycles
+        await self.core_mini_axi.execute_from(self.entry_point)
+        return await self.core_mini_axi.wait_for_wfi()
+
     async def run_to_fault(self, timeout_cycles: int = 10000) -> int:
         await self.core_mini_axi.execute_from(self.entry_point)
         return await self.core_mini_axi.wait_for_fault(

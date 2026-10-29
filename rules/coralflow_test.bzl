@@ -422,6 +422,7 @@ def coralflow_test(
                 "//tests/uvm:use_vcs_uvm": ["//tests/uvm:uvm_sim_vcs_dut"],
                 "//conditions:default": ["//tests/uvm:uvm_sim_verilator_dut"],
             })
+        uvm_size = _effective_size(size, uvm_testcases)
         _emit_py_test_target(
             name = name,
             backend = "uvm",
@@ -432,7 +433,7 @@ def coralflow_test(
             fixture_dep = "//coralnpu_test_utils/sim_backends:uvm_test_fixture",
             testcases = uvm_testcases,
             excluded_testcases = exclude_testcases.get("uvm", []),
-            size = _effective_size(size, uvm_testcases),
+            size = uvm_size,
             highmem_env = highmem_env,
             base_tags = ["uvm", "rtl"],
             tags = tags,

@@ -99,6 +99,27 @@ class BaseCoralNPUFixture:
         """Executes the loaded program until completion or timeout."""
         raise NotImplementedError
 
+    async def run_to_wfi(
+        self,
+        timeout_sec: float = 60.0,
+        timeout_cycles: int | None = None,
+    ) -> int | bool:
+        """Executes the loaded program until WFI or completion."""
+        return await self.run_to_halt(
+            timeout_sec=timeout_sec, timeout_cycles=timeout_cycles
+        )
+
+    async def run_to_fault(
+        self,
+        timeout_cycles: int = 10000,
+    ) -> int | bool:
+        """Executes the loaded program until a fault occurs or timeout."""
+        raise NotImplementedError
+
+    def fault(self) -> bool:
+        """Returns True if the target faulted during the last execution."""
+        return False
+
     def get_cycle_count(self) -> int | None:
         """Returns the total elapsed cycle count, or None if unavailable."""
         return self.cycle_count

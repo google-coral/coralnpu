@@ -455,8 +455,10 @@ async def load_unit_masked(fixture):
         np.uint32: "test_unit_load32",
     }
 
-    all_cases = itertools.product([False, True], cases)
-    total_loops = 2 * len(cases)
+    axi_options = [False, True] if hasattr(fixture,
+                                           'core_mini_axi') else [False]
+    all_cases = itertools.product(axi_options, cases)
+    total_loops = len(axi_options) * len(cases)
 
     rng = np.random.default_rng()
     for use_axi, (dtype, lmul, vl) in tqdm.tqdm(all_cases, total=total_loops):
@@ -582,8 +584,11 @@ async def load_unit_ff(fixture):
 
     rng = np.random.default_rng(42)
 
+    axi_options = [False, True] if hasattr(fixture,
+                                           'core_mini_axi') else [False]
+
     # 1. Unmasked fault-only-first loads across TCM and AXI
-    unmasked_tests = list(itertools.product([False, True], cases))
+    unmasked_tests = list(itertools.product(axi_options, cases))
     for use_axi, (dtype, lmul, vl) in tqdm.tqdm(unmasked_tests,
                                                 desc="load_unit_ff unmasked"):
         vtype = construct_vtype(0, 0, DTYPE_TO_SEW[dtype], lmul)
@@ -626,7 +631,7 @@ async def load_unit_ff(fixture):
     mask_modes = ['random', 'all_ones', 'all_zeros']
     for mask_mode in mask_modes:
         # For all_ones and all_zeros, testing on TCM is sufficient to keep test runtime lean.
-        tested_axi = [False, True] if mask_mode == 'random' else [False]
+        tested_axi = axi_options if mask_mode == 'random' else [False]
         masked_tests = list(itertools.product(tested_axi, cases))
         for use_axi, (dtype, lmul, vl) in tqdm.tqdm(
                 masked_tests, desc=f"load_unit_ff masked_{mask_mode}"):
@@ -714,7 +719,7 @@ async def load_unit_ff(fixture):
         (np.uint32, 0b000, 3, 3),
     ]
 
-    alignment_tests = list(itertools.product([False, True], alignment_cases))
+    alignment_tests = list(itertools.product(axi_options, alignment_cases))
     load_data_base_tcm = fixture.symbols['load_data']
     for use_axi, (dtype, lmul, vl, byte_offset) in tqdm.tqdm(
             alignment_tests, desc="load_unit_ff unaligned_and_lengths"):
@@ -807,8 +812,10 @@ async def store_unit_masked(fixture):
         np.uint32: "test_unit_store32",
     }
 
-    all_cases = itertools.product([False, True], cases)
-    total_loops = 2 * len(cases)
+    axi_options = [False, True] if hasattr(fixture,
+                                           'core_mini_axi') else [False]
+    all_cases = itertools.product(axi_options, cases)
+    total_loops = len(axi_options) * len(cases)
 
     rng = np.random.default_rng()
     for use_axi, (dtype, lmul, vl) in tqdm.tqdm(all_cases, total=total_loops):

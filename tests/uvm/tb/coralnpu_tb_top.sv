@@ -447,7 +447,7 @@ module coralnpu_tb_top;
         forever begin
           @(posedge clk);
           // Check internal data bus (dbus)
-          if (u_dut.core.io_dbus_valid && u_dut.core.io_dbus_write &&
+          if (tohost_addr != 32'h0 && u_dut.core.io_dbus_valid && u_dut.core.io_dbus_write &&
               u_dut.core.io_dbus_addr == tohost_addr) begin
             if (u_dut.core.io_dbus_wdata[0] == 1'b1) begin
               `uvm_info("TB_TOP_MONITOR", "tohost write detected on DBUS.", UVM_LOW)
@@ -459,8 +459,9 @@ module coralnpu_tb_top;
           end
 
           // Check external bus (ebus)
-          if (u_dut.core.io_ebus_dbus_valid && u_dut.core.io_ebus_dbus_ready &&
-              u_dut.core.io_ebus_dbus_write && u_dut.core.io_ebus_dbus_addr == tohost_addr) begin
+          if (tohost_addr != 32'h0 && u_dut.core.io_ebus_dbus_valid &&
+              u_dut.core.io_ebus_dbus_ready && u_dut.core.io_ebus_dbus_write &&
+              u_dut.core.io_ebus_dbus_addr == tohost_addr) begin
             if (u_dut.core.io_ebus_dbus_wdata[0] == 1'b1) begin
               `uvm_info("TB_TOP_MONITOR", "tohost write detected on EBUS.", UVM_LOW)
               uvm_config_db#(logic [127:0])::set(null, "*", "final_tohost_data",

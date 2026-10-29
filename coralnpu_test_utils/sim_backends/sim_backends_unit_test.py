@@ -35,7 +35,10 @@ from coralnpu_test_utils.sim_backends.common_utils import (
 )
 from coralnpu_test_utils.sim_backends.fpga_test_fixture import FpgaTestFixture
 from coralnpu_test_utils.sim_backends.mpact_npusim_test_fixture import MpactNpuSimTestFixture
-from coralnpu_test_utils.sim_backends.uvm_test_fixture import UvmTestFixture
+from coralnpu_test_utils.sim_backends.uvm_test_fixture import (
+    UvmTestFixture,
+    _shutdown_all_workers,
+)
 from coralnpu_test_utils.sim_backends.verilator_test_fixture import VerilatorTestFixture
 
 
@@ -693,6 +696,55 @@ class TestUvmTestFixture(unittest.IsolatedAsyncioTestCase):
         ):
             ok = await fixture.run_batch([elf1, elf2])
         self.assertTrue(ok)
+
+    async def test_persistent_worker_reused_across_runs(self):
+        fake_sim = os.path.join(self._temp_dir.name, "fake_simv.py")
+        with open(fake_sim, "w", encoding="utf-8") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import struct, sys\n"
+                "fifo_path = [a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('+REGRESSION_LIST=')][0]\n"
+                "with open(fifo_path, 'r', encoding='utf-8') as fifo:\n"
+                "    for idx, line in enumerate(fifo, start=1):\n"
+                "        parts = line.strip().split()\n"
+                "        if not parts or parts[0] == 'QUIT':\n"
+                "            break\n"
+                "        tid, dump_file = parts[5], parts[8]\n"
+                "        if dump_file != 'NONE':\n"
+                "            with open(dump_file, 'wb') as df:\n"
+                "                df.write(struct.pack('<QII', 0x1000, 4, 100 + idx))\n"
+                "        print(f'--- STARTING TEST: {tid} ---', flush=True)\n"
+                "        print(f'Cycle count: {idx * 10}', flush=True)\n"
+                "        print('tohost write detected: 1', flush=True)\n"
+                "        print('** UVM TEST PASSED **', flush=True)\n"
+                "        print('--- FINISHED TEST: ' + tid + ' ---', flush=True)\n"
+            )
+        os.chmod(fake_sim, 0o755)
+
+        elf_path = os.path.join(self._temp_dir.name, "test.elf")
+        with open(elf_path, "wb") as f:
+            f.write(b"\x7fELF")
+
+        fixture = UvmTestFixture(sim_binary_path=fake_sim)
+        fixture.elf_path = elf_path
+        fixture.entry_point = 0x100
+        fixture.tohost_addr = 0x2000
+        fixture.symbols = {"out": 0x1000}
+
+        try:
+            with patch(
+                    "coralnpu_test_utils.sim_backends.uvm_test_fixture.resolve_runfile_path",
+                    side_effect=lambda p: str(p),
+            ):
+                self.assertTrue(await fixture.run_to_halt())
+                self.assertEqual(fixture.get_cycle_count(), 10)
+                self.assertEqual(await fixture.read_word("out"), 101)
+
+                self.assertTrue(await fixture.run_to_halt())
+                self.assertEqual(fixture.get_cycle_count(), 20)
+                self.assertEqual(await fixture.read_word("out"), 102)
+        finally:
+            _shutdown_all_workers()
 
 
 class TestFpgaTestFixture(unittest.TestCase):
