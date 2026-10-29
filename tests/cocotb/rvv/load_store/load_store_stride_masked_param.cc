@@ -16,21 +16,31 @@
 #include <stddef.h>
 #include <stdint.h>
 
-uint8_t input_data8[1024] __attribute__((section(".data")));
+#include "tests/cocotb/rvv/load_store/rvv_lsu_test_utils.h"
+
+RvvSeededInput<uint8_t, 1024> input_data8 __attribute__((section(".data")));
 uint8_t output_data8[1024] __attribute__((section(".data")));
 uint8_t output_stride_store8[1024] __attribute__((section(".data")));
-uint16_t input_data16[1024] __attribute__((section(".data")));
+RvvSeededInput<uint16_t, 1024> input_data16 __attribute__((section(".data")));
 uint16_t output_data16[1024] __attribute__((section(".data")));
 uint16_t output_stride_store16[1024] __attribute__((section(".data")));
-uint32_t input_data32[1024] __attribute__((section(".data")));
+RvvSeededInput<uint32_t, 1024> input_data32 __attribute__((section(".data")));
 uint32_t output_data32[1024] __attribute__((section(".data")));
 uint32_t output_stride_store32[1024] __attribute__((section(".data")));
-ptrdiff_t input_stride __attribute__((section(".data")));
-uint8_t input_mask[32] __attribute__((section(".data")));
+ptrdiff_t input_stride __attribute__((section(".data"))) = 4;
+RvvSeededMask<32> input_mask __attribute__((section(".data")));
 size_t n = 8;
 
+extern "C" {
+extern rvv_test_func_t rvv_stride_mask;
+}
+
 #define CREATE_VSTRIDE_MASK_FN(data_bits, data_lmul, mask_bits)                                      \
-  __attribute__((used, retain)) void vstride_mask_u##data_bits##data_lmul() {                        \
+  RVV_SUBTEST(vstride_mask_u##data_bits##data_lmul) {                                                \
+    if (rvv_stride_mask == nullptr) {                                                                \
+      rvv_fill_output_canary(output_data##data_bits, 128, data_bits);                                \
+      rvv_fill_output_canary(output_stride_store##data_bits, 128, data_bits ^ 0x55u);                \
+    }                                                                                                \
     size_t vl = __riscv_vsetvl_e##data_bits##data_lmul(n);                                           \
     auto mask = __riscv_vlm_v_b##mask_bits((const uint8_t *)input_mask, vl);                         \
     auto op   = __riscv_vlse##data_bits##_v_u##data_bits##data_lmul##_m(mask, input_data##data_bits, \
@@ -38,6 +48,10 @@ size_t n = 8;
     __riscv_vse##data_bits##_v_u##data_bits##data_lmul(output_data##data_bits, op, vl);              \
     __riscv_vsse##data_bits##_v_u##data_bits##data_lmul##_m(mask, output_stride_store##data_bits,    \
                                                             input_stride, op, vl);                   \
+    if (rvv_stride_mask == nullptr) {                                                                \
+      rvv_readback_output_bytes(output_data##data_bits, 128);                                        \
+      rvv_readback_output_bytes(output_stride_store##data_bits, 128);                                \
+    }                                                                                                \
   }
 
 extern "C" {
@@ -59,11 +73,11 @@ CREATE_VSTRIDE_MASK_FN(32, m1, 32)
 CREATE_VSTRIDE_MASK_FN(32, m2, 16)
 CREATE_VSTRIDE_MASK_FN(32, m4, 8)
 CREATE_VSTRIDE_MASK_FN(32, m8, 4)
+
+rvv_test_func_t rvv_stride_mask __attribute__((section(".data"))) = nullptr;
 }
 
-void (*rvv_stride_mask)() __attribute__((section(".data"))) = &vstride_mask_u16m1;
-
 int main(int argc, char **argv) {
-  rvv_stride_mask();
+  rvv_run_subtests(rvv_stride_mask);
   return 0;
 }

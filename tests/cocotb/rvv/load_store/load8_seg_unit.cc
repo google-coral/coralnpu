@@ -15,6 +15,8 @@
 #include <riscv_vector.h>
 #include <stdint.h>
 
+#include "tests/cocotb/rvv/load_store/rvv_lsu_test_utils.h"
+
 namespace {
 // Double sized so we can check trailing regions are not read/written.
 constexpr size_t buf_size = 256;
@@ -23,43 +25,43 @@ constexpr size_t buf_size = 256;
 size_t vl __attribute__((section(".data"))) = 16;
 // These instructions don't differentiate signed/unsigned so we only need to
 // test one. The types come from intrinsic level.
-uint8_t in_buf[buf_size] __attribute__((section(".data")));
+RvvSeededInput<uint8_t, buf_size> in_buf __attribute__((section(".data")));
 uint8_t out_buf[buf_size] __attribute__((section(".data")));
 
 extern "C" {
 // Segment 2
-__attribute__((used, retain)) void vlseg2e8_v_u8mf4x2() {
+RVV_SUBTEST(vlseg2e8_v_u8mf4x2) {
   auto data = __riscv_vlseg2e8_v_u8mf4x2(in_buf, vl);
   __riscv_vse8_v_u8mf4(out_buf, __riscv_vget_v_u8mf4x2_u8mf4(data, 0), vl);
   __riscv_vse8_v_u8mf4(out_buf + vl, __riscv_vget_v_u8mf4x2_u8mf4(data, 1), vl);
 }
 
-__attribute__((used, retain)) void vlseg2e8_v_u8mf2x2() {
+RVV_SUBTEST(vlseg2e8_v_u8mf2x2) {
   auto data = __riscv_vlseg2e8_v_u8mf2x2(in_buf, vl);
   __riscv_vse8_v_u8mf2(out_buf, __riscv_vget_v_u8mf2x2_u8mf2(data, 0), vl);
   __riscv_vse8_v_u8mf2(out_buf + vl, __riscv_vget_v_u8mf2x2_u8mf2(data, 1), vl);
 }
 
-__attribute__((used, retain)) void vlseg2e8_v_u8m1x2() {
+RVV_SUBTEST(vlseg2e8_v_u8m1x2) {
   auto data = __riscv_vlseg2e8_v_u8m1x2(in_buf, vl);
   __riscv_vse8_v_u8m1(out_buf, __riscv_vget_v_u8m1x2_u8m1(data, 0), vl);
   __riscv_vse8_v_u8m1(out_buf + vl, __riscv_vget_v_u8m1x2_u8m1(data, 1), vl);
 }
 
-__attribute__((used, retain)) void vlseg2e8_v_u8m2x2() {
+RVV_SUBTEST(vlseg2e8_v_u8m2x2) {
   auto data = __riscv_vlseg2e8_v_u8m2x2(in_buf, vl);
   __riscv_vse8_v_u8m2(out_buf, __riscv_vget_v_u8m2x2_u8m2(data, 0), vl);
   __riscv_vse8_v_u8m2(out_buf + vl, __riscv_vget_v_u8m2x2_u8m2(data, 1), vl);
 }
 
-__attribute__((used, retain)) void vlseg2e8_v_u8m4x2() {
+RVV_SUBTEST(vlseg2e8_v_u8m4x2) {
   auto data = __riscv_vlseg2e8_v_u8m4x2(in_buf, vl);
   __riscv_vse8_v_u8m4(out_buf, __riscv_vget_v_u8m4x2_u8m4(data, 0), vl);
   __riscv_vse8_v_u8m4(out_buf + vl, __riscv_vget_v_u8m4x2_u8m4(data, 1), vl);
 }
 
 // Segment 3
-__attribute__((used, retain)) void vlseg3e8_v_u8mf4x3() {
+RVV_SUBTEST(vlseg3e8_v_u8mf4x3) {
   auto data = __riscv_vlseg3e8_v_u8mf4x3(in_buf, vl);
   __riscv_vse8_v_u8mf4(out_buf, __riscv_vget_v_u8mf4x3_u8mf4(data, 0), vl);
   __riscv_vse8_v_u8mf4(out_buf + vl, __riscv_vget_v_u8mf4x3_u8mf4(data, 1), vl);
@@ -67,7 +69,7 @@ __attribute__((used, retain)) void vlseg3e8_v_u8mf4x3() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg3e8_v_u8mf2x3() {
+RVV_SUBTEST(vlseg3e8_v_u8mf2x3) {
   auto data = __riscv_vlseg3e8_v_u8mf2x3(in_buf, vl);
   __riscv_vse8_v_u8mf2(out_buf, __riscv_vget_v_u8mf2x3_u8mf2(data, 0), vl);
   __riscv_vse8_v_u8mf2(out_buf + vl, __riscv_vget_v_u8mf2x3_u8mf2(data, 1), vl);
@@ -75,7 +77,7 @@ __attribute__((used, retain)) void vlseg3e8_v_u8mf2x3() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg3e8_v_u8m1x3() {
+RVV_SUBTEST(vlseg3e8_v_u8m1x3) {
   auto data = __riscv_vlseg3e8_v_u8m1x3(in_buf, vl);
   __riscv_vse8_v_u8m1(out_buf, __riscv_vget_v_u8m1x3_u8m1(data, 0), vl);
   __riscv_vse8_v_u8m1(out_buf + vl, __riscv_vget_v_u8m1x3_u8m1(data, 1), vl);
@@ -83,7 +85,7 @@ __attribute__((used, retain)) void vlseg3e8_v_u8m1x3() {
                       vl);
 }
 
-__attribute__((used, retain)) void vlseg3e8_v_u8m2x3() {
+RVV_SUBTEST(vlseg3e8_v_u8m2x3) {
   auto data = __riscv_vlseg3e8_v_u8m2x3(in_buf, vl);
   __riscv_vse8_v_u8m2(out_buf, __riscv_vget_v_u8m2x3_u8m2(data, 0), vl);
   __riscv_vse8_v_u8m2(out_buf + vl, __riscv_vget_v_u8m2x3_u8m2(data, 1), vl);
@@ -92,7 +94,7 @@ __attribute__((used, retain)) void vlseg3e8_v_u8m2x3() {
 }
 
 // Segment 4
-__attribute__((used, retain)) void vlseg4e8_v_u8mf4x4() {
+RVV_SUBTEST(vlseg4e8_v_u8mf4x4) {
   auto data = __riscv_vlseg4e8_v_u8mf4x4(in_buf, vl);
   __riscv_vse8_v_u8mf4(out_buf, __riscv_vget_v_u8mf4x4_u8mf4(data, 0), vl);
   __riscv_vse8_v_u8mf4(out_buf + vl, __riscv_vget_v_u8mf4x4_u8mf4(data, 1), vl);
@@ -102,7 +104,7 @@ __attribute__((used, retain)) void vlseg4e8_v_u8mf4x4() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg4e8_v_u8mf2x4() {
+RVV_SUBTEST(vlseg4e8_v_u8mf2x4) {
   auto data = __riscv_vlseg4e8_v_u8mf2x4(in_buf, vl);
   __riscv_vse8_v_u8mf2(out_buf, __riscv_vget_v_u8mf2x4_u8mf2(data, 0), vl);
   __riscv_vse8_v_u8mf2(out_buf + vl, __riscv_vget_v_u8mf2x4_u8mf2(data, 1), vl);
@@ -112,7 +114,7 @@ __attribute__((used, retain)) void vlseg4e8_v_u8mf2x4() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg4e8_v_u8m1x4() {
+RVV_SUBTEST(vlseg4e8_v_u8m1x4) {
   auto data = __riscv_vlseg4e8_v_u8m1x4(in_buf, vl);
   __riscv_vse8_v_u8m1(out_buf, __riscv_vget_v_u8m1x4_u8m1(data, 0), vl);
   __riscv_vse8_v_u8m1(out_buf + vl, __riscv_vget_v_u8m1x4_u8m1(data, 1), vl);
@@ -122,7 +124,7 @@ __attribute__((used, retain)) void vlseg4e8_v_u8m1x4() {
                       vl);
 }
 
-__attribute__((used, retain)) void vlseg4e8_v_u8m2x4() {
+RVV_SUBTEST(vlseg4e8_v_u8m2x4) {
   auto data = __riscv_vlseg4e8_v_u8m2x4(in_buf, vl);
   __riscv_vse8_v_u8m2(out_buf, __riscv_vget_v_u8m2x4_u8m2(data, 0), vl);
   __riscv_vse8_v_u8m2(out_buf + vl, __riscv_vget_v_u8m2x4_u8m2(data, 1), vl);
@@ -133,7 +135,7 @@ __attribute__((used, retain)) void vlseg4e8_v_u8m2x4() {
 }
 
 // Segment 5
-__attribute__((used, retain)) void vlseg5e8_v_u8mf4x5() {
+RVV_SUBTEST(vlseg5e8_v_u8mf4x5) {
   auto data = __riscv_vlseg5e8_v_u8mf4x5(in_buf, vl);
   __riscv_vse8_v_u8mf4(out_buf, __riscv_vget_v_u8mf4x5_u8mf4(data, 0), vl);
   __riscv_vse8_v_u8mf4(out_buf + vl, __riscv_vget_v_u8mf4x5_u8mf4(data, 1), vl);
@@ -145,7 +147,7 @@ __attribute__((used, retain)) void vlseg5e8_v_u8mf4x5() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg5e8_v_u8mf2x5() {
+RVV_SUBTEST(vlseg5e8_v_u8mf2x5) {
   auto data = __riscv_vlseg5e8_v_u8mf2x5(in_buf, vl);
   __riscv_vse8_v_u8mf2(out_buf, __riscv_vget_v_u8mf2x5_u8mf2(data, 0), vl);
   __riscv_vse8_v_u8mf2(out_buf + vl, __riscv_vget_v_u8mf2x5_u8mf2(data, 1), vl);
@@ -157,7 +159,7 @@ __attribute__((used, retain)) void vlseg5e8_v_u8mf2x5() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg5e8_v_u8m1x5() {
+RVV_SUBTEST(vlseg5e8_v_u8m1x5) {
   auto data = __riscv_vlseg5e8_v_u8m1x5(in_buf, vl);
   __riscv_vse8_v_u8m1(out_buf, __riscv_vget_v_u8m1x5_u8m1(data, 0), vl);
   __riscv_vse8_v_u8m1(out_buf + vl, __riscv_vget_v_u8m1x5_u8m1(data, 1), vl);
@@ -170,7 +172,7 @@ __attribute__((used, retain)) void vlseg5e8_v_u8m1x5() {
 }
 
 // Segment 6
-__attribute__((used, retain)) void vlseg6e8_v_u8mf4x6() {
+RVV_SUBTEST(vlseg6e8_v_u8mf4x6) {
   auto data = __riscv_vlseg6e8_v_u8mf4x6(in_buf, vl);
   __riscv_vse8_v_u8mf4(out_buf, __riscv_vget_v_u8mf4x6_u8mf4(data, 0), vl);
   __riscv_vse8_v_u8mf4(out_buf + vl, __riscv_vget_v_u8mf4x6_u8mf4(data, 1), vl);
@@ -184,7 +186,7 @@ __attribute__((used, retain)) void vlseg6e8_v_u8mf4x6() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg6e8_v_u8mf2x6() {
+RVV_SUBTEST(vlseg6e8_v_u8mf2x6) {
   auto data = __riscv_vlseg6e8_v_u8mf2x6(in_buf, vl);
   __riscv_vse8_v_u8mf2(out_buf, __riscv_vget_v_u8mf2x6_u8mf2(data, 0), vl);
   __riscv_vse8_v_u8mf2(out_buf + vl, __riscv_vget_v_u8mf2x6_u8mf2(data, 1), vl);
@@ -198,7 +200,7 @@ __attribute__((used, retain)) void vlseg6e8_v_u8mf2x6() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg6e8_v_u8m1x6() {
+RVV_SUBTEST(vlseg6e8_v_u8m1x6) {
   auto data = __riscv_vlseg6e8_v_u8m1x6(in_buf, vl);
   __riscv_vse8_v_u8m1(out_buf, __riscv_vget_v_u8m1x6_u8m1(data, 0), vl);
   __riscv_vse8_v_u8m1(out_buf + vl, __riscv_vget_v_u8m1x6_u8m1(data, 1), vl);
@@ -213,7 +215,7 @@ __attribute__((used, retain)) void vlseg6e8_v_u8m1x6() {
 }
 
 // Segment 7
-__attribute__((used, retain)) void vlseg7e8_v_u8mf4x7() {
+RVV_SUBTEST(vlseg7e8_v_u8mf4x7) {
   auto data = __riscv_vlseg7e8_v_u8mf4x7(in_buf, vl);
   __riscv_vse8_v_u8mf4(out_buf, __riscv_vget_v_u8mf4x7_u8mf4(data, 0), vl);
   __riscv_vse8_v_u8mf4(out_buf + vl, __riscv_vget_v_u8mf4x7_u8mf4(data, 1), vl);
@@ -229,7 +231,7 @@ __attribute__((used, retain)) void vlseg7e8_v_u8mf4x7() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg7e8_v_u8mf2x7() {
+RVV_SUBTEST(vlseg7e8_v_u8mf2x7) {
   auto data = __riscv_vlseg7e8_v_u8mf2x7(in_buf, vl);
   __riscv_vse8_v_u8mf2(out_buf, __riscv_vget_v_u8mf2x7_u8mf2(data, 0), vl);
   __riscv_vse8_v_u8mf2(out_buf + vl, __riscv_vget_v_u8mf2x7_u8mf2(data, 1), vl);
@@ -245,7 +247,7 @@ __attribute__((used, retain)) void vlseg7e8_v_u8mf2x7() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg7e8_v_u8m1x7() {
+RVV_SUBTEST(vlseg7e8_v_u8m1x7) {
   auto data = __riscv_vlseg7e8_v_u8m1x7(in_buf, vl);
   __riscv_vse8_v_u8m1(out_buf, __riscv_vget_v_u8m1x7_u8m1(data, 0), vl);
   __riscv_vse8_v_u8m1(out_buf + vl, __riscv_vget_v_u8m1x7_u8m1(data, 1), vl);
@@ -262,7 +264,7 @@ __attribute__((used, retain)) void vlseg7e8_v_u8m1x7() {
 }
 
 // Segment 8
-__attribute__((used, retain)) void vlseg8e8_v_u8mf4x8() {
+RVV_SUBTEST(vlseg8e8_v_u8mf4x8) {
   auto data = __riscv_vlseg8e8_v_u8mf4x8(in_buf, vl);
   __riscv_vse8_v_u8mf4(out_buf, __riscv_vget_v_u8mf4x8_u8mf4(data, 0), vl);
   __riscv_vse8_v_u8mf4(out_buf + vl, __riscv_vget_v_u8mf4x8_u8mf4(data, 1), vl);
@@ -280,7 +282,7 @@ __attribute__((used, retain)) void vlseg8e8_v_u8mf4x8() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg8e8_v_u8mf2x8() {
+RVV_SUBTEST(vlseg8e8_v_u8mf2x8) {
   auto data = __riscv_vlseg8e8_v_u8mf2x8(in_buf, vl);
   __riscv_vse8_v_u8mf2(out_buf, __riscv_vget_v_u8mf2x8_u8mf2(data, 0), vl);
   __riscv_vse8_v_u8mf2(out_buf + vl, __riscv_vget_v_u8mf2x8_u8mf2(data, 1), vl);
@@ -298,7 +300,7 @@ __attribute__((used, retain)) void vlseg8e8_v_u8mf2x8() {
                        vl);
 }
 
-__attribute__((used, retain)) void vlseg8e8_v_u8m1x8() {
+RVV_SUBTEST(vlseg8e8_v_u8m1x8) {
   auto data = __riscv_vlseg8e8_v_u8m1x8(in_buf, vl);
   __riscv_vse8_v_u8m1(out_buf, __riscv_vget_v_u8m1x8_u8m1(data, 0), vl);
   __riscv_vse8_v_u8m1(out_buf + vl, __riscv_vget_v_u8m1x8_u8m1(data, 1), vl);
@@ -317,9 +319,9 @@ __attribute__((used, retain)) void vlseg8e8_v_u8m1x8() {
 }
 }
 
-void (*impl)() __attribute__((section(".data"))) = &vlseg2e8_v_u8m1x2;
+rvv_test_func_t impl __attribute__((section(".data"))) = nullptr;
 
 int main(int argc, char** argv) {
-  impl();
+  rvv_run_subtests(impl, out_buf);
   return 0;
 }

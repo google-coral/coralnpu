@@ -15,6 +15,8 @@
 #include <riscv_vector.h>
 #include <stdint.h>
 
+#include "tests/cocotb/rvv/load_store/rvv_lsu_test_utils.h"
+
 extern "C" {
 extern uint8_t __data_start__[];
 extern uint8_t __boot_hart[];
@@ -31,12 +33,14 @@ uint32_t fault_mepc   = 0;
 uint32_t fault_mtval  = 0;
 uint32_t fault_vstart = 0;
 
-uint8_t buffer[4096] __attribute__((section(".data")));
-uint8_t *in_ptr __attribute__((section(".data")))  = &(buffer[0]);
-uint8_t *out_ptr __attribute__((section(".data"))) = &(buffer[0]);
+RvvSeededInput<uint8_t, 4096> buffer __attribute__((section(".data")));
+uint8_t *in_ptr __attribute__((section(".data")))  = buffer.data;
+uint8_t *out_ptr __attribute__((section(".data"))) = buffer.data;
 size_t vl __attribute__((section(".data")))        = 32;
 
-void coralnpu_exception_handler() {
+extern rvv_test_func_t test_fn;
+
+__attribute__((interrupt)) void coralnpu_exception_handler() {
   asm volatile(
       "csrr %[mcause], mcause \n"
       "csrr %[mepc], mepc \n"
@@ -47,9 +51,18 @@ void coralnpu_exception_handler() {
 
   fault_count += 1;
 
-  asm volatile("ebreak");
-  while (1) {
+  if (test_fn != nullptr) {
+    asm volatile("ebreak");
+    while (1) {
+    }
   }
+
+  uint32_t next_mepc = fault_mepc + 4;
+  asm volatile(
+      "csrw vstart, zero \n"
+      "csrw mepc, %[mepc] \n"
+      :
+      : [mepc] "r"(next_mepc));
 }
 
 // Note on `asm volatile`:
@@ -61,7 +74,7 @@ void coralnpu_exception_handler() {
 // instruction reordering across the fault boundaries.
 
 // 1. Scalar store fault preserves preset non-zero vstart
-__attribute__((used, retain)) void run_scalar_fault_preserves_vstart() {
+RVV_SUBTEST(run_scalar_fault_preserves_vstart) {
   asm volatile(
       "csrw vstart, %[preset_vstart] \n"
       ".globl faulting_insn_scalar \n"
@@ -72,7 +85,7 @@ __attribute__((used, retain)) void run_scalar_fault_preserves_vstart() {
 }
 
 // 2. Vector Store fault with Vector Store at RS head (Vector -> Vector RS flush)
-__attribute__((used, retain)) void run_unit_stride_fault_rs_flush() {
+RVV_SUBTEST(run_unit_stride_fault_rs_flush) {
   uint32_t a = 12345678, b = 7, div_res;
   vuint8m4_t v = __riscv_vmv_v_x_u8m4(0, 32);
   asm volatile(
@@ -89,7 +102,7 @@ __attribute__((used, retain)) void run_unit_stride_fault_rs_flush() {
 }
 
 // 3. Negative-stride vector store crossing DTCM to ITCM boundary (mid-vector vstart fault)
-__attribute__((used, retain)) void run_negative_stride_mid_vstart_fault() {
+RVV_SUBTEST(run_negative_stride_mid_vstart_fault) {
   vuint8m1_t v = __riscv_vle8_v_u8m1(in_ptr, vl);
   // Base is at __data_start__ + 8 (DTCM), stride is -4 bytes.
   // Element 0: __data_start__ + 8 (DTCM - valid)
@@ -107,12 +120,12 @@ __attribute__((used, retain)) void run_negative_stride_mid_vstart_fault() {
 }
 
 // 4. Indexed vector store fault mid-vector (vstart = 5)
-__attribute__((used, retain)) void run_indexed_mid_vstart_fault() {
+RVV_SUBTEST(run_indexed_mid_vstart_fault) {
   vuint8m1_t v = __riscv_vle8_v_u8m1(in_ptr, 8);
   // Index array with elements 0..4 pointing to valid buffer offsets, and element 5 pointing to
   // 0xA0000000
   uint32_t indices[8] __attribute__((aligned(16))) = {
-      0, 1, 2, 3, 4, (uint32_t)(0xA0000000 - (uintptr_t)buffer), 6, 7};
+      0, 1, 2, 3, 4, (uint32_t)(0xA0000000 - (uintptr_t)buffer.data), 6, 7};
   vuint32m4_t vindex = __riscv_vle32_v_u32m4(indices, 8);
   asm volatile(
       "vsetvli zero, %[vl], e8, m1, ta, ma \n"
@@ -120,12 +133,12 @@ __attribute__((used, retain)) void run_indexed_mid_vstart_fault() {
       "faulting_insn_indexed: \n"
       "vsuxei32.v %[v], (%[base]), %[vindex] \n"
       :
-      : [v] "vr"(v), [base] "r"(buffer), [vindex] "vr"(vindex), [vl] "r"(8)
+      : [v] "vr"(v), [base] "r"(buffer.data), [vindex] "vr"(vindex), [vl] "r"(8)
       : "vl", "vtype");
 }
 
 // 5. Segment store with NF=3 and negative stride (mid-vector vstart fault with NF=3 division)
-__attribute__((used, retain)) void run_seg3_negative_stride_mid_vstart_fault() {
+RVV_SUBTEST(run_seg3_negative_stride_mid_vstart_fault) {
   vuint8m1_t v0 = __riscv_vle8_v_u8m1(in_ptr, vl);
   // Base is at __data_start__ + 18 (DTCM), stride is -6 bytes.
   // Element 0: __data_start__ + 18 (DTCM - valid)
@@ -144,7 +157,7 @@ __attribute__((used, retain)) void run_seg3_negative_stride_mid_vstart_fault() {
 }
 
 // 6. Segment store with NF=5 and negative stride (mid-vector vstart fault with NF=5 division)
-__attribute__((used, retain)) void run_seg5_negative_stride_mid_vstart_fault() {
+RVV_SUBTEST(run_seg5_negative_stride_mid_vstart_fault) {
   vuint8m1_t v0 = __riscv_vle8_v_u8m1(in_ptr, vl);
   // Base is at __data_start__ + 20 (DTCM), stride is -10 bytes.
   // Element 0: __data_start__ + 20 (DTCM - valid)
@@ -162,7 +175,7 @@ __attribute__((used, retain)) void run_seg5_negative_stride_mid_vstart_fault() {
 }
 
 // 7. Vector Load fault with Scalar Store at RS head (Vector -> Scalar RS flush)
-__attribute__((used, retain)) void run_vector_load_fault_rs_flush() {
+RVV_SUBTEST(run_vector_load_fault_rs_flush) {
   uint32_t a = 12345678, b = 7, div_res;
   vuint8m4_t v;
   asm volatile(
@@ -179,7 +192,7 @@ __attribute__((used, retain)) void run_vector_load_fault_rs_flush() {
 }
 
 // 8. Scalar Store fault with Vector Store at RS head (Scalar -> Vector RS flush)
-__attribute__((used, retain)) void run_scalar_mixed_fault_rs_flush() {
+RVV_SUBTEST(run_scalar_mixed_fault_rs_flush) {
   uint32_t a = 12345678, b = 7, div_res;
   vuint8m4_t v = __riscv_vmv_v_x_u8m4(0, 32);
   asm volatile(
@@ -196,7 +209,7 @@ __attribute__((used, retain)) void run_scalar_mixed_fault_rs_flush() {
 }
 
 // 9. Scalar Store fault with Scalar Store at RS head (Scalar -> Scalar RS flush)
-__attribute__((used, retain)) void run_scalar_to_scalar_fault_rs_flush() {
+RVV_SUBTEST(run_scalar_to_scalar_fault_rs_flush) {
   uint32_t a = 12345678, b = 7, div_res;
   asm volatile(
       "div %[div_res], %[a], %[b] \n"
@@ -210,7 +223,7 @@ __attribute__((used, retain)) void run_scalar_to_scalar_fault_rs_flush() {
 }
 
 // 10. Fault-only-first Vector Load fault with Scalar Store at RS head (vle8ff fault on element 0)
-__attribute__((used, retain)) void run_vleff_fault_rs_flush() {
+RVV_SUBTEST(run_vleff_fault_rs_flush) {
   uint32_t a = 12345678, b = 7, div_res;
   vuint8m1_t v = __riscv_vmv_v_x_u8m1(0xaa, 16);
   asm volatile(
@@ -226,10 +239,10 @@ __attribute__((used, retain)) void run_vleff_fault_rs_flush() {
       : "vl", "vtype");
 }
 
-void (*test_fn)() __attribute__((section(".data"))) = &run_scalar_fault_preserves_vstart;
+rvv_test_func_t test_fn __attribute__((section(".data"))) = nullptr;
 }
 
 int main() {
-  test_fn();
+  rvv_run_subtests(test_fn);
   return 0;
 }

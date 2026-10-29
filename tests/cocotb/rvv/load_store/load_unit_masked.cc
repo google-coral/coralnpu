@@ -15,17 +15,21 @@
 #include <riscv_vector.h>
 #include <stdint.h>
 
-size_t vl __attribute__((section(".data"))) = 16;
-size_t vtype __attribute__((section(".data"))) = 0;
-size_t load_filler __attribute__((section(".data"))) = 0;
-uint8_t mask_data[16] __attribute__((section(".data")));
-uint8_t load_data[128] __attribute__((section(".data")));
+#include "tests/cocotb/rvv/load_store/rvv_lsu_test_utils.h"
+
+size_t vl __attribute__((section(".data")))          = 16;
+size_t vtype __attribute__((section(".data")))       = 0;
+size_t load_filler __attribute__((section(".data"))) = 0x5a5a5a5au;
+RvvSeededMask<16> mask_data __attribute__((section(".data")));
+RvvSeededInput<uint8_t, 128> load_data __attribute__((section(".data")));
 // Allow load_addr to be overwritten to exercise AXI memory
-uint8_t* load_addr __attribute__((section(".data"))) = load_data;
+uint8_t *load_addr __attribute__((section(".data"))) = load_data.data;
 uint8_t store_data[128] __attribute__((section(".data")));
 
 extern "C" {
-__attribute__((used, retain)) void test_unit_load8() {
+extern rvv_test_func_t impl;
+
+RVV_SUBTEST(test_unit_load8) {
   asm("vsetvl zero, %[vl], %[vtype];"
       "vlm.v v0, %[mask_data];"
       "vmv.v.x v8, %[load_filler];"
@@ -33,45 +37,46 @@ __attribute__((used, retain)) void test_unit_load8() {
       "vse8.v v8, %[store_data];"
       : [store_data] "=A"(store_data)
       : [vl] "r"(vl), [vtype] "r"(vtype), [load_filler] "r"(load_filler),
-        [mask_data] "A"(mask_data),
-        [load_addr] "A"(*reinterpret_cast<const uint8_t (*)[128]>(load_addr))
-      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",
-        "vtype");
+        [mask_data] "A"(mask_data.data),
+        [load_addr] "A"(*reinterpret_cast<const uint8_t(*)[128]>(load_addr))
+      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl", "vtype");
 }
 
-__attribute__((used, retain)) void test_unit_load16() {
+RVV_SUBTEST(test_unit_load16) {
+  size_t eff_vl    = (impl != nullptr) ? vl : 8;
+  size_t eff_vtype = (impl != nullptr) ? vtype : (1u << 3);
   asm("vsetvl zero, %[vl], %[vtype];"
       "vlm.v v0, %[mask_data];"
       "vmv.v.x v8, %[load_filler];"
       "vle16.v v8, %[load_addr], v0.t;"
       "vse16.v v8, %[store_data];"
       : [store_data] "=A"(store_data)
-      : [vl] "r"(vl), [vtype] "r"(vtype), [load_filler] "r"(load_filler),
-        [mask_data] "A"(mask_data),
-        [load_addr] "A"(*reinterpret_cast<const uint16_t (*)[64]>(load_addr))
-      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",
-        "vtype");
+      : [vl] "r"(eff_vl), [vtype] "r"(eff_vtype), [load_filler] "r"(load_filler),
+        [mask_data] "A"(mask_data.data),
+        [load_addr] "A"(*reinterpret_cast<const uint16_t(*)[64]>(load_addr))
+      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl", "vtype");
 }
 
-__attribute__((used, retain)) void test_unit_load32() {
+RVV_SUBTEST(test_unit_load32) {
+  size_t eff_vl    = (impl != nullptr) ? vl : 4;
+  size_t eff_vtype = (impl != nullptr) ? vtype : (2u << 3);
   asm("vsetvl zero, %[vl], %[vtype];"
       "vlm.v v0, %[mask_data];"
       "vmv.v.x v8, %[load_filler];"
       "vle32.v v8, %[load_addr], v0.t;"
       "vse32.v v8, %[store_data];"
       : [store_data] "=A"(store_data)
-      : [vl] "r"(vl), [vtype] "r"(vtype), [load_filler] "r"(load_filler),
-        [mask_data] "A"(mask_data),
-        [load_addr] "A"(*reinterpret_cast<const uint32_t (*)[32]>(load_addr))
-      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",
-        "vtype");
+      : [vl] "r"(eff_vl), [vtype] "r"(eff_vtype), [load_filler] "r"(load_filler),
+        [mask_data] "A"(mask_data.data),
+        [load_addr] "A"(*reinterpret_cast<const uint32_t(*)[32]>(load_addr))
+      : "v0", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl", "vtype");
 }
 }
 
-void (*impl)() __attribute__((section(".data"))) = &test_unit_load8;
+rvv_test_func_t impl __attribute__((section(".data"))) = nullptr;
 
-int main(int argc, char** argv) {
-  impl();
+int main(int argc, char **argv) {
+  rvv_run_subtests(impl, store_data);
 
   return 0;
 }

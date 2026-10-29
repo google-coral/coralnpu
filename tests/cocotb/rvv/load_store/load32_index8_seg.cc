@@ -15,6 +15,8 @@
 #include <riscv_vector.h>
 #include <stdint.h>
 
+#include "tests/cocotb/rvv/load_store/rvv_lsu_test_utils.h"
+
 namespace {
 constexpr size_t lut_size = 271;
 // Double sized so we can check trailing regions are not read/written.
@@ -23,15 +25,15 @@ constexpr size_t buf_size = 64;
 
 size_t vl __attribute__((section(".data"))) = 4;
 // Indices are always unsigned.
-uint8_t index_buf[buf_size] __attribute__((section(".data")));
+RvvSeededIndex<uint8_t, buf_size, uint32_t> index_buf __attribute__((section(".data")));
 // These instructions don't differentiate signed/unsigned so we only need to
 // test one. The types come from intrinsic level.
-uint32_t in_buf[lut_size] __attribute__((section(".data")));
+RvvSeededInput<uint32_t, lut_size> in_buf __attribute__((section(".data")));
 uint32_t out_buf[buf_size] __attribute__((section(".data")));
 
 extern "C" {
 // Unordered, segment 2
-__attribute__((used, retain)) void vluxseg2ei8_v_u32m1x2() {
+RVV_SUBTEST(vluxseg2ei8_v_u32m1x2) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vluxseg2ei8_v_u32m1x2(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x2_u32m1(data, 0), vl);
@@ -39,7 +41,7 @@ __attribute__((used, retain)) void vluxseg2ei8_v_u32m1x2() {
                         vl);
 }
 
-__attribute__((used, retain)) void vluxseg2ei8_v_u32m2x2() {
+RVV_SUBTEST(vluxseg2ei8_v_u32m2x2) {
   auto indices = __riscv_vle8_v_u8mf2(index_buf, vl);
   auto data = __riscv_vluxseg2ei8_v_u32m2x2(in_buf, indices, vl);
   __riscv_vse32_v_u32m2(out_buf, __riscv_vget_v_u32m2x2_u32m2(data, 0), vl);
@@ -47,7 +49,7 @@ __attribute__((used, retain)) void vluxseg2ei8_v_u32m2x2() {
                         vl);
 }
 
-__attribute__((used, retain)) void vluxseg2ei8_v_u32m4x2() {
+RVV_SUBTEST(vluxseg2ei8_v_u32m4x2) {
   auto indices = __riscv_vle8_v_u8m1(index_buf, vl);
   auto data = __riscv_vluxseg2ei8_v_u32m4x2(in_buf, indices, vl);
   __riscv_vse32_v_u32m4(out_buf, __riscv_vget_v_u32m4x2_u32m4(data, 0), vl);
@@ -56,7 +58,7 @@ __attribute__((used, retain)) void vluxseg2ei8_v_u32m4x2() {
 }
 
 // Unordered, segment 3
-__attribute__((used, retain)) void vluxseg3ei8_v_u32m1x3() {
+RVV_SUBTEST(vluxseg3ei8_v_u32m1x3) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vluxseg3ei8_v_u32m1x3(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x3_u32m1(data, 0), vl);
@@ -66,7 +68,7 @@ __attribute__((used, retain)) void vluxseg3ei8_v_u32m1x3() {
                         vl);
 }
 
-__attribute__((used, retain)) void vluxseg3ei8_v_u32m2x3() {
+RVV_SUBTEST(vluxseg3ei8_v_u32m2x3) {
   auto indices = __riscv_vle8_v_u8mf2(index_buf, vl);
   auto data = __riscv_vluxseg3ei8_v_u32m2x3(in_buf, indices, vl);
   __riscv_vse32_v_u32m2(out_buf, __riscv_vget_v_u32m2x3_u32m2(data, 0), vl);
@@ -77,7 +79,7 @@ __attribute__((used, retain)) void vluxseg3ei8_v_u32m2x3() {
 }
 
 // Unordered, segment 4
-__attribute__((used, retain)) void vluxseg4ei8_v_u32m1x4() {
+RVV_SUBTEST(vluxseg4ei8_v_u32m1x4) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vluxseg4ei8_v_u32m1x4(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x4_u32m1(data, 0), vl);
@@ -89,7 +91,7 @@ __attribute__((used, retain)) void vluxseg4ei8_v_u32m1x4() {
                         vl);
 }
 
-__attribute__((used, retain)) void vluxseg4ei8_v_u32m2x4() {
+RVV_SUBTEST(vluxseg4ei8_v_u32m2x4) {
   auto indices = __riscv_vle8_v_u8mf2(index_buf, vl);
   auto data = __riscv_vluxseg4ei8_v_u32m2x4(in_buf, indices, vl);
   __riscv_vse32_v_u32m2(out_buf, __riscv_vget_v_u32m2x4_u32m2(data, 0), vl);
@@ -102,7 +104,7 @@ __attribute__((used, retain)) void vluxseg4ei8_v_u32m2x4() {
 }
 
 // Unordered, segment 5
-__attribute__((used, retain)) void vluxseg5ei8_v_u32m1x5() {
+RVV_SUBTEST(vluxseg5ei8_v_u32m1x5) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vluxseg5ei8_v_u32m1x5(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x5_u32m1(data, 0), vl);
@@ -117,7 +119,7 @@ __attribute__((used, retain)) void vluxseg5ei8_v_u32m1x5() {
 }
 
 // Unordered, segment 6
-__attribute__((used, retain)) void vluxseg6ei8_v_u32m1x6() {
+RVV_SUBTEST(vluxseg6ei8_v_u32m1x6) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vluxseg6ei8_v_u32m1x6(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x6_u32m1(data, 0), vl);
@@ -134,7 +136,7 @@ __attribute__((used, retain)) void vluxseg6ei8_v_u32m1x6() {
 }
 
 // Unordered, segment 7
-__attribute__((used, retain)) void vluxseg7ei8_v_u32m1x7() {
+RVV_SUBTEST(vluxseg7ei8_v_u32m1x7) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vluxseg7ei8_v_u32m1x7(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x7_u32m1(data, 0), vl);
@@ -153,7 +155,7 @@ __attribute__((used, retain)) void vluxseg7ei8_v_u32m1x7() {
 }
 
 // Unordered, segment 8
-__attribute__((used, retain)) void vluxseg8ei8_v_u32m1x8() {
+RVV_SUBTEST(vluxseg8ei8_v_u32m1x8) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vluxseg8ei8_v_u32m1x8(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x8_u32m1(data, 0), vl);
@@ -174,7 +176,7 @@ __attribute__((used, retain)) void vluxseg8ei8_v_u32m1x8() {
 }
 
 // Ordered, segment 2
-__attribute__((used, retain)) void vloxseg2ei8_v_u32m1x2() {
+RVV_SUBTEST(vloxseg2ei8_v_u32m1x2) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vloxseg2ei8_v_u32m1x2(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x2_u32m1(data, 0), vl);
@@ -182,7 +184,7 @@ __attribute__((used, retain)) void vloxseg2ei8_v_u32m1x2() {
                         vl);
 }
 
-__attribute__((used, retain)) void vloxseg2ei8_v_u32m2x2() {
+RVV_SUBTEST(vloxseg2ei8_v_u32m2x2) {
   auto indices = __riscv_vle8_v_u8mf2(index_buf, vl);
   auto data = __riscv_vloxseg2ei8_v_u32m2x2(in_buf, indices, vl);
   __riscv_vse32_v_u32m2(out_buf, __riscv_vget_v_u32m2x2_u32m2(data, 0), vl);
@@ -190,7 +192,7 @@ __attribute__((used, retain)) void vloxseg2ei8_v_u32m2x2() {
                         vl);
 }
 
-__attribute__((used, retain)) void vloxseg2ei8_v_u32m4x2() {
+RVV_SUBTEST(vloxseg2ei8_v_u32m4x2) {
   auto indices = __riscv_vle8_v_u8m1(index_buf, vl);
   auto data = __riscv_vloxseg2ei8_v_u32m4x2(in_buf, indices, vl);
   __riscv_vse32_v_u32m4(out_buf, __riscv_vget_v_u32m4x2_u32m4(data, 0), vl);
@@ -199,7 +201,7 @@ __attribute__((used, retain)) void vloxseg2ei8_v_u32m4x2() {
 }
 
 // Ordered, segment 3
-__attribute__((used, retain)) void vloxseg3ei8_v_u32m1x3() {
+RVV_SUBTEST(vloxseg3ei8_v_u32m1x3) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vloxseg3ei8_v_u32m1x3(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x3_u32m1(data, 0), vl);
@@ -209,7 +211,7 @@ __attribute__((used, retain)) void vloxseg3ei8_v_u32m1x3() {
                         vl);
 }
 
-__attribute__((used, retain)) void vloxseg3ei8_v_u32m2x3() {
+RVV_SUBTEST(vloxseg3ei8_v_u32m2x3) {
   auto indices = __riscv_vle8_v_u8mf2(index_buf, vl);
   auto data = __riscv_vloxseg3ei8_v_u32m2x3(in_buf, indices, vl);
   __riscv_vse32_v_u32m2(out_buf, __riscv_vget_v_u32m2x3_u32m2(data, 0), vl);
@@ -220,7 +222,7 @@ __attribute__((used, retain)) void vloxseg3ei8_v_u32m2x3() {
 }
 
 // Ordered, segment 4
-__attribute__((used, retain)) void vloxseg4ei8_v_u32m1x4() {
+RVV_SUBTEST(vloxseg4ei8_v_u32m1x4) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vloxseg4ei8_v_u32m1x4(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x4_u32m1(data, 0), vl);
@@ -232,7 +234,7 @@ __attribute__((used, retain)) void vloxseg4ei8_v_u32m1x4() {
                         vl);
 }
 
-__attribute__((used, retain)) void vloxseg4ei8_v_u32m2x4() {
+RVV_SUBTEST(vloxseg4ei8_v_u32m2x4) {
   auto indices = __riscv_vle8_v_u8mf2(index_buf, vl);
   auto data = __riscv_vloxseg4ei8_v_u32m2x4(in_buf, indices, vl);
   __riscv_vse32_v_u32m2(out_buf, __riscv_vget_v_u32m2x4_u32m2(data, 0), vl);
@@ -245,7 +247,7 @@ __attribute__((used, retain)) void vloxseg4ei8_v_u32m2x4() {
 }
 
 // Ordered, segment 5
-__attribute__((used, retain)) void vloxseg5ei8_v_u32m1x5() {
+RVV_SUBTEST(vloxseg5ei8_v_u32m1x5) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vloxseg5ei8_v_u32m1x5(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x5_u32m1(data, 0), vl);
@@ -260,7 +262,7 @@ __attribute__((used, retain)) void vloxseg5ei8_v_u32m1x5() {
 }
 
 // Ordered, segment 6
-__attribute__((used, retain)) void vloxseg6ei8_v_u32m1x6() {
+RVV_SUBTEST(vloxseg6ei8_v_u32m1x6) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vloxseg6ei8_v_u32m1x6(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x6_u32m1(data, 0), vl);
@@ -277,7 +279,7 @@ __attribute__((used, retain)) void vloxseg6ei8_v_u32m1x6() {
 }
 
 // Ordered, segment 7
-__attribute__((used, retain)) void vloxseg7ei8_v_u32m1x7() {
+RVV_SUBTEST(vloxseg7ei8_v_u32m1x7) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vloxseg7ei8_v_u32m1x7(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x7_u32m1(data, 0), vl);
@@ -296,7 +298,7 @@ __attribute__((used, retain)) void vloxseg7ei8_v_u32m1x7() {
 }
 
 // Ordered, segment 8
-__attribute__((used, retain)) void vloxseg8ei8_v_u32m1x8() {
+RVV_SUBTEST(vloxseg8ei8_v_u32m1x8) {
   auto indices = __riscv_vle8_v_u8mf4(index_buf, vl);
   auto data = __riscv_vloxseg8ei8_v_u32m1x8(in_buf, indices, vl);
   __riscv_vse32_v_u32m1(out_buf, __riscv_vget_v_u32m1x8_u32m1(data, 0), vl);
@@ -317,9 +319,9 @@ __attribute__((used, retain)) void vloxseg8ei8_v_u32m1x8() {
 }
 }
 
-void (*impl)() __attribute__((section(".data"))) = &vluxseg2ei8_v_u32m1x2;
+rvv_test_func_t impl __attribute__((section(".data"))) = nullptr;
 
 int main(int argc, char** argv) {
-  impl();
+  rvv_run_subtests(impl, out_buf);
   return 0;
 }

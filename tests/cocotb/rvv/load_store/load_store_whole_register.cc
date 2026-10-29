@@ -15,41 +15,41 @@
 #include <riscv_vector.h>
 #include <stdint.h>
 
+#include "tests/cocotb/rvv/load_store/rvv_lsu_test_utils.h"
+
 namespace {
 constexpr size_t buf_size = 128;
 }
 
-size_t vl __attribute__((section(".data"))) = buf_size;
-size_t vtype __attribute__((section(".data"))) = buf_size;
-uint8_t load_data[buf_size] __attribute__((section(".data")));
+size_t vl __attribute__((section(".data")))    = buf_size;
+size_t vtype __attribute__((section(".data"))) = 0;
+RvvSeededInput<uint8_t, buf_size> load_data __attribute__((section(".data")));
 uint8_t store_data[buf_size] __attribute__((section(".data")));
 
 extern "C" {
-#define CREATE_LOAD_FN(name, n_registers)                             \
-  __attribute__((used, retain)) void name() {                         \
-    size_t eight_vl = 8 * __riscv_vlenb();                            \
-    asm("vsetvli zero, %[eight_vl], e8, m8, ta, ma;"                  \
-        "vmv.v.i v8, 0;"                                              \
-        "vsetvl zero, %[vl], %[vtype];"                               \
-        "vl" #n_registers                                             \
-        "r.v v8, %[load_data];"                                       \
-        "vs8r.v v8, %[store_data];"                                   \
-        : [store_data] "=A"(store_data)                               \
-        : [eight_vl] "r"(eight_vl), [vl] "r"(vl), [vtype] "r"(vtype), \
-          [load_data] "A"(load_data)                                  \
-        : "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl", \
-          "vtype");                                                   \
+#define CREATE_LOAD_FN(name, n_registers)                                       \
+  RVV_SUBTEST(name) {                                                           \
+    size_t eight_vl = 8 * __riscv_vlenb();                                      \
+    asm("vsetvli zero, %[eight_vl], e8, m8, ta, ma;"                            \
+        "vmv.v.i v8, 0;"                                                        \
+        "vsetvl zero, %[vl], %[vtype];"                                         \
+        "vl" #n_registers                                                       \
+        "r.v v8, %[load_data];"                                                 \
+        "vs8r.v v8, %[store_data];"                                             \
+        : [store_data] "=A"(store_data)                                         \
+        : [eight_vl] "r"(eight_vl), [vl] "r"(vl), [vtype] "r"(vtype),           \
+          [load_data] "A"(load_data.data)                                       \
+        : "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl", "vtype"); \
   }
 
-#define CREATE_STORE_FN(name, n_registers)                             \
-  __attribute__((used, retain)) void name() {                          \
-    asm("vsetvl zero, %[vl], %[vtype];"                                \
-        "vl8r.v v8, %[load_data];"                                     \
-        "vs" #n_registers "r.v v8, %[store_data];"                     \
-        : [store_data] "=A"(store_data)                                \
-        : [vl] "r"(vl), [vtype] "r"(vtype), [load_data] "A"(load_data) \
-        : "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl",  \
-          "vtype");                                                    \
+#define CREATE_STORE_FN(name, n_registers)                                      \
+  RVV_SUBTEST(name) {                                                           \
+    asm("vsetvl zero, %[vl], %[vtype];"                                         \
+        "vl8r.v v8, %[load_data];"                                              \
+        "vs" #n_registers "r.v v8, %[store_data];"                              \
+        : [store_data] "=A"(store_data)                                         \
+        : [vl] "r"(vl), [vtype] "r"(vtype), [load_data] "A"(load_data.data)     \
+        : "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "vl", "vtype"); \
   }
 
 CREATE_LOAD_FN(test_vl1r, 1)
@@ -60,11 +60,11 @@ CREATE_STORE_FN(test_vs1r, 1)
 CREATE_STORE_FN(test_vs2r, 2)
 CREATE_STORE_FN(test_vs4r, 4)
 CREATE_STORE_FN(test_vs8r, 8)
+
+rvv_test_func_t impl __attribute__((section(".data"))) = nullptr;
 }
 
-void (*impl)() __attribute__((section(".data"))) = &test_vl1r;
-
-int main(int argc, char** argv) {
-  impl();
+int main(int argc, char **argv) {
+  rvv_run_subtests(impl, store_data);
   return 0;
 }

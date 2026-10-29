@@ -22,45 +22,58 @@ template_rule(
     {
         "load_store_bits": {
             "srcs": ["load_store_bits.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load_store_whole_register": {
             "srcs": ["load_store_whole_register.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "whole_reg_repro": {
             "srcs": ["whole_reg_repro.cc"],
         },
         "load_unit_ff": {
             "srcs": ["load_unit_ff.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load_unit_masked": {
             "srcs": ["load_unit_masked.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load_unit_vtype": {
             "srcs": ["load_unit_vtype.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load_stride_vtype": {
             "srcs": ["load_stride_vtype.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load8_index8": {
             "srcs": ["load8_index8.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load8_index8_seg": {
             "srcs": ["load8_index8_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load8_index16": {
             "srcs": ["load8_index16.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load8_index16_seg": {
             "srcs": ["load8_index16_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load8_index32": {
             "srcs": ["load8_index32.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load8_index32_seg": {
             "srcs": ["load8_index32_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load8_seg_unit": {
             "srcs": ["load8_seg_unit.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load8_segment2_stride6_m1": {
             "srcs": ["load8_segment2_stride6_m1.cc"],
@@ -85,6 +98,7 @@ template_rule(
         },
         "lsu_fault_cases": {
             "srcs": ["lsu_fault_cases.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load_store8_fault": {
             "srcs": ["load_store8_fault.cc"],
@@ -103,18 +117,23 @@ template_rule(
         },
         "load16_index8": {
             "srcs": ["load16_index8.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load16_index8_seg": {
             "srcs": ["load16_index8_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load16_index16_seg": {
             "srcs": ["load16_index16_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load16_index32_seg": {
             "srcs": ["load16_index32_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load16_seg_unit": {
             "srcs": ["load16_seg_unit.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load16_stride4_m1": {
             "srcs": ["load16_stride4_m1.cc"],
@@ -127,18 +146,23 @@ template_rule(
         },
         "load32_index8": {
             "srcs": ["load32_index8.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load32_index32_seg": {
             "srcs": ["load32_index32_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load32_index16_seg": {
             "srcs": ["load32_index16_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load32_index8_seg": {
             "srcs": ["load32_index8_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load32_seg_unit": {
             "srcs": ["load32_seg_unit.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load32_stride8_m1": {
             "srcs": ["load32_stride8_m1.cc"],
@@ -148,57 +172,74 @@ template_rule(
         },
         "store8_index8": {
             "srcs": ["store8_index8.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store8_index8_seg": {
             "srcs": ["store8_index8_seg.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store8_index16": {
             "srcs": ["store8_index16.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store8_index32": {
             "srcs": ["store8_index32.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store16_index8": {
             "srcs": ["store16_index8.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store16_index16": {
             "srcs": ["store16_index16.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store16_index32": {
             "srcs": ["store16_index32.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store32_index8": {
             "srcs": ["store32_index8.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store32_index16": {
             "srcs": ["store32_index16.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store32_index32": {
             "srcs": ["store32_index32.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store8_seg_unit": {
             "srcs": ["store8_seg_unit.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store16_seg_unit": {
             "srcs": ["store16_seg_unit.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store32_seg_unit": {
             "srcs": ["store32_seg_unit.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store_unit_masked": {
             "srcs": ["store_unit_masked.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store_unit_vtype": {
             "srcs": ["store_unit_vtype.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "store_strided_vtype": {
             "srcs": ["store_strided_vtype.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
         "load_store_stride_masked": {
             "srcs": ["load_store_stride_masked.cc"],
         },
         "load_store_stride_masked_param": {
             "srcs": ["load_store_stride_masked_param.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
         },
     },
 )

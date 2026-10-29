@@ -15,49 +15,51 @@
 #include <riscv_vector.h>
 #include <stdint.h>
 
+#include "tests/cocotb/rvv/load_store/rvv_lsu_test_utils.h"
+
 namespace {
 constexpr size_t buf_size = 16;
 }
 
 size_t vl __attribute__((section(".data"))) = buf_size;
-uint8_t in_buf[buf_size] __attribute__((section(".data")));
+RvvSeededInput<uint8_t, buf_size> in_buf __attribute__((section(".data")));
 uint8_t out_buf[buf_size] __attribute__((section(".data")));
 
 extern "C" {
-__attribute__((used, retain)) void vlm_vsm_v_b1() {
+RVV_SUBTEST(vlm_vsm_v_b1) {
   auto data = __riscv_vlm_v_b1(in_buf, vl);
   __riscv_vsm_v_b1(out_buf, data, vl);
 }
 
-__attribute__((used, retain)) void vlm_vsm_v_b2() {
+RVV_SUBTEST(vlm_vsm_v_b2) {
   auto data = __riscv_vlm_v_b2(in_buf, vl);
   __riscv_vsm_v_b2(out_buf, data, vl);
 }
 
-__attribute__((used, retain)) void vlm_vsm_v_b4() {
+RVV_SUBTEST(vlm_vsm_v_b4) {
   auto data = __riscv_vlm_v_b4(in_buf, vl);
   __riscv_vsm_v_b4(out_buf, data, vl);
 }
 
-__attribute__((used, retain)) void vlm_vsm_v_b8() {
+RVV_SUBTEST(vlm_vsm_v_b8) {
   auto data = __riscv_vlm_v_b8(in_buf, vl);
   __riscv_vsm_v_b8(out_buf, data, vl);
 }
 
-__attribute__((used, retain)) void vlm_vsm_v_b16() {
+RVV_SUBTEST(vlm_vsm_v_b16) {
   auto data = __riscv_vlm_v_b16(in_buf, vl);
   __riscv_vsm_v_b16(out_buf, data, vl);
 }
 
-__attribute__((used, retain)) void vlm_vsm_v_b32() {
+RVV_SUBTEST(vlm_vsm_v_b32) {
   auto data = __riscv_vlm_v_b32(in_buf, vl);
   __riscv_vsm_v_b32(out_buf, data, vl);
 }
 }
 
-void (*impl)() __attribute__((section(".data"))) = &vlm_vsm_v_b1;
+rvv_test_func_t impl __attribute__((section(".data"))) = nullptr;
 
 int main(int argc, char** argv) {
-  impl();
+  rvv_run_subtests(impl, out_buf);
   return 0;
 }
