@@ -1,0 +1,1834 @@
+diff --git a/riscv/riscv_format32.bin_fmt b/riscv/riscv_format32.bin_fmt
+index e3c38bb..c0cbb45 100644
+--- a/riscv/riscv_format32.bin_fmt
++++ b/riscv/riscv_format32.bin_fmt
+@@ -204,6 +204,10 @@ format VMem[32] : Inst32Format {
+     unsigned sumop[5] = rs2;
+     unsigned vs2[5] = rs2;
+     unsigned vs3[5] = vd;
++    unsigned vm_vd[6] = vm, vd;
++    unsigned vd_lsb1[1] = vd[0];
++    unsigned vd_lsb2[2] = vd[1..0];
++    unsigned vd_lsb3[3] = vd[2..0];
+ };
+ 
+ format VArith[32] : Inst32Format {
+@@ -223,6 +227,12 @@ format VArith[32] : Inst32Format {
+     unsigned rd[5] = vd;
+     unsigned rs1[5] = vs1;
+     unsigned vd_mask[5] = vd;
++    unsigned vd_lsb1[1] = vd[0];
++    unsigned vd_lsb2[2] = vd[1..0];
++    unsigned vd_lsb3[3] = vd[2..0];
++    unsigned vs2_lsb1[1] = vs2[0];
++    unsigned vs2_lsb2[2] = vs2[1..0];
++    unsigned vs2_lsb3[3] = vs2[2..0];
+ };
+ 
+ format VConfig[32] : Inst32Format {
+diff --git a/riscv/riscv_getters_vector.h b/riscv/riscv_getters_vector.h
+index 3d16e87..ad39471 100644
+--- a/riscv/riscv_getters_vector.h
++++ b/riscv/riscv_getters_vector.h
+@@ -15,6 +15,7 @@
+ #ifndef THIRD_PARTY_MPACT_RISCV_RISCV_GETTERS_VECTOR_H_
+ #define THIRD_PARTY_MPACT_RISCV_RISCV_GETTERS_VECTOR_H_
+ 
++#include <algorithm>
+ #include <cstdint>
+ #include <string>
+ #include <vector>
+@@ -56,7 +57,8 @@ inline void GetVRegGroup(RiscVState* state, int reg_num, int num_fields,
+   // field. Each register group size is limited by the NumRegTable limit, but
+   // the total number of registers can still be up to 8.
+   int num_regs = kNumRegTable[reg_num % 8];
+-  for (int i = 0; i < num_regs * num_fields; i++) {
++  int total_regs = std::min({num_regs * num_fields, 8, 32 - reg_num});
++  for (int i = 0; i < total_regs; i++) {
+     auto vreg_name = absl::StrCat(RiscVState::kVregPrefix, reg_num + i);
+     vreg_group->push_back(state->GetRegister<RegType>(vreg_name).first);
+   }
+diff --git a/riscv/riscv_vector.bin_fmt b/riscv/riscv_vector.bin_fmt
+index 1a6b13c..221fefa 100644
+--- a/riscv/riscv_vector.bin_fmt
++++ b/riscv/riscv_vector.bin_fmt
+@@ -26,74 +26,79 @@ instruction group RiscVVInst32[32] : Inst32Format {
+   vsetvl_zz   : VConfig : rd == 0, rs1 == 0, func7 == 0b100'0000, func3 == 0b111, opcode == 0b101'0111;
+ 
+   // Unit stride, masked (vm=0).
+-  vle8      : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
+-  vle16     : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
+-  vle32     : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
+-  vle64     : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b111, opcode == 0b000'0111;
++  vle8      : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
++  vle16     : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
++  vle32     : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
++  vle64     : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b111, opcode == 0b000'0111;
+   // Unit stride, unmasked (vm=1).
+   vle8_vm1  : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
+   vle16_vm1 : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
+   vle32_vm1 : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
+   vle64_vm1 : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b111, opcode == 0b000'0111;
+   // Mask load.
+-  vlm   : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b01011, width == 0b000, opcode == 0b000'0111;
++  vlm   : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b01011, width == 0b000, opcode == 0b000'0111;
+   // Unit stride, fault first.
+-  vle8ff  : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
+-  vle16ff : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
+-  vle32ff : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
+-  vle64ff : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b111, opcode == 0b000'0111;
++  vle8ff  : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
++  vle16ff : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
++  vle32ff : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
++  vle64ff : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b111, opcode == 0b000'0111;
+   // Unit stride, whole register load.
+-  vl1re8  : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl1re16 : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl1re32 : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl1re64 : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b111, opcode == 0b000'0111;
+-  vl2re8  : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl2re16 : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl2re32 : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl2re64 : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b111, opcode == 0b000'0111;
+-  vl4re8  : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl4re16 : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl4re32 : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl4re64 : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b111, opcode == 0b000'0111;
+-  vl8re8  : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl8re16 : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl8re32 : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl8re64 : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b111, opcode == 0b000'0111;
++  vl1re8  : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
++  vl1re16 : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
++  vl1re32 : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
++  vl1re64 : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b111, opcode == 0b000'0111;
++  vl2re8  : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl2re16 : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl2re32 : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl2re64 : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b111, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl4re8  : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl4re16 : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl4re32 : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl4re64 : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b111, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl8re8  : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, vd_lsb3 == 0, opcode == 0b000'0111;
++  vl8re16 : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, vd_lsb3 == 0, opcode == 0b000'0111;
++  vl8re32 : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, vd_lsb3 == 0, opcode == 0b000'0111;
++  vl8re64 : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b111, vd_lsb3 == 0, opcode == 0b000'0111;
+   // Vector load strided.
+-  vlse8  : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
+-  vlse16 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
+-  vlse32 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
+-  vlse64 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b111, opcode == 0b000'0111;
++  vlse8  : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
++  vlse16 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
++  vlse32 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
++  vlse64 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b111, opcode == 0b000'0111;
+   // Vector load indexed, unordered.
+-  vluxei8 : VMem : nf == 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
+-  vluxei16: VMem : nf == 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
+-  vluxei32: VMem : nf == 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
+-  vluxei64: VMem : nf == 0, mew == 0, mop == 0b01, width == 0b111, opcode == 0b000'0111;
++  vluxei8 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
++  vluxei16: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
++  vluxei32: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
++  vluxei64: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b111, opcode == 0b000'0111;
+   // Vector load indexed, ordered.
+-  vloxei8 : VMem : nf == 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
+-  vloxei16: VMem : nf == 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
+-  vloxei32: VMem : nf == 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
+-  vloxei64: VMem : nf == 0, mew == 0, mop == 0b11, width == 0b111, opcode == 0b000'0111;
++  vloxei8 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
++  vloxei16: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
++  vloxei32: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
++  vloxei64: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b111, opcode == 0b000'0111;
+   // Vector segment load, unit stride.
+-  vlsege8:   VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
+-  vlsege16:  VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
+-  vlsege32:  VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
+-  vlsege64:  VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b111, opcode == 0b000'0111;
++  vlsege8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
++  vlsege16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
++  vlsege32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
++  vlsege64:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b111, opcode == 0b000'0111;
++  // Vector segment load, unit stride, fault first.
++  vlsege8ff:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
++  vlsege16ff:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
++  vlsege32ff:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
++  vlsege64ff:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b111, opcode == 0b000'0111;
+   // Vector segment load, strided.
+-  vlssege8:   VMem : nf != 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
+-  vlssege16:  VMem : nf != 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
+-  vlssege32:  VMem : nf != 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
+-  vlssege64:  VMem : nf != 0, mew == 0, mop == 0b10, width == 0b111, opcode == 0b000'0111;
++  vlssege8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
++  vlssege16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
++  vlssege32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
++  vlssege64:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b111, opcode == 0b000'0111;
+   // Vector segment load, indexed, unordered.
+-  vluxsegei8:   VMem : nf != 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
+-  vluxsegei16:  VMem : nf != 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
+-  vluxsegei32:  VMem : nf != 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
+-  vluxsegei64:  VMem : nf != 0, mew == 0, mop == 0b01, width == 0b111, opcode == 0b000'0111;
++  vluxsegei8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
++  vluxsegei16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
++  vluxsegei32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
++  vluxsegei64:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b111, opcode == 0b000'0111;
+   // Vector segement load, indexed, ordered.
+-  vloxsegei8:   VMem : nf != 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
+-  vloxsegei16:  VMem : nf != 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
+-  vloxsegei32:  VMem : nf != 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
+-  vloxsegei64:  VMem : nf != 0, mew == 0, mop == 0b11, width == 0b111, opcode == 0b000'0111;
++  vloxsegei8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
++  vloxsegei16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
++  vloxsegei32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
++  vloxsegei64:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b111, opcode == 0b000'0111;
+ 
+ 
+   // VECTOR STORES
+@@ -104,29 +109,12 @@ instruction group RiscVVInst32[32] : Inst32Format {
+   vse32 : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b00000, width == 0b110, opcode == 0b010'0111;
+   vse64 : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b00000, width == 0b111, opcode == 0b010'0111;
+   // Mask store.
+-  vsm   : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b01011, width == 0b000, opcode == 0b010'0111;
+-  // Unit stride, fault first.
+-  vse8ff  : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b10000, width == 0b000, opcode == 0b010'0111;
+-  vse16ff : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b10000, width == 0b101, opcode == 0b010'0111;
+-  vse32ff : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b10000, width == 0b110, opcode == 0b010'0111;
+-  vse64ff : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b10000, width == 0b111, opcode == 0b010'0111;
++  vsm   : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, sumop == 0b01011, width == 0b000, opcode == 0b010'0111;
+   // Unit stride, whole register store.
+-  vs1re8  : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs1re16 : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs1re32 : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs1re64 : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b111, opcode == 0b010'0111;
+-  vs2re8  : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs2re16 : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs2re32 : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs2re64 : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b111, opcode == 0b010'0111;
+-  vs4re8  : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs4re16 : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs4re32 : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs4re64 : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b111, opcode == 0b010'0111;
+-  vs8re8  : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs8re16 : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs8re32 : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs8re64 : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b111, opcode == 0b010'0111;
++  vs1re8  : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
++  vs2re8  : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, vd_lsb1 == 0, opcode == 0b010'0111;
++  vs4re8  : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, vd_lsb2 == 0, opcode == 0b010'0111;
++  vs8re8  : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, vd_lsb3 == 0, opcode == 0b010'0111;
+   // Store strided.
+   vsse8  : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b010'0111;
+   vsse16 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b010'0111;
+@@ -251,10 +239,10 @@ instruction group RiscVVInst32[32] : Inst32Format {
+   vsll_vi   : VArith : func6 == 0b100'101, func3 == 0b011, opcode == 0b101'0111;
+   vsmul_vv  : VArith : func6 == 0b100'111, func3 == 0b000, opcode == 0b101'0111;
+   vsmul_vx  : VArith : func6 == 0b100'111, func3 == 0b100, opcode == 0b101'0111;
+-  vmv1r_vi  : VArith : func6 == 0b100'111, uimm5 == 0, func3 == 0b011, opcode == 0b101'0111;
+-  vmv2r_vi  : VArith : func6 == 0b100'111, uimm5 == 1, func3 == 0b011, opcode == 0b101'0111;
+-  vmv4r_vi  : VArith : func6 == 0b100'111, uimm5 == 3, func3 == 0b011, opcode == 0b101'0111;
+-  vmv8r_vi  : VArith : func6 == 0b100'111, uimm5 == 7, func3 == 0b011, opcode == 0b101'0111;
++  vmv1r_vi  : VArith : func6 == 0b100'111, vm == 1, uimm5 == 0, func3 == 0b011, opcode == 0b101'0111;
++  vmv2r_vi  : VArith : func6 == 0b100'111, vm == 1, vs2_lsb1 == 0, uimm5 == 1, func3 == 0b011, vd_lsb1 == 0, opcode == 0b101'0111;
++  vmv4r_vi  : VArith : func6 == 0b100'111, vm == 1, vs2_lsb2 == 0, uimm5 == 3, func3 == 0b011, vd_lsb2 == 0, opcode == 0b101'0111;
++  vmv8r_vi  : VArith : func6 == 0b100'111, vm == 1, vs2_lsb3 == 0, uimm5 == 7, func3 == 0b011, vd_lsb3 == 0, opcode == 0b101'0111;
+   vsrl_vv   : VArith : func6 == 0b101'000, func3 == 0b000, opcode == 0b101'0111;
+   vsrl_vx   : VArith : func6 == 0b101'000, func3 == 0b100, opcode == 0b101'0111;
+   vsrl_vi   : VArith : func6 == 0b101'000, func3 == 0b011, opcode == 0b101'0111;
+@@ -521,60 +509,64 @@ instruction group RiscVZve32xInst32[32] : Inst32Format {
+   vsetvl_zz   : VConfig : rd == 0, rs1 == 0, func7 == 0b100'0000, func3 == 0b111, opcode == 0b101'0111;
+ 
+   // Unit stride, masked (vm=0).
+-  vle8      : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
+-  vle16     : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
+-  vle32     : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
++  vle8      : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
++  vle16     : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
++  vle32     : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
+   // Unit stride, unmasked (vm=1).
+   vle8_vm1  : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
+   vle16_vm1 : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
+   vle32_vm1 : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
+   // Mask load.
+-  vlm   : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b01011, width == 0b000, opcode == 0b000'0111;
++  vlm   : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b01011, width == 0b000, opcode == 0b000'0111;
+   // Unit stride, fault first.
+-  vle8ff  : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
+-  vle16ff : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
+-  vle32ff : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
++  vle8ff  : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
++  vle16ff : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
++  vle32ff : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
+   // Unit stride, whole register load.
+-  vl1re8  : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl1re16 : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl1re32 : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl2re8  : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl2re16 : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl2re32 : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl4re8  : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl4re16 : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl4re32 : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl8re8  : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl8re16 : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl8re32 : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
++  vl1re8  : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
++  vl1re16 : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
++  vl1re32 : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
++  vl2re8  : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl2re16 : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl2re32 : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl4re8  : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl4re16 : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl4re32 : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl8re8  : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, vd_lsb3 == 0, opcode == 0b000'0111;
++  vl8re16 : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, vd_lsb3 == 0, opcode == 0b000'0111;
++  vl8re32 : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, vd_lsb3 == 0, opcode == 0b000'0111;
+   // Vector load strided.
+-  vlse8  : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
+-  vlse16 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
+-  vlse32 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
++  vlse8  : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
++  vlse16 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
++  vlse32 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
+   // Vector load indexed, unordered.
+-  vluxei8 : VMem : nf == 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
+-  vluxei16: VMem : nf == 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
+-  vluxei32: VMem : nf == 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
++  vluxei8 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
++  vluxei16: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
++  vluxei32: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
+   // Vector load indexed, ordered.
+-  vloxei8 : VMem : nf == 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
+-  vloxei16: VMem : nf == 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
+-  vloxei32: VMem : nf == 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
++  vloxei8 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
++  vloxei16: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
++  vloxei32: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
+   // Vector segment load, unit stride.
+-  vlsege8:   VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
+-  vlsege16:  VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
+-  vlsege32:  VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
++  vlsege8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
++  vlsege16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
++  vlsege32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
++  // Vector segment load, unit stride, fault first.
++  vlsege8ff:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
++  vlsege16ff:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
++  vlsege32ff:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
+   // Vector segment load, strided.
+-  vlssege8:   VMem : nf != 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
+-  vlssege16:  VMem : nf != 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
+-  vlssege32:  VMem : nf != 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
++  vlssege8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
++  vlssege16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
++  vlssege32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
+   // Vector segment load, indexed, unordered.
+-  vluxsegei8:   VMem : nf != 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
+-  vluxsegei16:  VMem : nf != 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
+-  vluxsegei32:  VMem : nf != 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
++  vluxsegei8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
++  vluxsegei16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
++  vluxsegei32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
+   // Vector segement load, indexed, ordered.
+-  vloxsegei8:   VMem : nf != 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
+-  vloxsegei16:  VMem : nf != 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
+-  vloxsegei32:  VMem : nf != 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
++  vloxsegei8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
++  vloxsegei16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
++  vloxsegei32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
+ 
+ 
+   // VECTOR STORES
+@@ -584,24 +576,12 @@ instruction group RiscVZve32xInst32[32] : Inst32Format {
+   vse16 : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b00000, width == 0b101, opcode == 0b010'0111;
+   vse32 : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b00000, width == 0b110, opcode == 0b010'0111;
+   // Mask store.
+-  vsm   : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b01011, width == 0b000, opcode == 0b010'0111;
+-  // Unit stride, fault first.
+-  vse8ff  : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b10000, width == 0b000, opcode == 0b010'0111;
+-  vse16ff : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b10000, width == 0b101, opcode == 0b010'0111;
+-  vse32ff : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b10000, width == 0b110, opcode == 0b010'0111;
++  vsm   : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, sumop == 0b01011, width == 0b000, opcode == 0b010'0111;
+   // Unit stride, whole register store.
+-  vs1re8  : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs1re16 : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs1re32 : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs2re8  : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs2re16 : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs2re32 : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs4re8  : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs4re16 : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs4re32 : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs8re8  : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs8re16 : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs8re32 : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
++  vs1re8  : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
++  vs2re8  : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, vd_lsb1 == 0, opcode == 0b010'0111;
++  vs4re8  : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, vd_lsb2 == 0, opcode == 0b010'0111;
++  vs8re8  : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, vd_lsb3 == 0, opcode == 0b010'0111;
+   // Store strided.
+   vsse8  : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b010'0111;
+   vsse16 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b010'0111;
+@@ -719,10 +699,10 @@ instruction group RiscVZve32xInst32[32] : Inst32Format {
+   vsll_vi   : VArith : func6 == 0b100'101, func3 == 0b011, opcode == 0b101'0111;
+   vsmul_vv  : VArith : func6 == 0b100'111, func3 == 0b000, opcode == 0b101'0111;
+   vsmul_vx  : VArith : func6 == 0b100'111, func3 == 0b100, opcode == 0b101'0111;
+-  vmv1r_vi  : VArith : func6 == 0b100'111, uimm5 == 0, func3 == 0b011, opcode == 0b101'0111;
+-  vmv2r_vi  : VArith : func6 == 0b100'111, uimm5 == 1, func3 == 0b011, opcode == 0b101'0111;
+-  vmv4r_vi  : VArith : func6 == 0b100'111, uimm5 == 3, func3 == 0b011, opcode == 0b101'0111;
+-  vmv8r_vi  : VArith : func6 == 0b100'111, uimm5 == 7, func3 == 0b011, opcode == 0b101'0111;
++  vmv1r_vi  : VArith : func6 == 0b100'111, vm == 1, uimm5 == 0, func3 == 0b011, opcode == 0b101'0111;
++  vmv2r_vi  : VArith : func6 == 0b100'111, vm == 1, vs2_lsb1 == 0, uimm5 == 1, func3 == 0b011, vd_lsb1 == 0, opcode == 0b101'0111;
++  vmv4r_vi  : VArith : func6 == 0b100'111, vm == 1, vs2_lsb2 == 0, uimm5 == 3, func3 == 0b011, vd_lsb2 == 0, opcode == 0b101'0111;
++  vmv8r_vi  : VArith : func6 == 0b100'111, vm == 1, vs2_lsb3 == 0, uimm5 == 7, func3 == 0b011, vd_lsb3 == 0, opcode == 0b101'0111;
+   vsrl_vv   : VArith : func6 == 0b101'000, func3 == 0b000, opcode == 0b101'0111;
+   vsrl_vx   : VArith : func6 == 0b101'000, func3 == 0b100, opcode == 0b101'0111;
+   vsrl_vi   : VArith : func6 == 0b101'000, func3 == 0b011, opcode == 0b101'0111;
+diff --git a/riscv/riscv_vector.isa b/riscv/riscv_vector.isa
+index ee9ae36..fd7949d 100644
+--- a/riscv/riscv_vector.isa
++++ b/riscv/riscv_vector.isa
+@@ -219,6 +219,24 @@ slot riscv_vector {
+       semfunc: "absl::bind_front(&VlSegment, /*element_width*/ 8)",
+                "absl::bind_front(&VlSegmentChild, /*element_width*/ 8)";
+ 
++    // Vector unit-stride segment load, fault first
++    vlsege8ff{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\e8ff.v", "%vd_nf, (%rs1), %vmask",
++      semfunc: "absl::bind_front(&VlSegment, /*element_width*/ 1)",
++               "absl::bind_front(&VlSegmentChild, /*element_width*/ 1)";
++    vlsege16ff{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\e16ff.v", "%vd_nf, (%rs1), %vmask",
++      semfunc: "absl::bind_front(&VlSegment, /*element_width*/ 2)",
++               "absl::bind_front(&VlSegmentChild, /*element_width*/ 2)";
++    vlsege32ff{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\e32ff.v", "%vd_nf, (%rs1), %vmask",
++      semfunc: "absl::bind_front(&VlSegment, /*element_width*/ 4)",
++               "absl::bind_front(&VlSegmentChild, /*element_width*/ 4)";
++    vlsege64ff{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\e64ff.v", "%vd_nf, (%rs1), %vmask",
++      semfunc: "absl::bind_front(&VlSegment, /*element_width*/ 8)",
++               "absl::bind_front(&VlSegmentChild, /*element_width*/ 8)";
++
+     // Vector strided segment load.
+     vlssege8{(: rs1, rs2, vmask, nf: ), (: nf : vd_nf)},
+       disasm: "vlsseg%nf\\e8.v", "%vd_nf, (%rs1), %rs2, %vmask",
+@@ -295,69 +313,19 @@ slot riscv_vector {
+       disasm: "vsm",
+       semfunc: "absl::bind_front(&Vsm)";
+ 
+-    // Vector store, unit stride, fault first.
+-    vse8ff{: vs3, rs1, const1, vmask:},
+-      disasm: "vse8ff.v", "%vs3, (%rs1), %vmask",
+-      semfunc: "absl::bind_front(&VsStrided, /*element_width*/ 1)";
+-    vse16ff{: vs3, rs1, const2, vmask:},
+-      disasm: "vse16ff.v", "%vs3, (%rs1), %vmask",
+-      semfunc: "absl::bind_front(&VsStrided, /*element_width*/ 2)";
+-    vse32ff{: vs3, rs1, const4, vmask:},
+-      disasm: "vse32ff.v", "%vs3, (%rs1), %vmask",
+-      semfunc: "absl::bind_front(&VsStrided, /*element_width*/ 4)";
+-    vse64ff{: vs3, rs1, const8, vmask:},
+-      disasm: "vse64ff.v", "%vs3, (%rs1), %vmask",
+-      semfunc: "absl::bind_front(&VsStrided, /*element_width*/ 8)";
+-
+     // Vector store register.
+     vs1re8{(: vs3, rs1 :)},
+       disasm: "vs1re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 1)";
+-    vs1re16{(: vs3, rs1 :)},
+-      disasm: "vs1re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 1)";
+-    vs1re32{(: vs3, rs1 :)},
+-      disasm: "vs1re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 1)";
+-    vs1re64{(: vs3, rs1 :)},
+-      disasm: "vs1re64.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 1)";
+     vs2re8{(: vs3, rs1 :)},
+       disasm: "vs2re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 2)";
+-    vs2re16{(: vs3, rs1 :)},
+-      disasm: "vs2re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 2)";
+-    vs2re32{(: vs3, rs1 :)},
+-      disasm: "vs2re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 2)";
+-    vs2re64{(: vs3, rs1 :)},
+-      disasm: "vs2re64.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 2)";
+     vs4re8{(: vs3, rs1 :)},
+       disasm: "vs4re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 4)";
+-    vs4re16{(: vs3, rs1 :)},
+-      disasm: "vs4re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 4)";
+-    vs4re32{(: vs3, rs1 :)},
+-      disasm: "vs4re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 4)";
+-    vs4re64{(: vs3, rs1 :)},
+-      disasm: "vs4re64.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/ 4)";
+     vs8re8{(: vs3, rs1 :)},
+       disasm: "vs8re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&VsRegister, /*num_regs*/8)";
+-    vs8re16{(: vs3, rs1 :)},
+-      disasm: "vs8re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/8)";
+-    vs8re32{(: vs3, rs1 :)},
+-      disasm: "vs8re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/8)";
+-    vs8re64{(: vs3, rs1 :)},
+-      disasm: "vs8re64.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&VsRegister, /*num_regs*/8)";
+ 
+     // Vector store, strided.
+     vsse8{: vs3, rs1, rs2, vmask : },
+@@ -1596,6 +1564,20 @@ slot riscv_zve32x {
+       semfunc: "absl::bind_front(&::mpact::sim::riscv::VlSegment, /*element_width*/ 4)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 4)";
+ 
++    // Vector unit-stride segment load, fault first
++    vlsege8ff{(: rs1, vmask, nf:), (: nf : vd)},
++      disasm: "vlseg%nf\\e8ff.v", "%vd, (%rs1), %vmask",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::VlSegment, /*element_width*/ 1)",
++               "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 1)";
++    vlsege16ff{(: rs1, vmask, nf:), (: nf : vd)},
++      disasm: "vlseg%nf\\e16ff.v", "%vd, (%rs1), %vmask",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::VlSegment, /*element_width*/ 2)",
++               "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 2)";
++    vlsege32ff{(: rs1, vmask, nf:), (: nf : vd)},
++      disasm: "vlseg%nf\\e32ff.v", "%vd, (%rs1), %vmask",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::VlSegment, /*element_width*/ 4)",
++               "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 4)";
++
+     // Vector strided segment load.
+     vlssege8{(: rs1, rs2, vmask, nf: ), (: nf : vd)},
+       disasm: "vlsseg%nf\\e8.v", "%vd, (%rs1), %rs2, %vmask",
+@@ -1657,54 +1639,19 @@ slot riscv_zve32x {
+       disasm: "vsm",
+       semfunc: "absl::bind_front(&::mpact::sim::riscv::Vsm)";
+ 
+-    // Vector store, unit stride, fault first.
+-    vse8ff{: vs3, rs1, const1, vmask:},
+-      disasm: "vse8ff.v", "%vs3, (%rs1), %vmask",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsStrided, /*element_width*/ 1)";
+-    vse16ff{: vs3, rs1, const2, vmask:},
+-      disasm: "vse16ff.v", "%vs3, (%rs1), %vmask",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsStrided, /*element_width*/ 2)";
+-    vse32ff{: vs3, rs1, const4, vmask:},
+-      disasm: "vse32ff.v", "%vs3, (%rs1), %vmask",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsStrided, /*element_width*/ 4)";
+-
+     // Vector store register.
+     vs1re8{(: vs3, rs1 :)},
+       disasm: "vs1re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/ 1)";
+-    vs1re16{(: vs3, rs1 :)},
+-      disasm: "vs1re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/ 1)";
+-    vs1re32{(: vs3, rs1 :)},
+-      disasm: "vs1re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/ 1)";
+     vs2re8{(: vs3, rs1 :)},
+       disasm: "vs2re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/ 2)";
+-    vs2re16{(: vs3, rs1 :)},
+-      disasm: "vs2re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/ 2)";
+-    vs2re32{(: vs3, rs1 :)},
+-      disasm: "vs2re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/ 2)";
+     vs4re8{(: vs3, rs1 :)},
+       disasm: "vs4re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/ 4)";
+-    vs4re16{(: vs3, rs1 :)},
+-      disasm: "vs4re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/ 4)";
+-    vs4re32{(: vs3, rs1 :)},
+-      disasm: "vs4re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/ 4)";
+     vs8re8{(: vs3, rs1 :)},
+       disasm: "vs8re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/8)";
+-    vs8re16{(: vs3, rs1 :)},
+-      disasm: "vs8re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/8)";
+-    vs8re32{(: vs3, rs1 :)},
+-      disasm: "vs8re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::mpact::sim::riscv::VsRegister, /*num_regs*/8)";
+ 
+     // Vector store, strided.
+     vsse8{: vs3, rs1, rs2, vmask : },
+diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memory_instructions.cc
+index 34e391e..1c5ff07 100644
+--- a/riscv/riscv_vector_memory_instructions.cc
++++ b/riscv/riscv_vector_memory_instructions.cc
+@@ -15,16 +15,21 @@
+ #include "riscv/riscv_vector_memory_instructions.h"
+ 
+ #include <algorithm>
++#include <any>
+ #include <cstdint>
++#include <cstdlib>
+ 
+ #include "absl/log/log.h"
+ #include "absl/status/status.h"
+ #include "absl/strings/str_cat.h"
++#include "absl/strings/string_view.h"
+ #include "mpact/sim/generic/instruction.h"
++#include "mpact/sim/generic/operand_interface.h"
+ #include "mpact/sim/generic/register.h"
+ #include "riscv/riscv_register.h"
+ #include "riscv/riscv_state.h"
+ #include "riscv/riscv_vector_state.h"
++#include "riscv/riscv_xstatus.h"
+ 
+ namespace mpact {
+ namespace sim {
+@@ -32,6 +37,348 @@ namespace riscv {
+ 
+ using generic::GetInstructionSource;
+ 
++namespace {
++
++int ExtractVRegNumber(absl::string_view name) {
++  if (name.size() < 2 || name[0] != 'v') return -1;
++  int val = 0;
++  for (size_t i = 1; i < name.size(); ++i) {
++    char c = name[i];
++    if (c < '0' || c > '9') break;
++    val = val * 10 + (c - '0');
++  }
++  return (val >= 0 && val < 32) ? val : -1;
++}
++
++int GetLoadDestRegNumber(const Instruction* inst) {
++  if (inst == nullptr || inst->child() == nullptr ||
++      inst->child()->DestinationsSize() < 1) {
++    return -1;
++  }
++  auto* dest_op = static_cast<RV32VectorDestinationOperand*>(
++      inst->child()->Destination(0));
++  if (dest_op == nullptr || dest_op->size() < 1) return -1;
++  std::any reg_any = dest_op->GetObject(0);
++  if (auto* reg_ptr = std::any_cast<generic::RegisterBase*>(&reg_any);
++      reg_ptr != nullptr && *reg_ptr != nullptr) {
++    int reg_num = ExtractVRegNumber((*reg_ptr)->name());
++    if (reg_num >= 0) return reg_num;
++  }
++  return ExtractVRegNumber(dest_op->AsString());
++}
++
++int GetVectorSourceRegNumber(const Instruction* inst, int source_index) {
++  if (inst == nullptr || inst->SourcesSize() <= source_index) return -1;
++  auto* src_op =
++      static_cast<RV32VectorSourceOperand*>(inst->Source(source_index));
++  if (src_op == nullptr || src_op->size() < 1) return -1;
++  auto* reg = src_op->GetRegister(0);
++  if (reg != nullptr) {
++    int reg_num = ExtractVRegNumber(reg->name());
++    if (reg_num >= 0) return reg_num;
++  }
++  return ExtractVRegNumber(src_op->AsString());
++}
++
++bool IsMaskedOp(const generic::SourceOperandInterface* mask_op) {
++  if (mask_op == nullptr) return false;
++  std::string name = mask_op->AsString();
++  return !name.empty() && name != "__vector_true__";
++}
++
++bool CheckVectorEnabled(RiscVState* state) {
++  if (state == nullptr) return false;
++  if (state->mstatus() != nullptr &&
++      state->mstatus()->vs() == RiscVMStatus::kStatusOff) {
++    return false;
++  }
++  return true;
++}
++
++bool CheckVectorReady(RiscVState* state, RiscVVectorState* rv_vector) {
++  if (!CheckVectorEnabled(state) || rv_vector == nullptr) return false;
++  return !rv_vector->is_vill();
++}
++
++bool ComputeEmul8(RiscVVectorState* rv_vector, int width_bytes, int* emul8_out,
++                  int* reg_mul_out) {
++  if (width_bytes != 1 && width_bytes != 2 && width_bytes != 4 &&
++      width_bytes != 8) {
++    return false;
++  }
++  if (width_bytes * 8 > rv_vector->max_elen()) return false;
++  int sew = rv_vector->selected_element_width();
++  int lmul8 = rv_vector->vector_length_multiplier();
++  if ((sew != 1 && sew != 2 && sew != 4 && sew != 8) || lmul8 <= 0) {
++    return false;
++  }
++  if ((width_bytes * lmul8) % sew != 0) return false;
++  int emul8 = (width_bytes * lmul8) / sew;
++  // Per RVV 1.0 Section 3.4.2, the minimum supported fractional EMUL is
++  // SEW_min / ELEN = 1 / (max_elen / 8), so emul8 * max_elen >= 64, and the
++  // maximum supported EMUL is 8 (emul8 <= 64).
++  if (emul8 < 1 || emul8 > 64 || emul8 * rv_vector->max_elen() < 64) {
++    return false;
++  }
++  *emul8_out = emul8;
++  *reg_mul_out = std::max(1, emul8 / 8);
++  return true;
++}
++
++bool IsAlignedGroupInBounds(int reg, int reg_mul, int num_fields) {
++  if (reg < 0 || reg >= 32) return false;
++  if (reg_mul < 1 || reg_mul > 8) return false;
++  if (num_fields < 1 || num_fields > 8) return false;
++  if ((reg % reg_mul) != 0) return false;
++  if (reg + num_fields * reg_mul > 32) return false;
++  return true;
++}
++
++bool ValidateIndexedLoadOverlap(int vd_reg, int data_reg_mul, int vs2_reg,
++                                int index_reg_mul, int index_emul8,
++                                int sew_bytes, int index_width_bytes,
++                                int num_fields) {
++  int vd_end = vd_reg + num_fields * data_reg_mul;
++  int vs2_end = vs2_reg + index_reg_mul;
++  bool overlaps = (vd_reg < vs2_end) && (vs2_reg < vd_end);
++  if (!overlaps) return true;
++  // Per RVV 1.0 Section 7.8.3, destination vector register groups cannot
++  // overlap the source index vector register group for segment indexed loads.
++  if (num_fields > 1) return false;
++  // Per RVV 1.0 Section 7.3 & Section 5.2:
++  // - Narrowing (EEW_data < EEW_index): overlap is legal only when vd is
++  //   aligned to index_reg_mul (lowest-numbered part of vs2 group).
++  if (index_width_bytes > sew_bytes) {
++    return (vd_reg % index_reg_mul) == 0;
++  }
++  // - Widening (EEW_data > EEW_index): overlap is legal only when EMUL_index >= 1
++  //   (index_emul8 >= 8) and vs2 is the highest-numbered part of the vd
++  //   register group.
++  if (index_width_bytes < sew_bytes) {
++    return (index_emul8 >= 8) &&
++           (vs2_reg == (vd_reg + data_reg_mul - index_reg_mul));
++  }
++  return true;
++}
++
++}  // namespace
++
++bool ValidateVlStrided(int element_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int emul8 = 0, reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, element_width, &emul8, &reg_mul)) return false;
++  int vd_reg = GetLoadDestRegNumber(inst);
++  if (!IsAlignedGroupInBounds(vd_reg, reg_mul, /*num_fields=*/1)) return false;
++  if (IsMaskedOp(inst->Source(2)) && vd_reg == 0) return false;
++  return true;
++}
++
++bool ValidateVlm(const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int vd_reg = GetLoadDestRegNumber(inst);
++  return IsAlignedGroupInBounds(vd_reg, /*reg_mul=*/1, /*num_fields=*/1);
++}
++
++bool ValidateVlIndexed(int index_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int sew = rv_vector->selected_element_width();
++  int data_emul8 = 0, data_reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, sew, &data_emul8, &data_reg_mul)) return false;
++  int index_emul8 = 0, index_reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, index_width, &index_emul8, &index_reg_mul)) {
++    return false;
++  }
++  int vd_reg = GetLoadDestRegNumber(inst);
++  int vs2_reg = GetVectorSourceRegNumber(inst, 1);
++  if (!IsAlignedGroupInBounds(vd_reg, data_reg_mul, /*num_fields=*/1)) {
++    return false;
++  }
++  if (!IsAlignedGroupInBounds(vs2_reg, index_reg_mul, /*num_fields=*/1)) {
++    return false;
++  }
++  if (IsMaskedOp(inst->Source(2)) && vd_reg == 0) return false;
++  return ValidateIndexedLoadOverlap(vd_reg, data_reg_mul, vs2_reg,
++                                    index_reg_mul, index_emul8, sew,
++                                    index_width, /*num_fields=*/1);
++}
++
++bool ValidateVlRegister(int num_regs, int element_width_bytes,
++                        const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorEnabled(state) || rv_vector == nullptr) return false;
++  if (num_regs != 1 && num_regs != 2 && num_regs != 4 && num_regs != 8) {
++    return false;
++  }
++  if (element_width_bytes != 1 && element_width_bytes != 2 &&
++      element_width_bytes != 4 && element_width_bytes != 8) {
++    return false;
++  }
++  if (element_width_bytes * 8 > rv_vector->max_elen()) return false;
++  int vd_reg = GetLoadDestRegNumber(inst);
++  return IsAlignedGroupInBounds(vd_reg, num_regs, /*num_fields=*/1);
++}
++
++bool ValidateVlSegment(int element_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int num_fields = GetInstructionSource<int32_t>(inst, 2) + 1;
++  int emul8 = 0, reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, element_width, &emul8, &reg_mul)) return false;
++  if (num_fields < 1 || num_fields > 8 || emul8 * num_fields > 64) return false;
++  int vd_reg = GetLoadDestRegNumber(inst);
++  if (!IsAlignedGroupInBounds(vd_reg, reg_mul, num_fields)) return false;
++  if (IsMaskedOp(inst->Source(1)) && vd_reg == 0) return false;
++  return true;
++}
++
++bool ValidateVlSegmentStrided(int element_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int num_fields = GetInstructionSource<int32_t>(inst, 3) + 1;
++  int emul8 = 0, reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, element_width, &emul8, &reg_mul)) return false;
++  if (num_fields < 1 || num_fields > 8 || emul8 * num_fields > 64) return false;
++  int vd_reg = GetLoadDestRegNumber(inst);
++  if (!IsAlignedGroupInBounds(vd_reg, reg_mul, num_fields)) return false;
++  if (IsMaskedOp(inst->Source(2)) && vd_reg == 0) return false;
++  return true;
++}
++
++bool ValidateVlSegmentIndexed(int index_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int num_fields = GetInstructionSource<int32_t>(inst, 3) + 1;
++  int sew = rv_vector->selected_element_width();
++  int data_emul8 = 0, data_reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, sew, &data_emul8, &data_reg_mul)) return false;
++  if (num_fields < 1 || num_fields > 8 || data_emul8 * num_fields > 64) {
++    return false;
++  }
++  int index_emul8 = 0, index_reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, index_width, &index_emul8, &index_reg_mul)) {
++    return false;
++  }
++  int vd_reg = GetLoadDestRegNumber(inst);
++  int vs2_reg = GetVectorSourceRegNumber(inst, 1);
++  if (!IsAlignedGroupInBounds(vd_reg, data_reg_mul, num_fields)) return false;
++  if (!IsAlignedGroupInBounds(vs2_reg, index_reg_mul, /*num_fields=*/1)) {
++    return false;
++  }
++  if (IsMaskedOp(inst->Source(2)) && vd_reg == 0) return false;
++  return ValidateIndexedLoadOverlap(vd_reg, data_reg_mul, vs2_reg,
++                                    index_reg_mul, index_emul8, sew,
++                                    index_width, num_fields);
++}
++
++bool ValidateVsStrided(int element_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int emul8 = 0, reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, element_width, &emul8, &reg_mul)) return false;
++  int vs3_reg = GetVectorSourceRegNumber(inst, 0);
++  return IsAlignedGroupInBounds(vs3_reg, reg_mul, /*num_fields=*/1);
++}
++
++bool ValidateVsm(const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int vs3_reg = GetVectorSourceRegNumber(inst, 0);
++  return IsAlignedGroupInBounds(vs3_reg, /*reg_mul=*/1, /*num_fields=*/1);
++}
++
++bool ValidateVsIndexed(int index_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int sew = rv_vector->selected_element_width();
++  int data_emul8 = 0, data_reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, sew, &data_emul8, &data_reg_mul)) return false;
++  int index_emul8 = 0, index_reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, index_width, &index_emul8, &index_reg_mul)) {
++    return false;
++  }
++  int vs3_reg = GetVectorSourceRegNumber(inst, 0);
++  int vs2_reg = GetVectorSourceRegNumber(inst, 2);
++  if (!IsAlignedGroupInBounds(vs3_reg, data_reg_mul, /*num_fields=*/1)) {
++    return false;
++  }
++  if (!IsAlignedGroupInBounds(vs2_reg, index_reg_mul, /*num_fields=*/1)) {
++    return false;
++  }
++  return true;
++}
++
++bool ValidateVsRegister(int num_regs, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorEnabled(state) || rv_vector == nullptr) return false;
++  if (num_regs != 1 && num_regs != 2 && num_regs != 4 && num_regs != 8) {
++    return false;
++  }
++  int vs3_reg = GetVectorSourceRegNumber(inst, 0);
++  return IsAlignedGroupInBounds(vs3_reg, num_regs, /*num_fields=*/1);
++}
++
++bool ValidateVsSegment(int element_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int num_fields = GetInstructionSource<int32_t>(inst, 3) + 1;
++  int emul8 = 0, reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, element_width, &emul8, &reg_mul)) return false;
++  if (num_fields < 1 || num_fields > 8 || emul8 * num_fields > 64) return false;
++  int vs3_reg = GetVectorSourceRegNumber(inst, 0);
++  return IsAlignedGroupInBounds(vs3_reg, reg_mul, num_fields);
++}
++
++bool ValidateVsSegmentStrided(int element_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int num_fields = GetInstructionSource<int32_t>(inst, 4) + 1;
++  int emul8 = 0, reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, element_width, &emul8, &reg_mul)) return false;
++  if (num_fields < 1 || num_fields > 8 || emul8 * num_fields > 64) return false;
++  int vs3_reg = GetVectorSourceRegNumber(inst, 0);
++  return IsAlignedGroupInBounds(vs3_reg, reg_mul, num_fields);
++}
++
++bool ValidateVsSegmentIndexed(int index_width, const Instruction* inst) {
++  auto* state = static_cast<RiscVState*>(inst->state());
++  auto* rv_vector = state->rv_vector();
++  if (!CheckVectorReady(state, rv_vector)) return false;
++  int num_fields = GetInstructionSource<int32_t>(inst, 4) + 1;
++  int sew = rv_vector->selected_element_width();
++  int data_emul8 = 0, data_reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, sew, &data_emul8, &data_reg_mul)) return false;
++  if (num_fields < 1 || num_fields > 8 || data_emul8 * num_fields > 64) {
++    return false;
++  }
++  int index_emul8 = 0, index_reg_mul = 0;
++  if (!ComputeEmul8(rv_vector, index_width, &index_emul8, &index_reg_mul)) {
++    return false;
++  }
++  int vs3_reg = GetVectorSourceRegNumber(inst, 0);
++  int vs2_reg = GetVectorSourceRegNumber(inst, 2);
++  if (!IsAlignedGroupInBounds(vs3_reg, data_reg_mul, num_fields)) return false;
++  if (!IsAlignedGroupInBounds(vs2_reg, index_reg_mul, /*num_fields=*/1)) {
++    return false;
++  }
++  return true;
++}
++
+ // Helper function used by the load child instructions (non segment loads) that
+ // writes the loaded data into the registers.
+ template <typename T>
+@@ -103,11 +450,21 @@ absl::Status WriteBackSegmentLoadData(int vector_register_byte_length,
+ 
+   int element_size = sizeof(T);
+   int num_segments = masks.size() / num_fields;
++  // Compute the number of segments to be written.
++  if (vector_length - start_segment != num_segments) {
++    return absl::InternalError(
++        absl::StrCat("The number of mask elements (", num_segments,
++                     ") differs from the number of elements to write (",
++                     vector_length - start_segment, ")"));
++  }
++  if (num_segments <= 0) {
++    return absl::OkStatus();
++  }
+   // Number of registers written for each field.
+-  int max_elements_per_vector =
+-      std::min(vector_register_byte_length / element_size, num_segments);
++  int elements_per_reg = vector_register_byte_length / element_size;
++  int max_elements_per_vector = std::min(elements_per_reg, num_segments);
+   int num_regs =
+-      std::max(1, num_segments * element_size / vector_register_byte_length);
++      std::max(1, (num_segments + elements_per_reg - 1) / elements_per_reg);
+   // Compute emul, since this determines how many vector registers have been
+   // allocated for each field.
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
+@@ -122,13 +479,6 @@ absl::Status WriteBackSegmentLoadData(int vector_register_byte_length,
+   if (dest_op->size() < total_regs) {
+     return absl::InternalError("Not enough registers in destination operand");
+   }
+-  // Compute the number of segments to be written.
+-  if (vector_length - start_segment != num_segments) {
+-    return absl::InternalError(
+-        absl::StrCat("The number of mask elements (", num_segments,
+-                     ") differs from the number of elements to write (",
+-                     vector_length - start_segment, ")"));
+-  }
+   int load_data_index = 0;
+   // Data is organized by field. So write back in that order.
+   for (int field = 0; field < num_fields; field++) {
+@@ -224,6 +574,10 @@ void Vsetvl(bool rd_zero, bool rs1_zero, const Instruction* inst) {
+ // Destination(0): vector destination register.
+ void VlStrided(int element_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVlStrided(element_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int start = rv_vector->vstart();
+   uint64_t base = GetInstructionSource<uint64_t>(inst, 0);
+   int64_t stride = GetInstructionSource<int64_t>(inst, 1);
+@@ -232,6 +586,7 @@ void VlStrided(int element_width, const Instruction* inst) {
+   if ((emul > 64) || (emul == 0)) {
+     // TODO: signal vector error.
+     LOG(WARNING) << "EMUL (" << emul << ") out of range";
++    rv_vector->set_vector_exception();
+     return;
+   }
+ 
+@@ -286,6 +641,10 @@ void VlStrided(int element_width, const Instruction* inst) {
+ // Destination(0): vector destination register (for the child instruction).
+ void Vlm(const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVlm(inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   // Compute base address.
+   int start = rv_vector->vstart();
+   uint64_t base = GetInstructionSource<uint64_t>(inst, 0);
+@@ -343,6 +702,10 @@ void Vlm(const Instruction* inst) {
+ // Destination(0): vector destination register (for the child instruction).
+ void VlIndexed(int index_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVlIndexed(index_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int start = rv_vector->vstart();
+   int element_width = rv_vector->selected_element_width();
+   int lmul = rv_vector->vector_length_multiplier();
+@@ -440,6 +803,10 @@ void VlIndexed(int index_width, const Instruction* inst) {
+ void VlRegister(int num_regs, int element_width_bytes,
+                 const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVlRegister(num_regs, element_width_bytes, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   // Get base address.
+   uint64_t base = GetInstructionSource<uint64_t>(inst, 0);
+   int start = rv_vector->vstart();
+@@ -496,6 +863,10 @@ void VlRegister(int num_regs, int element_width_bytes,
+ // Destination(0): vector destination register (for the child instruction).
+ void VlSegment(int element_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVlSegment(element_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int start = rv_vector->vstart();
+   uint64_t base = GetInstructionSource<uint64_t>(inst, 0);
+   auto src_mask_op = static_cast<RV32VectorSourceOperand*>(inst->Source(1));
+@@ -554,6 +925,10 @@ void VlSegment(int element_width, const Instruction* inst) {
+ // Destination(0): vector destination register (for the child instruction).
+ void VlSegmentStrided(int element_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVlSegmentStrided(element_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int start = rv_vector->vstart();
+   uint64_t base = GetInstructionSource<uint64_t>(inst, 0);
+   int64_t segment_stride = GetInstructionSource<int64_t>(inst, 1);
+@@ -613,6 +988,10 @@ void VlSegmentStrided(int element_width, const Instruction* inst) {
+ // Destination(0): vector destination register (for the child instruction).
+ void VlSegmentIndexed(int index_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVlSegmentIndexed(index_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int start = rv_vector->vstart();
+   uint64_t base = GetInstructionSource<uint64_t>(inst, 0);
+   auto* index_op = static_cast<RV32VectorSourceOperand*>(inst->Source(1));
+@@ -651,6 +1030,9 @@ void VlSegmentIndexed(int index_width, const Instruction* inst) {
+   auto addresses = address_db->Get<uint64_t>();
+   auto masks = mask_db->Get<bool>();
+ 
++  auto* rv32_state = static_cast<RiscVState*>(inst->state());
++  bool is_rv32 = (rv32_state->xlen() == RiscVXlen::RV32);
++
+   for (int i = start; i < num_segments; i++) {
+     // The mask value is per segment.
+     int mask_index = i >> 3;
+@@ -680,13 +1062,13 @@ void VlSegmentIndexed(int index_width, const Instruction* inst) {
+     }
+     for (int field = 0; field < num_fields; field++) {
+       masks[field * num_segments + i] = mask_value;
++      uint64_t addr = base + offset + field * element_width;
+       addresses[field * num_segments + i] =
+-          base + offset + field * element_width;
++          is_rv32 ? static_cast<uint32_t>(addr) : addr;
+     }
+   }
+   auto* context = new VectorLoadContext(data_db, mask_db, element_width, start,
+                                         num_segments);
+-  auto* rv32_state = static_cast<RiscVState*>(inst->state());
+   data_db->set_latency(0);
+   rv32_state->LoadMemory(inst, address_db, mask_db, element_width, data_db,
+                          inst->child(), context);
+@@ -801,6 +1183,10 @@ void StoreVectorStrided(int vector_length, int vstart, int emul,
+ // Source(3): vector mask register, vector constant {1..} if not masked.
+ void VsStrided(int element_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVsStrided(element_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int emul = element_width * rv_vector->vector_length_multiplier() /
+              rv_vector->selected_element_width();
+   // Validate that emul has a legal value.
+@@ -836,6 +1222,10 @@ void VsStrided(int element_width, const Instruction* inst) {
+ // Source(1): base address
+ void Vsm(const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVsm(inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   // Compute base address.
+   int start = rv_vector->vstart();
+   uint64_t base = GetInstructionSource<uint64_t>(inst, 1);
+@@ -888,6 +1278,10 @@ void Vsm(const Instruction* inst) {
+ // Source(3): mask.
+ void VsIndexed(int index_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVsIndexed(index_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   // Compute base address.
+   int start = rv_vector->vstart();
+   int num_elements = rv_vector->vector_length();
+@@ -991,6 +1385,10 @@ void VsIndexed(int index_width, const Instruction* inst) {
+ 
+ void VsRegister(int num_regs, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVsRegister(num_regs, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int start = rv_vector->vstart();
+   uint64_t base = GetInstructionSource<uint64_t>(inst, 1);
+   int num_elements =
+@@ -1026,6 +1424,10 @@ void VsRegister(int num_regs, const Instruction* inst) {
+ // in memory in a sequential manner.
+ void VsSegment(int element_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVsSegment(element_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int start = rv_vector->vstart();
+   uint64_t base_address = GetInstructionSource<uint64_t>(inst, 1);
+   auto src_mask_op = static_cast<RV32VectorSourceOperand*>(inst->Source(2));
+@@ -1061,8 +1463,9 @@ void VsSegment(int element_width, const Instruction* inst) {
+   auto data8 = data_db->Get<uint64_t>();
+ 
+   auto* data_op = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
+-  int max_regs =
+-      reg_mul * (num_fields - 1) + num_segments / num_elements_per_reg;
++  int num_regs = std::max(
++      1, (num_segments + num_elements_per_reg - 1) / num_elements_per_reg);
++  int max_regs = reg_mul * (num_fields - 1) + num_regs;
+   if (max_regs > data_op->size()) {
+     LOG(ERROR) << absl::StrCat(
+         "Reserved encoding error - register group too small (", data_op->size(),
+@@ -1128,6 +1531,10 @@ void VsSegment(int element_width, const Instruction* inst) {
+ // locations separated by the segment stride.
+ void VsSegmentStrided(int element_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVsSegmentStrided(element_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int start = rv_vector->vstart();
+   uint64_t base_address = GetInstructionSource<uint64_t>(inst, 1);
+   int64_t segment_stride = GetInstructionSource<int64_t>(inst, 2);
+@@ -1164,8 +1571,9 @@ void VsSegmentStrided(int element_width, const Instruction* inst) {
+   auto data8 = data_db->Get<uint64_t>();
+ 
+   auto* data_op = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
+-  int max_regs =
+-      reg_mul * (num_fields - 1) + num_segments / num_elements_per_reg;
++  int num_regs = std::max(
++      1, (num_segments + num_elements_per_reg - 1) / num_elements_per_reg);
++  int max_regs = reg_mul * (num_fields - 1) + num_regs;
+   if (max_regs > data_op->size()) {
+     LOG(ERROR) << absl::StrCat(
+         "Reserved encoding error - register group too small (", data_op->size(),
+@@ -1235,6 +1643,10 @@ void VsSegmentStrided(int element_width, const Instruction* inst) {
+ // segment (from the index vector source operand) to the base address.
+ void VsSegmentIndexed(int index_width, const Instruction* inst) {
+   auto* rv_vector = static_cast<RiscVState*>(inst->state())->rv_vector();
++  if (!ValidateVsSegmentIndexed(index_width, inst)) {
++    rv_vector->set_vector_exception();
++    return;
++  }
+   int start = rv_vector->vstart();
+   uint64_t base_address = GetInstructionSource<uint64_t>(inst, 1);
+   auto src_mask_op = static_cast<RV32VectorSourceOperand*>(inst->Source(3));
+@@ -1279,8 +1691,9 @@ void VsSegmentIndexed(int index_width, const Instruction* inst) {
+   auto data8 = data_db->Get<uint64_t>();
+ 
+   auto* data_op = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
+-  int max_regs =
+-      reg_mul * (num_fields - 1) + num_segments / num_elements_per_reg;
++  int num_regs = std::max(
++      1, (num_segments + num_elements_per_reg - 1) / num_elements_per_reg);
++  int max_regs = reg_mul * (num_fields - 1) + num_regs;
+   if (max_regs > data_op->size()) {
+     LOG(ERROR) << absl::StrCat(
+         "Reserved encoding error - register group too small (", data_op->size(),
+@@ -1291,6 +1704,8 @@ void VsSegmentIndexed(int index_width, const Instruction* inst) {
+     rv_vector->set_vector_exception();
+     return;
+   }
++  auto* rv32_state = static_cast<RiscVState*>(inst->state());
++  bool is_rv32 = (rv32_state->xlen() == RiscVXlen::RV32);
+   int count = 0;
+   for (int segment = start; segment < num_segments; segment++) {
+     // Masks are applied on a segment basis.
+@@ -1300,19 +1715,19 @@ void VsSegmentIndexed(int index_width, const Instruction* inst) {
+     // If the segments span multiple registers, compute the register offset
+     // from the current segment number (upper bits).
+     int reg_offset = segment / num_elements_per_reg;
+-    int64_t index_value;
++    uint64_t index_value;
+     switch (index_width) {
+       case 1:
+-        index_value = GetInstructionSource<int8_t>(inst, 2, segment);
++        index_value = GetInstructionSource<uint8_t>(inst, 2, segment);
+         break;
+       case 2:
+-        index_value = GetInstructionSource<int16_t>(inst, 2, segment);
++        index_value = GetInstructionSource<uint16_t>(inst, 2, segment);
+         break;
+       case 4:
+-        index_value = GetInstructionSource<int32_t>(inst, 2, segment);
++        index_value = GetInstructionSource<uint32_t>(inst, 2, segment);
+         break;
+       case 8:
+-        index_value = GetInstructionSource<int64_t>(inst, 2, segment);
++        index_value = GetInstructionSource<uint64_t>(inst, 2, segment);
+         break;
+       default:
+         LOG(ERROR) << "Invalid index width: " << index_width << ".";
+@@ -1324,7 +1739,8 @@ void VsSegmentIndexed(int index_width, const Instruction* inst) {
+       // Compute register offset number within register group.
+       int reg_no = field * reg_mul + reg_offset;
+       // Compute element address and set mask value.
+-      addresses[count] = field_address;
++      addresses[count] =
++          is_rv32 ? static_cast<uint32_t>(field_address) : field_address;
+       field_address += element_width;
+       masks[count] = mask_value;
+       if (!mask_value) {
+@@ -1354,7 +1770,6 @@ void VsSegmentIndexed(int index_width, const Instruction* inst) {
+       count++;
+     }
+   }
+-  auto* rv32_state = static_cast<RiscVState*>(inst->state());
+   rv32_state->StoreMemory(inst, address_db, mask_db, element_width, data_db);
+   // Release the dbs.
+   address_db->DecRef();
+diff --git a/riscv/riscv_vector_memory_instructions.h b/riscv/riscv_vector_memory_instructions.h
+index 0479693..79d36fa 100644
+--- a/riscv/riscv_vector_memory_instructions.h
++++ b/riscv/riscv_vector_memory_instructions.h
+@@ -33,6 +33,24 @@ using Instruction = ::mpact::sim::generic::Instruction;
+ // configuration value. The destination operand is a scalar.
+ void Vsetvl(bool rd_zero, bool rs1_zero, const Instruction* inst);
+ 
++// Validation helpers for vector memory instructions per the RISC-V Vector
++// Extension Specification v1.0 (Section 3.3, Section 5.2, and Section 7).
++bool ValidateVlStrided(int element_width, const Instruction* inst);
++bool ValidateVlm(const Instruction* inst);
++bool ValidateVlIndexed(int index_width, const Instruction* inst);
++bool ValidateVlRegister(int num_regs, int element_width_bytes,
++                        const Instruction* inst);
++bool ValidateVlSegment(int element_width, const Instruction* inst);
++bool ValidateVlSegmentStrided(int element_width, const Instruction* inst);
++bool ValidateVlSegmentIndexed(int index_width, const Instruction* inst);
++bool ValidateVsStrided(int element_width, const Instruction* inst);
++bool ValidateVsm(const Instruction* inst);
++bool ValidateVsIndexed(int index_width, const Instruction* inst);
++bool ValidateVsRegister(int num_regs, const Instruction* inst);
++bool ValidateVsSegment(int element_width, const Instruction* inst);
++bool ValidateVsSegmentStrided(int element_width, const Instruction* inst);
++bool ValidateVsSegmentIndexed(int index_width, const Instruction* inst);
++
+ // Vector load semantic functions.
+ // Load with constant stride, the parameter specifies the width of the vector
+ // elements. This instruction takes 3 source and 1 destination operands. Source
+diff --git a/riscv/test/riscv32gv_bin_decoder_test.cc b/riscv/test/riscv32gv_bin_decoder_test.cc
+index 15d4dff..07443bb 100644
+--- a/riscv/test/riscv32gv_bin_decoder_test.cc
++++ b/riscv/test/riscv32gv_bin_decoder_test.cc
+@@ -521,6 +521,14 @@ static uint32_t SetNf(uint32_t iword, uint32_t nf) {
+   return (iword | ((nf & 0x7) << 29));
+ }
+ 
++static uint32_t SetVm(uint32_t iword, uint32_t vm) {
++  return (iword & ~(1u << 25)) | ((vm & 0x1) << 25);
++}
++
++static uint32_t SetVs2(uint32_t iword, uint32_t vs2) {
++  return (iword & ~(0x1fu << 20)) | ((vs2 & 0x1f) << 20);
++}
++
+ // This test is only used to make sure all functions and variables are used,
+ // instead of deleting them and then having to put them back later as more
+ // encodings are added.
+@@ -547,17 +555,21 @@ TEST(RiscV32GVBinDecoderTest, VectorConfig) {
+ }
+ 
+ TEST(RiscV32GVBinDecoderTest, VectorLoads) {
+-  EXPECT_EQ(DecodeRiscV32GV(kVle8), OpcodeEnum::kVle8);
+-  EXPECT_EQ(DecodeRiscV32GV(kVle16), OpcodeEnum::kVle16);
+-  EXPECT_EQ(DecodeRiscV32GV(kVle32), OpcodeEnum::kVle32);
+-  EXPECT_EQ(DecodeRiscV32GV(kVle64), OpcodeEnum::kVle64);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVle8, 1)), OpcodeEnum::kVle8);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVle16, 1)), OpcodeEnum::kVle16);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVle32, 1)), OpcodeEnum::kVle32);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVle64, 1)), OpcodeEnum::kVle64);
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVle8, 1)), OpcodeEnum::kVle8Vm1);
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVle16, 1)), OpcodeEnum::kVle16Vm1);
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVle32, 1)), OpcodeEnum::kVle32Vm1);
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVle64, 1)), OpcodeEnum::kVle64Vm1);
+ 
+-  EXPECT_EQ(DecodeRiscV32GV(kVlm), OpcodeEnum::kVlm);
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVlm, 1)), OpcodeEnum::kVlm);
+ 
+-  EXPECT_EQ(DecodeRiscV32GV(kVle8ff), OpcodeEnum::kVle8ff);
+-  EXPECT_EQ(DecodeRiscV32GV(kVle16ff), OpcodeEnum::kVle16ff);
+-  EXPECT_EQ(DecodeRiscV32GV(kVle32ff), OpcodeEnum::kVle32ff);
+-  EXPECT_EQ(DecodeRiscV32GV(kVle64ff), OpcodeEnum::kVle64ff);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVle8ff, 1)), OpcodeEnum::kVle8ff);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVle16ff, 1)), OpcodeEnum::kVle16ff);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVle32ff, 1)), OpcodeEnum::kVle32ff);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVle64ff, 1)), OpcodeEnum::kVle64ff);
+ 
+   EXPECT_EQ(DecodeRiscV32GV(kVl1re8), OpcodeEnum::kVl1re8);
+   EXPECT_EQ(DecodeRiscV32GV(kVl1re16), OpcodeEnum::kVl1re16);
+@@ -576,26 +588,34 @@ TEST(RiscV32GVBinDecoderTest, VectorLoads) {
+   EXPECT_EQ(DecodeRiscV32GV(kVl8re32), OpcodeEnum::kVl8re32);
+   EXPECT_EQ(DecodeRiscV32GV(kVl8re64), OpcodeEnum::kVl8re64);
+ 
+-  EXPECT_EQ(DecodeRiscV32GV(kVlse8), OpcodeEnum::kVlse8);
+-  EXPECT_EQ(DecodeRiscV32GV(kVlse16), OpcodeEnum::kVlse16);
+-  EXPECT_EQ(DecodeRiscV32GV(kVlse32), OpcodeEnum::kVlse32);
+-  EXPECT_EQ(DecodeRiscV32GV(kVlse64), OpcodeEnum::kVlse64);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVlse8, 1)), OpcodeEnum::kVlse8);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVlse16, 1)), OpcodeEnum::kVlse16);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVlse32, 1)), OpcodeEnum::kVlse32);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVlse64, 1)), OpcodeEnum::kVlse64);
+ 
+-  EXPECT_EQ(DecodeRiscV32GV(kVluxei8), OpcodeEnum::kVluxei8);
+-  EXPECT_EQ(DecodeRiscV32GV(kVluxei16), OpcodeEnum::kVluxei16);
+-  EXPECT_EQ(DecodeRiscV32GV(kVluxei32), OpcodeEnum::kVluxei32);
+-  EXPECT_EQ(DecodeRiscV32GV(kVluxei64), OpcodeEnum::kVluxei64);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVluxei8, 1)), OpcodeEnum::kVluxei8);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVluxei16, 1)), OpcodeEnum::kVluxei16);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVluxei32, 1)), OpcodeEnum::kVluxei32);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVluxei64, 1)), OpcodeEnum::kVluxei64);
+ 
+-  EXPECT_EQ(DecodeRiscV32GV(kVloxei8), OpcodeEnum::kVloxei8);
+-  EXPECT_EQ(DecodeRiscV32GV(kVloxei16), OpcodeEnum::kVloxei16);
+-  EXPECT_EQ(DecodeRiscV32GV(kVloxei32), OpcodeEnum::kVloxei32);
+-  EXPECT_EQ(DecodeRiscV32GV(kVloxei64), OpcodeEnum::kVloxei64);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVloxei8, 1)), OpcodeEnum::kVloxei8);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVloxei16, 1)), OpcodeEnum::kVloxei16);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVloxei32, 1)), OpcodeEnum::kVloxei32);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVloxei64, 1)), OpcodeEnum::kVloxei64);
+ 
+   for (int nf = 1; nf < 8; nf++) {
+     EXPECT_EQ(DecodeRiscV32GV(SetNf(kVlsegNFe8, nf)), OpcodeEnum::kVlsege8);
+     EXPECT_EQ(DecodeRiscV32GV(SetNf(kVlsegNFe16, nf)), OpcodeEnum::kVlsege16);
+     EXPECT_EQ(DecodeRiscV32GV(SetNf(kVlsegNFe32, nf)), OpcodeEnum::kVlsege32);
+     EXPECT_EQ(DecodeRiscV32GV(SetNf(kVlsegNFe64, nf)), OpcodeEnum::kVlsege64);
++    EXPECT_EQ(DecodeRiscV32GV(SetNf(SetVm(kVle8ff, 1), nf)),
++              OpcodeEnum::kVlsege8ff);
++    EXPECT_EQ(DecodeRiscV32GV(SetNf(SetVm(kVle16ff, 1), nf)),
++              OpcodeEnum::kVlsege16ff);
++    EXPECT_EQ(DecodeRiscV32GV(SetNf(SetVm(kVle32ff, 1), nf)),
++              OpcodeEnum::kVlsege32ff);
++    EXPECT_EQ(DecodeRiscV32GV(SetNf(SetVm(kVle64ff, 1), nf)),
++              OpcodeEnum::kVlsege64ff);
+   }
+ 
+   for (int nf = 1; nf < 8; nf++) {
+@@ -634,30 +654,30 @@ TEST(RiscV32GVBinDecoderTest, VectorStores) {
+   EXPECT_EQ(DecodeRiscV32GV(kVse16), OpcodeEnum::kVse16);
+   EXPECT_EQ(DecodeRiscV32GV(kVse32), OpcodeEnum::kVse32);
+   EXPECT_EQ(DecodeRiscV32GV(kVse64), OpcodeEnum::kVse64);
+-  // Store mask.
+-  EXPECT_EQ(DecodeRiscV32GV(kVsm), OpcodeEnum::kVsm);
+-  // Unit stride, fail first.
+-  EXPECT_EQ(DecodeRiscV32GV(kVse8ff), OpcodeEnum::kVse8ff);
+-  EXPECT_EQ(DecodeRiscV32GV(kVse16ff), OpcodeEnum::kVse16ff);
+-  EXPECT_EQ(DecodeRiscV32GV(kVse32ff), OpcodeEnum::kVse32ff);
+-  EXPECT_EQ(DecodeRiscV32GV(kVse64ff), OpcodeEnum::kVse64ff);
+-  // Store whole register.
++  // Store mask (requires vm == 1).
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVsm, 1)), OpcodeEnum::kVsm);
++  // Fault-only-first stores do not exist in RVV 1.0.
++  EXPECT_EQ(DecodeRiscV32GV(kVse8ff), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVse16ff), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVse32ff), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVse64ff), OpcodeEnum::kNone);
++  // Store whole register (width != e8 is reserved in RVV 1.0).
+   EXPECT_EQ(DecodeRiscV32GV(kVs1re8), OpcodeEnum::kVs1re8);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs1re16), OpcodeEnum::kVs1re16);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs1re32), OpcodeEnum::kVs1re32);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs1re64), OpcodeEnum::kVs1re64);
++  EXPECT_EQ(DecodeRiscV32GV(kVs1re16), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVs1re32), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVs1re64), OpcodeEnum::kNone);
+   EXPECT_EQ(DecodeRiscV32GV(kVs2re8), OpcodeEnum::kVs2re8);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs2re16), OpcodeEnum::kVs2re16);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs2re32), OpcodeEnum::kVs2re32);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs2re64), OpcodeEnum::kVs2re64);
++  EXPECT_EQ(DecodeRiscV32GV(kVs2re16), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVs2re32), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVs2re64), OpcodeEnum::kNone);
+   EXPECT_EQ(DecodeRiscV32GV(kVs4re8), OpcodeEnum::kVs4re8);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs4re16), OpcodeEnum::kVs4re16);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs4re32), OpcodeEnum::kVs4re32);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs4re64), OpcodeEnum::kVs4re64);
++  EXPECT_EQ(DecodeRiscV32GV(kVs4re16), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVs4re32), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVs4re64), OpcodeEnum::kNone);
+   EXPECT_EQ(DecodeRiscV32GV(kVs8re8), OpcodeEnum::kVs8re8);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs8re16), OpcodeEnum::kVs8re16);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs8re32), OpcodeEnum::kVs8re32);
+-  EXPECT_EQ(DecodeRiscV32GV(kVs8re64), OpcodeEnum::kVs8re64);
++  EXPECT_EQ(DecodeRiscV32GV(kVs8re16), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVs8re32), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVs8re64), OpcodeEnum::kNone);
+   // Store strided.
+   EXPECT_EQ(DecodeRiscV32GV(kVsse8), OpcodeEnum::kVsse8);
+   EXPECT_EQ(DecodeRiscV32GV(kVsse16), OpcodeEnum::kVsse16);
+@@ -675,6 +695,49 @@ TEST(RiscV32GVBinDecoderTest, VectorStores) {
+   EXPECT_EQ(DecodeRiscV32GV(kVsoxei64), OpcodeEnum::kVsoxei64);
+ }
+ 
++TEST(RiscV32GVBinDecoderTest, VectorLoadStoreLegality) {
++  // Masked loads with vd == v0 are reserved.
++  EXPECT_EQ(DecodeRiscV32GV(kVle8), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVle16), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVle32), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVle64), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVle8ff), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVlse8), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVluxei8), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVloxei8), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetNf(SetVm(kVlsegNFe8, 0), 1)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetNf(SetVm(kVle8ff, 0), 1)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetNf(SetVm(kVlssegNFe8, 0), 1)),
++            OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetNf(SetVm(kVluxsegNFei8, 0), 1)),
++            OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetNf(SetVm(kVloxsegNFei8, 0), 1)),
++            OpcodeEnum::kNone);
++
++  // vlm.v and vsm.v with vm == 0 are reserved.
++  EXPECT_EQ(DecodeRiscV32GV(kVlm), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVsm), OpcodeEnum::kNone);
++
++  // Whole-register load/store with unaligned register groups or mew == 1.
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVl2re8, 1)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVl4re8, 2)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVl8re8, 4)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVs2re8, 1)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVs4re8, 2)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(kVs8re8, 4)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVl1re8 | (1u << 28)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(kVs1re8 | (1u << 28)), OpcodeEnum::kNone);
++
++  // Whole-register moves require vm == 1 and aligned vd/vs2.
++  EXPECT_EQ(DecodeRiscV32GV(kVmv1rVi), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(SetVm(kVmv2rVi, 1), 1)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetVs2(SetVm(kVmv2rVi, 1), 1)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(SetVm(kVmv4rVi, 1), 2)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetVs2(SetVm(kVmv4rVi, 1), 2)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetRd(SetVm(kVmv8rVi, 1), 4)), OpcodeEnum::kNone);
++  EXPECT_EQ(DecodeRiscV32GV(SetVs2(SetVm(kVmv8rVi, 1), 4)), OpcodeEnum::kNone);
++}
++
+ TEST(RiscV32GVBinDecoderTest, OPIVV_OPIVX_OPIVI) {
+   EXPECT_EQ(DecodeRiscV32GV(kVaddVv), OpcodeEnum::kVaddVv);
+   EXPECT_EQ(DecodeRiscV32GV(kVaddVx), OpcodeEnum::kVaddVx);
+@@ -759,10 +822,10 @@ TEST(RiscV32GVBinDecoderTest, OPIVV_OPIVX_OPIVI) {
+   EXPECT_EQ(DecodeRiscV32GV(kVsllVi), OpcodeEnum::kVsllVi);
+   EXPECT_EQ(DecodeRiscV32GV(kVsmulVv), OpcodeEnum::kVsmulVv);
+   EXPECT_EQ(DecodeRiscV32GV(kVsmulVx), OpcodeEnum::kVsmulVx);
+-  EXPECT_EQ(DecodeRiscV32GV(kVmv1rVi), OpcodeEnum::kVmv1rVi);
+-  EXPECT_EQ(DecodeRiscV32GV(kVmv2rVi), OpcodeEnum::kVmv2rVi);
+-  EXPECT_EQ(DecodeRiscV32GV(kVmv4rVi), OpcodeEnum::kVmv4rVi);
+-  EXPECT_EQ(DecodeRiscV32GV(kVmv8rVi), OpcodeEnum::kVmv8rVi);
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVmv1rVi, 1)), OpcodeEnum::kVmv1rVi);
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVmv2rVi, 1)), OpcodeEnum::kVmv2rVi);
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVmv4rVi, 1)), OpcodeEnum::kVmv4rVi);
++  EXPECT_EQ(DecodeRiscV32GV(SetVm(kVmv8rVi, 1)), OpcodeEnum::kVmv8rVi);
+   EXPECT_EQ(DecodeRiscV32GV(kVsrlVv), OpcodeEnum::kVsrlVv);
+   EXPECT_EQ(DecodeRiscV32GV(kVsrlVx), OpcodeEnum::kVsrlVx);
+   EXPECT_EQ(DecodeRiscV32GV(kVsrlVi), OpcodeEnum::kVsrlVi);
+diff --git a/riscv/test/riscv_vector_memory_instructions_test.cc b/riscv/test/riscv_vector_memory_instructions_test.cc
+index a583fda..0ed2e1c 100644
+--- a/riscv/test/riscv_vector_memory_instructions_test.cc
++++ b/riscv/test/riscv_vector_memory_instructions_test.cc
+@@ -139,7 +139,7 @@ class RV32VInstructionsTest : public testing::Test {
+     for (int i = 1; i < 32; i++) {
+       xreg_[i] = state_->GetRegister<RV32Register>(absl::StrCat("x", i)).first;
+     }
+-    for (int i = 1; i < 32; i++) {
++    for (int i = 0; i < 32; i++) {
+       vreg_[i] =
+           state_->GetRegister<RVVectorRegister>(absl::StrCat("v", i)).first;
+     }
+@@ -333,6 +333,12 @@ class RV32VInstructionsTest : public testing::Test {
+       int lmul8 = kLmul8Values[lmul_index];
+       int num_values = kVectorLengthInBytes * lmul8 / (sizeof(T) * 8);
+       ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++      if (rv_vector_->is_vill()) {
++        instruction_->Execute(nullptr);
++        EXPECT_TRUE(rv_vector_->vector_exception());
++        rv_vector_->clear_vector_exception();
++        continue;
++      }
+       // Execute instruction.
+       instruction_->Execute(nullptr);
+ 
+@@ -390,6 +396,12 @@ class RV32VInstructionsTest : public testing::Test {
+         int lmul8 = kLmul8Values[lmul_index];
+         int num_values = kVectorLengthInBytes * lmul8 / (sizeof(T) * 8);
+         ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++        if (rv_vector_->is_vill()) {
++          instruction_->Execute(nullptr);
++          EXPECT_TRUE(rv_vector_->vector_exception());
++          rv_vector_->clear_vector_exception();
++          continue;
++        }
+         // Execute instruction.
+         instruction_->Execute(nullptr);
+ 
+@@ -452,6 +464,12 @@ class RV32VInstructionsTest : public testing::Test {
+       uint32_t vtype = (kSewSettingsByByteSize[sizeof(ValueType)] << 3) |
+                        kLmulSettings[lmul_index];
+       ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++      if (rv_vector_->is_vill()) {
++        instruction_->Execute(nullptr);
++        EXPECT_TRUE(rv_vector_->vector_exception());
++        rv_vector_->clear_vector_exception();
++        continue;
++      }
+       int lmul8 = kLmul8Values[lmul_index];
+       int index_emul8 = lmul8 * sizeof(IndexType) / sizeof(ValueType);
+ 
+@@ -534,6 +552,12 @@ class RV32VInstructionsTest : public testing::Test {
+         int lmul8 = kLmul8Values[lmul_index];
+         int num_values = kVectorLengthInBytes * lmul8 / (sizeof(T) * 8);
+         ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++        if (rv_vector_->is_vill()) {
++          instruction_->Execute(nullptr);
++          EXPECT_TRUE(rv_vector_->vector_exception());
++          rv_vector_->clear_vector_exception();
++          continue;
++        }
+         // Execute instruction.
+         instruction_->Execute(nullptr);
+ 
+@@ -625,6 +649,12 @@ class RV32VInstructionsTest : public testing::Test {
+         int lmul8 = kLmul8Values[lmul_index];
+         int num_values = kVectorLengthInBytes * lmul8 / (sizeof(T) * 8);
+         ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++        if (rv_vector_->is_vill()) {
++          instruction_->Execute(nullptr);
++          EXPECT_TRUE(rv_vector_->vector_exception());
++          rv_vector_->clear_vector_exception();
++          continue;
++        }
+ 
+         // Try different strides.
+         for (int s = 0; s < 5; s++) {
+@@ -725,6 +755,12 @@ class RV32VInstructionsTest : public testing::Test {
+                          kLmulSettings[lmul_index];
+         int lmul8 = kLmul8Values[lmul_index];
+         ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++        if (rv_vector_->is_vill()) {
++          instruction_->Execute(nullptr);
++          EXPECT_TRUE(rv_vector_->vector_exception());
++          rv_vector_->clear_vector_exception();
++          continue;
++        }
+         int index_emul8 = lmul8 * sizeof(IndexType) / sizeof(ValueType);
+         int num_values = kVectorLengthInBytes * lmul8 / (sizeof(ValueType) * 8);
+ 
+@@ -831,6 +867,12 @@ class RV32VInstructionsTest : public testing::Test {
+         int lmul8 = kLmul8Values[lmul_index];
+         int num_values = kVectorLengthInBytes * lmul8 / (sizeof(T) * 8);
+         ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++        if (rv_vector_->is_vill()) {
++          instruction_->Execute(nullptr);
++          EXPECT_TRUE(rv_vector_->vector_exception());
++          rv_vector_->clear_vector_exception();
++          continue;
++        }
+         // Execute instruction.
+         instruction_->Execute(nullptr);
+ 
+@@ -894,6 +936,12 @@ class RV32VInstructionsTest : public testing::Test {
+       uint32_t vtype = (kSewSettingsByByteSize[sizeof(ValueType)] << 3) |
+                        kLmulSettings[lmul_index];
+       ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++      if (rv_vector_->is_vill()) {
++        instruction_->Execute(nullptr);
++        EXPECT_TRUE(rv_vector_->vector_exception());
++        rv_vector_->clear_vector_exception();
++        continue;
++      }
+       int lmul8 = kLmul8Values[lmul_index];
+       int index_emul8 = lmul8 * sizeof(IndexType) / sizeof(ValueType);
+       int num_values = kVectorLengthInBytes * lmul8 / (sizeof(ValueType) * 8);
+@@ -996,6 +1044,12 @@ class RV32VInstructionsTest : public testing::Test {
+                          kLmulSettings[lmul_index];
+         int lmul8 = kLmul8Values[lmul_index];
+         ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++        if (rv_vector_->is_vill()) {
++          instruction_->Execute(nullptr);
++          EXPECT_TRUE(rv_vector_->vector_exception());
++          rv_vector_->clear_vector_exception();
++          continue;
++        }
+         // Clear the memory.
+         uint64_t base = kDataStoreAddress;
+         std::memset(data_db->raw_ptr(), 0, data_db->template size<uint8_t>());
+@@ -1108,6 +1162,12 @@ class RV32VInstructionsTest : public testing::Test {
+                          kLmulSettings[lmul_index];
+         int lmul8 = kLmul8Values[lmul_index];
+         ConfigureVectorUnit(vtype, /*vlen*/ 1024);
++        if (rv_vector_->is_vill()) {
++          instruction_->Execute(nullptr);
++          EXPECT_TRUE(rv_vector_->vector_exception());
++          rv_vector_->clear_vector_exception();
++          continue;
++        }
+ 
+         // Try different strides.
+         for (int s : strides) {
+@@ -1183,11 +1243,11 @@ class RV32VInstructionsTest : public testing::Test {
+     data_db->DecRef();
+   }
+ 
+-  // Helper function to test vector load segment strided instructions.
++  // Helper function to test vector store segment indexed instructions.
+   template <typename T, typename I>
+   void VectorStoreIndexedSegmentHelper() {
+-    // Ensure that the IndexType is signed.
+-    using IndexType = typename std::make_signed<I>::type;
++    // Per RVV 1.0 Section 7.3, index values are unsigned (zero-extended).
++    using IndexType = typename std::make_unsigned<I>::type;
+     // Set up instructions.
+     // Store data register.
+     AppendVectorRegisterOperands({kVs1}, {});
+@@ -1244,6 +1304,12 @@ class RV32VInstructionsTest : public testing::Test {
+           max_segments = std::min(256 / num_fields, max_segments);
+         }
+         ConfigureVectorUnit(vtype, max_segments);
++        if (rv_vector_->is_vill()) {
++          instruction_->Execute(nullptr);
++          EXPECT_TRUE(rv_vector_->vector_exception());
++          rv_vector_->clear_vector_exception();
++          continue;
++        }
+ 
+         int emul8 =
+             sizeof(IndexType) * lmul8 / rv_vector_->selected_element_width();
+@@ -1300,7 +1366,7 @@ class RV32VInstructionsTest : public testing::Test {
+             int index_reg = segment / index_values_per_reg;
+             int index_no = segment % index_values_per_reg;
+             // Load the data.
+-            int64_t index =
++            uint64_t index =
+                 vreg_[kVs2 + index_reg]->data_buffer()->Get<IndexType>(
+                     index_no);
+             uint64_t address = base + field * sizeof(T) + index;
+@@ -1375,6 +1441,16 @@ TEST_F(RV32VInstructionsTest, VsetvlNN) {
+         // Execute instruction.
+         instruction_->Execute(nullptr);
+ 
++        if (rv_vector_->is_vill()) {
++          EXPECT_EQ(xreg_[kRd]->data_buffer()->Get<uint32_t>(0), 0);
++          EXPECT_EQ(rv_vector_->vector_length(), 0);
++          EXPECT_FALSE(rv_vector_->vector_mask_agnostic());
++          EXPECT_FALSE(rv_vector_->vector_tail_agnostic());
++          EXPECT_EQ(rv_vector_->vector_length_multiplier(), 0);
++          EXPECT_EQ(rv_vector_->selected_element_width(), 0);
++          continue;
++        }
++
+         // Check results.
+         uint32_t expected_vlen =
+             std::min<uint32_t>(vlen, kVectorLengthInBytes * kLmul8Values[lmul] /
+@@ -1413,6 +1489,16 @@ TEST_F(RV32VInstructionsTest, VsetvlZN) {
+         // Execute instruction.
+         instruction_->Execute(nullptr);
+ 
++        if (rv_vector_->is_vill()) {
++          EXPECT_EQ(xreg_[kRd]->data_buffer()->Get<uint32_t>(0), 0);
++          EXPECT_EQ(rv_vector_->vector_length(), 0);
++          EXPECT_FALSE(rv_vector_->vector_mask_agnostic());
++          EXPECT_FALSE(rv_vector_->vector_tail_agnostic());
++          EXPECT_EQ(rv_vector_->vector_length_multiplier(), 0);
++          EXPECT_EQ(rv_vector_->selected_element_width(), 0);
++          continue;
++        }
++
+         // Check results.
+         uint32_t expected_vlen =
+             std::min<uint32_t>(vlen, kVectorLengthInBytes * kLmul8Values[lmul] /
+@@ -1449,6 +1535,16 @@ TEST_F(RV32VInstructionsTest, VsetvlNZ) {
+         // Execute instruction.
+         instruction_->Execute(nullptr);
+ 
++        if (rv_vector_->is_vill()) {
++          EXPECT_EQ(xreg_[kRd]->data_buffer()->Get<uint32_t>(0), 0);
++          EXPECT_EQ(rv_vector_->vector_length(), 0);
++          EXPECT_FALSE(rv_vector_->vector_mask_agnostic());
++          EXPECT_FALSE(rv_vector_->vector_tail_agnostic());
++          EXPECT_EQ(rv_vector_->vector_length_multiplier(), 0);
++          EXPECT_EQ(rv_vector_->selected_element_width(), 0);
++          continue;
++        }
++
+         // Check results.
+         // In this case, vlen is vlen max.
+         uint32_t expected_vlen =
+@@ -2046,7 +2142,7 @@ TEST_F(RV32VInstructionsTest, VsRegister) {
+   SetRegisterValues<uint32_t>({{kRs1Name, kDataStoreAddress}});
+ 
+   auto data_db = state_->db_factory()->Allocate(8 * kVectorLengthInBytes);
+-  for (int num_regs = 1; num_regs <= 8; num_regs++) {
++  for (int num_regs = 1; num_regs <= 8; num_regs *= 2) {
+     SetSemanticFunction(absl::bind_front(&VsRegister, num_regs));
+ 
+     // Execute instruction.
+@@ -2570,4 +2666,99 @@ TEST_F(RV32VInstructionsTest, VsRegister_VstartGteNumElements) {
+   load_db->DecRef();
+ }
+ 
++TEST_F(RV32VInstructionsTest, ValidateVlStrided_RejectsUnalignedVd) {
++  // LMUL=2 (kLmulSettings[4]), SEW=32 -> EMUL=2, requires even vd.
++  uint32_t vtype =
++      (kSewSettingsByByteSize[sizeof(uint32_t)] << 3) | kLmulSettings[4];
++  ConfigureVectorUnit(vtype, /*avl=*/4);
++
++  AppendRegisterOperands({kRs1Name, kRs2Name}, {});
++  AppendVectorRegisterOperands({kVmask}, {});
++  SetSemanticFunction(absl::bind_front(&VlStrided, sizeof(uint32_t)));
++  SetChildInstruction();
++  SetChildSemanticFunction(&VlChild);
++  // Odd destination register v3 is illegal for EMUL=2.
++  AppendVectorRegisterOperands(child_instruction_, {}, {3});
++
++  instruction_->Execute(nullptr);
++  EXPECT_TRUE(rv_vector_->vector_exception());
++}
++
++TEST_F(RV32VInstructionsTest, ValidateVlIndexed_OverlapRules) {
++  // SEW=32, LMUL=2 (data_reg_mul=2), index_width=16 (index_reg_mul=1).
++  // Widening load: legal only when vs2 == vd + data_reg_mul - index_reg_mul = vd + 1.
++  uint32_t vtype =
++      (kSewSettingsByByteSize[sizeof(uint32_t)] << 3) | kLmulSettings[4];
++  ConfigureVectorUnit(vtype, /*avl=*/4);
++
++  // Case 1: vd=v8, vs2=v8 (lowest part of vd group) -> Illegal for widening.
++  AppendRegisterOperands({kRs1Name}, {});
++  AppendVectorRegisterOperands({8, kVmask}, {});
++  SetSemanticFunction(absl::bind_front(&VlIndexed, sizeof(uint16_t)));
++  SetChildInstruction();
++  SetChildSemanticFunction(&VlChild);
++  AppendVectorRegisterOperands(child_instruction_, {}, {8});
++
++  instruction_->Execute(nullptr);
++  EXPECT_TRUE(rv_vector_->vector_exception());
++}
++
++TEST_F(RV32VInstructionsTest,
++       ValidateVlIndexed_RejectsWideningFractionalIndexOverlap) {
++  // SEW=16, LMUL=1/2 (kLmulSettings[2]) -> data_emul=1/2, index_width=8 ->
++  // index_emul=1/4 (< 1). Any overlap between vd and vs2 is illegal.
++  uint32_t vtype =
++      (kSewSettingsByByteSize[sizeof(uint16_t)] << 3) | kLmulSettings[2];
++  ConfigureVectorUnit(vtype, /*avl=*/4);
++
++  AppendRegisterOperands({kRs1Name}, {});
++  AppendVectorRegisterOperands({4, kVmask}, {});
++  SetSemanticFunction(absl::bind_front(&VlIndexed, sizeof(uint8_t)));
++  SetChildInstruction();
++  SetChildSemanticFunction(&VlChild);
++  AppendVectorRegisterOperands(child_instruction_, {}, {4});
++
++  instruction_->Execute(nullptr);
++  EXPECT_TRUE(rv_vector_->vector_exception());
++}
++
++TEST_F(RV32VInstructionsTest, VlSegment_PartialSecondRegister_WritesBack) {
++  // SEW=32, LMUL=2 -> 16 elements per 512-bit register.
++  // Use avl=20 so register 0 has 16 segments and register 1 has 4 segments.
++  uint32_t vtype =
++      (kSewSettingsByByteSize[sizeof(uint32_t)] << 3) | kLmulSettings[4];
++  ConfigureVectorUnit(vtype, /*avl=*/20);
++  ASSERT_EQ(rv_vector_->vector_length(), 20);
++
++  AppendRegisterOperands({kRs1Name}, {});
++  AppendVectorRegisterOperands({kVmask}, {});
++  AppendRegisterOperands({kRs3Name}, {});
++  uint8_t all_ones_mask[kVectorLengthInBytes];
++  std::memset(all_ones_mask, 0xff, sizeof(all_ones_mask));
++  SetVectorRegisterValues<uint8_t>(
++      {{kVmaskName, Span<const uint8_t>(all_ones_mask)}});
++  SetSemanticFunction(absl::bind_front(&VlSegment, sizeof(uint32_t)));
++  SetChildInstruction();
++  SetChildSemanticFunction(absl::bind_front(&VlSegmentChild, sizeof(uint32_t)));
++  AppendRegisterOperands(child_instruction_, {kRs3Name}, {});
++  AppendVectorRegisterOperands(child_instruction_, {}, {kVd});
++
++  SetRegisterValues<uint32_t>({{kRs1Name, kDataLoadAddress}});
++  SetRegisterValues<int32_t>({{kRs3Name, 1}});  // nf=1 -> 2 fields
++
++  vreg_[kVd + 1]->data_buffer()->Set<uint32_t>(0, 0);
++  vreg_[kVd + 3]->data_buffer()->Set<uint32_t>(0, 0);
++
++  instruction_->Execute(nullptr);
++  EXPECT_FALSE(rv_vector_->vector_exception());
++
++  // Segment 16 (first element of second register in each field's group) must be written.
++  uint32_t expected_f0_s16 =
++      ComputeValue<uint32_t>(4096 + 16 * 2 * sizeof(uint32_t));
++  uint32_t expected_f1_s16 =
++      ComputeValue<uint32_t>(4096 + 16 * 2 * sizeof(uint32_t) + sizeof(uint32_t));
++  EXPECT_EQ(vreg_[kVd + 1]->data_buffer()->Get<uint32_t>(0), expected_f0_s16);
++  EXPECT_EQ(vreg_[kVd + 3]->data_buffer()->Get<uint32_t>(0), expected_f1_s16);
++}
++
+ }  // namespace

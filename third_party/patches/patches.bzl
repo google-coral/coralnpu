@@ -17,6 +17,7 @@
 MPACT_RISCV_PATCH_FILES = [
     "mpact_riscv_mepc_mask.patch",
     "mpact_riscv_mstatus_vs.patch",
+    "mpact_riscv_rvv_lsu_legality.patch",
     "mpact_riscv_vector_csr.patch",
     "mpact_riscv_vstart_trap.patch",
     "mpact_riscv_widening_reduction.patch",

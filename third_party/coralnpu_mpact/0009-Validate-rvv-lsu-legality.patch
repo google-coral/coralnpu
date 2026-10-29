@@ -1,0 +1,974 @@
+diff --git a/sim/coralnpu_v2.bin_fmt b/sim/coralnpu_v2.bin_fmt
+index 5452723..832f76c 100755
+--- a/sim/coralnpu_v2.bin_fmt
++++ b/sim/coralnpu_v2.bin_fmt
+@@ -225,6 +225,10 @@ format VMem[32] : Inst32Format {
+     unsigned sumop[5] = rs2;
+     unsigned vs2[5] = rs2;
+     unsigned vs3[5] = vd;
++    unsigned vm_vd[6] = vm, vd;
++    unsigned vd_lsb1[1] = vd[0];
++    unsigned vd_lsb2[2] = vd[1..0];
++    unsigned vd_lsb3[3] = vd[2..0];
+ };
+ 
+ format VArith[32] : Inst32Format {
+@@ -244,6 +248,12 @@ format VArith[32] : Inst32Format {
+     unsigned rd[5] = vd;
+     unsigned rs1[5] = vs1;
+     unsigned vd_mask[5] = vd;
++    unsigned vd_lsb1[1] = vd[0];
++    unsigned vd_lsb2[2] = vd[1..0];
++    unsigned vd_lsb3[3] = vd[2..0];
++    unsigned vs2_lsb1[1] = vs2[0];
++    unsigned vs2_lsb2[2] = vs2[1..0];
++    unsigned vs2_lsb3[3] = vs2[2..0];
+ };
+ 
+ format VConfig[32] : Inst32Format {
+@@ -430,64 +440,64 @@ instruction group RiscVZve32xInst32[32] : Inst32Format {
+   vsetvl_zz   : VConfig : rd == 0, rs1 == 0, func7 == 0b100'0000, func3 == 0b111, opcode == 0b101'0111;
+ 
+   // Unit stride, masked (vm=0).
+-  vle8      : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
+-  vle16     : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
+-  vle32     : VMem : vm == 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
++  vle8      : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
++  vle16     : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
++  vle32     : VMem : vm == 0, vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
+   // Unit stride, unmasked (vm=1).
+   vle8_vm1  : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
+   vle16_vm1 : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
+   vle32_vm1 : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
+   // Mask load.
+-  vlm   : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b01011, width == 0b000, opcode == 0b000'0111;
++  vlm   : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, lumop == 0b01011, width == 0b000, opcode == 0b000'0111;
+   // Unit stride, fault first.
+-  vle8ff  : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
+-  vle16ff : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
+-  vle32ff : VMem : nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
++  vle8ff  : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
++  vle16ff : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
++  vle32ff : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
+   // Unit stride, whole register load.
+-  vl1re8  : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl1re16 : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl1re32 : VMem : nf == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl2re8  : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl2re16 : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl2re32 : VMem : nf == 1, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl4re8  : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl4re16 : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl4re32 : VMem : nf == 3, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
+-  vl8re8  : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
+-  vl8re16 : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
+-  vl8re32 : VMem : nf == 7, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
++  vl1re8  : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, opcode == 0b000'0111;
++  vl1re16 : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, opcode == 0b000'0111;
++  vl1re32 : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, opcode == 0b000'0111;
++  vl2re8  : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl2re16 : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl2re32 : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, vd_lsb1 == 0, opcode == 0b000'0111;
++  vl4re8  : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl4re16 : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl4re32 : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, vd_lsb2 == 0, opcode == 0b000'0111;
++  vl8re8  : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b000, vd_lsb3 == 0, opcode == 0b000'0111;
++  vl8re16 : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b101, vd_lsb3 == 0, opcode == 0b000'0111;
++  vl8re32 : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, lumop == 0b01000, width == 0b110, vd_lsb3 == 0, opcode == 0b000'0111;
+   // Vector load strided.
+-  vlse8  : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
+-  vlse16 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
+-  vlse32 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
++  vlse8  : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
++  vlse16 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
++  vlse32 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
+   // Vector load indexed, unordered.
+-  vluxei8 : VMem : nf == 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
+-  vluxei16: VMem : nf == 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
+-  vluxei32: VMem : nf == 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
++  vluxei8 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
++  vluxei16: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
++  vluxei32: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
+   // Vector load indexed, ordered.
+-  vloxei8 : VMem : nf == 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
+-  vloxei16: VMem : nf == 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
+-  vloxei32: VMem : nf == 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
++  vloxei8 : VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
++  vloxei16: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
++  vloxei32: VMem : vm_vd != 0, nf == 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
+   // Vector segment load, unit stride.
+-  vlsege8:   VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
+-  vlsege16:  VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
+-  vlsege32:  VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
++  vlsege8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b000, opcode == 0b000'0111;
++  vlsege16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b101, opcode == 0b000'0111;
++  vlsege32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b00000, width == 0b110, opcode == 0b000'0111;
+   // Vector segment load, unit stride, fault first.
+-  vlsege8ff:   VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
+-  vlsege16ff:  VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
+-  vlsege32ff:  VMem : nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
++  vlsege8ff:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b000, opcode == 0b000'0111;
++  vlsege16ff:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b101, opcode == 0b000'0111;
++  vlsege32ff:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b00, lumop == 0b10000, width == 0b110, opcode == 0b000'0111;
+   // Vector segment load, strided.
+-  vlssege8:   VMem : nf != 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
+-  vlssege16:  VMem : nf != 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
+-  vlssege32:  VMem : nf != 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
++  vlssege8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b000'0111;
++  vlssege16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b000'0111;
++  vlssege32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b10, width == 0b110, opcode == 0b000'0111;
+   // Vector segment load, indexed, unordered.
+-  vluxsegei8:   VMem : nf != 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
+-  vluxsegei16:  VMem : nf != 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
+-  vluxsegei32:  VMem : nf != 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
++  vluxsegei8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b000, opcode == 0b000'0111;
++  vluxsegei16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b101, opcode == 0b000'0111;
++  vluxsegei32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b01, width == 0b110, opcode == 0b000'0111;
+   // Vector segement load, indexed, ordered.
+-  vloxsegei8:   VMem : nf != 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
+-  vloxsegei16:  VMem : nf != 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
+-  vloxsegei32:  VMem : nf != 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
++  vloxsegei8:   VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b000, opcode == 0b000'0111;
++  vloxsegei16:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b101, opcode == 0b000'0111;
++  vloxsegei32:  VMem : vm_vd != 0, nf != 0, mew == 0, mop == 0b11, width == 0b110, opcode == 0b000'0111;
+ 
+ 
+   // VECTOR STORES
+@@ -497,20 +507,12 @@ instruction group RiscVZve32xInst32[32] : Inst32Format {
+   vse16 : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b00000, width == 0b101, opcode == 0b010'0111;
+   vse32 : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b00000, width == 0b110, opcode == 0b010'0111;
+   // Mask store.
+-  vsm   : VMem : nf == 0, mew == 0, mop == 0b00, sumop == 0b01011, width == 0b000, opcode == 0b010'0111;
++  vsm   : VMem : vm == 1, nf == 0, mew == 0, mop == 0b00, sumop == 0b01011, width == 0b000, opcode == 0b010'0111;
+   // Unit stride, whole register store.
+-  vs1re8  : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs1re16 : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs1re32 : VMem : nf == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs2re8  : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs2re16 : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs2re32 : VMem : nf == 1, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs4re8  : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs4re16 : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs4re32 : VMem : nf == 3, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
+-  vs8re8  : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
+-  vs8re16 : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b101, opcode == 0b010'0111;
+-  vs8re32 : VMem : nf == 7, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b110, opcode == 0b010'0111;
++  vs1re8  : VMem : nf == 0, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, opcode == 0b010'0111;
++  vs2re8  : VMem : nf == 1, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, vd_lsb1 == 0, opcode == 0b010'0111;
++  vs4re8  : VMem : nf == 3, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, vd_lsb2 == 0, opcode == 0b010'0111;
++  vs8re8  : VMem : nf == 7, mew == 0, mop == 0b00, vm == 1, sumop == 0b01000, width == 0b000, vd_lsb3 == 0, opcode == 0b010'0111;
+   // Store strided.
+   vsse8  : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b000, opcode == 0b010'0111;
+   vsse16 : VMem : nf == 0, mew == 0, mop == 0b10, width == 0b101, opcode == 0b010'0111;
+@@ -628,10 +630,10 @@ instruction group RiscVZve32xInst32[32] : Inst32Format {
+   vsll_vi   : VArith : func6 == 0b100'101, func3 == 0b011, opcode == 0b101'0111;
+   vsmul_vv  : VArith : func6 == 0b100'111, func3 == 0b000, opcode == 0b101'0111;
+   vsmul_vx  : VArith : func6 == 0b100'111, func3 == 0b100, opcode == 0b101'0111;
+-  vmv1r_vi  : VArith : func6 == 0b100'111, uimm5 == 0, func3 == 0b011, opcode == 0b101'0111;
+-  vmv2r_vi  : VArith : func6 == 0b100'111, uimm5 == 1, func3 == 0b011, opcode == 0b101'0111;
+-  vmv4r_vi  : VArith : func6 == 0b100'111, uimm5 == 3, func3 == 0b011, opcode == 0b101'0111;
+-  vmv8r_vi  : VArith : func6 == 0b100'111, uimm5 == 7, func3 == 0b011, opcode == 0b101'0111;
++  vmv1r_vi  : VArith : func6 == 0b100'111, vm == 1, uimm5 == 0, func3 == 0b011, opcode == 0b101'0111;
++  vmv2r_vi  : VArith : func6 == 0b100'111, vm == 1, uimm5 == 1, vd_lsb1 == 0, vs2_lsb1 == 0, func3 == 0b011, opcode == 0b101'0111;
++  vmv4r_vi  : VArith : func6 == 0b100'111, vm == 1, uimm5 == 3, vd_lsb2 == 0, vs2_lsb2 == 0, func3 == 0b011, opcode == 0b101'0111;
++  vmv8r_vi  : VArith : func6 == 0b100'111, vm == 1, uimm5 == 7, vd_lsb3 == 0, vs2_lsb3 == 0, func3 == 0b011, opcode == 0b101'0111;
+   vsrl_vv   : VArith : func6 == 0b101'000, func3 == 0b000, opcode == 0b101'0111;
+   vsrl_vx   : VArith : func6 == 0b101'000, func3 == 0b100, opcode == 0b101'0111;
+   vsrl_vi   : VArith : func6 == 0b101'000, func3 == 0b011, opcode == 0b101'0111;
+diff --git a/sim/coralnpu_v2.isa b/sim/coralnpu_v2.isa
+index f758012..70d4471 100755
+--- a/sim/coralnpu_v2.isa
++++ b/sim/coralnpu_v2.isa
+@@ -922,73 +922,73 @@ slot riscv_zve32x {
+                "&::mpact::sim::riscv::VlChild";
+ 
+     // Vector unit-stride segment load
+-    vlsege8{(: rs1, vmask, nf:), (: nf : vd)},
+-      disasm: "vlseg%nf\\e.v", "%vd, (%rs1), %vmask",
++    vlsege8{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\e.v", "%vd_nf, (%rs1), %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegment, /*element_width*/ 1)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 1)";
+-    vlsege16{(: rs1, vmask, nf:), (: nf : vd)},
+-      disasm: "vlseg%nf\\e.v", "%vd, (%rs1), %vmask",
++    vlsege16{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\e.v", "%vd_nf, (%rs1), %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegment, /*element_width*/ 2)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 2)";
+-    vlsege32{(: rs1, vmask, nf:), (: nf : vd)},
+-      disasm: "vlseg%nf\\e.v", "%vd, (%rs1), %vmask",
++    vlsege32{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\e.v", "%vd_nf, (%rs1), %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegment, /*element_width*/ 4)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 4)";
+ 
+     // Vector unit-stride segment load, fault first.
+-    vlsege8ff{(: rs1, vmask, nf:), (: nf : vd)},
+-      disasm: "vlseg%nf\\eff.v", "%vd, (%rs1), %vmask",
++    vlsege8ff{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\eff.v", "%vd_nf, (%rs1), %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegment, /*element_width*/ 1)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 1)";
+-    vlsege16ff{(: rs1, vmask, nf:), (: nf : vd)},
+-      disasm: "vlseg%nf\\eff.v", "%vd, (%rs1), %vmask",
++    vlsege16ff{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\eff.v", "%vd_nf, (%rs1), %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegment, /*element_width*/ 2)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 2)";
+-    vlsege32ff{(: rs1, vmask, nf:), (: nf : vd)},
+-      disasm: "vlseg%nf\\eff.v", "%vd, (%rs1), %vmask",
++    vlsege32ff{(: rs1, vmask, nf:), (: nf : vd_nf)},
++      disasm: "vlseg%nf\\eff.v", "%vd_nf, (%rs1), %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegment, /*element_width*/ 4)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 4)";
+ 
+     // Vector strided segment load.
+-    vlssege8{(: rs1, rs2, vmask, nf: ), (: nf : vd)},
+-      disasm: "vlsseg%nf\\e8.v", "%vd, (%rs1), %rs2, %vmask",
++    vlssege8{(: rs1, rs2, vmask, nf: ), (: nf : vd_nf)},
++      disasm: "vlsseg%nf\\e8.v", "%vd_nf, (%rs1), %rs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegmentStrided, /*element_width*/ 1)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 1)";
+-    vlssege16{(: rs1, rs2, vmask, nf: ), (: nf : vd)},
+-      disasm: "vlsseg%nf\\e16.v", "%vd, (%rs1), %rs2, %vmask",
++    vlssege16{(: rs1, rs2, vmask, nf: ), (: nf : vd_nf)},
++      disasm: "vlsseg%nf\\e16.v", "%vd_nf, (%rs1), %rs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegmentStrided, /*element_width*/ 2)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 2)";
+-    vlssege32{(: rs1, rs2, vmask, nf: ), (: nf : vd)},
+-      disasm: "vlsseg%nf\\e32.v", "%vd, (%rs1), %rs2, %vmask",
++    vlssege32{(: rs1, rs2, vmask, nf: ), (: nf : vd_nf)},
++      disasm: "vlsseg%nf\\e32.v", "%vd_nf, (%rs1), %rs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegmentStrided, /*element_width*/ 4)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 4)";
+ 
+     // Vector indexed segment load unordered.
+-    vluxsegei8{(: rs1, vs2, vmask, nf :), (: nf : vd)},
+-      disasm: "vluxseg%nf\\ei1.v", "%vd, (%rs1), %vs2, %vmask",
++    vluxsegei8{(: rs1, vs2, vmask, nf :), (: nf : vd_nf)},
++      disasm: "vluxseg%nf\\ei1.v", "%vd_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegmentIndexed, /*index_width*/ 1)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 1)";
+-    vluxsegei16{(: rs1, vs2, vmask, nf :), (: nf : vd)},
+-      disasm: "vluxseg%nf\\ei2.v", "%vd, (%rs1), %vs2, %vmask",
++    vluxsegei16{(: rs1, vs2, vmask, nf :), (: nf : vd_nf)},
++      disasm: "vluxseg%nf\\ei2.v", "%vd_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegmentIndexed, /*index_width*/ 2)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 2)";
+-    vluxsegei32{(: rs1, vs2, vmask, nf :), (: nf : vd)},
+-      disasm: "vluxseg%nf\\ei4.v", "%vd, (%rs1), %vs2, %vmask",
++    vluxsegei32{(: rs1, vs2, vmask, nf :), (: nf : vd_nf)},
++      disasm: "vluxseg%nf\\ei4.v", "%vd_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegmentIndexed, /*index_width*/ 4)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 4)";
+ 
+     // Vector indexed segment load ordered.
+ 
+-    vloxsegei8{(: rs1, vs2, vmask, nf :), (: nf : vd)},
+-      disasm: "vloxseg%nf\\ei1.v", "%vd, (%rs1), %vs2, %vmask",
++    vloxsegei8{(: rs1, vs2, vmask, nf :), (: nf : vd_nf)},
++      disasm: "vloxseg%nf\\ei1.v", "%vd_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegmentIndexed, /*index_width*/ 1)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 1)";
+-    vloxsegei16{(: rs1, vs2, vmask, nf :), (: nf : vd)},
+-      disasm: "vloxseg%nf\\ei2.v", "%vd, (%rs1), %vs2, %vmask",
++    vloxsegei16{(: rs1, vs2, vmask, nf :), (: nf : vd_nf)},
++      disasm: "vloxseg%nf\\ei2.v", "%vd_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegmentIndexed, /*index_width*/ 2)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 2)";
+-    vloxsegei32{(: rs1, vs2, vmask, nf :), (: nf : vd)},
+-      disasm: "vloxseg%nf\\ei4.v", "%vd, (%rs1), %vs2, %vmask",
++    vloxsegei32{(: rs1, vs2, vmask, nf :), (: nf : vd_nf)},
++      disasm: "vloxseg%nf\\ei4.v", "%vd_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VlSegmentIndexed, /*index_width*/ 4)",
+                "absl::bind_front(&::mpact::sim::riscv::VlSegmentChild, /*element_width*/ 4)";
+ 
+@@ -1014,39 +1014,15 @@ slot riscv_zve32x {
+     vs1re8{(: vs3, rs1 :)},
+       disasm: "vs1re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/ 1)";
+-    vs1re16{(: vs3, rs1 :)},
+-      disasm: "vs1re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/ 1)";
+-    vs1re32{(: vs3, rs1 :)},
+-      disasm: "vs1re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/ 1)";
+     vs2re8{(: vs3, rs1 :)},
+       disasm: "vs2re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/ 2)";
+-    vs2re16{(: vs3, rs1 :)},
+-      disasm: "vs2re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/ 2)";
+-    vs2re32{(: vs3, rs1 :)},
+-      disasm: "vs2re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/ 2)";
+     vs4re8{(: vs3, rs1 :)},
+       disasm: "vs4re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/ 4)";
+-    vs4re16{(: vs3, rs1 :)},
+-      disasm: "vs4re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/ 4)";
+-    vs4re32{(: vs3, rs1 :)},
+-      disasm: "vs4re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/ 4)";
+     vs8re8{(: vs3, rs1 :)},
+       disasm: "vs8re8.v", "%vs3, (%rs1)",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/8)";
+-    vs8re16{(: vs3, rs1 :)},
+-      disasm: "vs8re16.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/8)";
+-    vs8re32{(: vs3, rs1 :)},
+-      disasm: "vs8re32.v", "%vs3, (%rs1)",
+-      semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsRegister, /*num_regs*/8)";
+ 
+     // Vector store, strided.
+     vsse8{: vs3, rs1, rs2, vmask : },
+@@ -1082,47 +1058,47 @@ slot riscv_zve32x {
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsIndexed, /*index_width*/ 4)";
+ 
+     // Vector unit-stride segment store.
+-    vssege8{(: vs3, rs1, vmask, nf:)},
+-      disasm: "vsseg%nf\\e.v", "%vs3, (%rs1), %vmask",
++    vssege8{(: vs3_nf, rs1, vmask, nf:)},
++      disasm: "vsseg%nf\\e.v", "%vs3_nf, (%rs1), %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegment, /*element_width*/ 1)";
+-    vssege16{(: vs3, rs1, vmask, nf:)},
+-      disasm: "vsseg%nf\\e.v", "%vs3, (%rs1), %vmask",
++    vssege16{(: vs3_nf, rs1, vmask, nf:)},
++      disasm: "vsseg%nf\\e.v", "%vs3_nf, (%rs1), %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegment, /*element_width*/ 2)";
+-    vssege32{(: vs3, rs1, vmask, nf:)},
+-      disasm: "vsseg%nf\\e.v", "%vs3, (%rs1), %vmask",
++    vssege32{(: vs3_nf, rs1, vmask, nf:)},
++      disasm: "vsseg%nf\\e.v", "%vs3_nf, (%rs1), %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegment, /*element_width*/ 4)";
+ 
+     // Vector strided segment store.
+-    vsssege8{(: vs3, rs1, rs2, vmask, nf: )},
+-      disasm: "vssseg%nf\\e8.v", "%vs3, (%rs1), %rs2, %vmask",
++    vsssege8{(: vs3_nf, rs1, rs2, vmask, nf: )},
++      disasm: "vssseg%nf\\e8.v", "%vs3_nf, (%rs1), %rs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegmentStrided, /*element_width*/ 1)";
+-    vsssege16{(: vs3, rs1, rs2, vmask, nf: )},
+-      disasm: "vssseg%nf\\e16.v", "%vs3, (%rs1), %rs2, %vmask",
++    vsssege16{(: vs3_nf, rs1, rs2, vmask, nf: )},
++      disasm: "vssseg%nf\\e16.v", "%vs3_nf, (%rs1), %rs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegmentStrided, /*element_width*/ 2)";
+-    vsssege32{(: vs3, rs1, rs2, vmask, nf: )},
+-      disasm: "vssseg%nf\\e32.v", "%vs3, (%rs1), %rs2, %vmask",
++    vsssege32{(: vs3_nf, rs1, rs2, vmask, nf: )},
++      disasm: "vssseg%nf\\e32.v", "%vs3_nf, (%rs1), %rs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegmentStrided, /*element_width*/ 4)";
+ 
+     // Vector indexed segment store unordered.
+-    vsuxsegei8{(: vs3, rs1, vs2, vmask, nf :)},
+-      disasm: "vsuxseg%nf\\ei1.v", "%vs3, (%rs1), %vs2, %vmask",
++    vsuxsegei8{(: vs3_nf, rs1, vs2, vmask, nf :)},
++      disasm: "vsuxseg%nf\\ei1.v", "%vs3_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegmentIndexed, /*index_width*/ 1)";
+-    vsuxsegei16{(: vs3, rs1, vs2, vmask, nf :)},
+-      disasm: "vsuxseg%nf\\ei2.v", "%vs3, (%rs1), %vs2, %vmask",
++    vsuxsegei16{(: vs3_nf, rs1, vs2, vmask, nf :)},
++      disasm: "vsuxseg%nf\\ei2.v", "%vs3_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegmentIndexed, /*index_width*/ 2)";
+-    vsuxsegei32{(: vs3, rs1, vs2, vmask, nf :)},
+-      disasm: "vsuxseg%nf\\ei4.v", "%vs3, (%rs1), %vs2, %vmask",
++    vsuxsegei32{(: vs3_nf, rs1, vs2, vmask, nf :)},
++      disasm: "vsuxseg%nf\\ei4.v", "%vs3_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegmentIndexed, /*index_width*/ 4)";
+ 
+     // Vector indexed segment store ordered.
+-    vsoxsegei8{(: vs3, rs1, vs2, vmask, nf :)},
+-      disasm: "vsoxseg%nf\\ei1.v", "%vs3, (%rs1), %vs2, %vmask",
++    vsoxsegei8{(: vs3_nf, rs1, vs2, vmask, nf :)},
++      disasm: "vsoxseg%nf\\ei1.v", "%vs3_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegmentIndexed, /*index_width*/ 1)";
+-    vsoxsegei16{(: vs3, rs1, vs2, vmask, nf :)},
+-      disasm: "vsoxseg%nf\\ei2.v", "%vs3, (%rs1), %vs2, %vmask",
++    vsoxsegei16{(: vs3_nf, rs1, vs2, vmask, nf :)},
++      disasm: "vsoxseg%nf\\ei2.v", "%vs3_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegmentIndexed, /*index_width*/ 2)";
+-    vsoxsegei32{(: vs3, rs1, vs2, vmask, nf :)},
+-      disasm: "vsoxseg%nf\\ei4.v", "%vs3, (%rs1), %vs2, %vmask",
++    vsoxsegei32{(: vs3_nf, rs1, vs2, vmask, nf :)},
++      disasm: "vsoxseg%nf\\ei4.v", "%vs3_nf, (%rs1), %vs2, %vmask",
+       semfunc: "absl::bind_front(&::coralnpu::sim::CoralNPUV2VsSegmentIndexed, /*index_width*/ 4)";
+ 
+     // Integer OPIVV, OPIVX, OPIVI.
+diff --git a/sim/coralnpu_v2_getters.h b/sim/coralnpu_v2_getters.h
+index 5872084..4843d9c 100755
+--- a/sim/coralnpu_v2_getters.h
++++ b/sim/coralnpu_v2_getters.h
+@@ -40,7 +40,14 @@ using ::mpact::sim::generic::ImmediateOperand;
+ using ::mpact::sim::generic::IntLiteralOperand;
+ using ::mpact::sim::generic::operator*;  // NOLINT
+ using ::mpact::sim::generic::SourceOperandInterface;
++using ::mpact::sim::riscv::GetCSRSetBitsDestinationOp;
++using ::mpact::sim::riscv::GetRegisterDestinationOp;
++using ::mpact::sim::riscv::GetRegisterSourceOp;
++using ::mpact::sim::riscv::GetVectorMaskRegisterSourceOp;
++using ::mpact::sim::riscv::GetVectorRegisterDestinationOp;
++using ::mpact::sim::riscv::GetVectorRegisterDestinationOpNf;
+ using ::mpact::sim::riscv::GetVectorRegisterSourceOp;
++using ::mpact::sim::riscv::GetVectorRegisterSourceOpNf;
+ using ::mpact::sim::riscv::Insert;
+ using ::mpact::sim::riscv::kFRegisterAliases;
+ using ::mpact::sim::riscv::kXRegisterAliases;
+@@ -255,6 +262,13 @@ void AddCoralNPUV2SourceGetters(SourceOpGetterMap& getter_map,
+            return GetVectorRegisterSourceOp<RVVectorRegister>(common->state(),
+                                                               num);
+          });
++  Insert(getter_map, *SourceOpEnum::kVs3Nf,
++         [common]() -> SourceOperandInterface* {
++           int nf = Extractors::VMem::ExtractNf(common->inst_word()) + 1;
++           int num = Extractors::VMem::ExtractVs3(common->inst_word());
++           return GetVectorRegisterSourceOpNf<RVVectorRegister>(common->state(),
++                                                                num, nf);
++         });
+   Insert(getter_map, *SourceOpEnum::kZimm10,
+          [common]() -> SourceOperandInterface* {
+            int num = Extractors::VConfig::ExtractZimm10(common->inst_word());
+@@ -311,6 +325,13 @@ void AddCoralNPUV2DestGetters(DestOpGetterMap& getter_map,
+            return GetVectorRegisterDestinationOp<RVVectorRegister>(
+                common->state(), latency, num);
+          });
++  Insert(getter_map, *DestOpEnum::kVdNf,
++         [common](int latency) -> DestinationOperandInterface* {
++           int nf = Extractors::VMem::ExtractNf(common->inst_word()) + 1;
++           int num = Extractors::VMem::ExtractVd(common->inst_word());
++           return GetVectorRegisterDestinationOpNf<RVVectorRegister>(
++               common->state(), latency, num, nf);
++         });
+ }
+ 
+ }  // namespace coralnpu::sim
+diff --git a/sim/coralnpu_v2_instructions.cc b/sim/coralnpu_v2_instructions.cc
+index cc9ba1e..9fdfb8a 100755
+--- a/sim/coralnpu_v2_instructions.cc
++++ b/sim/coralnpu_v2_instructions.cc
+@@ -31,8 +31,6 @@
+ #include "mpact/sim/generic/operand_interface.h"
+ #include "mpact/sim/generic/type_helpers.h"
+ 
+-constexpr int kMaxEmul = 64;
+-
+ namespace {
+ 
+ using ::coralnpu::sim::CoralNPUV2State;
+@@ -236,6 +234,19 @@ bool ValidateIndexedVectorAccess(
+       });
+ }
+ 
++void TrapIllegalInstruction(CoralNPUV2State* state,
++                            const Instruction* /*absl_nonnull*/ instruction) {
++  uint64_t address = instruction->address();
++  auto* db = state->db_factory()->Allocate<uint32_t>(1);
++  state->LoadMemory(instruction, address, db, nullptr, nullptr);
++  uint32_t inst_word = db->Get<uint32_t>(0);
++  db->DecRef();
++  if ((inst_word & 0b11) != 0b11) inst_word &= 0xffff;
++  state->Trap(/*is_interrupt=*/false, /*trap_value=*/inst_word,
++              *ExceptionCode::kIllegalInstruction,
++              /*epc=*/address, instruction);
++}
++
+ }  // namespace
+ 
+ namespace coralnpu::sim {
+@@ -364,17 +375,13 @@ void CoralNPUV2Jalr(const Instruction* /*absl_nonnull*/ instruction) {
+ void CoralNPUV2VlStrided(int element_width,
+                          const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVlStrided(element_width, instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 0);
+   int64_t stride = GetInstructionSource<int64_t>(instruction, 1);
+-  int emul = element_width * rv_vector->vector_length_multiplier() /
+-             rv_vector->selected_element_width();
+-  if ((emul > kMaxEmul) || (emul == 0)) {
+-    state->Trap(/*is_interrupt=*/false, /*trap_value=*/0,
+-                *ExceptionCode::kIllegalInstruction,
+-                /*epc=*/instruction->address(), instruction);
+-    return;
+-  }
+ 
+   int vl = rv_vector->vector_length();
+   bool success = ValidateStridedVectorAccess(
+@@ -393,6 +400,10 @@ void CoralNPUV2VlStrided(int element_width,
+ 
+ void CoralNPUV2Vlm(const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVlm(instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 0);
+   int num_bytes = (rv_vector->vector_length() + 7) / 8;
+@@ -414,6 +425,11 @@ void CoralNPUV2Vlm(const Instruction* /*absl_nonnull*/ instruction) {
+ void CoralNPUV2VlRegister(int num_regs, int element_width_bytes,
+                           const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVlRegister(num_regs, element_width_bytes,
++                                               instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 0);
+   int num_elements =
+@@ -436,6 +452,10 @@ void CoralNPUV2VlRegister(int num_regs, int element_width_bytes,
+ void CoralNPUV2VlIndexed(int index_width,
+                          const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVlIndexed(index_width, instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 0);
+   auto* index_op =
+@@ -462,6 +482,10 @@ void CoralNPUV2VlIndexed(int index_width,
+ void CoralNPUV2VlSegment(int element_width,
+                          const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVlSegment(element_width, instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 0);
+ 
+@@ -488,6 +512,11 @@ void CoralNPUV2VlSegment(int element_width,
+ void CoralNPUV2VlSegmentStrided(int element_width,
+                                 const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVlSegmentStrided(element_width,
++                                                     instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 0);
+   int64_t segment_stride = GetInstructionSource<int64_t>(instruction, 1);
+@@ -520,6 +549,11 @@ void CoralNPUV2VlSegmentStrided(int element_width,
+ void CoralNPUV2VlSegmentIndexed(int index_width,
+                                 const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVlSegmentIndexed(index_width,
++                                                     instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 0);
+ 
+@@ -558,19 +592,14 @@ void CoralNPUV2VlSegmentIndexed(int index_width,
+ void CoralNPUV2VsStrided(int element_width,
+                          const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVsStrided(element_width, instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 1);
+   int64_t stride = GetInstructionSource<int64_t>(instruction, 2);
+ 
+-  int emul = element_width * rv_vector->vector_length_multiplier() /
+-             rv_vector->selected_element_width();
+-  if ((emul > kMaxEmul) || (emul == 0)) {
+-    state->Trap(/*is_interrupt=*/false, /*trap_value=*/0,
+-                *ExceptionCode::kIllegalInstruction,
+-                /*epc=*/instruction->address(), instruction);
+-    return;
+-  }
+-
+   int vl = rv_vector->vector_length();
+   bool success = ValidateStridedVectorAccess(
+       instruction, /*mask_source_index=*/3, vl,
+@@ -588,6 +617,10 @@ void CoralNPUV2VsStrided(int element_width,
+ 
+ void CoralNPUV2Vsm(const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVsm(instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 1);
+   int num_bytes = (rv_vector->vector_length() + 7) / 8;
+@@ -609,17 +642,21 @@ void CoralNPUV2Vsm(const Instruction* /*absl_nonnull*/ instruction) {
+ void CoralNPUV2VsRegister(int num_regs,
+                           const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVsRegister(num_regs, instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 1);
+   int num_elements =
+-      rv_vector->vector_register_byte_length() * num_regs / sizeof(uint64_t);
++      rv_vector->vector_register_byte_length() * num_regs / sizeof(uint8_t);
+ 
+   bool success = ValidateStridedVectorAccess(
+       instruction, /*mask_source_index=*/-1, num_elements,
+-      /*ignore_vstart=*/true, base, sizeof(uint64_t), sizeof(uint64_t),
++      /*ignore_vstart=*/true, base, sizeof(uint8_t), sizeof(uint8_t),
+       MemoryPermission::kWrite, [&](CoralNPUV2State* s, int i) {
+-        uint32_t address = base + i * sizeof(uint64_t);
+-        return CheckVectorAccess(s, instruction, address, sizeof(uint64_t),
++        uint32_t address = base + i * sizeof(uint8_t);
++        return CheckVectorAccess(s, instruction, address, sizeof(uint8_t),
+                                  MemoryPermission::kWrite);
+       });
+ 
+@@ -631,6 +668,10 @@ void CoralNPUV2VsRegister(int num_regs,
+ void CoralNPUV2VsIndexed(int index_width,
+                          const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVsIndexed(index_width, instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 1);
+   auto* index_op =
+@@ -657,6 +698,10 @@ void CoralNPUV2VsIndexed(int index_width,
+ void CoralNPUV2VsSegment(int element_width,
+                          const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVsSegment(element_width, instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 1);
+   int nf = GetInstructionSource<int32_t>(instruction, 3);
+@@ -681,6 +726,11 @@ void CoralNPUV2VsSegment(int element_width,
+ void CoralNPUV2VsSegmentStrided(int element_width,
+                                 const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVsSegmentStrided(element_width,
++                                                     instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 1);
+   int64_t segment_stride = GetInstructionSource<int64_t>(instruction, 2);
+@@ -710,6 +760,11 @@ void CoralNPUV2VsSegmentStrided(int element_width,
+ void CoralNPUV2VsSegmentIndexed(int index_width,
+                                 const Instruction* /*absl_nonnull*/ instruction) {
+   CoralNPUV2State* state = static_cast<CoralNPUV2State*>(instruction->state());
++  if (!::mpact::sim::riscv::ValidateVsSegmentIndexed(index_width,
++                                                     instruction)) {
++    TrapIllegalInstruction(state, instruction);
++    return;
++  }
+   RiscVVectorState* rv_vector = state->rv_vector();
+   uint64_t base = GetInstructionSource<uint64_t>(instruction, 1);
+   auto* index_op =
+@@ -720,11 +775,10 @@ void CoralNPUV2VsSegmentIndexed(int index_width,
+   int vlen_bytes = rv_vector->vector_register_byte_length();
+   int indices_per_reg = vlen_bytes / index_width;
+ 
+-  bool success = ValidateVectorAccess(
++  bool success = ValidateIndexedVectorAccess(
+       instruction, /*mask_source_index=*/3, rv_vector->vector_length(),
+-      /*ignore_vstart=*/false, [&](CoralNPUV2State* s, int i) {
+-        uint64_t index_val =
+-            GetIndexValue(index_op, i, index_width, indices_per_reg);
++      /*ignore_vstart=*/false, index_op, index_width, indices_per_reg,
++      [&](CoralNPUV2State* s, int i, uint32_t index_val) {
+         uint32_t segment_address = base + index_val;
+         for (int field = 0; field < num_fields; field++) {
+           uint32_t address = segment_address + field * element_width;
+diff --git a/sim/test/BUILD b/sim/test/BUILD
+index a0c64cf..a923991 100755
+--- a/sim/test/BUILD
++++ b/sim/test/BUILD
+@@ -351,7 +351,7 @@ cc_test(
+         "//sim:coralnpu_v2_state",
+         "@abseil-cpp//absl/functional:any_invocable",
+         "@abseil-cpp//absl/functional:bind_front",
+-        "@abseil-cpp//absl/status:status_matchers",
++        "@abseil-cpp//absl/status",
+         "@abseil-cpp//absl/strings",
+         "@abseil-cpp//absl/types:span",
+         "@com_google_googletest//:gtest_main",
+diff --git a/sim/test/coralnpu_v2_instructions_test.cc b/sim/test/coralnpu_v2_instructions_test.cc
+index 63ab4b6..f4b73b8 100755
+--- a/sim/test/coralnpu_v2_instructions_test.cc
++++ b/sim/test/coralnpu_v2_instructions_test.cc
+@@ -27,7 +27,7 @@
+ #include "googletest/include/gtest/gtest.h"
+ #include "absl/functional/any_invocable.h"
+ #include "absl/functional/bind_front.h"
+-#include "absl/status/status_matchers.h"
++#include "absl/status/status.h"
+ #include "absl/strings/str_cat.h"
+ #include "absl/types/span.h"
+ #include "riscv/riscv_f_instructions.h"
+@@ -48,9 +48,9 @@
+ 
+ /* start - new test macros */
+ #define ABSL_EXPECT_OK(expression) \
+-  EXPECT_THAT(expression, ::absl_testing::IsOk())
++  EXPECT_TRUE((expression).ok())
+ #define ABSL_ASSERT_OK(expression) \
+-  ASSERT_THAT(expression, ::absl_testing::IsOk())
++  ASSERT_TRUE((expression).ok())
+ /* end - new test macros */
+ 
+ /* start - helper test macro */
+@@ -2497,7 +2497,7 @@ TEST_F(CoralNPUV2InstructionTest, VsIndexed_InvalidAddress_Traps) {
+ 
+ TEST_F(CoralNPUV2InstructionTest, Vsm_ValidAddress_Succeeds) {
+   std::vector<uint8_t> test_data = {0x55};
+-  rv_vector_->set_vector_length(8);
++  SetupVectorState(0, /*vl=*/8);
+   SetXRegValue(1, kGoodLsuAddress);
+   SetVRegData(1, test_data);
+ 
+@@ -2509,14 +2509,14 @@ TEST_F(CoralNPUV2InstructionTest, Vsm_ValidAddress_Succeeds) {
+ }
+ 
+ TEST_F(CoralNPUV2InstructionTest, VsStrided_Emul1_Succeeds) {
+-  // SEW=32 bits (4 bytes), LMUL=1/8.
+-  // emul should be 1.
+-  SetupVectorState(0b11010101, /*vl=*/1);  // SEW=32 bits (010), LMUL=1/8 (101)
++  // SEW=8 bits (1 byte), LMUL=1/8.
++  // emul8 should be 1 (EMUL=1/8).
++  SetupVectorState(0b11000101, /*vl=*/1);  // SEW=8 bits (000), LMUL=1/8 (101)
+   SetXRegValue(1, kGoodLsuAddress);
+-  SetXRegValue(2, 4);  // stride
++  SetXRegValue(2, 1);  // stride
+ 
+   std::unique_ptr<Instruction> inst = CreateStridedVectorStoreInstruction(
+-      /*element_width=*/4, /*v_src=*/0, x_regs_[2]->CreateSourceOperand(),
++      /*element_width=*/1, /*v_src=*/0, x_regs_[2]->CreateSourceOperand(),
+       /*mask_operand=*/nullptr);
+   inst->Execute(/*context=*/nullptr);
+   EXPECT_FALSE(was_trap_handler_called_);
+@@ -2541,7 +2541,7 @@ TEST_F(CoralNPUV2InstructionTest, Vsm_AtMemoryBoundary_Succeeds) {
+   // End address is 0x18000. Last valid byte is 0x17fff.
+   // vl=8 -> num_bytes = 1.
+   const uint32_t kTestAddress = kLsuAccessStartAddress + kLsuAccessLength - 1;
+-  rv_vector_->set_vector_length(8);
++  SetupVectorState(0, /*vl=*/8);
+   SetXRegValue(1, kTestAddress);
+ 
+   std::unique_ptr<Instruction> inst = CreateVsmInstruction(/*v_src=*/1);
+@@ -2552,7 +2552,7 @@ TEST_F(CoralNPUV2InstructionTest, Vsm_AtMemoryBoundary_Succeeds) {
+ TEST_F(CoralNPUV2InstructionTest, Vsm_AddressAtStart_Succeeds) {
+   // LSU range is [0x10000, 0x18000).
+   const uint32_t kTestAddress = kLsuAccessStartAddress;
+-  rv_vector_->set_vector_length(8);
++  SetupVectorState(0, /*vl=*/8);
+   SetXRegValue(1, kTestAddress);
+ 
+   std::unique_ptr<Instruction> inst = CreateVsmInstruction(/*v_src=*/1);
+@@ -2718,7 +2718,7 @@ TEST_F(CoralNPUV2InstructionTest, Vsm_LastByteInvalid_Traps) {
+   uint32_t base = boundary - 1;
+   // Byte 0: base (0x17FFF) - VALID.
+   // Byte 1: base + 1 (0x18000) - INVALID.
+-  rv_vector_->set_vector_length(16);
++  SetupVectorState(0, /*vl=*/16);
+   SetXRegValue(1, base);
+ 
+   std::unique_ptr<Instruction> inst = CreateVsmInstruction(/*v_src=*/1);
+@@ -2956,4 +2956,82 @@ TEST_F(CoralNPUV2InstructionTest,
+   EXPECT_EQ(trap_value_, 0x20000);
+ }
+ 
++TEST_F(CoralNPUV2InstructionTest, VlStrided_VillSet_TrapsIllegalInstruction) {
++  // Set vill bit (bit 31) in vtype.
++  SetupVectorState(0x80000000u, /*vl=*/0);
++  SetXRegValue(1, kGoodLsuAddress);
++  constexpr uint32_t kDummyInstWord = 0x0200e087;
++  SetMemoryContents(0x0, kDummyInstWord);
++
++  std::unique_ptr<Instruction> inst = CreateStridedVectorLoadInstruction(
++      /*element_width=*/4, /*v_dest=*/1,
++      /*stride_operand=*/new ImmediateOperand<int64_t>(4),
++      /*mask_operand=*/new RV32VectorTrueOperand(state_.get()));
++  inst->Execute(/*context=*/nullptr);
++
++  EXPECT_TRUE(was_trap_handler_called_);
++  EXPECT_EQ(exception_code_, ExceptionCode::kIllegalInstruction);
++  EXPECT_EQ(trap_value_, kDummyInstWord);
++}
++
++TEST_F(CoralNPUV2InstructionTest,
++       VlStrided_UnalignedDestGroup_TrapsIllegalInstruction) {
++  // SEW=32, LMUL=2 -> EMUL=2, requires even vd.
++  SetupVectorState(0b11'010'001, /*vl=*/4);
++  SetXRegValue(1, kGoodLsuAddress);
++
++  std::unique_ptr<Instruction> inst = CreateStridedVectorLoadInstruction(
++      /*element_width=*/4, /*v_dest=*/3,
++      /*stride_operand=*/new ImmediateOperand<int64_t>(4),
++      /*mask_operand=*/new RV32VectorTrueOperand(state_.get()),
++      /*num_regs=*/2);
++  inst->Execute(/*context=*/nullptr);
++
++  EXPECT_TRUE(was_trap_handler_called_);
++  EXPECT_EQ(exception_code_, ExceptionCode::kIllegalInstruction);
++}
++
++TEST_F(CoralNPUV2InstructionTest,
++       VlIndexed_InvalidOverlap_TrapsIllegalInstruction) {
++  // SEW=32, LMUL=2 (data_reg_mul=2), index_width=2 (index_reg_mul=1).
++  // Widening load overlap with vs2 == vd (lowest part of vd group) is illegal.
++  SetupVectorState(0b11'010'001, /*vl=*/4);
++  SetXRegValue(1, kGoodLsuAddress);
++
++  std::unique_ptr<Instruction> inst = CreateVlIndexedInstruction(
++      /*index_width=*/2, /*v_index=*/8, /*v_dest=*/8,
++      /*mask_operand=*/new RV32VectorTrueOperand(state_.get()),
++      /*num_regs=*/2);
++  inst->Execute(/*context=*/nullptr);
++
++  EXPECT_TRUE(was_trap_handler_called_);
++  EXPECT_EQ(exception_code_, ExceptionCode::kIllegalInstruction);
++}
++
++TEST_F(CoralNPUV2InstructionTest,
++       VsRegister_UnalignedSourceGroup_TrapsIllegalInstruction) {
++  SetXRegValue(1, kGoodLsuAddress);
++  std::unique_ptr<Instruction> inst =
++      CreateVsRegisterInstruction(/*num_regs=*/2, /*v_src_start=*/3);
++  inst->Execute(/*context=*/nullptr);
++
++  EXPECT_TRUE(was_trap_handler_called_);
++  EXPECT_EQ(exception_code_, ExceptionCode::kIllegalInstruction);
++}
++
++TEST_F(CoralNPUV2InstructionTest, VsRegister_LastByteInvalid_Traps) {
++  // VsRegister with num_regs=1 stores 16 bytes.
++  uint32_t boundary = kLsuAccessStartAddress + kLsuAccessLength;
++  uint32_t base = boundary - 15;
++  SetXRegValue(1, base);
++
++  std::unique_ptr<Instruction> inst =
++      CreateVsRegisterInstruction(/*num_regs=*/1, /*v_src_start=*/1);
++  inst->Execute(/*context=*/nullptr);
++
++  EXPECT_TRUE(was_trap_handler_called_);
++  EXPECT_EQ(exception_code_, ExceptionCode::kStoreAccessFault);
++  EXPECT_EQ(trap_value_, boundary);
++}
++
+ }  // namespace
+diff --git a/sim/test/coralnpu_v2_user_decoder_test.cc b/sim/test/coralnpu_v2_user_decoder_test.cc
+index 3549f71..4a0d183 100755
+--- a/sim/test/coralnpu_v2_user_decoder_test.cc
++++ b/sim/test/coralnpu_v2_user_decoder_test.cc
+@@ -26,6 +26,7 @@
+ #include "absl/strings/str_cat.h"
+ #include "absl/strings/str_format.h"
+ #include "riscv/riscv_state.h"
++#include "riscv/riscv_vector_state.h"
+ #include "mpact/sim/generic/data_buffer.h"
+ #include "mpact/sim/generic/type_helpers.h"
+ #include "mpact/sim/util/memory/flat_demand_memory.h"
+@@ -45,6 +46,7 @@ using ::coralnpu::sim::isa32_v2::SourceOpEnum;
+ using ::mpact::sim::generic::DataBuffer;
+ using ::mpact::sim::riscv::ExceptionCode;
+ using ::mpact::sim::riscv::Instruction;
++using ::mpact::sim::riscv::RiscVVectorState;
+ using ::mpact::sim::riscv::RiscVXlen;
+ using ::mpact::sim::generic::operator*;  // NOLINT: clang-tidy false positive.
+ using ::mpact::sim::util::FlatDemandMemory;
+@@ -64,6 +66,9 @@ class CoralNPUV2UserDecoderFixture : public ::testing::Test {
+     memory_ = std::make_unique<FlatDemandMemory>();
+     state_ = std::make_unique<CoralNPUV2State>("CoralNPUV2", RiscVXlen::RV32,
+                                                memory_.get());
++    rv_vector_ = std::make_unique<RiscVVectorState>(
++        state_.get(), ::coralnpu::sim::kCoralNPUV2VectorByteLength);
++    state_->set_rv_vector(rv_vector_.get());
+     state_->AddMemoryRegion(kMemoryStart, kMemorySize,
+                             MemoryPermission::kReadExecute);
+     decoder_ =
+@@ -108,6 +113,7 @@ class CoralNPUV2UserDecoderFixture : public ::testing::Test {
+ 
+  protected:
+   std::unique_ptr<CoralNPUV2State> state_;
++  std::unique_ptr<RiscVVectorState> rv_vector_;
+   std::unique_ptr<MemoryInterface> memory_;
+   std::unique_ptr<CoralNPUV2UserDecoder> decoder_;
+ };
+@@ -184,6 +190,68 @@ TEST_F(CoralNPUV2UserDecoderFixture, DecodeVectorInstruction) {
+   inst_db->DecRef();
+ }
+ 
++TEST_F(CoralNPUV2UserDecoderFixture, DecodeVectorLoadStoreLegality) {
++  auto decode_word = [this](uint32_t inst_word) {
++    const uint64_t test_address = 0;
++    DataBuffer* inst_db = state_->db_factory()->Allocate<uint32_t>(1);
++    inst_db->Set<uint32_t>(/*index=*/0, inst_word);
++    memory_->Store(test_address, inst_db);
++    std::unique_ptr<Instruction> instruction =
++        absl::WrapUnique(decoder_->DecodeInstruction(test_address));
++    inst_db->DecRef();
++    return instruction->opcode();
++  };
++
++  // Masked vle32.v with vd=v0 is reserved; vd=v1 or vm=1 is valid.
++  constexpr uint32_t kVle32MaskedV0 = 0b0000000'00000'00000'110'00000'0000111;
++  EXPECT_EQ(decode_word(kVle32MaskedV0), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVle32MaskedV0 | (1u << 7)), *OpcodeEnum::kVle32);
++  EXPECT_EQ(decode_word(kVle32MaskedV0 | (1u << 25)), *OpcodeEnum::kVle32Vm1);
++
++  // Masked vle32ff.v, vlse32.v, vluxei32.v, vlseg2e32.v, vlseg2e32ff.v with vd=v0.
++  constexpr uint32_t kVle32ffMaskedV0 = 0b0000000'10000'00000'110'00000'0000111;
++  constexpr uint32_t kVlse32MaskedV0 = 0b0000100'00000'00000'110'00000'0000111;
++  constexpr uint32_t kVluxei32MaskedV0 =
++      0b0000010'00000'00000'110'00000'0000111;
++  constexpr uint32_t kVlseg2e32MaskedV0 =
++      0b0010000'00000'00000'110'00000'0000111;
++  constexpr uint32_t kVlseg2e32ffMaskedV0 =
++      0b0010000'10000'00000'110'00000'0000111;
++  EXPECT_EQ(decode_word(kVle32ffMaskedV0), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVlse32MaskedV0), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVluxei32MaskedV0), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVlseg2e32MaskedV0), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVlseg2e32ffMaskedV0), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVlseg2e32ffMaskedV0 | (1u << 25)),
++            *OpcodeEnum::kVlsege32ff);
++
++  // vlm.v and vsm.v require vm == 1.
++  constexpr uint32_t kVlmVm0 = 0b0000000'01011'00000'000'00000'0000111;
++  constexpr uint32_t kVsmVm0 = 0b0000000'01011'00000'000'00000'0100111;
++  EXPECT_EQ(decode_word(kVlmVm0), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVsmVm0), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVlmVm0 | (1u << 25)), *OpcodeEnum::kVlm);
++  EXPECT_EQ(decode_word(kVsmVm0 | (1u << 25)), *OpcodeEnum::kVsm);
++
++  // Whole-register stores require width == e8 and aligned register groups.
++  constexpr uint32_t kVs1re8 = 0b0000001'01000'00000'000'00000'0100111;
++  constexpr uint32_t kVs1re16 = 0b0000001'01000'00000'101'00000'0100111;
++  constexpr uint32_t kVs2re8V1 = 0b0010001'01000'00000'000'00001'0100111;
++  constexpr uint32_t kVl2re32V1 = 0b0010001'01000'00000'110'00001'0000111;
++  EXPECT_EQ(decode_word(kVs1re8), *OpcodeEnum::kVs1re8);
++  EXPECT_EQ(decode_word(kVs1re16), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVs2re8V1), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVl2re32V1), *OpcodeEnum::kNone);
++
++  // Whole-register moves require vm == 1 and aligned vd/vs2.
++  constexpr uint32_t kVmv2rVm0 = 0b1001110'00000'00001'011'00000'1010111;
++  constexpr uint32_t kVmv2rVm1 = 0b1001111'00000'00001'011'00000'1010111;
++  EXPECT_EQ(decode_word(kVmv2rVm0), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVmv2rVm1), *OpcodeEnum::kVmv2rVi);
++  EXPECT_EQ(decode_word(kVmv2rVm1 | (1u << 7)), *OpcodeEnum::kNone);
++  EXPECT_EQ(decode_word(kVmv2rVm1 | (1u << 20)), *OpcodeEnum::kNone);
++}
++
+ TEST_F(CoralNPUV2UserDecoderFixture, DecodeMpauseInstruction) {
+   const uint64_t test_address = 0;
+   DataBuffer* inst_db = state_->db_factory()->Allocate<uint32_t>(1);
