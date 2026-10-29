@@ -85,6 +85,20 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
     io.compWritesVecReg    := comp.valid && comp.bits.writesVectorRegister()
   }
 
+  class TesterLsuLegality(p: Parameters) extends Module {
+    val io = IO(new Bundle {
+      val inst       = Input(UInt(32.W))
+      val sew        = Input(UInt(3.W))
+      val lmul_orig  = Input(UInt(3.W))
+      val compValid  = Output(Bool())
+      val illegalCfg = Output(Bool())
+    })
+
+    val comp = RvvCompressedInstruction.from_uncompressed(p, io.inst, 0.U)
+    io.compValid  := comp.valid
+    io.illegalCfg := comp.valid && comp.bits.isIllegalLsuConfig(io.sew, io.lmul_orig)
+  }
+
   private def test_decode(
     dut: Tester,
     // Long because Scala has no unsigned int.
@@ -613,6 +627,546 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
         dut.io.compIsMsettn.expect(c.isMsettn.B)
         dut.io.compWritesRd.expect(c.writesRd.B)
         dut.io.compWritesVecReg.expect(c.writesVecReg.B)
+      }
+    }
+  }
+
+  "Validate RVV Load/Store Static and Dynamic Legality" in {
+    simulate(new TesterLsuLegality(p)) { dut =>
+      // Helper to build standard RVV load (opcode=0x07) or store (opcode=0x27) encodings
+      def encodeLsu(
+        isStore: Boolean,
+        nf: Int,
+        mew: Int,
+        mop: Int,
+        vm: Int,
+        vs2OrUmop: Int,
+        rs1: Int,
+        width: Int,
+        vdOrVs3: Int
+      ): Long = {
+        val opcode = if (isStore) 0x27L else 0x07L
+        ((nf.toLong & 0x7L) << 29) |
+          ((mew.toLong & 0x1L) << 28) |
+          ((mop.toLong & 0x3L) << 26) |
+          ((vm.toLong & 0x1L) << 25) |
+          ((vs2OrUmop.toLong & 0x1fL) << 20) |
+          ((rs1.toLong & 0x1fL) << 15) |
+          ((width.toLong & 0x7L) << 12) |
+          ((vdOrVs3.toLong & 0x1fL) << 7) |
+          opcode
+      }
+
+      // 1. Static decode checks in RvvCompressedInstruction.from_uncompressed
+      val staticCases = Seq(
+        // Valid unit-stride loads/stores
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 0
+          ),
+          true
+        ), // vle8.v v0, (a0)
+        (
+          encodeLsu(
+            isStore = true,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 0,
+            vs2OrUmop = 0,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 0
+          ),
+          true
+        ), // vse8.v v0, (a0), v0.t
+        // Masked load into v0 is illegal (overlaps mask register v0.t)
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 0,
+            vs2OrUmop = 0,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 0
+          ),
+          false
+        ), // vle8.v v0, (a0), v0.t
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 2,
+            vm = 0,
+            vs2OrUmop = 1,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 0
+          ),
+          false
+        ), // vlse8.v v0, (a0), x1, v0.t
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 1,
+            vm = 0,
+            vs2OrUmop = 4,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 0
+          ),
+          false
+        ), // vluxei8.v v0, (a0), v4, v0.t
+        // Fault-only-first on store is illegal
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0x10,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          true
+        ), // vle8ff.v v4, (a0)
+        (
+          encodeLsu(
+            isStore = true,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0x10,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          false
+        ), // vse8ff.v (illegal)
+        // Mask load/store (umop=01011): requires vm=1, nf=0, width=000
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0x0b,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          true
+        ), // vlm.v v4, (a0)
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 0,
+            vs2OrUmop = 0x0b,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          false
+        ), // vlm.v with vm=0
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 1,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0x0b,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          false
+        ), // vlm.v with nf=1
+        (
+          encodeLsu(
+            isStore = true,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0x0b,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 4
+          ),
+          false
+        ), // vsm.v with width=e16
+        // Whole-register load/store (umop=01000): requires vm=1, nf in {0,1,3,7}, vd aligned to nf+1, store width=000
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 1,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0x08,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 4
+          ),
+          true
+        ), // vl2re16.v v4, (a0)
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 1,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0x08,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 5
+          ),
+          false
+        ), // vl2re16.v v5 (unaligned)
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 2,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0x08,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          false
+        ), // vl3re8.v (invalid nf=2)
+        (
+          encodeLsu(
+            isStore = true,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0x08,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 4
+          ),
+          false
+        ), // vs1re16.v (reserved width)
+        // EEW=64 (width=111, mew=0) is illegal on Zve32x
+        (
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 4,
+            rs1 = 10,
+            width = 7,
+            vdOrVs3 = 8
+          ),
+          false
+        ) // vluxei64.v
+      )
+
+      for ((inst, expectedValid) <- staticCases) {
+        dut.io.inst.poke(inst.U)
+        dut.io.sew.poke(0.U)
+        dut.io.lmul_orig.poke(0.U)
+        dut.io.compValid.expect(expectedValid.B)
+      }
+
+      // 2. Dynamic vtype config checks in isIllegalLsuConfig(sew, lmul_orig)
+      // sew: 0 -> e8, 1 -> e16, 2 -> e32
+      // lmul_orig: 0 -> m1, 1 -> m2, 2 -> m4, 3 -> m8, 6 -> mf4 (-2), 7 -> mf2 (-1)
+      case class DynCase(inst: Long, sew: Int, lmul: Int, expectIllegal: Boolean)
+      val dynCases = Seq(
+        // Valid baseline: vle16.v v8, (a0) with SEW=16, LMUL=1 -> EMUL=1
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 8
+          ),
+          sew = 1,
+          lmul = 0,
+          expectIllegal = false
+        ),
+        // EMUL > 8: vle16.v v8, (a0) with SEW=8, LMUL=8 -> EMUL=16
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 8
+          ),
+          sew = 0,
+          lmul = 3,
+          expectIllegal = true
+        ),
+        // EMUL < 1/4: vle8.v v8, (a0) with SEW=32, LMUL=1/2 -> EMUL=1/8
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 8
+          ),
+          sew = 2,
+          lmul = 7,
+          expectIllegal = true
+        ),
+        // Unaligned vd for EMUL=2: vle16.v v1, (a0) with SEW=8, LMUL=1 -> EMUL=2
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 1
+          ),
+          sew = 0,
+          lmul = 0,
+          expectIllegal = true
+        ),
+        // Segment NFIELDS * EMUL > 8: vlseg2e16.v v8, (a0) with SEW=8, LMUL=4 -> NFIELDS=2, EMUL=8 -> 16 > 8
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 1,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 8
+          ),
+          sew = 0,
+          lmul = 2,
+          expectIllegal = true
+        ),
+        // Segment vd + NFIELDS * EMUL > 32: vlseg4e8.v v30, (a0) with SEW=8, LMUL=1 -> 30 + 4 = 34 > 32
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 3,
+            mew = 0,
+            mop = 0,
+            vm = 1,
+            vs2OrUmop = 0,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 30
+          ),
+          sew = 0,
+          lmul = 0,
+          expectIllegal = true
+        ),
+        // Unaligned vs2 for indexed load when EMUL_index=2: vluxei16.v v4, (a0), v1 with SEW=8, LMUL=1
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 1,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 4
+          ),
+          sew = 0,
+          lmul = 0,
+          expectIllegal = true
+        ),
+        // Narrowing indexed load (EEW_index=16 > SEW=8, LMUL=1 -> EMUL_data=1, EMUL_index=2):
+        // vd=v4 (lowest part of vs2=[v4,v5]) is legal; vd=v5 (upper part of vs2=[v4,v5]) is illegal
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 4,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 4
+          ),
+          sew = 0,
+          lmul = 0,
+          expectIllegal = false
+        ),
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 4,
+            rs1 = 10,
+            width = 5,
+            vdOrVs3 = 5
+          ),
+          sew = 0,
+          lmul = 0,
+          expectIllegal = true
+        ),
+        // Widening indexed load with EMUL_index >= 1 (EEW_index=8 < SEW=16, LMUL=2 -> EMUL_data=2, EMUL_index=1):
+        // vs2=v5 (highest part of vd=[v4,v5]) is legal; vs2=v4 (lower part of vd=[v4,v5]) is illegal
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 5,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          sew = 1,
+          lmul = 1,
+          expectIllegal = false
+        ),
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 4,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          sew = 1,
+          lmul = 1,
+          expectIllegal = true
+        ),
+        // Widening indexed load with EMUL_index < 1 (EEW_index=8 < SEW=16, LMUL=1/2 -> EMUL_data=1/2, EMUL_index=1/4):
+        // Any overlap (vd=v4, vs2=v4) is illegal when EMUL_index < 1!
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 4,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          sew = 1,
+          lmul = 7,
+          expectIllegal = true
+        ),
+        // Widening 4:1 indexed load with EMUL_index < 1 (EEW_index=8 < SEW=32, LMUL=2 -> EMUL_data=2, EMUL_index=1/2):
+        // Even vs2=v5 (highest reg of vd=[v4,v5]) is illegal because EMUL_index = 1/2 < 1!
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 0,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 5,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          sew = 2,
+          lmul = 1,
+          expectIllegal = true
+        ),
+        // Segment indexed load (nf=1 -> NFIELDS=2): any overlap between vd=[v4,v5] and vs2=v5 is illegal
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 1,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 5,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          sew = 0,
+          lmul = 0,
+          expectIllegal = true
+        ),
+        DynCase(
+          encodeLsu(
+            isStore = false,
+            nf = 1,
+            mew = 0,
+            mop = 1,
+            vm = 1,
+            vs2OrUmop = 6,
+            rs1 = 10,
+            width = 0,
+            vdOrVs3 = 4
+          ),
+          sew = 0,
+          lmul = 0,
+          expectIllegal = false
+        )
+      )
+
+      for (c <- dynCases) {
+        dut.io.inst.poke(c.inst.U)
+        dut.io.sew.poke(c.sew.U)
+        dut.io.lmul_orig.poke(c.lmul.U)
+        dut.io.compValid.expect(true.B)
+        dut.io.illegalCfg.expect(c.expectIllegal.B)
       }
     }
   }

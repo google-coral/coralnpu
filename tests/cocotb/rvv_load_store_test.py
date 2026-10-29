@@ -3525,6 +3525,70 @@ async def lsu_fault_scalar_to_scalar_rs_flush(fixture):
 
 
 @coralflow_test
+async def lsu_decode_test(fixture):
+    """Testbench to verify illegal RVV load/store encodings and vtype configurations raise mcause=2."""
+    subtests = [
+        'vluxei64_v',
+        'vsuxei64_v',
+        'vluxei16_emul_over_8',
+        'vsuxei16_emul_over_8',
+        'vloxei32_emul_over_8',
+        'vsoxei32_emul_over_8',
+        'vlm_invalid_eew16',
+        'vsm_invalid_eew16',
+        'vl1re64_v',
+        'vs1r_invalid_eew16',
+        'vs1r_invalid_eew32',
+        'vs1r_invalid_eew64',
+        'vl3re8_invalid_nf',
+        'vs3r_invalid_nf',
+        'vl2re16_unaligned_vd',
+        'vs4r_unaligned_vs3',
+        'vl1re8_masked_vm0',
+        'vs1r_masked_vm0',
+        'vsbff_invalid_store_ff',
+        'vle16_emul_over_8',
+        'vse16_emul_over_8',
+        'vlse32_emul_over_8',
+        'vsse32_emul_over_8',
+        'vlseg2e16_emul_over_8',
+        'vle8_emul_under_mf4',
+        'vluxei8_emul_under_mf4',
+        'vle16_unaligned_vd',
+        'vluxei16_unaligned_vs2',
+        'vlseg4e8_vd_wrap',
+        'vle8_masked_vd_v0',
+        'vluxei16_narrow_overlap',
+        'vluxei8_widen_low_overlap',
+        'vluxei8_widen_frac_overlap',
+        'vluxseg2ei8_overlap',
+    ]
+
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation(
+            'coralnpu_hw/tests/cocotb/rvv/load_store/lsu_decode_test.elf'
+        ),
+        ['test_fn', 'fault_count', 'fault_mcause'] + subtests,
+    )
+
+    for subtest in subtests:
+        await fixture.write_word('fault_count', 0)
+        await fixture.write_word('fault_mcause', 0)
+        await fixture.write_ptr('test_fn', subtest)
+        await fixture.run_to_halt()
+
+        fault_count = await fixture.read_word('fault_count')
+        assert fault_count == 1, (
+            f"[{subtest}] Expected 1 illegal-instruction fault, got {fault_count}"
+        )
+        fault_mcause = await fixture.read_word('fault_mcause')
+        assert fault_mcause == 2, (
+            f"[{subtest}] Expected mcause=2 (Illegal instruction), got {fault_mcause}"
+        )
+
+
+@coralflow_test
 async def load_store8_test(fixture):
     """Testbench to test RVV load."""
     r = runfiles.Create()

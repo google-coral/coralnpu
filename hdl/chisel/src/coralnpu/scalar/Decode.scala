@@ -570,15 +570,22 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       val isNonWrLdSt = decodedInsts(i).rvv.get.valid &&
         decodedInsts(i).rvv.get.bits.isLoadStore() &&
         !decodedInsts(i).rvv.get.bits.isWholeRegisterLoadStore()
-      val invalidVill = isNonWrLdSt && (configInvalid(i) || io.rvvState.get.bits.vill)
-      val invalidVme  = if (p.enableVme) {
+      val invalidVill      = isNonWrLdSt && (configInvalid(i) || io.rvvState.get.bits.vill)
+      val invalidLsuConfig = isNonWrLdSt && (
+        configInvalid(i) ||
+          decodedInsts(i).rvv.get.bits.isIllegalLsuConfig(
+            io.rvvState.get.bits.sew,
+            io.rvvState.get.bits.lmul_orig
+          )
+      )
+      val invalidVme = if (p.enableVme) {
         decodedInsts(i).rvv.get.valid &&
         decodedInsts(i).rvv.get.bits.isVmeLdSt() &&
         (configInvalid(i) || !io.rvvState.get.bits.mtwiden.get.orR)
       } else {
         false.B
       }
-      !invalidVill && !invalidVme
+      !invalidVill && !invalidLsuConfig && !invalidVme
     })
   } else {
     Seq.fill(p.instructionLanes)(true.B)
@@ -1050,6 +1057,13 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
                                  !decodedInsts(0).rvv.get.bits.isWholeRegisterLoadStore()
                                val villIsSet   = io.rvvState.get.valid && io.rvvState.get.bits.vill
                                val invalidVill = isNonWrLdSt && villIsSet
+                               val invalidLsuConfig = isNonWrLdSt &&
+                                 io.rvvState.get.valid &&
+                                 !io.rvvState.get.bits.vill &&
+                                 decodedInsts(0).rvv.get.bits.isIllegalLsuConfig(
+                                   io.rvvState.get.bits.sew,
+                                   io.rvvState.get.bits.lmul_orig
+                                 )
 
                                // Return fault if mstatus.MS == Off (0) for tile instructions or vtdiscard.
                                val isTileOrDiscard = decodedInsts(0).accessesTile()
@@ -1069,8 +1083,11 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
                                  false.B
                                }
 
-                               io.inst(0)
-                                 .valid && (invalidVstart || invalidVill || invalidMs || invalidVillVtdiscard || invalidVme) &&
+                               !io.halted &&
+                               !io.interlock &&
+                               singleStepInterlock(0) &&
+                               io.inst(0).valid &&
+                               (invalidVstart || invalidVill || invalidLsuConfig || invalidMs || invalidVillVtdiscard || invalidVme) &&
                                (0.U < io.retirement_buffer_nSpace) &&
                                !io.retirement_buffer_trap_pending
                              } else {

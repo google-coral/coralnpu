@@ -212,8 +212,89 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     isLoadStore() && !bits(21) && (bits(20, 19) === 0.U) && (bits(17, 13) === "b01000".U)
   }
 
+  def isMaskLoadStore(): Bool = {
+    isLoadStore() && !bits(21) && (bits(20, 19) === 0.U) && (bits(17, 13) === "b01011".U)
+  }
+
   def isVmeLdSt(): Bool = {
     isLoadStore() && (bits(21, 18) === "b1001".U) && (funct3() === "b111".U) && (bits(4, 0) === 0.U)
+  }
+
+  /** Checks dynamic vtype-dependent legality for standard RVV load/store instructions (RVV 1.0
+    * Sections 7.2, 7.3, 7.8):
+    *   - Effective EMUL (data EMUL for unit-stride/strided, index EMUL for indexed) must be within
+    *     supported bounds [1/4, 8] (log2(EMUL) in [-2, 3]).
+    *   - Segment register group size (NFIELDS * ceil(EMUL_data)) must not exceed 8.
+    *   - Destination/source vector register group vd/vs3 must be aligned to EMUL_data and fit
+    *     within v0..v31 (vd + NFIELDS * ceil(EMUL_data) <= 32).
+    *   - Index vector register group vs2 (for indexed loads/stores) must be aligned to EMUL_index,
+    *     and for indexed loads must obey destination/index overlap rules.
+    */
+  def isIllegalLsuConfig(sew: UInt, lmul_orig: UInt): Bool = {
+    val isStandardRvvLsu =
+      isLoadStore() && !isVmeLdSt() && !isWholeRegisterLoadStore() && !isMaskLoadStore()
+    val isStore   = opcode === RvvCompressedOpcode.RVVSTORE
+    val isIndexed = mop.isOneOf(
+      RvvAddressingMode.INDEXED_UNORDERED,
+      RvvAddressingMode.INDEXED_ORDERED
+    )
+    val nf    = bits(24, 22)
+    val vs2   = bits(17, 13)
+    val width = funct3()
+    val vd    = bits(4, 0)
+
+    val instShift = MuxLookup(width, 0.U(2.W))(
+      Seq(
+        "b000".U -> 0.U(2.W),
+        "b101".U -> 1.U(2.W),
+        "b110".U -> 2.U(2.W)
+      )
+    )
+    val sewShift = sew(1, 0)
+    val lmulS    = lmul_orig.asSInt
+
+    // SEW must be <= 32 (sew <= 2) and SEW/LMUL <= ELEN (lmulS - sewShift >= -2)
+    val vtypeValid = (sew <= 2.U) && ((lmulS - Cat(0.U(1.W), sewShift).asSInt) >= (-2).S)
+
+    // Signed log2(EMUL_inst) = log2(LMUL) + log2(EEW_inst) - log2(SEW)
+    val instEmulLog2: SInt =
+      lmulS +& (Cat(0.U(1.W), instShift).asSInt - Cat(0.U(1.W), sewShift).asSInt)
+    val emulInRange = vtypeValid && (instEmulLog2 >= (-2).S) && (instEmulLog2 <= 3.S)
+
+    val dataEmulLog2: SInt = Mux(isIndexed, lmulS.pad(instEmulLog2.getWidth), instEmulLog2)
+    val idxEmulLog2: SInt  = instEmulLog2
+
+    val dataEmulRegs: UInt =
+      Mux(dataEmulLog2 <= 0.S, 1.U(4.W), (1.U(4.W) << dataEmulLog2(1, 0).asUInt)(3, 0))
+    val idxEmulRegs: UInt =
+      Mux(idxEmulLog2 <= 0.S, 1.U(4.W), (1.U(4.W) << idxEmulLog2(1, 0).asUInt)(3, 0))
+    val dataEmulMask: UInt = (dataEmulRegs - 1.U).pad(5)
+    val idxEmulMask: UInt  = (idxEmulRegs - 1.U).pad(5)
+
+    val nfields: UInt    = nf +& 1.U
+    val segRegs: UInt    = nfields * dataEmulRegs
+    val segEmulInRange   = segRegs <= 8.U
+    val vdAligned        = (vd & dataEmulMask) === 0.U
+    val vdInRange        = (vd +& segRegs) <= 32.U
+    val vs2Aligned       = !isIndexed || ((vs2 & idxEmulMask) === 0.U)
+    val noOverlap        = ((vs2 +& idxEmulRegs) <= vd) || ((vd +& segRegs) <= vs2)
+    val idxLoadOverlapOk = MuxCase(
+      false.B,
+      Seq(
+        (!isIndexed || isStore || noOverlap) -> true.B,
+        (nf =/= 0.U)                         -> false.B,
+        (instShift === sewShift)             -> true.B,
+        (instShift > sewShift)               -> ((vd & idxEmulMask) === 0.U),
+        (instShift < sewShift)               -> (
+          (idxEmulLog2 >= 0.S) &&
+            ((vs2 & dataEmulMask) === (dataEmulRegs - idxEmulRegs).pad(5))
+        )
+      )
+    )
+
+    isStandardRvvLsu && !(
+      emulInRange && segEmulInRange && vdAligned && vdInRange && vs2Aligned && idxLoadOverlapOk
+    )
   }
 
   def readsRs1(): Bool = {
@@ -353,17 +434,51 @@ object RvvCompressedInstruction {
     val bits       = inst(31, 7)
 
     // mew must be 0 for valid standard RVV load/stores, or 1 for VME tile loads/stores
-    val mew = inst(28)
+    val mew  = inst(28)
+    val nf   = inst(31, 29)
+    val mop  = inst(27, 26)
+    val vm   = inst(25)
+    val umop = inst(24, 20)
     // RVVLOAD and RVVSTORE op codes are shared with "f" extension. Use "width"
     // to discriminate between the two.
-    val width     = inst(14, 12)
-    val isRvvLdSt = !mew && MuxLookup(width, false.B)(
+    val width   = inst(14, 12)
+    val vd      = inst(11, 7)
+    val isStore = old_opcode === "b0100111".U
+
+    val validEewWidth = MuxLookup(width, false.B)(
       Seq(
         "b000".U -> true.B, // 8b
         "b101".U -> true.B, // 16b
         "b110".U -> true.B  // 32b
         // "b111".U -> true.B,  // 64b, unused for coralnpu
       )
+    )
+    // Masked loads (vm=0) cannot use v0 as destination register (overlaps mask register v0.t).
+    val vdOverlapV0Ok = isStore || vm || (vd =/= 0.U)
+
+    val validUnitStride = MuxLookup(umop, false.B)(
+      Seq(
+        // US_REGULAR (vle/vse, vlseg/vsseg)
+        "b00000".U -> (validEewWidth && vdOverlapV0Ok),
+        // US_WHOLE_REGISTER (vl<nr>r / vs<nr>r): unmasked, nf in {0,1,3,7}, vd aligned to nf+1,
+        // store only supports e8 width encoding.
+        "b01000".U -> (
+          vm &&
+            (nf === "b000".U || nf === "b001".U || nf === "b011".U || nf === "b111".U) &&
+            ((vd & nf) === 0.U) &&
+            Mux(isStore, width === "b000".U, validEewWidth)
+        ),
+        // US_MASK (vlm.v / vsm.v): unmasked, nf=0, e8 width encoding only.
+        "b01011".U -> (vm && (nf === "b000".U) && (width === "b000".U)),
+        // US_FAULT_FIRST (vle<eew>ff.v / vlseg<nf>e<eew>ff.v): load only.
+        "b10000".U -> (!isStore && validEewWidth && vdOverlapV0Ok)
+      )
+    )
+
+    val isRvvLdSt = !mew && Mux(
+      mop === "b00".U,
+      validUnitStride,
+      validEewWidth && vdOverlapV0Ok
     )
 
     val isVmeLdSt = if (p.enableVme) {

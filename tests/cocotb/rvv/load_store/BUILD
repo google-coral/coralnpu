@@ -96,6 +96,10 @@ template_rule(
         "load8_stride2_mf4": {
             "srcs": ["load8_stride2_mf4.cc"],
         },
+        "lsu_decode_test": {
+            "srcs": ["lsu_decode_test.cc"],
+            "hdrs": ["rvv_lsu_test_utils.h"],
+        },
         "lsu_fault_cases": {
             "srcs": ["lsu_fault_cases.cc"],
             "hdrs": ["rvv_lsu_test_utils.h"],
@@ -289,6 +293,7 @@ filegroup(
         ":load_unit_ff.elf",
         ":load_unit_masked.elf",
         ":load_unit_vtype.elf",
+        ":lsu_decode_test.elf",
         ":lsu_fault_cases.elf",
         ":store16_index16.elf",
         ":store16_index32.elf",

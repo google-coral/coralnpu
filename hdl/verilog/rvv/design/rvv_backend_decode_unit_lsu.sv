@@ -3291,7 +3291,7 @@ module rvv_backend_decode_unit_lsu
 
     case(emul_vd)
       EMUL1: begin
-        check_vs2_part_overlap_vd_2_1 = 1'b1;
+        check_vs2_part_overlap_vd_2_1 = (inst_vd != inst_vs2);
       end
       EMUL2: begin
         check_vs2_part_overlap_vd_2_1 = !((inst_vd[`REGIDX_WIDTH-1:1]==inst_vs2[`REGIDX_WIDTH-1:1])&(inst_vs2[0]!=1'b1));
@@ -3312,10 +3312,10 @@ module rvv_backend_decode_unit_lsu
 
     case(emul_vd)
       EMUL1: begin
-        check_vs2_part_overlap_vd_4_1 = 1'b1;
+        check_vs2_part_overlap_vd_4_1 = (inst_vd != inst_vs2);
       end
       EMUL2: begin
-        check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGIDX_WIDTH-1:1]==inst_vs2[`REGIDX_WIDTH-1:1])&(inst_vs2[0]!=1'b1));
+        check_vs2_part_overlap_vd_4_1 = (inst_vd[`REGIDX_WIDTH-1:1] != inst_vs2[`REGIDX_WIDTH-1:1]);
       end
       EMUL4: begin
         check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGIDX_WIDTH-1:2]==inst_vs2[`REGIDX_WIDTH-1:2])&(inst_vs2[1:0]!=2'b11));
