@@ -152,7 +152,8 @@ def _emit_py_test_target(
         highmem_env,
         base_tags,
         tags,
-        kwargs):
+        kwargs,
+        extra_env = {}):
     if testcases != None and not testcases:
         return
     py_kwargs = dict(kwargs)
@@ -168,6 +169,8 @@ def _emit_py_test_target(
         ])
     if excluded_testcases:
         py_env["CORALFLOW_EXCLUDE_TESTCASE"] = ",".join(excluded_testcases)
+    for k, v in extra_env.items():
+        py_env[k] = v
     native.py_test(
         name = "{}_{}".format(name, backend),
         srcs = srcs,
@@ -250,6 +253,7 @@ def coralflow_test(
         targets = None,
         hdl_toplevel = "RvvCoreMiniAxi",
         highmem = False,
+        uvm_batch = False,
         testcases = None,
         exclude_testcases = {},
         test_args = [],
@@ -264,10 +268,13 @@ def coralflow_test(
     - :{name}_npusim: Fast functional ISS test (py_test).
     - :{name}_verilator: Verilator RTL simulation.
     - :{name}_vcs: VCS RTL simulation.
-    - :{name}_uvm: UVM + Spike co-simulation.
+    - :{name}_uvm: UVM + Spike + MPACT 3-way co-simulation.
     - :{name}_nexus_fpga & :{name}_nexus_fpga_pkg: Physical FPGA runner and standalone tarball.
 
     Args:
+      uvm_batch: If True, :{name}_uvm executes all ELF binaries in `data`/`elf`
+        (excluding any listed in `exclude_testcases["uvm"]`) in a single batch
+        UVM regression simulator invocation via `UvmTestFixture.run_batch()`.
       exclude_testcases: Optional dict mapping backend name (e.g. "uvm", "npusim")
         to a list of testcase names to skip on that backend.
       verilator_model: Optional target label for the Verilator simulation model.
@@ -395,7 +402,16 @@ def coralflow_test(
         )
 
     if "uvm" in targets:
-        uvm_testcases = _filter_testcases(testcases, "uvm", exclude_testcases)
+        uvm_testcases = None if uvm_batch else _filter_testcases(testcases, "uvm", exclude_testcases)
+        uvm_extra_env = {}
+        if uvm_batch:
+            uvm_extra_env = {
+                "CORALFLOW_UVM_BATCH": "1",
+                "CORALFLOW_DATA_ELFS": " ".join([
+                    "$(rlocationpaths {})".format(d)
+                    for d in common_data
+                ]),
+            }
         if resolved_toplevel == "VmeCoreMiniAxi":
             uvm_sim_dep = select({
                 "//tests/uvm:use_vcs_uvm": ["//tests/uvm:uvm_sim_vcs_vme"],
@@ -421,4 +437,5 @@ def coralflow_test(
             base_tags = ["uvm", "rtl"],
             tags = tags,
             kwargs = kwargs,
+            extra_env = uvm_extra_env,
         )

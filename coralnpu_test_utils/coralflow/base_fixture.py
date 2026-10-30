@@ -108,14 +108,17 @@ class BaseCoralNPUFixture:
         elf_paths: list[str | os.PathLike],
         timeout_cycles: int = 100000,
     ) -> bool:
-        """Executes a batch of self-contained ELF binaries and verifies tohost == 1."""
+        """Executes a batch of self-contained ELF binaries and verifies clean termination."""
         for elf_path in elf_paths:
             elf_name = os.path.basename(elf_path)
-            await self.load_elf_and_lookup_symbols(elf_path, ["tohost"])
+            await self.load_elf_and_lookup_symbols(
+                elf_path, optional_symbols=["tohost"]
+            )
             await self.run_to_halt(timeout_cycles=timeout_cycles)
-            tohost = await self.read_word("tohost")
-            if tohost != 1:
-                raise AssertionError(
-                    f"{elf_name}: expected tohost == 1, got 0x{tohost:08x}"
-                )
+            if "tohost" in self.symbols:
+                tohost = await self.read_word("tohost")
+                if tohost != 1:
+                    raise AssertionError(
+                        f"{elf_name}: expected tohost == 1, got 0x{tohost:08x}"
+                    )
         return True

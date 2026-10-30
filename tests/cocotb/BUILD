@@ -59,6 +59,7 @@ COCOTB_TEST_BINARY_TARGETS = glob(["**/*.elf"]) + glob(["**/*.o"]) + [
     "//tests/cocotb/coralnpu_isa:coralnpu_isa_tests",
     "//tests/cocotb/exceptions:elf_files",
     "//third_party/riscv-tests:all_files",
+    "//third_party/riscv-tests:all_isa_binaries",
     ":csr_behavior.elf",
 ]
 
@@ -306,12 +307,30 @@ coralflow_test(
     size = "enormous",
     srcs = ["core_mini_axi_sim.py"],
     data = COCOTB_TEST_BINARY_TARGETS,
+    exclude_testcases = {
+        "uvm": [
+            "csr_behavior",
+            "csr_illegal_write_test",
+            "fencei_test",
+            "retire_buffer_full_illegal_inst",
+            "spi_exec_test",
+            "store_fault_0",
+            "stress_test",
+            "vfwadd_trap",
+            "vfwmul_trap",
+            "vfwsub_trap",
+            "zfbfmin_test",
+            "zvfbf_test",
+        ],
+    },
     hdl_toplevel = "RvvCoreMiniAxi",
     targets = [
         "verilator",
         "vcs",
+        "uvm",
     ],
     testcases = RVV_CORE_MINI_AXI_SIM_TESTCASES,
+    uvm_batch = True,
     deps = CORE_MINI_AXI_SIM_DEPS,
 )
 
@@ -361,11 +380,24 @@ coralflow_test(
     size = "large",
     srcs = ["rvv_assembly_cocotb_test.py"],
     data = ["//tests/cocotb/rvv:rvv_assem_tests"],
+    exclude_testcases = {
+        "uvm": [
+            "rvv_vill_loop_trap_test",
+            "rvv_vill_trap_squashed_load_test",
+            "rvv_vstart_forwarding_squash_test",
+            "rvv_vstart_vmv_scalar_test",
+            "rvv_vstart_vset_test",
+            "vill_test",
+            "vill_whole_reg_test",
+        ],
+    },
     hdl_toplevel = "RvvCoreMiniAxi",
     targets = [
         "verilator",
         "vcs",
+        "uvm",
     ],
+    uvm_batch = True,
     deps = [
         "//coralnpu_test_utils:core_mini_axi_sim_interface",
         "//coralnpu_test_utils:dispatch_verifier",
@@ -691,11 +723,19 @@ coralflow_test(
     size = "enormous",
     srcs = ["rvv_load_store_test.py"],
     data = ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"],
+    exclude_testcases = {
+        "uvm": [
+            "load_store8_fault",
+            "lsu_fault_cases",
+        ],
+    },
     hdl_toplevel = "RvvCoreMiniAxi",
     targets = [
         "verilator",
         "vcs",
+        "uvm",
     ],
+    uvm_batch = True,
     deps = [
         "//coralnpu_test_utils:rvv_type_util",
         "@bazel_tools//tools/python/runfiles",
@@ -708,11 +748,19 @@ coralflow_test(
     size = "enormous",
     srcs = ["rvv_load_store_test.py"],
     data = ["//tests/cocotb/rvv/load_store:rvv_load_store_tests"],
+    exclude_testcases = {
+        "uvm": [
+            "load_store8_fault",
+            "lsu_fault_cases",
+        ],
+    },
     hdl_toplevel = "VmeCoreMiniAxi",
     targets = [
         "verilator",
         "vcs",
+        "uvm",
     ],
+    uvm_batch = True,
     deps = [
         "//coralnpu_test_utils:rvv_type_util",
         "@bazel_tools//tools/python/runfiles",
@@ -727,11 +775,19 @@ coralflow_test(
     data = [
         "//tests/cocotb/rvv/arithmetics:rvv_arith_tests",
     ],
+    exclude_testcases = {
+        "uvm": [
+            "*bf16*",
+            "vmsge_vx_test",
+        ],
+    },
     targets = [
         "verilator",
         "vcs",
+        "uvm",
         "nexus_fpga",
     ],
+    uvm_batch = True,
     deps = [
         "@bazel_tools//tools/python/runfiles",
         requirement("tqdm"),
@@ -918,7 +974,6 @@ coralflow_test(
     targets = [
         "verilator",
         "vcs",
-        "uvm",
         "nexus_fpga",
     ],
     deps = [

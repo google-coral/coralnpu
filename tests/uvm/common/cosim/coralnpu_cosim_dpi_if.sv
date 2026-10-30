@@ -53,6 +53,15 @@ package coralnpu_cosim_dpi_if;
     output int unsigned value
   );
 
+  // Function to set a register value (GPR, PC, CSR) by its string name.
+  import "DPI-C" context function int mpact_set_register(
+    input string name,
+    input int unsigned value
+  );
+
+  // Function to apply a binary memory patch file to MPACT memory.
+  import "DPI-C" context function int mpact_apply_memory_patch(input string patch_file);
+
   // Function to get a vector register value by its string name.
   // The C pointer 'svLogicVecVal* value' maps to an 'output' argument in SV.
   import "DPI-C" context function int mpact_get_vector_register(

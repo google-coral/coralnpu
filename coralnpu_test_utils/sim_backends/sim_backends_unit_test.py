@@ -656,6 +656,44 @@ class TestUvmTestFixture(unittest.IsolatedAsyncioTestCase):
                                         "prog_001.elf: expected tohost == 1"):
                 await fixture.run_batch([elf1, elf2])
 
+    async def test_run_batch_without_tohost_symbol_passes_on_halt(self):
+        fixture = UvmTestFixture(sim_binary_path="/bin/simv")
+        elf1 = os.path.join(self._temp_dir.name, "prog_000.elf")
+        elf2 = os.path.join(self._temp_dir.name, "prog_001.elf")
+        for p in (elf1, elf2):
+            with open(p, "wb") as f:
+                f.write(b"\x7fELF")
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        log = (
+            "--- STARTING TEST: prog_000.elf ---\n"
+            "** UVM TEST PASSED **\n"
+            "--- FINISHED TEST: prog_000.elf ---\n"
+            "--- STARTING TEST: prog_001.elf ---\n"
+            "** UVM TEST PASSED **\n"
+            "--- FINISHED TEST: prog_001.elf ---\n"
+            "REGRESSION COMPLETE. Passed: 2/2\n"
+        )
+        mock_proc.communicate = AsyncMock(
+            return_value=(log.encode("utf-8"), b"")
+        )
+
+        with (
+                patch(
+                    "coralnpu_test_utils.sim_backends.uvm_test_fixture.resolve_runfile_path",
+                    side_effect=lambda p: str(p),
+                ),
+                patch(
+                    "coralnpu_test_utils.sim_backends.uvm_test_fixture.parse_elf_symbols",
+                    return_value=(0x0, {}, {}),
+                ),
+                patch("asyncio.create_subprocess_exec",
+                      return_value=mock_proc),
+        ):
+            ok = await fixture.run_batch([elf1, elf2])
+        self.assertTrue(ok)
+
 
 class TestFpgaTestFixture(unittest.TestCase):
     """Tests for FpgaTestFixture."""

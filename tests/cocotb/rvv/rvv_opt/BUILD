@@ -57,7 +57,9 @@ coralflow_test(
         "npusim",
         "verilator",
         "vcs",
+        "uvm",
         "nexus_fpga",
     ],
     testcases = RUN_RVV_OPT_TESTS,
+    uvm_batch = True,
 )

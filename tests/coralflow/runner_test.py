@@ -512,6 +512,40 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
             # tc_d is enabled index 1 -> runs on shard 1!
             self.assertFalse(tc_d._cocotb_skip)
 
+    @mock.patch("coralnpu_test_utils.coralflow.runner._create_fixture")
+    def test_coralflow_main_uvm_batch(self, mock_create):
+        batch_calls = []
+
+        class BatchMockFixture(MockFixture):
+
+            async def run_batch(self, elf_paths, timeout_cycles=100000):
+                batch_calls.append((list(elf_paths), timeout_cycles))
+                return True
+
+        mock_create.side_effect = lambda *args, **kwargs: BatchMockFixture()
+
+        os.environ["CORALFLOW_TARGET"] = "uvm"
+        os.environ["CORALFLOW_UVM_BATCH"] = "1"
+        os.environ["CORALFLOW_DATA_ELFS"] = (
+            "pkg/b_test.elf pkg/b_test.bin pkg/a_test.elf "
+            "pkg/rvv_bf16_add.elf pkg/fault_test.elf "
+            "pkg/rv32ui-p-add pkg/rv32ui-p-add.dump"
+        )
+        os.environ["CORALFLOW_EXCLUDE_TESTCASE"] = "fault_test,*bf16*"
+
+        coralflow_main(argv=[])
+        self.assertEqual(len(batch_calls), 1)
+        self.assertEqual(
+            batch_calls[0][0],
+            ["pkg/a_test.elf", "pkg/b_test.elf", "pkg/rv32ui-p-add"],
+        )
+
+        # Filtering by --testcase stem
+        batch_calls.clear()
+        coralflow_main(argv=["--testcase", "b_test"])
+        self.assertEqual(len(batch_calls), 1)
+        self.assertEqual(batch_calls[0][0], ["pkg/b_test.elf"])
+
 
 if __name__ == "__main__":
     unittest.main()

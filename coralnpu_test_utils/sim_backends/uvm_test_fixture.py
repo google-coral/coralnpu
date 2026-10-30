@@ -471,7 +471,7 @@ class UvmTestFixture(BaseCoralNPUFixture):
                 elf_paths, timeout_cycles=timeout_cycles
             )
 
-        resolved_entries: list[tuple[str, int, int, str]] = []
+        resolved_entries: list[tuple[str, int, int, str, bool]] = []
         for elf_path in elf_paths:
             resolved = resolve_runfile_path(elf_path)
             if not os.path.exists(resolved):
@@ -480,16 +480,20 @@ class UvmTestFixture(BaseCoralNPUFixture):
                 )
             entry_point, symbols, _ = parse_elf_symbols(
                 resolved,
-                symbols=["tohost"],
+                optional_symbols=["tohost", "fromhost"],
                 strict=True,
                 require_symtab=False,
             )
-            tohost_addr = symbols["tohost"]
+            tohost_addr = symbols.get("tohost", 0)
+            requires_tohost_write = (
+                tohost_addr != 0 and "fromhost" not in symbols
+            )
             resolved_entries.append((
                 os.path.abspath(resolved),
                 tohost_addr,
                 entry_point,
                 os.path.basename(resolved),
+                requires_tohost_write,
             ))
 
         reg_list_file: str | None = None
@@ -508,7 +512,13 @@ class UvmTestFixture(BaseCoralNPUFixture):
                     delete=False,
                     encoding="utf-8",
             ) as reg_tmp:
-                for abs_elf, tohost_addr, entry_point, elf_name in resolved_entries:
+                for (
+                        abs_elf,
+                        tohost_addr,
+                        entry_point,
+                        elf_name,
+                        _,
+                ) in resolved_entries:
                     reg_tmp.write(
                         f"{abs_elf} {tohost_addr:08x} {entry_point:08x} "
                         f"{timeout_ns} {spike_opt} {elf_name}\n"
@@ -593,7 +603,13 @@ class UvmTestFixture(BaseCoralNPUFixture):
                     )
                 )
 
-            for _, _, _, elf_name in resolved_entries:
+            for (
+                    _,
+                    tohost_addr,
+                    _,
+                    elf_name,
+                    requires_tohost_write,
+            ) in resolved_entries:
                 block_match = re.search(
                     rf"--- STARTING TEST: {re.escape(elf_name)} ---"
                     r"(.*?)"
@@ -610,12 +626,22 @@ class UvmTestFixture(BaseCoralNPUFixture):
                         )
                     )
                 block = block_match.group(1)
-                if "tohost write detected" not in block:
+                if requires_tohost_write and "tohost write detected" not in block:
                     raise RuntimeError(
                         self._dump_sim_log(
                             stdout_str,
                             reason=
                             f"{elf_name}: expected tohost == 1, but no tohost write was detected.",
+                        )
+                    )
+                if (tohost_addr != 0 and not requires_tohost_write
+                        and "tohost write detected" not in block
+                        and "mpause instruction received." not in block):
+                    raise RuntimeError(
+                        self._dump_sim_log(
+                            stdout_str,
+                            reason=
+                            f"{elf_name}: did not write tohost or halt cleanly via mpause.",
                         )
                     )
                 if "** UVM TEST PASSED **" not in block:

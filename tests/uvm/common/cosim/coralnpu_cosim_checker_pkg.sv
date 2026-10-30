@@ -460,18 +460,6 @@ package coralnpu_cosim_checker_pkg;
         if (!uvm_config_db#(bit)::get(this, "", "mpact_enabled", mpact_enabled)) begin
           if ($test$plusargs("DISABLE_MPACT")) begin
             mpact_enabled = 0;
-          end else if (mem_patch_file != "") begin
-            // TODO(b/563400507): MPACT's DPI wrapper (@coralnpu_mpact) currently only supports
-            // loading static ELF binaries via mpact_load_program() and lacks a runtime backdoor
-            // memory patching interface (e.g. mpact_apply_memory_patch). When memory patches
-            // (+MEM_PATCH=) are applied, MPACT retains unpatched memory, triggering false co-sim
-            // mismatches on load instructions. Temporarily disable MPACT when mem_patch_file is
-            // active until MPACT's DPI wrapper is extended to support memory patch injection.
-            `uvm_info(
-                get_type_name(),
-                "Memory patch active (+MEM_PATCH); disabling MPACT co-simulation due to missing patch DPI support (Spike active).",
-                UVM_LOW)
-            mpact_enabled = 0;
           end else begin
             mpact_enabled = 1;
           end
@@ -500,6 +488,15 @@ package coralnpu_cosim_checker_pkg;
           if (mpact_config(dpi_cfg_s) != 0) `uvm_error(get_type_name(), "MPACT DPI config failed.")
           if (mpact_load_program(test_elf) != 0)
             `uvm_error(get_type_name(), "MPACT DPI load program failed.")
+          if (has_entry_point) begin
+            if (mpact_set_register("pc", entry_point) != 0)
+              `uvm_error(get_type_name(), "MPACT DPI set entry_point failed.")
+          end
+          if (mem_patch_file != "") begin
+            if (mpact_apply_memory_patch(mem_patch_file) != 0)
+              `uvm_error(get_type_name(), $sformatf(
+                         "MPACT DPI memory patch failed: %s", mem_patch_file))
+          end
         end
 
         // Initialize Spike

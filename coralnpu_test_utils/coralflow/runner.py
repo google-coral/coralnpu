@@ -386,6 +386,78 @@ def coralflow_test(*args: Any, **fixture_kwargs: Any) -> Any:
     return decorator
 
 
+def _is_batch_elf_path(path: str) -> bool:
+    """Returns True if path is a runnable ELF binary in runfiles."""
+    name = os.path.basename(path)
+    if name.endswith(".elf"):
+        return True
+    if name.startswith("rv32u") and not name.endswith(".dump"):
+        return True
+    return False
+
+
+def _discover_uvm_batch_elfs(
+    excluded: set[str],
+    tc_filter: str,
+    shard_index: int,
+    total_shards: int,
+) -> list[str]:
+    """Filters ELF binaries from CORALFLOW_DATA_ELFS for UVM batch execution."""
+    raw_paths = os.environ.get("CORALFLOW_DATA_ELFS", "").split()
+    elf_paths: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_paths:
+        if not _is_batch_elf_path(raw):
+            continue
+        basename = os.path.basename(raw)
+        stem = os.path.splitext(basename)[0]
+        if basename in excluded or stem in excluded:
+            continue
+        if any(pat.startswith("*") and pat.endswith("*")
+               and pat[1:-1] in basename for pat in excluded):
+            continue
+        if raw not in seen:
+            seen.add(raw)
+            elf_paths.append(raw)
+
+    elf_paths.sort(key=os.path.basename)
+
+    if tc_filter:
+        requested = [t.strip() for t in tc_filter.split(",") if t.strip()]
+        filtered: list[str] = []
+        for req in requested:
+            if req in excluded:
+                continue
+            exact = [
+                p for p in elf_paths if os.path.basename(p) == req
+                or os.path.splitext(os.path.basename(p))[0] == req
+            ]
+            if exact:
+                for p in exact:
+                    if p not in filtered:
+                        filtered.append(p)
+            else:
+                matches = [p for p in elf_paths if req in os.path.basename(p)]
+                if not matches:
+                    available = [
+                        os.path.splitext(os.path.basename(p))[0]
+                        for p in elf_paths
+                    ]
+                    raise ValueError(
+                        f"No UVM batch ELF matches testcase '{req}'. "
+                        f"Available: {available}"
+                    )
+                for p in matches:
+                    if p not in filtered:
+                        filtered.append(p)
+        elf_paths = filtered
+
+    if total_shards > 1:
+        elf_paths = elf_paths[shard_index::total_shards]
+
+    return elf_paths
+
+
 def coralflow_main(argv: list[str] | None = None) -> None:
     """Entrypoint to execute registered @coralflow_test functions in standalone mode.
 
@@ -405,16 +477,49 @@ def coralflow_main(argv: list[str] | None = None) -> None:
 
     excl_filter = os.environ.get("CORALFLOW_EXCLUDE_TESTCASE", "").strip()
     excluded = {t.strip() for t in excl_filter.split(",") if t.strip()}
-    available = {
-        name: fn
-        for name, fn in _REGISTERED_TESTS.items()
-        if name not in excluded
-    }
 
     tc_filter = (
         ns.testcase or os.environ.get("TESTBRIDGE_TEST_ONLY")
         or os.environ.get("CORALFLOW_TESTCASE") or ""
     ).strip()
+
+    if (get_target_environment() == "uvm" and os.environ.get(
+            "CORALFLOW_UVM_BATCH", "").strip() in ("1", "true", "True")):
+        try:
+            elf_paths = _discover_uvm_batch_elfs(
+                excluded=excluded,
+                tc_filter=tc_filter,
+                shard_index=shard_index,
+                total_shards=total_shards,
+            )
+        except ValueError:
+            if not tc_filter or not any(
+                    req in name
+                    for req in (t.strip()
+                                for t in tc_filter.split(",")
+                                if t.strip())
+                    for name in _REGISTERED_TESTS):
+                raise
+            elf_paths = None
+
+        if elf_paths is not None:
+            if not elf_paths:
+                return
+
+            async def _uvm_batch_coro(fixture: Any) -> None:
+                await fixture.run_batch(elf_paths, timeout_cycles=200000)
+
+            _uvm_batch_coro.__name__ = "uvm_batch_test"
+            _uvm_batch_coro.__qualname__ = "uvm_batch_test"
+            batch_wrapper = coralflow_test(_uvm_batch_coro)
+            batch_wrapper()
+            return
+
+    available = {
+        name: fn
+        for name, fn in _REGISTERED_TESTS.items()
+        if name not in excluded
+    }
 
     if not tc_filter:
         selected = list(available.values())

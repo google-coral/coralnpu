@@ -56,7 +56,9 @@ coralflow_test(
     targets = [
         "verilator",
         "vcs",
+        "uvm",
     ],
+    uvm_batch = True,
     deps = [
         requirement("tqdm"),
         "@bazel_tools//tools/python/runfiles",

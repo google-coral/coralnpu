@@ -119,7 +119,7 @@ diff -uNr a/sim/coralnpu_simulator.h b/sim/coralnpu_simulator.h
 diff -uNr a/sim/cosim/coralnpu_cosim_dpi.h b/sim/cosim/coralnpu_cosim_dpi.h
 --- a/sim/cosim/coralnpu_cosim_dpi.h	2026-09-28 22:55:05.419845525 +0000
 +++ b/sim/cosim/coralnpu_cosim_dpi.h	2026-09-28 22:54:50.325829182 +0000
-@@ -89,6 +89,25 @@
+@@ -89,6 +89,29 @@
  // The register value is returned in the svLogicVecVal argument.
  int mpact_get_vector_register(const char* name, svLogicVecVal* value);
  
@@ -142,13 +142,26 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi.h b/sim/cosim/coralnpu_cosim_dpi.h
 +int mpact_get_current_matrix_tile(uint32_t tile, svLogicVecVal* value,
 +                                  uint32_t* tew, uint32_t* valid_word_count);
 +
++// Apply a binary memory patch file (uint64_t addr, uint32_t len, bytes) to
++// the MPACT simulator's memory space. Returns 0 on success.
++int mpact_apply_memory_patch(const char* patch_file);
++
  // Return the configured architecture of the simulator.
  // Returns 0 on success, non-zero on failure.
  int mpact_get_architecture(coralnpu_architecture_t* architecture);
 diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc
 --- a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc	2026-09-28 22:55:05.420004885 +0000
 +++ b/sim/cosim/coralnpu_cosim_dpi_wrapper.cc	2026-09-28 22:55:33.605658413 +0000
-@@ -21,6 +21,7 @@
+@@ -13,14 +13,16 @@
+ // limitations under the License.
+ 
+ #include <cstdint>
++#include <cstdio>
+ #include <memory>
+ #include <string>
+ #include <vector>
+ 
+ #include "sim/coralnpu_architecture.h"
  #include "sim/coralnpu_simulator.h"
  #include "sim/coralnpu_v2_state.h"
  #include "sim/cosim/coralnpu_cosim_dpi.h"
@@ -156,7 +169,7 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
  #include "absl/log/check.h"
  #include "absl/log/log.h"
  #include "absl/status/status.h"
-@@ -32,6 +33,7 @@
+@@ -32,6 +34,7 @@
  using ::coralnpu::sim::CoralNPUSimulator;
  using ::coralnpu::sim::CoralNPUSimulatorOptions;
  using ::coralnpu::sim::CoralNPUV2State;
@@ -164,7 +177,7 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
  
  namespace {
  
-@@ -81,6 +83,8 @@
+@@ -81,6 +84,8 @@
  
    coralnpu_architecture_t architecture() const {
      switch (options_.architecture) {
@@ -173,7 +186,7 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
        case Architecture::kM3:
          return kCoralNPUM3;
        case Architecture::kV2:
-@@ -344,6 +348,137 @@
+@@ -344,6 +349,186 @@
    return 0;
  }
  
@@ -305,6 +318,55 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
 +
 +  *tew = current_tew;
 +  *valid_word_count = ptile_words;
++  return 0;
++}
++
++int mpact_apply_memory_patch(const char* patch_file) {
++  if (g_mpact_handle == nullptr || !g_mpact_handle->is_initialized()) {
++    LOG(ERROR) << "[DPI] mpact_apply_memory_patch: Simulator not initialized.";
++    return -1;
++  }
++  if (patch_file == nullptr || patch_file[0] == '\0') {
++    return 0;
++  }
++  FILE* f = std::fopen(patch_file, "rb");
++  if (!f) {
++    LOG(ERROR) << "[DPI] Failed to open patch file: " << patch_file;
++    return -1;
++  }
++
++  while (true) {
++    uint64_t addr = 0;
++    uint32_t len = 0;
++    if (std::fread(&addr, sizeof(addr), 1, f) != 1) {
++      break;
++    }
++    if (std::fread(&len, sizeof(len), 1, f) != 1) {
++      LOG(ERROR) << "[DPI] Truncated patch record length at 0x" << std::hex
++                 << addr;
++      std::fclose(f);
++      return -1;
++    }
++    if (len == 0) {
++      continue;
++    }
++    std::vector<uint8_t> buffer(len);
++    if (std::fread(buffer.data(), 1, len, f) != len) {
++      LOG(ERROR) << "[DPI] Truncated patch payload at 0x" << std::hex << addr;
++      std::fclose(f);
++      return -1;
++    }
++    auto status =
++        g_mpact_handle->simulator()->WriteMemory(addr, buffer.data(), len);
++    if (!status.ok()) {
++      LOG(ERROR) << "[DPI] WriteMemory failed at 0x" << std::hex << addr << ": "
++                 << status.status().message();
++      std::fclose(f);
++      return -1;
++    }
++  }
++
++  std::fclose(f);
 +  return 0;
 +}
 +
