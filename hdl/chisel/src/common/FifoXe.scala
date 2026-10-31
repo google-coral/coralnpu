@@ -29,7 +29,7 @@ class FifoXe[T <: Data](t: T, x: Int, n: Int) extends Module {
   val io = IO(new Bundle {
     val in     = Flipped(Decoupled(Vec(x, Valid(t))))
     val out    = Decoupled(t)
-    val count  = Output(UInt(log2Ceil(n + 1).W))
+    val count  = Output(UInt(BitWidthForInt(n)))
     val entry  = Output(Vec(n, Valid(t)))
     val nempty = Output(Bool())
   })
@@ -44,7 +44,7 @@ class FifoXe[T <: Data](t: T, x: Int, n: Int) extends Module {
 
   val inxpos = RegInit(VecInit((0 until x).map(x => x.U((log2Ceil(n) + 1).W))))
   val outpos = RegInit(0.U(log2Ceil(n).W))
-  val mcount = RegInit(0.U(log2Ceil(n + 1).W))
+  val mcount = RegInit(0.U(BitWidthForInt(n)))
   val nempty = RegInit(false.B)
 
   io.count  := mcount

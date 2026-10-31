@@ -17,6 +17,22 @@ package common
 import chisel3._
 import chisel3.util._
 
+// Number of bits required to represent max in binary
+object BitWidthForInt {
+  def apply(max: Int): Width = {
+    require(max >= 0, "Count maximum must be nonnegative")
+    log2Ceil(BigInt(max) + 1).W
+  }
+}
+
+// Ready/valid handshake for flat interfaces without a bits payload
+class Fireable extends Bundle {
+  val valid = Output(Bool())
+  val ready = Input(Bool())
+
+  def fire: Bool = valid && ready
+}
+
 object MuxOR {
   def apply(valid: Bool, data: UInt): UInt = {
     Mux(valid, data, 0.U(data.getWidth.W))

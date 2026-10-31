@@ -265,6 +265,8 @@ chisel_test(
     ],
     deps = [
         ":coralnpu_base",
+        ":coralnpu_float",
+        ":coralnpu_rvv",
         ":coralnpu_scalar",
         "//hdl/chisel/src/common:testing",
     ],
@@ -460,6 +462,9 @@ chisel_library(
         "Interfaces.scala",
         "Library.scala",
         "Parameters.scala",
+    ],
+    exports = [
+        "//hdl/chisel/src/common:library",
     ],
     deps = [
         ":clock_gate",
