@@ -486,7 +486,12 @@ class LsuCell(p: Parameters) extends Bundle {
   val state   = LsuCellState()
   val data    = UInt(8.W)
   val rowAddr = UInt(p.dbusRowAddrBits.W)
-  val mask    = UInt(p.lsuDataBytes.W)
+  // Store the byte position in binary; decode only where a bus-lane mask is needed.
+  // byteValid preserves the all-zero mask used by reset/unallocated cells.
+  val byteOffset = UInt(p.dbusOffsetBits.W)
+  val byteValid  = Bool()
+
+  def mask: UInt = Mux(byteValid, UIntToOH(byteOffset, p.lsuDataBytes), 0.U(p.lsuDataBytes.W))
 
   def canAcceptResp(respRowAddr: UInt): Bool = {
     rowAddr === respRowAddr && state.isOneOf(LsuCellState.W_START, LsuCellState.W_RESP)
@@ -591,16 +596,15 @@ class LsuCell(p: Parameters) extends Bundle {
       .map { x =>
         val vOffset    = x.bits(p.dbusOffsetBits - 1, 0)
         val vRow       = x.bits(x.bits.getWidth - 1, p.dbusOffsetBits)
-        val carryMask  = (~(Fill(p.lsuDataBytes, 1.U(1.W)) >> vOffset))(p.lsuDataBytes - 1, 1)
-        val carry      = (mask(p.lsuDataBytes - 1, 1) & carryMask).orR
+        val offsetSum  = byteOffset +& vOffset
+        val carry      = byteValid && offsetSum(p.dbusOffsetBits)
         val newRowAddr = (rowAddr +& vRow +& carry)(p.dbusRowAddrBits - 1, 0)
-        val newMask    = LsuCell.rotl(mask, vOffset, p.lsuDataBytes)
 
         MakeWireBundle[LsuCell](
           new LsuCell(p),
-          _         -> this,
-          _.rowAddr -> Mux(x.valid, newRowAddr, rowAddr),
-          _.mask    -> Mux(x.valid, newMask, mask)
+          _            -> this,
+          _.rowAddr    -> Mux(x.valid, newRowAddr, rowAddr),
+          _.byteOffset -> Mux(x.valid && byteValid, offsetSum(p.dbusOffsetBits - 1, 0), byteOffset)
         )
       }
       .getOrElse(this)
@@ -608,34 +612,25 @@ class LsuCell(p: Parameters) extends Bundle {
 }
 
 object LsuCell {
-  def rotl(x: UInt, shamt: UInt, n: Int): UInt = {
-    (0 until log2Ceil(n)).foldLeft(x) { (curr, stage) =>
-      val shift = 1 << stage
-      Mux(
-        shamt(stage),
-        Cat(curr(n - 1 - shift, 0), curr(n - 1, n - shift)),
-        curr
-      )
-    }
-  }
-
   def apply(p: Parameters): LsuCell = {
     MakeWireBundle[LsuCell](
       new LsuCell(p),
-      _.state   -> LsuCellState.DONE,
-      _.data    -> 0.U,
-      _.rowAddr -> 0.U,
-      _.mask    -> 0.U
+      _.state      -> LsuCellState.DONE,
+      _.data       -> 0.U,
+      _.rowAddr    -> 0.U,
+      _.byteOffset -> 0.U,
+      _.byteValid  -> false.B
     )
   }
 
   def unreachable(p: Parameters): LsuCell = {
     MakeWireBundle[LsuCell](
       new LsuCell(p),
-      _.state   -> DontCare,
-      _.data    -> DontCare,
-      _.rowAddr -> DontCare,
-      _.mask    -> DontCare
+      _.state      -> DontCare,
+      _.data       -> DontCare,
+      _.rowAddr    -> DontCare,
+      _.byteOffset -> DontCare,
+      _.byteValid  -> DontCare
     )
   }
 }
@@ -1267,7 +1262,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
           cellWriteback(i)
           // We don't need to worry about invalidate because it doesn't skip WB.
         }
-        .reduce(_ && _)
+        .asUInt
+        .andR
 
       val nextRowAddrCandidates = VecInit.tabulate(windowSizeNormal + 1) { i =>
         val idx         = leadIndex +& i.U
@@ -1467,10 +1463,9 @@ class LsuSuperSlot(p: Parameters) extends Module {
       }
       val byteInRow         = VecInit.tabulate(nCells) { i => byteSum(i)(p.dbusOffsetBits - 1, 0) }
       val continuousRowAddr = VecInit.tabulate(nCells) { i => rowTable(rowDelta(i)) }
-      val continuousMask = VecInit.tabulate(nCells) { i => UIntToOH(byteInRow(i), p.lsuDataBytes) }
 
       // Mode B: Strided / Indexed (Unified 16-entry lookup, RVV only)
-      val (cellRowAddr, cellMask) = if (p.enableRvv) {
+      val (cellRowAddr, cellOffset) = if (p.enableRvv) {
         val effStride         = Mux(isIndexed, 0.U(32.W), uop.data)
         val uniqueStructSizes = Seq(1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32)
         val stridedOffsets    = VecInit.tabulate(nCells) { i =>
@@ -1496,19 +1491,19 @@ class LsuSuperSlot(p: Parameters) extends Module {
         val stridedRowAddr = VecInit.tabulate(nCells) { i =>
           stridedAddr(i)(p.lsuAddrBits - 1, p.dbusOffsetBits)
         }
-        val stridedMask = VecInit.tabulate(nCells) { i =>
-          UIntToOH(stridedAddr(i)(p.dbusOffsetBits - 1, 0), p.lsuDataBytes)
+        val stridedOffset = VecInit.tabulate(nCells) { i =>
+          stridedAddr(i)(p.dbusOffsetBits - 1, 0)
         }
 
         val rowAddr = VecInit.tabulate(nCells) { i =>
           Mux(uop.initAsConstStride, stridedRowAddr(i), continuousRowAddr(i))
         }
-        val mask = VecInit.tabulate(nCells) { i =>
-          Mux(uop.initAsConstStride, stridedMask(i), continuousMask(i))
+        val offset = VecInit.tabulate(nCells) { i =>
+          Mux(uop.initAsConstStride, stridedOffset(i), byteInRow(i))
         }
-        (rowAddr, mask)
+        (rowAddr, offset)
       } else {
-        (continuousRowAddr, continuousMask)
+        (continuousRowAddr, byteInRow)
       }
 
       // 3. Assemble cells
@@ -1523,10 +1518,11 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
         MakeWireBundle[LsuCell](
           new LsuCell(p),
-          _.state   -> cellsInitState(i),
-          _.rowAddr -> Mux(isActive, cellRowAddr(i), cells(i).rowAddr),
-          _.mask    -> Mux(isActive, cellMask(i), cells(i).mask),
-          _.data    -> cellData
+          _.state      -> cellsInitState(i),
+          _.rowAddr    -> Mux(isActive, cellRowAddr(i), cells(i).rowAddr),
+          _.byteOffset -> Mux(isActive, cellOffset(i), cells(i).byteOffset),
+          _.byteValid  -> Mux(isActive, true.B, cells(i).byteValid),
+          _.data       -> cellData
         )
       }
 
@@ -1967,12 +1963,13 @@ class LsuSuperSlot(p: Parameters) extends Module {
   io.active := !state.cells.forall { x =>
     x.state === LsuCellState.DONE
   }
-  // storeComplete is raised iff we've completed all cells and writebacks
-  io.storeComplete := state.write && !state.cells.forall { x =>
-    x.state === LsuCellState.DONE
-  } && stateFromAction.cells.forall { x =>
-    x.state === LsuCellState.DONE
-  }
+  // Reuse the completion predicate from act rather than re-decoding every
+  // cell's next-state mux on the store-completion path. Retain the old
+  // expression as a verification check, including the final-writeback cycle.
+  val currentCellsDone = VecInit(state.cells.map(_.state === LsuCellState.DONE)).asUInt.andR
+  val nextCellsDone = VecInit(stateFromAction.cells.map(_.state === LsuCellState.DONE)).asUInt.andR
+  assert(stateFromAction.isDone === nextCellsDone)
+  io.storeComplete := state.write && !currentCellsDone && stateFromAction.isDone
   io.pc := state.pc
 
   io.vectorData.map { x =>
