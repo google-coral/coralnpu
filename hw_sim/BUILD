@@ -12,7 +12,59 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("//hdl/chisel/src/coralnpu:flags.bzl", "VME_CORE_MINI_AXI_VOPTS")
 load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
+load("//rules:verilator.bzl", "verilator_cc_library")
+
+# Verilator --threads for the models; each simulator needs that many free
+# CPUs. On large hosts, use e.g. --@coralnpu_hw//hw_sim:verilator_threads=8.
+_THREADS = [
+    "1",
+    "4",
+    "8",
+]
+
+string_flag(
+    name = "verilator_threads",
+    build_setting_default = "1",
+    values = _THREADS,
+)
+
+[
+    config_setting(
+        name = "verilator_threads_" + t,
+        flag_values = {":verilator_threads": t},
+    )
+    for t in _THREADS
+]
+
+# UNOPTTHREADS would fail the 8-thread build, but 8 threads run faster than 4.
+_MODEL_VOPTS = VME_CORE_MINI_AXI_VOPTS + ["-Wno-UNOPTTHREADS"] + select({
+    ":verilator_threads_" + t: [
+        "--threads",
+        t,
+    ]
+    for t in _THREADS
+})
+
+verilator_cc_library(
+    name = "vme_core_mini_axi_model",
+    module = "//hdl/chisel/src/coralnpu:vme_core_mini_axi_cc_library_verilog",
+    module_top = "VmeCoreMiniAxi",
+    systemc = False,
+    trace = False,
+    vopts = _MODEL_VOPTS,
+)
+
+verilator_cc_library(
+    name = "vme_core_mini_highmem_axi_model",
+    module = "//hdl/chisel/src/coralnpu:vme_core_mini_highmem_axi_cc_library_verilog",
+    module_top = "VmeCoreMiniHighmemAxi",
+    systemc = False,
+    trace = False,
+    vopts = _MODEL_VOPTS,
+)
 
 cc_library(
     name = "hw_primitives",
@@ -32,14 +84,16 @@ cc_library(
     name = "core_mini_axi_wrapper",
     hdrs = [
         "core_mini_axi_wrapper.h",
-        "mailbox.h",
     ],
+    defines = select({
+        ":verilator_threads_" + t: ["CORALNPU_VERILATOR_THREADS=" + t]
+        for t in _THREADS
+    }),
     deps = [
         ":coralnpu_simulator_headers",
         ":hw_primitives",
-        "//hdl/chisel/src/coralnpu:core_mini_axi_cc_library_cc",
-        "//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_cc",
-        "//hdl/chisel/src/coralnpu:vme_core_mini_axi_cc_library_cc",
+        ":vme_core_mini_axi_model",
+        ":vme_core_mini_highmem_axi_model",
         "//hdl/verilog:sram_backdoor",
     ],
 )
@@ -68,34 +122,8 @@ cc_library(
 )
 
 cc_library(
-    name = "core_mini_axi_simulator",
-    srcs = ["core_mini_axi_simulator.cc"],
-    linkstatic = True,
-    visibility = ["//visibility:public"],
-    deps = [
-        ":coralnpu_simulator_headers",
-        ":core_mini_axi_wrapper",
-    ],
-    alwayslink = True,
-)
-
-cc_library(
-    name = "core_mini_axi_simulator_rvv",
-    srcs = ["core_mini_axi_simulator.cc"],
-    copts = ["-DENABLE_RVV"],
-    linkstatic = True,
-    visibility = ["//visibility:public"],
-    deps = [
-        ":coralnpu_simulator_headers",
-        ":core_mini_axi_wrapper",
-    ],
-    alwayslink = True,
-)
-
-cc_library(
     name = "core_mini_axi_simulator_vme",
     srcs = ["core_mini_axi_simulator.cc"],
-    copts = ["-DENABLE_VME"],
     linkstatic = True,
     visibility = ["//visibility:public"],
     deps = [
@@ -122,26 +150,12 @@ cc_binary(
         ":mailbox_example.elf",
     ],
     deps = [
-        ":core_mini_axi_simulator",
+        ":core_mini_axi_simulator_vme",
         "//tests/verilator_sim:elf",
     ],
 )
 
 # generate libraries for external projects
-cc_binary(
-    name = "libcoralnpu_simulator.so",
-    linkshared = True,
-    visibility = ["//visibility:public"],
-    deps = [":core_mini_axi_simulator"],
-)
-
-cc_binary(
-    name = "libcoralnpu_simulator_rvv.so",
-    linkshared = True,
-    visibility = ["//visibility:public"],
-    deps = [":core_mini_axi_simulator_rvv"],
-)
-
 cc_binary(
     name = "libcoralnpu_simulator_vme.so",
     linkshared = True,

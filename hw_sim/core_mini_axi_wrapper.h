@@ -16,25 +16,37 @@
 #define HW_SIM_CORE_MINI_AXI_WRAPPER_H_
 
 #include <algorithm>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
+#include "VVmeCoreMiniAxi.h"
+#include "VVmeCoreMiniHighmemAxi.h"
 #include "hw_sim/coralnpu_simulator.h"
 #include "hw_sim/hw_primitives.h"
-#include "hw_sim/mailbox.h"
 
-#if defined(ENABLE_VME)
-#include "VVmeCoreMiniAxi.h"
-#elif defined(ENABLE_RVV)
-#include "VRvvCoreMiniAxi.h"
-#else
-#include "VCoreMiniAxi.h"
-#endif
-
-class CoreMiniAxiWrapper {
+class CoreMiniAxiWrapperBase {
  public:
-  explicit CoreMiniAxiWrapper(VerilatedContext *context,
-                              const CoralNPUSimulatorOptions &options = {})
+  virtual ~CoreMiniAxiWrapperBase() = default;
+
+  virtual void Reset()                                                                = 0;
+  virtual void Step()                                                                 = 0;
+  virtual void Write(uint32_t addr, uint32_t len, const char *data)                   = 0;
+  virtual std::vector<uint8_t> Read(uint32_t addr, uint32_t len)                      = 0;
+  virtual void RegisterReadCallback(std::function<AxiRData(const AxiAddr &)> read_cb) = 0;
+  virtual void RegisterWriteCallback(
+      std::function<AxiWResp(const AxiAddr &, const AxiWData &)> write_cb) = 0;
+  virtual void WriteWord(uint32_t addr, uint32_t word)                     = 0;
+  virtual bool WaitForTermination(int timeout = 10000)                     = 0;
+  virtual uint64_t cycle_count() const                                     = 0;
+};
+
+template <typename Model>
+class CoreMiniAxiWrapperTemplate final : public CoreMiniAxiWrapperBase {
+ public:
+  explicit CoreMiniAxiWrapperTemplate(VerilatedContext *context,
+                                      const CoralNPUSimulatorOptions &options = {})
       : context_(context),
         core_(context, "core"),
         options_(options),
@@ -85,9 +97,10 @@ class CoreMiniAxiWrapper {
             &core_.io_axi_master_write_resp_bits_resp, &core_.io_axi_master_write_resp_ready),
         halted_(&core_.io_halted),
         wfi_(&core_.io_wfi) {}
-  ~CoreMiniAxiWrapper() = default;
+  // Runs final blocks, which free the DPI SRAMs.
+  ~CoreMiniAxiWrapperTemplate() final { core_.final(); }
 
-  void Reset() {
+  void Reset() final {
     core_.io_aresetn = 1;
     context_->timeInc(1);
     core_.io_aresetn = 0;
@@ -96,7 +109,7 @@ class CoreMiniAxiWrapper {
     context_->timeInc(1);
   }
 
-  void Step() {
+  void Step() final {
     clock_.Step();
     cycle_count_++;
     if (options_.cycle_callback && options_.cycle_callback_period > 0 &&
@@ -105,19 +118,7 @@ class CoreMiniAxiWrapper {
     }
   }
 
-  CoralNPUMailbox& mailbox() { return mailbox_; }
-
-  const CoralNPUMailbox& mailbox() const { return mailbox_; }
-
-  const CoralNPUMailbox& ReadMailbox(void) { return mailbox_; }
-
-  void WriteMailbox(const CoralNPUMailbox& mailbox) {
-    for (int i = 0; i < 4; i++) {
-      mailbox_.message[i] = mailbox.message[i];
-    }
-  }
-
-  void Write(uint32_t addr, uint32_t len, const char* data) {
+  void Write(uint32_t addr, uint32_t len, const char *data) final {
     auto write_data =
         absl::Span<const uint8_t>(reinterpret_cast<const uint8_t*>(data), len);
     while (write_data.size() > 0) {
@@ -140,7 +141,7 @@ class CoreMiniAxiWrapper {
     }
   }
 
-  std::vector<uint8_t> Read(uint32_t addr, uint32_t len) {
+  std::vector<uint8_t> Read(uint32_t addr, uint32_t len) final {
     std::vector<uint8_t> result;
     result.reserve(len);
     while (result.size() < len) {
@@ -164,16 +165,16 @@ class CoreMiniAxiWrapper {
     return result;
   }
 
-  void RegisterReadCallback(std::function<AxiRData(const AxiAddr&)> read_cb) {
+  void RegisterReadCallback(std::function<AxiRData(const AxiAddr &)> read_cb) final {
     master_read_driver_.RegisterReadCallback(read_cb);
   }
 
   void RegisterWriteCallback(
-      std::function<AxiWResp(const AxiAddr&, const AxiWData&)> write_cb) {
+      std::function<AxiWResp(const AxiAddr &, const AxiWData &)> write_cb) final {
     master_write_driver_.RegisterWriteCallback(write_cb);
   }
 
-  void WriteWord(uint32_t addr, uint32_t word) {
+  void WriteWord(uint32_t addr, uint32_t word) final {
     absl::Span<const uint8_t> data_span(reinterpret_cast<uint8_t*>(&word),
                                         sizeof(word));
     std::shared_ptr<bool> transaction =
@@ -183,7 +184,7 @@ class CoreMiniAxiWrapper {
     }
   }
 
-  bool WaitForTermination(int timeout = 10000) {
+  bool WaitForTermination(int timeout = 10000) final {
     for (int i = 0; i < timeout; i++) {
       if ((*halted_) || (*wfi_)) {
         return true;
@@ -193,18 +194,11 @@ class CoreMiniAxiWrapper {
     return false;
   }
 
-  uint64_t cycle_count() const { return cycle_count_; }
+  uint64_t cycle_count() const final { return cycle_count_; }
 
  private:
   VerilatedContext* const context_;
-  CoralNPUMailbox mailbox_;
-#if defined(ENABLE_VME)
-  VVmeCoreMiniAxi core_;
-#elif defined(ENABLE_RVV)
-  VRvvCoreMiniAxi core_;
-#else
-  VCoreMiniAxi core_;
-#endif
+  Model core_;
   const CoralNPUSimulatorOptions options_;
   uint64_t cycle_count_ = 0;
   Clock clock_;
@@ -215,5 +209,8 @@ class CoreMiniAxiWrapper {
   const uint8_t* const halted_;
   const uint8_t* const wfi_;
 };
+
+using CoreMiniAxiWrapper        = CoreMiniAxiWrapperTemplate<VVmeCoreMiniAxi>;
+using CoreMiniHighmemAxiWrapper = CoreMiniAxiWrapperTemplate<VVmeCoreMiniHighmemAxi>;
 
 #endif  // HW_SIM_CORE_MINI_AXI_WRAPPER_H_

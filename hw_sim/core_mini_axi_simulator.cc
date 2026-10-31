@@ -12,8 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <sys/mman.h>
+
 #include <cassert>
 #include <cstring>
+#include <memory>
+#include <new>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "hw_sim/coralnpu_simulator.h"
@@ -24,9 +30,10 @@ namespace {
 // The core's CSR block (CoreAxiCSR.scala): the status register (bit 0: halted,
 // bit 1: fault) and the CSR values the core exports (io.csr.out.value in
 // scalar/Csr.scala), one word each.
-constexpr uint32_t kCoreCsrBase   = 0x30000;
-constexpr uint32_t kCoreCsrStatus = kCoreCsrBase + 0x8;
-constexpr uint32_t kCoreCsrValues = kCoreCsrBase + 0x100;
+constexpr uint32_t kCoreCsrBase         = 0x30000;
+constexpr uint32_t kHighmemCoreCsrBase  = 0x200000;
+constexpr uint32_t kCoreCsrStatusOffset = 0x8;
+constexpr uint32_t kCoreCsrValuesOffset = 0x100;
 enum CoreCsrValue : uint32_t {
   kCoreCsrPc        = 0,
   kCoreCsrMepc      = 1,
@@ -36,25 +43,40 @@ enum CoreCsrValue : uint32_t {
   kCoreCsrMinstreth = 7,
 };
 
+// Default 8 KiB ITCM ([0, 0x2000)) and 32 KiB DTCM ([0x10000, 0x18000)) bounds
+// (MemoryRegions.default in Parameters.scala). Programs outside these bounds
+// get the 1 MiB ITCM/DTCM highmem RTL model (VVmeCoreMiniHighmemAxi).
+constexpr uint32_t kDefaultItcmEnd   = 0x00002000;
+constexpr uint32_t kDefaultDtcmStart = 0x00010000;
+constexpr uint32_t kDefaultDtcmEnd   = 0x00018000;
+
 // The number of cycles WaitForTermination waits if its timeout isn't positive.
 constexpr int kDefaultTimeoutCycles = 10000;
+
+constexpr size_t kDdrMemorySize = 1024 * 1024 * 1024;  // 1GB DDR
+
+struct DdrDeleter {
+  void operator()(uint8_t *p) const noexcept { munmap(p, kDdrMemorySize); }
+};
 
 }  // namespace
 
 class CoreMiniAxiSimulator final : public CoralNPUSimulator {
  public:
   explicit CoreMiniAxiSimulator(const CoralNPUSimulatorOptions &options = {})
-      : context_(), wrapper_(&context_, options) {
-    ddr_memory_.resize(1024 * 1024 * 1024, 0);  // 1GB DDR
-    auto read_cb = [this](const AxiAddr &axi_addr) { return this->ReadCallback(axi_addr); };
-    wrapper_.RegisterReadCallback(read_cb);
-
-    auto write_cb = [this](const AxiAddr &axi_addr, const AxiWData &axi_data) {
-      return this->WriteCallback(axi_addr, axi_data);
-    };
-    wrapper_.RegisterWriteCallback(write_cb);
-
-    wrapper_.Reset();
+      : context_(), options_(options) {
+    // Match the models' --threads; the context defaults to one per host CPU.
+    // threads() also turns on worker CPU pinning, which only adds startup cost.
+    context_.threads(CORALNPU_VERILATOR_THREADS);
+    context_.useNumaAssign(false);
+    // Reserve the 1 GiB DDR address range lazily with anonymous mmap so
+    // untouched pages are not faulted in or zero-filled on construction.
+    void *mapped =
+        mmap(nullptr, kDdrMemorySize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (mapped == MAP_FAILED) {
+      throw std::bad_alloc();
+    }
+    ddr_memory_.reset(static_cast<uint8_t *>(mapped));
   }
   ~CoreMiniAxiSimulator() final = default;
 
@@ -69,15 +91,45 @@ class CoreMiniAxiSimulator final : public CoralNPUSimulator {
 
  private:
   VerilatedContext context_;
-  CoreMiniAxiWrapper wrapper_;
-  std::vector<uint8_t> ddr_memory_;
+  const CoralNPUSimulatorOptions options_;
+  std::unique_ptr<uint8_t[], DdrDeleter> ddr_memory_;
+  std::unique_ptr<CoreMiniAxiWrapperBase> wrapper_;
+  bool highmem_ = false;
+  CoralNPUMailbox mailbox_;
+  std::vector<std::pair<uint32_t, std::string>> pending_tcm_writes_;
 
   bool IsDdrAddress(uint32_t addr) { return addr >= 0x80000000 && addr < 0xC0000000; }
+
+  // Returns the base address of the active core's CSR block.
+  uint32_t CsrBase() const { return highmem_ ? kHighmemCoreCsrBase : kCoreCsrBase; }
+
+  // Lazily initializes and returns the active standard or highmem Verilated
+  // wrapper, replaying any buffered initial ITCM writes.
+  CoreMiniAxiWrapperBase &GetWrapper() {
+    if (!wrapper_) {
+      if (highmem_) {
+        wrapper_ = std::make_unique<CoreMiniHighmemAxiWrapper>(&context_, options_);
+      } else {
+        wrapper_ = std::make_unique<CoreMiniAxiWrapper>(&context_, options_);
+      }
+      wrapper_->RegisterReadCallback([this](const AxiAddr &a) { return this->ReadCallback(a); });
+      wrapper_->RegisterWriteCallback(
+          [this](const AxiAddr &a, const AxiWData &d) { return this->WriteCallback(a, d); });
+      wrapper_->Reset();
+      for (const auto &[addr, bytes] : pending_tcm_writes_) {
+        wrapper_->Write(addr, bytes.size(), bytes.data());
+      }
+      pending_tcm_writes_.clear();
+    }
+    return *wrapper_;
+  }
 
   // Reads the word at |addr|.
   uint32_t ReadWord(uint32_t addr);
   // Reads CSR value |index| from the core's CSR block.
-  uint32_t ReadCoreCsr(CoreCsrValue index) { return ReadWord(kCoreCsrValues + 4 * index); }
+  uint32_t ReadCoreCsr(CoreCsrValue index) {
+    return ReadWord(CsrBase() + kCoreCsrValuesOffset + 4 * index);
+  }
 
   AxiWResp WriteCallback(const AxiAddr &, const AxiWData &);
   AxiRData ReadCallback(const AxiAddr &);
@@ -86,47 +138,58 @@ class CoreMiniAxiSimulator final : public CoralNPUSimulator {
 void CoreMiniAxiSimulator::ReadMem(uint32_t addr, size_t size, char *data) {
   if (IsDdrAddress(addr)) {
     uint32_t offset = addr - 0x80000000;
-    if (offset + size <= ddr_memory_.size()) {
-      memcpy(data, ddr_memory_.data() + offset, size);
+    if (offset + size <= kDdrMemorySize) {
+      memcpy(data, ddr_memory_.get() + offset, size);
     } else {
       assert(false && "DDR read out of bounds");
     }
   } else {
-    std::vector<uint8_t> read_result = wrapper_.Read(addr, size);
+    std::vector<uint8_t> read_result = GetWrapper().Read(addr, size);
     memcpy(data, read_result.data(), size);
   }
 }
 
-const CoralNPUMailbox &CoreMiniAxiSimulator::ReadMailbox(void) { return wrapper_.ReadMailbox(); }
+const CoralNPUMailbox &CoreMiniAxiSimulator::ReadMailbox(void) { return mailbox_; }
 
 void CoreMiniAxiSimulator::WriteMem(uint32_t addr, size_t size, const char *data) {
   if (IsDdrAddress(addr)) {
     uint32_t offset = addr - 0x80000000;
-    if (offset + size <= ddr_memory_.size()) {
-      memcpy(ddr_memory_.data() + offset, data, size);
+    if (offset + size <= kDdrMemorySize) {
+      memcpy(ddr_memory_.get() + offset, data, size);
     } else {
       assert(false && "DDR write out of bounds");
     }
   } else {
-    wrapper_.Write(addr, size, data);
+    if (!wrapper_) {
+      // Buffer writes within the default 8 KiB ITCM until a later write reveals
+      // whether the program fits in the default TCMs or needs 1 MiB highmem.
+      if (addr + size <= kDefaultItcmEnd) {
+        pending_tcm_writes_.emplace_back(addr, std::string(data, size));
+        return;
+      }
+      highmem_ = addr + size > kDefaultDtcmEnd || addr < kDefaultDtcmStart;
+    }
+    GetWrapper().Write(addr, size, data);
   }
 }
 
-void CoreMiniAxiSimulator::WriteMailbox(const CoralNPUMailbox &mailbox) {
-  wrapper_.WriteMailbox(mailbox);
-}
+void CoreMiniAxiSimulator::WriteMailbox(const CoralNPUMailbox &mailbox) { mailbox_ = mailbox; }
 
 void CoreMiniAxiSimulator::Run(uint32_t start_addr) {
-  wrapper_.WriteWord(0x30004, start_addr);
-  wrapper_.WriteWord(0x30000, 1u);
-  wrapper_.WriteWord(0x30000, 0u);
+  CoreMiniAxiWrapperBase &w = GetWrapper();
+  const uint32_t csr_base   = CsrBase();
+  w.WriteWord(csr_base + 4, start_addr);
+  w.WriteWord(csr_base, 1u);
+  w.WriteWord(csr_base, 0u);
 }
 
 bool CoreMiniAxiSimulator::WaitForTermination(int timeout) {
-  return wrapper_.WaitForTermination(timeout > 0 ? timeout : kDefaultTimeoutCycles);
+  return GetWrapper().WaitForTermination(timeout > 0 ? timeout : kDefaultTimeoutCycles);
 }
 
-uint64_t CoreMiniAxiSimulator::GetCycleCount() const { return wrapper_.cycle_count(); }
+uint64_t CoreMiniAxiSimulator::GetCycleCount() const {
+  return wrapper_ ? wrapper_->cycle_count() : 0;
+}
 
 uint32_t CoreMiniAxiSimulator::ReadWord(uint32_t addr) {
   uint32_t word = 0;
@@ -136,7 +199,7 @@ uint32_t CoreMiniAxiSimulator::ReadWord(uint32_t addr) {
 
 bool CoreMiniAxiSimulator::ReadCoreState(CoralNPUCoreState *state) {
   // Word by word: the CSR block registers are one word wide.
-  const uint32_t status = ReadWord(kCoreCsrStatus);
+  const uint32_t status = ReadWord(CsrBase() + kCoreCsrStatusOffset);
   state->halted         = (status & 1u) != 0;
   state->fault          = (status & 2u) != 0;
   state->pc             = ReadCoreCsr(kCoreCsrPc);
@@ -166,7 +229,7 @@ AxiWResp CoreMiniAxiSimulator::WriteCallback(const AxiAddr &addr, const AxiWData
     const uint8_t *write_data = reinterpret_cast<const uint8_t *>(&data.write_data_bits_data[0]);
     for (int i = 0; i < 16; i++) {
       if (data.write_data_bits_strb & (1 << i)) {
-        if (aligned_offset + i < ddr_memory_.size()) {
+        if (aligned_offset + i < kDdrMemorySize) {
           ddr_memory_[aligned_offset + i] = write_data[i];
         } else {
           assert(false && "NPU DDR write out of bounds");
@@ -179,8 +242,7 @@ AxiWResp CoreMiniAxiSimulator::WriteCallback(const AxiAddr &addr, const AxiWData
     return resp;
   }
 
-  CoralNPUMailbox &mailbox  = wrapper_.mailbox();
-  uint8_t *mailbox_data     = reinterpret_cast<uint8_t *>(mailbox.message);
+  uint8_t *mailbox_data     = reinterpret_cast<uint8_t *>(mailbox_.message);
   const uint8_t *write_data = reinterpret_cast<const uint8_t *>(&data.write_data_bits_data[0]);
   for (int i = 0; i < 16; i++) {
     if (data.write_data_bits_strb & (1 << i)) {
@@ -200,8 +262,8 @@ AxiRData CoreMiniAxiSimulator::ReadCallback(const AxiAddr &addr) {
     uint32_t aligned_offset = offset & ~15;
     AxiRData data;
     uint8_t *read_data = reinterpret_cast<uint8_t *>(&(data.read_data_bits_data[0]));
-    if (aligned_offset + 16 <= ddr_memory_.size()) {
-      memcpy(read_data, ddr_memory_.data() + aligned_offset, 16);
+    if (aligned_offset + 16 <= kDdrMemorySize) {
+      memcpy(read_data, ddr_memory_.get() + aligned_offset, 16);
     } else {
       assert(false && "NPU DDR read out of bounds");
     }
@@ -211,8 +273,7 @@ AxiRData CoreMiniAxiSimulator::ReadCallback(const AxiAddr &addr) {
     return data;
   }
 
-  const CoralNPUMailbox &mailbox = wrapper_.mailbox();
-  const uint8_t *mailbox_data    = reinterpret_cast<const uint8_t *>(mailbox.message);
+  const uint8_t *mailbox_data = reinterpret_cast<const uint8_t *>(mailbox_.message);
   AxiRData data;
   uint8_t *read_data = reinterpret_cast<uint8_t *>(&(data.read_data_bits_data[0]));
   for (int i = 0; i < 16; i++) {

@@ -25,6 +25,7 @@
 
 int main() {
   VerilatedContext context;
+  context.threads(CORALNPU_VERILATOR_THREADS);
   CoreMiniAxiWrapper wrapper(&context);
   wrapper.Reset();
 

@@ -36,11 +36,7 @@ class Clock {
     explicit Observer(Clock* clock);
     virtual ~Observer();
 
-    virtual void OnRisingEdge() {}
     virtual void OnFallingEdge() {}
-
-   protected:
-    Clock& clock() { return *clock_; }
 
    private:
     Clock* const clock_;
@@ -54,10 +50,11 @@ class Clock {
   ~Clock() = default;
 
   // Advance the clock on cycle (one positive edge, one negative edge).
+  // Observers see the rising edge's outputs (which must be registered); their
+  // new inputs are evaluated once, after all OnFallingEdge() calls.
   void Step();
 
-  // Update the simulation. If observers change input signals to the design,
-  // they should call this function to ensure internal signals get updated.
+  // Update the simulation.
   void Eval();
 
  private:
@@ -184,7 +181,6 @@ class AxiSlaveWriteDriver final : Clock::Observer {
   void OnFallingEdge() final {
     // Send Addr
     *write_addr_valid_ = !addr_queue_.empty();
-    clock().Eval();
     if (!addr_queue_.empty()) {
       *write_addr_bits_addr_ = addr_queue_.front().addr_bits_addr;
       *write_addr_bits_prot_ = addr_queue_.front().addr_bits_prot;
@@ -199,12 +195,10 @@ class AxiSlaveWriteDriver final : Clock::Observer {
       if (*write_addr_ready_) {
         addr_queue_.pop();
       }
-      clock().Eval();
     }
 
     // Send Data
     *write_data_valid_ = !data_queue_.empty();
-    clock().Eval();
     if (!data_queue_.empty()) {
       *write_data_bits_data_ = data_queue_.front().write_data_bits_data;
       *write_data_bits_strb_ = data_queue_.front().write_data_bits_strb;
@@ -212,7 +206,6 @@ class AxiSlaveWriteDriver final : Clock::Observer {
       if (*write_data_ready_) {
         data_queue_.pop();
       }
-      clock().Eval();
     }
 
     // Receive Response
@@ -320,7 +313,6 @@ class AxiSlaveReadDriver : Clock::Observer {
   void OnFallingEdge() final {
     // Send Addr
     *read_addr_valid_ = !addr_queue_.empty();
-    clock().Eval();
     if (!addr_queue_.empty()) {
       *read_addr_bits_addr_ = addr_queue_.front().addr_bits_addr;
       *read_addr_bits_prot_ = addr_queue_.front().addr_bits_prot;
@@ -335,7 +327,6 @@ class AxiSlaveReadDriver : Clock::Observer {
       if (*read_addr_ready_) {
         addr_queue_.pop();
       }
-      clock().Eval();
     }
 
     // Received data
@@ -445,7 +436,6 @@ class AxiMasterReadDriver : Clock::Observer {
   void OnFallingEdge() final {
     // Send Data
     *read_data_valid_ = !data_queue_.empty();
-    clock().Eval();
     if (!data_queue_.empty()) {
       *read_data_bits_data_ = data_queue_.front().read_data_bits_data;
       *read_data_bits_id_ = data_queue_.front().read_data_bits_id;
@@ -454,7 +444,6 @@ class AxiMasterReadDriver : Clock::Observer {
       if (*read_data_ready_) {
         data_queue_.pop();
       }
-      clock().Eval();
     }
 
     // Receive Address
@@ -570,14 +559,12 @@ class AxiMasterWriteDriver final : Clock::Observer {
   void OnFallingEdge() final {
     // Send Response
     *write_resp_valid_ = !resp_queue_.empty();
-    clock().Eval();
     if (!resp_queue_.empty()) {
       *write_resp_bits_id_ = resp_queue_.front().write_resp_bits_id;
       *write_resp_bits_resp_ = resp_queue_.front().write_resp_bits_resp;
       if (*write_resp_ready_) {
         resp_queue_.pop();
       }
-      clock().Eval();
     }
 
     // Receive Addr

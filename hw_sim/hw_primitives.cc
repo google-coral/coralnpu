@@ -27,18 +27,13 @@ void Clock::Step() {
   context_->timeInc(1);
   (*clock_) = 1;
   Eval();
-  for (auto& observer : observers_) {
-    observer->OnRisingEdge();
-    Eval();
-  }
 
   context_->timeInc(1);
   (*clock_) = 0;
-  Eval();
   for (auto& observer : observers_) {
     observer->OnFallingEdge();
-    Eval();
   }
+  Eval();
 }
 
 void Clock::Eval() {
