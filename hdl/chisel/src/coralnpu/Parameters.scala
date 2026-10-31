@@ -115,6 +115,11 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   // Maximum number of destination tiles written by a single VME instruction
   // (determined by the maximum tile widening factor mtwiden = 4).
   val vmeMaxTileWrites = 4
+  // Cycles the VME PE array spends on one TE x TE tile, a power of two up to
+  // TE / 4: the array has TE * TE / vmeProcessDelay PEs (64 at the default
+  // TE / 4, 256 at 1). Emitted to the RTL as ZVT_PROCESS_DELAY.
+  var vmeProcessDelay: Int = vmeTe / 4
+  def vmeNumPe: Int        = { vmeTe * vmeTe / vmeProcessDelay }
 
   def useRetirementBuffer: Boolean = { enableVerification }
 
@@ -208,6 +213,7 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
     newP.enableFloat = this.enableFloat
     newP.enableZfbfmin = this.enableZfbfmin
     newP.enableVectorBf16 = this.enableVectorBf16
+    newP.vmeProcessDelay = this.vmeProcessDelay
     newP.enableAxiInstructionFetch = this.enableAxiInstructionFetch
     newP.fetchDataBits = this.fetchDataBits
     newP.lsuDataBits = this.lsuDataBits

@@ -1,0 +1,1127 @@
+=== BATCH b_00 18:05:11 avail=9G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 100 targets (0 packages loaded, 0 targets configured)
+Analyzing: 100 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 100 targets (0 packages loaded, 0 targets configured).
+INFO: Found 100 test targets...
+ERROR: I/O error while writing action log: No space left on device during journal append
+INFO: Elapsed time: 32.429s, Critical Path: 11.69s
+INFO: 100 processes: 2 action cache hit, 1 internal, 198 linux-sandbox.
+INFO: Build completed successfully, 100 total actions
+//examples:verilator_uvm_regression_coralnpu_v2_hello_world_add_floats (cached) PASSED in 1.3s
+//examples:verilator_uvm_regression_coralnpu_v2_rvv_add_intrinsic        PASSED in 11.6s
+//hw_sim:verilator_uvm_regression_mailbox_example                        PASSED in 5.1s
+//tests/cocotb/coralnpu_isa:verilator_uvm_regression_ecall               PASSED in 0.9s
+//tests/cocotb/coralnpu_isa:verilator_uvm_regression_fence_test          PASSED in 1.0s
+//tests/cocotb/coralnpu_isa:verilator_uvm_regression_perf_counters       PASSED in 1.3s
+//tests/cocotb/csr_test:verilator_uvm_regression_csr_test_program        PASSED in 0.9s
+//tests/cocotb/exceptions:verilator_uvm_regression_illegal               PASSED in 1.0s
+//tests/cocotb/exceptions:verilator_uvm_regression_instr_align_0         PASSED in 0.9s
+//tests/cocotb/exceptions:verilator_uvm_regression_instr_align_1         PASSED in 0.8s
+//tests/cocotb/exceptions:verilator_uvm_regression_instr_align_2         PASSED in 1.0s
+//tests/cocotb/exceptions:verilator_uvm_regression_instr_fault           PASSED in 1.0s
+//tests/cocotb/exceptions:verilator_uvm_regression_load_fault_0          PASSED in 0.8s
+//tests/cocotb/exceptions:verilator_uvm_regression_load_fault_1          PASSED in 0.9s
+//tests/cocotb/exceptions:verilator_uvm_regression_store_fault_0         PASSED in 0.9s
+//tests/cocotb/exceptions:verilator_uvm_regression_store_fault_1         PASSED in 0.8s
+//tests/cocotb/exceptions:verilator_uvm_regression_vectored_exception_trap PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_aadd_int16_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_aadd_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_aadd_int8_m1 PASSED in 1.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_aadd_uint16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_aadd_uint32_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_aadd_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_add_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_add_int32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_add_int8_m1  PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_add_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_add_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_add_uint8_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_and_int16_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_and_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_and_int8_m1  PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_and_uint16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_and_uint32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_and_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_asub_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_asub_int32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_asub_int8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_asub_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_asub_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_asub_uint8_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_div_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_div_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_div_int8_m1  PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_div_uint16_m1 PASSED in 1.2s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_div_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_div_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fadd_float_rdn_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fadd_float_rmm_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fadd_float_rne_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fadd_float_rtz_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fadd_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fdiv_float_rdn_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fdiv_float_rmm_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fdiv_float_rne_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fdiv_float_rtz_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fdiv_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmacc_float_rdn_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmacc_float_rmm_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmacc_float_rne_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmacc_float_rtz_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmacc_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmadd_float_rdn_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmadd_float_rmm_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmadd_float_rne_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmadd_float_rtz_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmadd_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmax_float_rdn_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmax_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmax_float_rne_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmax_float_rtz_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmax_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmin_float_rdn_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmin_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmin_float_rne_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmin_float_rtz_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmin_float_rup_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsac_float_rdn_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsac_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsac_float_rne_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsac_float_rtz_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsac_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsub_float_rdn_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsub_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsub_float_rne_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsub_float_rtz_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmsub_float_rup_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmul_float_rdn_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmul_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmul_float_rne_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmul_float_rtz_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fmul_float_rup_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmacc_float_rdn_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmacc_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmacc_float_rne_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmacc_float_rtz_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmacc_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmadd_float_rdn_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmadd_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmadd_float_rne_m1 PASSED in 1.1s
+
+Executed 99 out of 100 tests: 100 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_00 18:08:55 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+ERROR: I/O error while writing action log: No space left on device during journal append
+INFO: Elapsed time: 19.496s, Critical Path: 2.87s
+INFO: 81 processes: 41 action cache hit, 41 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 81 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmadd_float_rtz_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmadd_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsac_float_rdn_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsac_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsac_float_rne_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsac_float_rtz_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsac_float_rup_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsub_float_rdn_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsub_float_rmm_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsub_float_rne_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsub_float_rtz_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fnmsub_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fredmax_float_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fredmin_float_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fredosum_float_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fredusum_float_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnj_float_rdn_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnj_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnj_float_rne_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnj_float_rtz_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnj_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjn_float_rdn_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjn_float_rmm_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjn_float_rne_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjn_float_rtz_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjn_float_rup_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjx_float_rdn_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjx_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjx_float_rne_m1 PASSED in 1.2s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjx_float_rtz_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsgnjx_float_rup_m1 PASSED in 1.2s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsqrt_float_rdn_m1 PASSED in 1.2s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsqrt_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsqrt_float_rne_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsqrt_float_rtz_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsqrt_float_rup_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsub_float_rdn_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsub_float_rmm_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsub_float_rne_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsub_float_rtz_m1 PASSED in 0.8s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_01 18:09:26 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 15.371s, Critical Path: 1.98s
+INFO: 81 processes: 41 action cache hit, 41 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 81 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_fsub_float_rup_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_macc_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_macc_int32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_macc_int8_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_macc_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_macc_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_macc_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_madd_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_madd_int32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_madd_int8_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_madd_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_madd_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_madd_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_max_int16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_max_int32_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_max_int8_m1  PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_max_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_max_uint32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_max_uint8_m1 PASSED in 1.2s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_min_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_min_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_min_int8_m1  PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_min_uint16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_min_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_min_uint8_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mul_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mul_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mul_int8_m1  PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mul_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mul_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mul_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mulh_int16_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mulh_int32_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mulh_int8_m1 PASSED in 1.2s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mulh_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mulh_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_mulh_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsac_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsac_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsac_int8_m1 PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_02 18:09:52 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 23.560s, Critical Path: 2.82s
+INFO: 85 processes: 40 action cache hit, 45 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 85 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsac_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsac_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsac_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsub_int16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsub_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsub_int8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsub_uint16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsub_uint32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_nmsub_uint8_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_or_int16_m1  PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_or_int32_m1  PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_or_int8_m1   PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_or_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_or_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_or_uint8_m1  PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redand_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redand_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redand_int8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redand_uint16_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redand_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redand_uint8_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmax_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmax_int32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmax_int8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmax_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmax_uint32_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmax_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmin_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmin_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmin_int8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmin_uint16_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmin_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redmin_uint8_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redor_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redor_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redor_int8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redor_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redor_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redor_uint8_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redsum_int16_m1 PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_03 18:10:27 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 21.388s, Critical Path: 2.48s
+INFO: 81 processes: 41 action cache hit, 41 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 81 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redsum_int32_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redsum_int8_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redsum_uint16_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redsum_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redsum_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redxor_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redxor_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redxor_int8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redxor_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redxor_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_redxor_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_rem_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_rem_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_rem_int8_m1  PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_rem_uint16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_rem_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_rem_uint8_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sadd_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sadd_int32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sadd_int8_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sadd_uint16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sadd_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sadd_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sll_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sll_int32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sll_int8_m1  PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sll_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sll_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sll_uint8_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_smul_int16_m1 PASSED in 1.2s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_smul_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_smul_int8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sra_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sra_int32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sra_int8_m1  PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_srl_uint16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_srl_uint32_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_srl_uint8_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssra_int16_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssra_int32_m1 PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_04 18:11:00 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 18.498s, Critical Path: 3.30s
+INFO: 83 processes: 39 action cache hit, 43 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 83 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssra_int8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssrl_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssrl_uint32_m1 PASSED in 1.3s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssrl_uint8_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssub_int16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssub_int32_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssub_int8_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssub_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssub_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_ssub_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sub_int16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sub_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sub_int8_m1  PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sub_uint16_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sub_uint32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_sub_uint8_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_add_int16_int32 PASSED in 1.4s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_add_int8_int16 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_add_uint16_uint32 PASSED in 1.4s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_add_uint8_uint16 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_mul_int16_int32 PASSED in 1.6s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_mul_int8_int16 PASSED in 1.4s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_mul_uint16_uint32 PASSED in 1.4s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_mul_uint8_uint16 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_sub_int16_int32 PASSED in 1.3s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_sub_int8_int16 PASSED in 1.6s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_sub_uint16_uint32 PASSED in 1.5s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_widen_sub_uint8_uint16 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_xor_int16_m1 PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_xor_int32_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_xor_int8_m1  PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_xor_uint16_m1 PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_xor_uint32_m1 PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_rvv_xor_uint8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vaadd_vx_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vaaddu_vx_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vadc_vvm_test    PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vadc_vxm_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vadd_vi_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vadd_vx_test     PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_05 18:11:30 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 22.548s, Critical Path: 3.05s
+INFO: 103 processes: 34 action cache hit, 63 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 103 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vand_vi_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vand_vx_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vasub_vx_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vasubu_vx_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vdiv_vx_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfadd_vf_test_rdn PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfadd_vf_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfadd_vf_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfadd_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfadd_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfclass_v_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfclass_v_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfclass_v_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfclass_v_test_rtz PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfclass_v_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_x_v_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_x_v_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_x_v_test_rne PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_x_v_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_x_v_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_xu_v_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_xu_v_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_xu_v_test_rne PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_xu_v_test_rtz PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_f_xu_v_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_x_f_v_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_x_f_v_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_x_f_v_test_rne PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_x_f_v_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_x_f_v_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_xu_f_v_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_xu_f_v_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_xu_f_v_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_xu_f_v_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_rtz_xu_f_v_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_x_f_v_test_rdn PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_x_f_v_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_x_f_v_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_x_f_v_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_x_f_v_test_rup PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_06 18:12:04 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 31.124s, Critical Path: 3.53s
+INFO: 121 processes: 31 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_xu_f_v_test_rdn PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_xu_f_v_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_xu_f_v_test_rne PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_xu_f_v_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfcvt_xu_f_v_test_rup PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfdiv_vf_test_rdn PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfdiv_vf_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfdiv_vf_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfdiv_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfdiv_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmacc_vf_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmacc_vf_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmacc_vf_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmacc_vf_test_rtz PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmacc_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmadd_vf_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmadd_vf_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmadd_vf_test_rne PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmadd_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmadd_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmerge_vfm_test_rdn PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmerge_vfm_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmerge_vfm_test_rne PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmerge_vfm_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmerge_vfm_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsac_vf_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsac_vf_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsac_vf_test_rne PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsac_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsac_vf_test_rup PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsub_vf_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsub_vf_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsub_vf_test_rne PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsub_vf_test_rtz PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmsub_vf_test_rup PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmul_vf_test_rdn PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmul_vf_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmul_vf_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmul_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmul_vf_test_rup PASSED in 1.0s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_07 18:12:46 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 33.842s, Critical Path: 3.66s
+INFO: 121 processes: 31 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmv_v_f_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmv_v_f_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmv_v_f_test_rne PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmv_v_f_test_rtz PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfmv_v_f_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmacc_vf_test_rdn PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmacc_vf_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmacc_vf_test_rne PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmacc_vf_test_rtz PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmacc_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmadd_vf_test_rdn PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmadd_vf_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmadd_vf_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmadd_vf_test_rtz PASSED in 1.2s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmadd_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsac_vf_test_rdn PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsac_vf_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsac_vf_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsac_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsac_vf_test_rup PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsub_vf_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsub_vf_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsub_vf_test_rne PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsub_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfnmsub_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrdiv_vf_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrdiv_vf_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrdiv_vf_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrdiv_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrdiv_vf_test_rup PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrsub_vf_test_rdn PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrsub_vf_test_rmm PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrsub_vf_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrsub_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfrsub_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnj_vf_test_rdn PASSED in 1.3s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnj_vf_test_rmm PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnj_vf_test_rne PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnj_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnj_vf_test_rup PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_08 18:13:33 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 32.801s, Critical Path: 3.58s
+INFO: 113 processes: 33 action cache hit, 73 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 113 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjn_vf_test_rdn PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjn_vf_test_rmm PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjn_vf_test_rne PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjn_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjn_vf_test_rup PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjx_vf_test_rdn PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjx_vf_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjx_vf_test_rne PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjx_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsgnjx_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsub_vf_test_rdn PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsub_vf_test_rmm PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsub_vf_test_rne PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsub_vf_test_rtz PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vfsub_vf_test_rup PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmacc_vx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmadc_vv_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmadc_vvm_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmadc_vx_test    PASSED in 1.1s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmadc_vxm_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmadd_vx_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmax_vx_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmerge_vv_test   PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmfeq_vf_test    PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmfeq_vv_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmfge_vf_test    PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmfgt_vf_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmfle_vf_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmfle_vv_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmflt_vf_test    PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmflt_vv_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmfne_vf_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmfne_vv_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmin_vx_test     PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmsbc_vv_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmsbc_vvm_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmsbc_vx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmsbc_vxm_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmseq_vv_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmseq_vx_test    PASSED in 1.0s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_09 18:14:16 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 31.066s, Critical Path: 3.46s
+INFO: 113 processes: 33 action cache hit, 73 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 113 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmsgt_vx_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmsle_vv_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmsle_vx_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmslt_vv_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmslt_vx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmsne_vv_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmsne_vx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmul_vx_test     PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmulh_vx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmulhsu_vx_test  PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vmv_v_v_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vnclip_test      PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vnclipu_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vnmsac_vx_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vnmsub_vx_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vnsra_test       PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vnsrl_test       PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vor_vi_test      PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vor_vx_test      PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vrem_vx_test     PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vrsub_vi_test    PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vrsub_vx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsadd_vi_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsadd_vx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsbc_vvm_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsbc_vxm_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsext_vf2_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsext_vf4_test   PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsll_vi_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsll_vx_test     PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsmul_vx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsra_vi_test     PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsra_vx_test     PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsrl_vi_test     PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsrl_vx_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vssra_vi_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vssrl_vi_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vssub_vx_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vsub_vx_test     PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwadd_vx_test    PASSED in 1.0s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_10 18:14:58 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 27.742s, Critical Path: 3.47s
+INFO: 125 processes: 30 action cache hit, 85 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 125 total actions
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwadd_wv_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwadd_wx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwaddu_vx_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwaddu_wv_test   PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwaddu_wx_test   PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwmul_vx_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwmulu_vx_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwsub_vx_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwsub_wv_test    PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwsub_wx_test    PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwsubu_vx_test   PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwsubu_wv_test   PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vwsubu_wx_test   PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vxor_vi_test     PASSED in 0.8s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vxor_vx_test     PASSED in 0.9s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vzext_vf2_test   PASSED in 1.0s
+//tests/cocotb/rvv/arithmetics:verilator_uvm_regression_vzext_vf4_test   PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load16_index16_seg PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load16_index32_seg PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load16_index8     PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load16_index8_seg PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load16_seg_unit   PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load16_segment2_stride6_m1 PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load16_stride4_m1 PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load16_stride4_m1_partial PASSED in 0.7s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load16_stride4_mf2 PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load32_index16_seg PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load32_index32_seg PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load32_index8     PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load32_index8_seg PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load32_seg_unit   PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load32_stride8_m1 PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load32_stride8_m1_partial PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_index16     PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_index16_seg PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_index32     PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_index32_seg PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_index8      PASSED in 1.0s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_index8_seg  PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_seg_unit    PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_11 18:15:37 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 44.566s, Critical Path: 31.68s
+INFO: 85 processes: 40 action cache hit, 45 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 85 total actions
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_segment2_stride6_m1 PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_stride0_m1  PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_stride0strict_m1 PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_stride2_m1  PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_stride2_m1_partial PASSED in 0.7s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load8_stride2_mf4 PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_store16_unit_m2 PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_store32_unit_m2 PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_store8_fault PASSED in 0.7s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_store8_test  PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_store8_unit_m2 PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_store_bits   PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_store_stride_masked PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_store_stride_masked_param PASSED in 1.0s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_store_whole_register PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_stride_vtype PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_unit_ff      PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_unit_masked  PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_load_unit_vtype   PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_lsu_fault_cases   PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store16_index16   PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store16_index32   PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store16_index8    PASSED in 1.0s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store16_seg_unit  PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store32_index16   PASSED in 1.0s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store32_index32   PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store32_index8    PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store32_seg_unit  PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store8_index16    PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store8_index32    PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store8_index8     PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store8_index8_seg PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store8_seg_unit   PASSED in 0.8s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store_strided_vtype PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store_unit_masked PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_store_unit_vtype  PASSED in 0.9s
+//tests/cocotb/rvv/load_store:verilator_uvm_regression_whole_reg_repro   PASSED in 2.6s
+//tests/cocotb/rvv/ml_ops:verilator_uvm_regression_rvv_float_matmul      PASSED in 31.5s
+//tests/cocotb/rvv/ml_ops/static_reference_tests:verilator_uvm_regression_float_matmul_16x48x16 PASSED in 31.5s
+//tests/cocotb/rvv/ml_ops/static_reference_tests:verilator_uvm_regression_int_matmul_16x48x16 PASSED in 12.1s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_12 18:16:32 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 105.101s, Critical Path: 82.29s
+INFO: 81 processes: 41 action cache hit, 41 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 81 total actions
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_add                      PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_flush_race_test          PASSED in 1.0s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_load                     PASSED in 1.0s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_lsu_indexed_short_vl_test PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_small_loop_test          PASSED in 1.2s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_vfrdiv_test              PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_vl0_v0_corruption_test   PASSED in 1.1s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_vleff_test               PASSED in 1.2s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_vstart_dual_dispatch_lsu_test PASSED in 1.1s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_vstart_forwarding_debug_test PASSED in 1.1s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_vstart_pipeline_test     PASSED in 1.0s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_vstart_rob_test          PASSED in 1.0s
+//tests/cocotb/rvv:verilator_uvm_regression_rvv_vstart_trap_flush_test   PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_vcompress_test               PASSED in 0.8s
+//tests/cocotb/rvv:verilator_uvm_regression_vcpop_exception_test         PASSED in 0.8s
+//tests/cocotb/rvv:verilator_uvm_regression_vcpop_test                   PASSED in 0.8s
+//tests/cocotb/rvv:verilator_uvm_regression_vcsr_test                    PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_vfirst_test                  PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_vgather                      PASSED in 0.8s
+//tests/cocotb/rvv:verilator_uvm_regression_vill_whole_reg_test          PASSED in 5.4s
+//tests/cocotb/rvv:verilator_uvm_regression_viota_test                   PASSED in 0.8s
+//tests/cocotb/rvv:verilator_uvm_regression_vmsbf_test                   PASSED in 0.8s
+//tests/cocotb/rvv:verilator_uvm_regression_vmsif_test                   PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_vmsof_test                   PASSED in 0.8s
+//tests/cocotb/rvv:verilator_uvm_regression_vrgather_test                PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_vsetvl_test                  PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_vslide                       PASSED in 1.0s
+//tests/cocotb/rvv:verilator_uvm_regression_vslide_boundary_test         PASSED in 0.9s
+//tests/cocotb/rvv:verilator_uvm_regression_vstart_store                 PASSED in 1.0s
+//tests/cocotb/rvv:verilator_uvm_regression_vstart_test                  PASSED in 3.0s
+//tests/cocotb/rvv:verilator_uvm_regression_vwredsumu_test               PASSED in 3.0s
+//tests/cocotb/rvv/ml_ops:verilator_uvm_regression_rvv_float_matmul_assembly PASSED in 30.6s
+//tests/cocotb/rvv/ml_ops:verilator_uvm_regression_rvv_float_matmul_optimized PASSED in 14.3s
+//tests/cocotb/rvv/ml_ops:verilator_uvm_regression_rvv_matmul            PASSED in 70.4s
+//tests/cocotb/rvv/ml_ops:verilator_uvm_regression_rvv_matmul_assembly   PASSED in 81.6s
+//tests/cocotb/rvv/rvv_opt:verilator_uvm_regression_rvv_memcpy_test      PASSED in 0.8s
+//tests/cocotb/rvv/rvv_opt:verilator_uvm_regression_rvv_memset_test      PASSED in 1.0s
+//tests/cocotb/tutorial:verilator_uvm_regression_coralnpu_v2_program     PASSED in 0.8s
+//tests/cocotb/tutorial/counters:verilator_uvm_regression_inst_cycle_counter_example PASSED in 1.3s
+//tests/cocotb/vme_test:verilator_uvm_regression_vme_altfmt_test         PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_13 18:18:29 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 67.055s, Critical Path: 55.56s
+INFO: 81 processes: 41 action cache hit, 41 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 81 total actions
+//tests/cocotb:verilator_uvm_regression_align_test                       PASSED in 1.5s
+//tests/cocotb:verilator_uvm_regression_cf_fault_retire_test             PASSED in 1.0s
+//tests/cocotb:verilator_uvm_regression_csr_behavior                     PASSED in 5.5s
+//tests/cocotb:verilator_uvm_regression_ddr_test                         PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_debug_trigger_test               PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_fcsr_frm_hazard_test             PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_finish_txn_before_halt           PASSED in 0.7s
+//tests/cocotb:verilator_uvm_regression_float_csr_interlock_test         PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_float_hazard_tests               PASSED in 0.9s
+//tests/cocotb:verilator_uvm_regression_float_store                      PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_fptr                             PASSED in 1.0s
+//tests/cocotb:verilator_uvm_regression_frm_test                         PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_isa_cycle_bench                  PASSED in 1.3s
+//tests/cocotb:verilator_uvm_regression_loop                             PASSED in 11.0s
+//tests/cocotb:verilator_uvm_regression_math                             PASSED in 1.0s
+//tests/cocotb:verilator_uvm_regression_mcycle_test                      PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_minstret_test                    PASSED in 1.2s
+//tests/cocotb:verilator_uvm_regression_misa_test                        PASSED in 1.0s
+//tests/cocotb:verilator_uvm_regression_mstatus_vs_fs_dirty_test         PASSED in 1.0s
+//tests/cocotb:verilator_uvm_regression_noop                             PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_nop_test                         PASSED in 53.9s
+//tests/cocotb:verilator_uvm_regression_registers                        PASSED in 3.2s
+//tests/cocotb:verilator_uvm_regression_rvv_fflags_test                  PASSED in 1.7s
+//tests/cocotb:verilator_uvm_regression_rvv_frm_hazard_test              PASSED in 1.3s
+//tests/cocotb:verilator_uvm_regression_rvv_vsetvli_keep_vl_test         PASSED in 1.0s
+//tests/cocotb:verilator_uvm_regression_software_interrupt_test          PASSED in 10.6s
+//tests/cocotb:verilator_uvm_regression_spi_exec_test                    PASSED in 0.6s
+//tests/cocotb:verilator_uvm_regression_stress_test                      PASSED in 11.0s
+//tests/cocotb:verilator_uvm_regression_unreachable_prefetch_fault       PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_vector_store                     PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_vector_store_fault               PASSED in 0.9s
+//tests/cocotb:verilator_uvm_regression_wfi_slot_0                       PASSED in 0.8s
+//tests/cocotb/vme_test:verilator_uvm_regression_vme_decode_test         PASSED in 2.7s
+//tests/cocotb/vme_test:verilator_uvm_regression_vme_load_store_test     PASSED in 12.1s
+//tests/cocotb/vme_test:verilator_uvm_regression_vme_matmul_test         PASSED in 6.5s
+//tests/cocotb/vme_test:verilator_uvm_regression_vme_mset_test           PASSED in 1.6s
+//tests/cocotb/vme_test:verilator_uvm_regression_vme_mset_vtmmu_sequence_test PASSED in 0.8s
+//tests/cocotb/vme_test:verilator_uvm_regression_vme_mstatus_ms_test     PASSED in 2.6s
+//tests/cocotb/vme_test:verilator_uvm_regression_vme_transpose_test      PASSED in 19.6s
+//tests/cocotb/vme_test:verilator_uvm_regression_vme_vset_mtype_reset_test PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_14 18:19:48 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 29.009s, Critical Path: 3.63s
+INFO: 118 processes: 5 action cache hit, 77 internal, 81 linux-sandbox.
+INFO: Build completed successfully, 118 total actions
+//tests/cocotb:verilator_uvm_regression_wfi_slot_1                       PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_wfi_slot_2                       PASSED in 0.9s
+//tests/cocotb:verilator_uvm_regression_wfi_slot_3                       PASSED in 0.8s
+//tests/cocotb:verilator_uvm_regression_zfbfmin_test                     PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-fadd PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-fclass PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-fcmp PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-fcvt PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-fcvt_w PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-fdiv PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-fmadd PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-fmin PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-ldst PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-move PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-p-recoding PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-fadd PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-fclass PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-fcmp PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-fcvt PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-fcvt_w PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-fdiv PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-fmadd PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-fmin PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-ldst PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-move PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uf-v-recoding PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-add PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-addi PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-and PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-andi PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-auipc PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-beq PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-bge PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-bgeu PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-blt PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-bltu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-bne PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-jal PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-jalr PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-lb PASSED in 0.9s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_15 18:20:27 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 18.482s, Critical Path: 4.82s
+INFO: 121 processes: 1 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-lbu PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-ld_st PASSED in 2.3s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-lh PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-lhu PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-lui PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-lw PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-ma_data PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-or PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-ori PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-sb PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-sh PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-simple PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-sll PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-slli PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-slt PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-slti PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-sltiu PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-sltu PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-sra PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-srai PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-srl PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-srli PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-st_ld PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-sub PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-sw PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-xor PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-p-xori PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-add PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-addi PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-and PASSED in 1.3s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-andi PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-auipc PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-beq PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-bge PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-bgeu PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-blt PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-bltu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-bne PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-jal PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-jalr PASSED in 0.8s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_16 18:20:55 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 13.934s, Critical Path: 3.12s
+INFO: 121 processes: 1 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-lb PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-lbu PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-ld_st PASSED in 2.5s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-lh PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-lhu PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-lui PASSED in 0.7s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-lw PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-ma_data PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-or PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-ori PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-sb PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-sh PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-simple PASSED in 0.6s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-sll PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-slli PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-slt PASSED in 1.3s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-slti PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-sltiu PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-sltu PASSED in 1.3s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-sra PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-srai PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-srl PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-srli PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-st_ld PASSED in 1.6s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-sub PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-sw PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-xor PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32ui-v-xori PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-p-div PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-p-divu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-p-mul PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-p-mulh PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-p-mulhsu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-p-mulhu PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-p-rem PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-p-remu PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-v-div PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-v-divu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-v-mul PASSED in 1.3s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-v-mulh PASSED in 1.0s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+=== BATCH c_17 18:21:20 avail=17G
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+Analyzing: 40 targets (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed 40 targets (0 packages loaded, 0 targets configured).
+INFO: Found 40 test targets...
+INFO: Elapsed time: 13.625s, Critical Path: 1.80s
+INFO: 121 processes: 1 action cache hit, 81 internal, 80 linux-sandbox.
+INFO: Build completed successfully, 121 total actions
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-v-mulhsu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-v-mulhu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-v-rem PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32um-v-remu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-andn PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-clz PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-cpop PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-ctz PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-max PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-maxu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-min PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-minu PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-orc_b PASSED in 0.8s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-orn PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-rev8 PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-rol PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-ror PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-rori PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-sext_b PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-sext_h PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-xnor PASSED in 1.3s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-p-zext_h PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-andn PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-clz PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-cpop PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-ctz PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-max PASSED in 1.1s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-maxu PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-min PASSED in 1.3s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-minu PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-orc_b PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-orn PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-rev8 PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-rol PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-ror PASSED in 1.0s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-rori PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-sext_b PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-sext_h PASSED in 0.9s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-xnor PASSED in 1.2s
+//third_party/riscv-tests:verilator_uvm_regression_riscv_tests_rv32uzbb-v-zext_h PASSED in 1.0s
+
+Executed 40 out of 40 tests: 40 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+BATCH_EXIT=0
+ALL_DONE

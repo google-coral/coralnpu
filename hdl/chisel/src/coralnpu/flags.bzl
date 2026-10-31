@@ -26,6 +26,8 @@ RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS = [
 
 VME_CORE_MINI_AXI_COMMON_GEN_FLAGS = RVV_CORE_MINI_AXI_COMMON_GEN_FLAGS + [
     "--enableVme=True",
+    # One cycle per TE x TE tile: 256 PEs instead of the RTL default of 64.
+    "--vmeProcessDelay=1",
 ]
 
 CORE_MINI_AXI_VOPTS = [

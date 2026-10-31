@@ -151,6 +151,12 @@ module zvt_mt_fpga (
     return addr;
   endfunction
 
+  // The 16-bank mapping serves exactly 4 ports per block, one read per bank per
+  // cycle. More PE parallelism (ZVT_PROCESS_DELAY below TE/4) needs more ports.
+  if (`NUM_BLKPORT != 4) begin : gen_unsupported_port_count
+    $error("zvt_mt_fpga supports 4 MT ports per block; build the FPGA image without ZVT_PROCESS_DELAY");
+  end
+
   // -------------------------------------------------------------------------
   // Internal Read Enable Reconstruction
   // Ports j in {1, 2, 3} never address (mt=0, sub=0) when active; Port j == 0

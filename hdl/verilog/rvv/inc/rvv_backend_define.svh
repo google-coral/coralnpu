@@ -207,14 +207,22 @@
   
   `define TE                  (`VLEN/8)
 
-// PROCESS_DELAY = (1/`COMPRATIO)
+// PROCESS_DELAY = (1/`COMPRATIO): cycles the PE array spends on one TE x TE
+// tile; NUM_PE = TE*TE/PROCESS_DELAY. ZVT_PROCESS_DELAY (1, 2 or 4 for TE=16)
+// overrides the default of TE/4; 1 gives one PE per output element.
   `ifdef ZVT_MAXCOMPUTING
     `define COMPRATIO         1/4
     `define PROCESS_DELAY     4
-  `else       
+  `elsif ZVT_PROCESS_DELAY
+    `define COMPRATIO         1/`ZVT_PROCESS_DELAY
+    `define PROCESS_DELAY     `ZVT_PROCESS_DELAY
+  `else
     `define COMPRATIO         4/`TE
     `define PROCESS_DELAY     `TE/4
-  `endif 
+  `endif
+  // Width of the per-tile cycle counter and of the tags that carry it; at
+  // least 1 so a single-cycle tile (PROCESS_DELAY == 1) has a legal type.
+  `define ZVT_CNT_WIDTH       ((`PROCESS_DELAY > 1) ? $clog2(`PROCESS_DELAY) : 1)
 
   `define ZVT_LMUL            (`WORD_WIDTH*`TE/`VLEN)
   `define NUM_PE              (`TE*`TE*`COMPRATIO)
