@@ -81,7 +81,10 @@ Each `LsuCell` stores:
 - `state`: Current lifecycle state (`LsuCellState`).
 - `data`: 8-bit data payload.
 - `rowAddr`: Memory row address (`addr >> dbusOffsetBits`).
-- `mask`: One-hot byte position within the 16-byte bus row.
+- `byteOffset`: Binary byte position within a `p.lsuDataBytes`-byte bus row.
+- `byteValid`: Distinguishes an initialized byte position from the reset zero mask.
+
+The `mask` accessor decodes these fields to a zero-or-one-hot bus byte mask.
 
 ### Cell Lifecycle (`LsuCellState`)
 

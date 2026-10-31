@@ -489,6 +489,16 @@ chisel_library(
     ],
 )
 
+chisel_test(
+    name = "coralnpu_lsu_cell_tests",
+    size = "medium",
+    srcs = ["scalar/LsuCellTest.scala"],
+    deps = [
+        ":coralnpu_base",
+        ":coralnpu_scalar",
+    ],
+)
+
 chisel_library(
     name = "srams",
     srcs = [
