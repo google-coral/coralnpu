@@ -639,12 +639,37 @@ coralnpu_v2_binary(
     ],
 )
 
-coralnpu_v2_binary(
-    name = "isa_cycle_bench",
-    srcs = [
-        "isa_cycle_bench.cc",
-    ],
-)
+# Benchmark groups of //tests/cocotb:isa_cycle_bench. ITCM is 8 KiB, which is
+# not enough room for every benchmarked instruction, so the benchmarks are
+# split into one ELF per group. Must match the BENCH_LIST_<GROUP>() macros in
+# isa_cycle_bench_defs.h, which isa_cycle_bench_test.py parses.
+ISA_CYCLE_BENCH_GROUPS = [
+    "SCALAR_ALU",
+    "SCALAR_MEM",
+    "SCALAR_CTRL",
+    "SCALAR_FP",
+    "VECTOR_INT_A",
+    "VECTOR_INT_B",
+    "VECTOR_MASK",
+    "VECTOR_PERM",
+    "VECTOR_MEM",
+    "VECTOR_FP_A",
+    "VECTOR_FP_B",
+]
+
+[
+    coralnpu_v2_binary(
+        name = "isa_cycle_bench_" + group.lower(),
+        srcs = [
+            "isa_cycle_bench.cc",
+        ],
+        hdrs = [
+            "isa_cycle_bench_defs.h",
+        ],
+        defines = ["BENCH_GROUP=" + group],
+    )
+    for group in ISA_CYCLE_BENCH_GROUPS
+]
 
 # This test is used for baseline vector power analysis.
 coralnpu_v2_binary(
@@ -797,7 +822,12 @@ coralflow_test(
     name = "isa_cycle_bench_test",
     size = "large",
     srcs = ["isa_cycle_bench_test.py"],
-    elf = ":isa_cycle_bench.elf",
+    data = [
+        "isa_cycle_bench_defs.h",
+    ] + [
+        ":isa_cycle_bench_%s.elf" % group.lower()
+        for group in ISA_CYCLE_BENCH_GROUPS
+    ],
     targets = [
         "verilator",
         "vcs",

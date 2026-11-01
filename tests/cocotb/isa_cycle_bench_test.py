@@ -1,9 +1,17 @@
 # Copyright 2026 Antmicro
 #
+# Drives the per-instruction cycle-cost microbenchmark on RTL.
+#
+# The benchmark table lives in isa_cycle_bench_defs.h and is parsed from there
+# rather than duplicated here, so the host and the firmware cannot drift
+# apart. Because ITCM is only 8 KiB the benchmarks are split into groups, each
+# compiled into its own ELF; this test walks every group's ELF and runs every
+# benchmark in it one program execution at a time.
 
 import json
 import logging
 import os
+import re
 
 from bazel_tools.tools.python.runfiles import runfiles
 import numpy as np
@@ -14,58 +22,65 @@ from coralnpu_test_utils.coralflow.runner import (
     get_target_environment,
 )
 
-REPS = 32
+BENCH_DEFS_RLOCATION = "coralnpu_hw/tests/cocotb/isa_cycle_bench_defs.h"
+ELF_RLOCATION_FMT = "coralnpu_hw/tests/cocotb/isa_cycle_bench_{group}.elf"
 BENCH_RUN_ALL = 0xFFFFFFFE
 
-# (BenchId enum name in isa_cycle_bench.cc, display mnemonic, category).
-# Order must match the BenchId enum in isa_cycle_bench.cc.
-BENCHMARKS = [
-    ("BENCH_NOP", "nop", "baseline"),
-    ("BENCH_ADD", "add", "RV32I ALU"),
-    ("BENCH_SUB", "sub", "RV32I ALU"),
-    ("BENCH_AND", "and", "RV32I ALU"),
-    ("BENCH_OR", "or", "RV32I ALU"),
-    ("BENCH_XOR", "xor", "RV32I ALU"),
-    ("BENCH_SLL", "sll", "RV32I ALU"),
-    ("BENCH_SRL", "srl", "RV32I ALU"),
-    ("BENCH_SRA", "sra", "RV32I ALU"),
-    ("BENCH_SLT", "slt", "RV32I ALU"),
-    ("BENCH_ADDI", "addi", "RV32I ALU immediate"),
-    ("BENCH_SLTI", "slti", "RV32I ALU immediate"),
-    ("BENCH_SLTIU", "sltiu", "RV32I ALU immediate"),
-    ("BENCH_ANDI", "andi", "RV32I ALU immediate"),
-    ("BENCH_ORI", "ori", "RV32I ALU immediate"),
-    ("BENCH_XORI", "xori", "RV32I ALU immediate"),
-    ("BENCH_SLLI", "slli", "RV32I ALU immediate"),
-    ("BENCH_SRLI", "srli", "RV32I ALU immediate"),
-    ("BENCH_SRAI", "srai", "RV32I ALU immediate"),
-    ("BENCH_LW", "lw", "Load/Store"),
-    ("BENCH_SW", "sw", "Load/Store"),
-    ("BENCH_LB", "lb", "Load/Store"),
-    ("BENCH_SB", "sb", "Load/Store"),
-    ("BENCH_BEQ_TAKEN", "beq (taken)", "Control flow"),
-    ("BENCH_BEQ_NOT_TAKEN", "beq (not taken)", "Control flow"),
-    ("BENCH_JAL", "jal", "Control flow"),
-    ("BENCH_MUL", "mul", "M extension"),
-    ("BENCH_MULH", "mulh", "M extension"),
-    ("BENCH_DIV", "div", "M extension"),
-    ("BENCH_DIVU", "divu", "M extension"),
-    ("BENCH_REM", "rem", "M extension"),
-    ("BENCH_FADD_S", "fadd.s", "F extension"),
-    ("BENCH_FMUL_S", "fmul.s", "F extension"),
-    ("BENCH_FDIV_S", "fdiv.s", "F extension"),
-    ("BENCH_FSQRT_S", "fsqrt.s", "F extension"),
-    ("BENCH_FMADD_S", "fmadd.s", "F extension"),
-    ("BENCH_VADD_VV", "vadd.vv", "RVV integer (e32, vl=4)"),
-    ("BENCH_VSUB_VV", "vsub.vv", "RVV integer (e32, vl=4)"),
-    ("BENCH_VAND_VV", "vand.vv", "RVV integer (e32, vl=4)"),
-    ("BENCH_VMUL_VV", "vmul.vv", "RVV integer (e32, vl=4)"),
-    ("BENCH_VLE32_V", "vle32.v", "RVV integer (e32, vl=4)"),
-    ("BENCH_VSE32_V", "vse32.v", "RVV integer (e32, vl=4)"),
-    ("BENCH_VREDSUM_VS", "vredsum.vs", "RVV integer (e32, vl=4)"),
-    ("BENCH_VFADD_VV", "vfadd.vv", "RVV float (e32, vl=4)"),
-    ("BENCH_VFMUL_VV", "vfmul.vv", "RVV float (e32, vl=4)"),
-]
+# Cycles spent in the two `csrr mcycle` bracket instructions, which are inside
+# the measured window but are not part of the instruction under test.
+BRACKET_OVERHEAD_CYCLES = 2
+
+_REPS_RE = re.compile(r"^#define\s+BENCH_REPS\s+(\d+)\s*$", re.MULTILINE)
+_GROUP_RE = re.compile(r"^#define\s+BENCH_LIST_(\w+)\(X\)", re.MULTILINE)
+# Each benchmark is one X(...) call on its own line (isa_cycle_bench_defs.h
+# wraps these in `// clang-format off` so they stay that way).
+_ENTRY_RE = re.compile(
+    r'^\s*X\(\s*(\w+)\s*,\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,', re.MULTILINE
+)
+_THROUGHPUT_RE = re.compile(
+    r"^#define\s+BENCH_THROUGHPUT_IDS((?:[^\n]*\\\n)*[^\n]*)", re.MULTILINE
+)
+
+# Bare instruction for rows whose display mnemonic does not start with the
+# instruction actually measured (`ret` and `call` are pseudo-instructions).
+INSTRUCTION_OVERRIDES = {
+    "JALR": "jalr",
+    "CALL_RET": "jalr",
+}
+
+# What a row's "Cycles/instruction" number means: whether consecutive
+# instances of the measured instruction are chained through a
+# read-after-write dependency or are independent of each other.
+MEASURES_LATENCY = "latency"
+MEASURES_THROUGHPUT = "throughput"
+
+
+def _parse_bench_defs(text):
+    """Extracts (reps, throughput_ids, [(group, [(id, mnemonic, cat)]), ...])."""
+    reps_match = _REPS_RE.search(text)
+    assert reps_match, "BENCH_REPS not found in isa_cycle_bench_defs.h"
+    reps = int(reps_match.group(1))
+
+    throughput_match = _THROUGHPUT_RE.search(text)
+    assert throughput_match, "BENCH_THROUGHPUT_IDS not found"
+    throughput_ids = set(
+        "".join(re.findall(r'"([^"]*)"', throughput_match.group(1))).split()
+    )
+
+    groups = []
+    starts = list(_GROUP_RE.finditer(text))
+    assert starts, "no BENCH_LIST_<GROUP>() macros found"
+    for index, match in enumerate(starts):
+        end = starts[index +
+                     1].start() if index + 1 < len(starts) else len(text)
+        entries = _ENTRY_RE.findall(text, match.end(), end)
+        assert entries, f"group {match.group(1)} has no benchmarks"
+        groups.append((match.group(1), entries))
+
+    known_ids = {entry[0] for _, entries in groups for entry in entries}
+    unknown = sorted(throughput_ids - known_ids)
+    assert not unknown, f"BENCH_THROUGHPUT_IDS names unknown benchmarks: {unknown}"
+    return reps, throughput_ids, groups
 
 
 def _compute_output_path(filename):
@@ -77,9 +92,11 @@ def _compute_output_path(filename):
 
 @coralflow_test
 async def isa_cycle_bench_test(fixture):
-    """Benchmarks each instruction in BENCHMARKS on RTL and reports its cycle cost."""
+    """Benchmarks every instruction in isa_cycle_bench_defs.h on RTL."""
     r = runfiles.Create()
-    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/isa_cycle_bench.elf")
+
+    with open(r.Rlocation(BENCH_DEFS_RLOCATION)) as defs_file:
+        reps, throughput_ids, groups = _parse_bench_defs(defs_file.read())
 
     md_path = _compute_output_path("measured_instruction_cycles.md")
     stats_path = _compute_output_path("measured_instruction_cycles.json")
@@ -96,56 +113,137 @@ async def isa_cycle_bench_test(fixture):
             os.fsync(md_file.fileno())
 
     emit(
-        "| Instruction | Category | Raw delta (cycles) | Raw delta normalized (cycles) | Cycles/instruction |"
+        "| Instruction | Category | Measures | Raw delta (cycles) | Raw delta normalized (cycles) | Cycles/instruction |"
     )
-    emit("|---|---|---:|---:|---:|")
+    emit("|---|---|---|---:|---:|---:|")
 
-    await fixture.load_elf_and_lookup_symbols(
-        elf_path, ["g_selected_bench", "g_result", "g_results"]
-    )
     rows = []
+    failures = []
 
-    def record_row(mnemonic, category, raw_delta):
-        assert raw_delta != 0xFFFFFFFF, f"benchmark {mnemonic} did not run"
-        # raw_delta includes 2 additional cycles needed for reading mcycle.
-        raw_data_normalized = raw_delta - 2
-        cycles_per_instr = raw_data_normalized / REPS
-        rows.append((
-            mnemonic,
-            category,
-            raw_delta,
-            raw_data_normalized,
-            cycles_per_instr,
-        ))
+    def measures_of(bench_id):
+        if bench_id in throughput_ids:
+            return MEASURES_THROUGHPUT
+        return MEASURES_LATENCY
+
+    def record_failure(group, bench_id, mnemonic, category, exc):
+        measures = measures_of(bench_id)
+        logging.error(f"benchmark {mnemonic} ({group}) failed: {exc}")
+        failures.append(f"{mnemonic} ({group}): {exc}")
         emit(
-            f"| `{mnemonic}` | {category} | {raw_delta} | {raw_data_normalized} | {cycles_per_instr:.2f} |"
+            f"| `{mnemonic}` | {category} | {measures} | FAILED | FAILED | FAILED |"
         )
+
+    def record_row(group, bench_id, mnemonic, category, raw_delta):
+        if raw_delta == 0xFFFFFFFF:
+            record_failure(
+                group, bench_id, mnemonic, category, "benchmark did not run"
+            )
+            return
+
+        measures = measures_of(bench_id)
+        # raw_delta includes the two bracket `csrr mcycle` instructions,
+        # which are not part of the instruction under test.
+        raw_delta_normalized = raw_delta - BRACKET_OVERHEAD_CYCLES
+        cycles_per_instr = raw_delta_normalized / reps
+
+        rows.append({
+            # `mnemonic` is the display label, which may carry a variant
+            # suffix such as "beq (taken)" or "ret (jalr)"; `instruction`
+            # is the bare instruction, for joining against an
+            # instruction-coverage report.
+            "mnemonic":
+            mnemonic,
+            "instruction":
+            INSTRUCTION_OVERRIDES.get(bench_id,
+                                      mnemonic.split(" ")[0]),
+            "group":
+            group.lower(),
+            "category":
+            category,
+            # "latency" if consecutive instances of the instruction are
+            # chained through a read-after-write dependency, otherwise
+            # "throughput". Latency and throughput rows are not
+            # comparable with each other.
+            "measures":
+            measures,
+            "raw_delta":
+            raw_delta,
+            "raw_delta_normalized":
+            raw_delta_normalized,
+            "cycles_per_instr":
+            cycles_per_instr,
+        })
+        emit(
+            f"| `{mnemonic}` | {category} | {measures} | {raw_delta} | {raw_delta_normalized} | {cycles_per_instr:.2f} |"
+        )
+
+    async def check_bench_count(group, entries):
+        bench_count = int(await fixture.read_word("g_bench_count"))
+        assert bench_count == len(entries), (
+            f"{group} ELF has {bench_count} benchmarks but the header "
+            f"lists {len(entries)}; the ELF is built from a different "
+            "group than the one parsed"
+        )
+
+    symbols = ["g_selected_bench", "g_result", "g_results", "g_bench_count"]
 
     # UvmTestFixture spawns a fresh simulator subprocess on every run_to_halt()
     # call. On EDACloud VCS UVM, each `simv` cold start and FlexLM license
-    # checkout takes ~45-50s, so 45 sequential run_to_halt() calls (~2,160s+
-    # plus license contention) exceed Bazel's 3600s test timeout. Execute all
-    # 45 benchmarks in a single UVM invocation via BENCH_RUN_ALL, while keeping
-    # isolated per-benchmark soft-resets on persistent Cocotb/FPGA backends.
-    if get_target_environment() == "uvm":
-        await fixture.write_word("g_selected_bench", BENCH_RUN_ALL)
-        await fixture.write(
-            "g_results",
-            np.full(len(BENCHMARKS), 0xFFFFFFFF, dtype=np.uint32),
-        )
-        await fixture.run_to_halt(timeout_cycles=500000)
-        raw_deltas = await fixture.read(
-            "g_results", dtype=np.uint32, shape=(len(BENCHMARKS), )
-        )
-        for (_, mnemonic, category), raw_delta in zip(BENCHMARKS, raw_deltas):
-            record_row(mnemonic, category, int(raw_delta))
-    else:
-        for bench_index, (_, mnemonic, category) in enumerate(BENCHMARKS):
-            await fixture.write_word("g_selected_bench", bench_index)
-            await fixture.write_word("g_result", 0xFFFFFFFF)
-            await fixture.run_to_halt(timeout_cycles=100000)
-            raw_delta = await fixture.read_word("g_result")
-            record_row(mnemonic, category, int(raw_delta))
+    # checkout takes ~45-50s, so one run_to_halt() call per benchmark would
+    # exceed Bazel's 3600s test timeout. On UVM, execute all benchmarks of a
+    # group in a single invocation via BENCH_RUN_ALL, while keeping isolated
+    # per-benchmark runs (each run_to_halt() restarts the program from reset)
+    # on persistent Cocotb/FPGA backends.
+    run_all = get_target_environment() == "uvm"
+
+    for group, entries in groups:
+        try:
+            elf_path = r.Rlocation(
+                ELF_RLOCATION_FMT.format(group=group.lower())
+            )
+            if not elf_path or not os.path.isfile(elf_path):
+                raise FileNotFoundError(
+                    f"no ELF built for benchmark group {group}; is it in "
+                    "ISA_CYCLE_BENCH_GROUPS in tests/cocotb/BUILD?"
+                )
+            await fixture.load_elf_and_lookup_symbols(elf_path, symbols)
+        except Exception as exc:  # noqa: BLE001 - reported in bulk below
+            for bench_id, mnemonic, category in entries:
+                record_failure(group, bench_id, mnemonic, category, exc)
+            continue
+
+        if run_all:
+            try:
+                await fixture.write_word("g_selected_bench", BENCH_RUN_ALL)
+                await fixture.write(
+                    "g_results",
+                    np.full(len(entries), 0xFFFFFFFF, dtype=np.uint32),
+                )
+                await fixture.run_to_halt(timeout_cycles=500000)
+                await check_bench_count(group, entries)
+                raw_deltas = await fixture.read(
+                    "g_results", dtype=np.uint32, shape=(len(entries), )
+                )
+            except Exception as exc:  # noqa: BLE001 - reported in bulk below
+                for bench_id, mnemonic, category in entries:
+                    record_failure(group, bench_id, mnemonic, category, exc)
+                continue
+            for (bench_id, mnemonic, category), raw_delta in zip(entries,
+                                                                 raw_deltas):
+                record_row(group, bench_id, mnemonic, category, int(raw_delta))
+            continue
+
+        for bench_index, (bench_id, mnemonic, category) in enumerate(entries):
+            try:
+                await fixture.write_word("g_selected_bench", bench_index)
+                await fixture.write_word("g_result", 0xFFFFFFFF)
+                await fixture.run_to_halt(timeout_cycles=100000)
+                await check_bench_count(group, entries)
+                raw_delta = int(await fixture.read_word("g_result"))
+            except Exception as exc:  # noqa: BLE001 - reported in bulk below
+                record_failure(group, bench_id, mnemonic, category, exc)
+                continue
+            record_row(group, bench_id, mnemonic, category, raw_delta)
 
     if md_file:
         md_file.close()
@@ -153,18 +251,12 @@ async def isa_cycle_bench_test(fixture):
 
     if stats_path:
         with open(stats_path, "w") as stats_file:
-            stats = {
-                row[0]: {
-                    "category": row[1],
-                    "raw_delta": row[2],
-                    "raw_delta_normalized": row[3],
-                    "cycles_per_instr": row[4],
-                }
-                for row in rows
-            }
+            stats = {row["mnemonic"]: row for row in rows}
             json.dump(stats, stats_file, indent=2)
 
-    assert len(rows) == len(BENCHMARKS)
+    total = sum(len(entries) for _, entries in groups)
+    logging.info(f"Benchmarked {len(rows)}/{total} instructions")
+    assert not failures, "benchmarks failed:\n" + "\n".join(failures)
 
 
 if __name__ == "__main__":
