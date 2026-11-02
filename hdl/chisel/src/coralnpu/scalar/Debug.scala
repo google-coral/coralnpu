@@ -16,6 +16,7 @@ package coralnpu
 
 import chisel3._
 import chisel3.util._
+import bus._
 import common._
 
 object DmReqOp extends ChiselEnum {
@@ -105,8 +106,7 @@ class DebugModule(p: Parameters) extends Module {
     }
     val float_rd = Option.when(p.enableFloat)(Flipped(new FRegfileWrite(p)))
     val float_rs = Option.when(p.enableFloat)(Flipped(new FRegfileRead(p)))
-    val itcm     = new FabricIO(p)
-    val dtcm     = new FabricIO(p)
+    val tlul     = new TLULHost2Device[NoUser, NoUser](p.toTLUL())
 
     val haltreq   = Output(Vec(nHart, Bool()))
     val resumereq = Output(Vec(nHart, Bool()))
@@ -213,22 +213,27 @@ class DebugModule(p: Parameters) extends Module {
     if (p.xlen == 64) (req.bits.aarsize =/= 3.U(3.W) && req.bits.aarsize =/= 2.U(3.W))
     else (req.bits.aarsize =/= 2.U(3.W))
 
-  val itcm = p.m
-    .filter(_.memType == MemoryRegionType.IMEM)
-    .map(_.contains(data1))
-    .reduceOption(_ || _)
-    .getOrElse(false.B)
-  val dtcm = p.m
-    .filter(_.memType == MemoryRegionType.DMEM)
-    .map(_.contains(data1))
-    .reduceOption(_ || _)
-    .getOrElse(false.B)
-  val peri = p.m
-    .filter(_.memType == MemoryRegionType.Peripheral)
-    .map(_.contains(data1))
-    .reduceOption(_ || _)
-    .getOrElse(false.B)
-  val ext = !(itcm || dtcm || peri)
+  val memTxInFlight = RegInit(false.B)
+  val memTxOrphaned = RegInit(false.B)
+  val memCmdActive  = abstractCmdValid && cmdtypeIsAccessMemory && io.halted(0)
+
+  memTxInFlight := MuxCase(
+    memTxInFlight,
+    Seq(
+      io.tlul.d.fire -> false.B,
+      io.tlul.a.fire -> true.B
+    )
+  )
+  memTxOrphaned := MuxCase(
+    memTxOrphaned,
+    Seq(
+      (io.tlul.d.fire || io.tlul.a.fire) -> false.B,
+      (memTxInFlight && !memCmdActive)   -> true.B
+    )
+  )
+
+  val memRespValid = memCmdActive && memTxInFlight && !memTxOrphaned && io.tlul.d.valid
+  val memRespFire  = memCmdActive && memTxInFlight && !memTxOrphaned && io.tlul.d.fire
 
   val abstractCmdCompleteFloat = (if (p.enableFloat) {
                                     Seq(
@@ -245,10 +250,7 @@ class DebugModule(p: Parameters) extends Module {
       (cmdtypeIsAccessRegister && regnoIsCsr && io.csr_rd.valid)                        -> true.B,
       (cmdtypeIsAccessRegister && regnoIsScalar && req.bits.write && io.scalar_rd.fire) -> true.B,
       (cmdtypeIsAccessRegister && regnoIsScalar && !req.bits.write)                     -> true.B,
-      (cmdtypeIsAccessMemory && (io.itcm.readData.valid))                               -> true.B,
-      (cmdtypeIsAccessMemory && (io.dtcm.readData.valid))                               -> true.B,
-      (cmdtypeIsAccessMemory && req.bits.write)                                         -> true.B,
-      (cmdtypeIsAccessMemory && !(itcm || dtcm))                                        -> true.B
+      (cmdtypeIsAccessMemory && memRespValid)                                           -> true.B
     ) ++ abstractCmdCompleteFloat
   )) || !io.halted(0)
   io.csr.valid      := io.halted(0) && abstractCmdValid && cmdtypeIsAccessRegister && regnoIsCsr
@@ -270,9 +272,8 @@ class DebugModule(p: Parameters) extends Module {
       (abstractCmdValid && !io.halted(0)) -> 4.U(3.W),
       (abstractCmdValid && req.bits.isAddrCommand && cmdtypeIsAccessRegister && req.bits.isOp && sizeInvalid) -> 2
         .U(3.W), // not supported
-      (abstractCmdValid && req.bits.isAddrCommand && cmdtypeIsAccessMemory && !(itcm || dtcm)) -> 5
-        .U(3.W),
-      !dmactive -> 0.U(3.W)
+      (memRespFire && io.tlul.d.bits.error) -> 5.U(3.W),
+      !dmactive                             -> 0.U(3.W)
     )
   )
   val busy       = abstractCmdValid && !abstractCmdComplete
@@ -320,23 +321,12 @@ class DebugModule(p: Parameters) extends Module {
     io.float_rs.get.addr := floatRegno
   }
 
-  val itcmWords         = p.axi2DataBits / 32
-  val itcmWordSel       = data1(log2Ceil(p.axi2DataBits / 8) - 1, 2)
-  val data0ItcmReadData = MuxCase(
-    0.U(32.W),
-    (0 until itcmWords).map(i =>
-      (itcmWordSel === i.U) -> io.itcm.readData.bits((i + 1) * 32 - 1, i * 32)
-    )
-  )
-  val dtcmWords         = p.axi2DataBits / 32
-  val dtcmWordSel       = data1(log2Ceil(p.axi2DataBits / 8) - 1, 2)
-  val data0DtcmReadData = MuxCase(
-    0.U(32.W),
-    (0 until dtcmWords).map(i =>
-      (dtcmWordSel === i.U) -> io.dtcm.readData.bits((i + 1) * 32 - 1, i * 32)
-    )
-  )
-  val data0Priv = RegNext(data0, 0.U(32.W))
+  val tlulP          = p.toTLUL()
+  val byteOffsetBits = log2Ceil(p.axi2DataBits / 8)
+  val byteOffset     = data1(byteOffsetBits - 1, 0)
+  val bitOffset      = Cat(byteOffset, 0.U(3.W))
+  val data0ReadData  = (io.tlul.d.bits.data >> bitOffset)(31, 0)
+  val data0Priv      = RegNext(data0, 0.U(32.W))
   data0 := MuxCase(
     data0,
     Seq(
@@ -353,17 +343,8 @@ class DebugModule(p: Parameters) extends Module {
         .map(_.data)
         .getOrElse(Fp32.Zero(false.B))
         .asWord,
-      (abstractCmdComplete && cmdtypeIsAccessMemory && io.halted(
-        0
-      ) && req.valid && !req.bits.write && io.itcm.readData.valid) -> data0ItcmReadData.rotateRight(
-        data1(1, 0) * 8.U
-      ),
-      (abstractCmdComplete && cmdtypeIsAccessMemory && io.halted(
-        0
-      ) && req.valid && !req.bits.write && io.dtcm.readData.valid) -> data0DtcmReadData.rotateRight(
-        data1(1, 0) * 8.U
-      ),
-      !dmactive -> 0.U(32.W)
+      (memRespFire && !req.bits.write && !io.tlul.d.bits.error) -> data0ReadData,
+      !dmactive                                                 -> 0.U(32.W)
     )
   )
 
@@ -391,8 +372,7 @@ class DebugModule(p: Parameters) extends Module {
                                                                   0.U(32.W)
                                                                 )
                                                               else 0.U(32.W)),
-      (req.valid && (req.bits.aampostincrement === 1.U) && abstractCmdComplete && cmdtypeIsAccessMemory && io
-        .halted(0)) -> (data1 + (1.U << req.bits.aamsize))
+      (memRespFire && (req.bits.aampostincrement === 1.U) && !io.tlul.d.bits.error) -> (data1 + (1.U << req.bits.aamsize))
     )
   )
 
@@ -433,29 +413,43 @@ class DebugModule(p: Parameters) extends Module {
   req.ready := rsp.ready && (!abstractCmdValid || abstractCmdComplete)
   io.ext.rsp <> Queue(rsp, 1)
 
-  io.itcm.readDataAddr.valid := (abstractCmdValid && cmdtypeIsAccessMemory && !req.bits.write && itcm)
-  io.itcm.readDataAddr.bits := data1
-  io.itcm.writeDataAddr.valid := (abstractCmdValid && cmdtypeIsAccessMemory && req.bits.write && itcm)
-  io.itcm.writeDataAddr.bits := data1
-
-  io.dtcm.readDataAddr.valid := (abstractCmdValid && cmdtypeIsAccessMemory && !req.bits.write && dtcm)
-  io.dtcm.readDataAddr.bits := data1
-  io.dtcm.writeDataAddr.valid := (abstractCmdValid && cmdtypeIsAccessMemory && req.bits.write && dtcm)
-  io.dtcm.writeDataAddr.bits := data1
-  // Handle variable access sizes and alignment
-  val byteOffsetBits = log2Ceil(p.axi2DataBits / 8)
-  val byteOffset     = data1(byteOffsetBits - 1, 0)
-  val strobe         = MuxCase(
-    ~0.U((p.axi2DataBits / 8).W),
+  // Handle variable access sizes and TileLink-UL alignment
+  val strobe = MuxCase(
+    ~0.U(tlulP.w.W),
     Seq(
-      (req.bits.aamsize === 0.U) -> ("b0001".U << byteOffset),
-      (req.bits.aamsize === 1.U) -> ("b0011".U << byteOffset),
-      (req.bits.aamsize === 2.U) -> ("b1111".U << byteOffset)
+      (req.bits.aamsize === 0.U) -> (("b0001".U(tlulP.w.W) << byteOffset)(tlulP.w - 1, 0)),
+      (req.bits.aamsize === 1.U) -> (("b0011".U(tlulP.w.W) << byteOffset)(tlulP.w - 1, 0)),
+      (req.bits.aamsize === 2.U) -> (("b1111".U(tlulP.w.W) << byteOffset)(tlulP.w - 1, 0))
     )
   )
-  val writeDataBits = data0.asTypeOf(UInt(p.axi2DataBits.W)) << (byteOffset * 8.U)
-  io.dtcm.writeDataBits := writeDataBits
-  io.dtcm.writeDataStrb := strobe
-  io.itcm.writeDataBits := writeDataBits
-  io.itcm.writeDataStrb := strobe
+  val writeDataBits = (data0.asTypeOf(UInt(p.axi2DataBits.W)) << bitOffset)(p.axi2DataBits - 1, 0)
+  val alignMask     = MuxLookup(req.bits.aamsize(1, 0), 3.U(2.W))(
+    Seq(
+      0.U -> 0.U(2.W),
+      1.U -> 1.U(2.W),
+      2.U -> 3.U(2.W)
+    )
+  )
+  val isAligned = (data1(1, 0) & alignMask) === 0.U
+  val fullAddr  = data1.pad(tlulP.a)
+  val tlSize    = Mux(isAligned, req.bits.aamsize(1, 0).pad(tlulP.z), byteOffsetBits.U(tlulP.z.W))
+  val tlAddr    =
+    Mux(isAligned, fullAddr, Cat(fullAddr(tlulP.a - 1, byteOffsetBits), 0.U(byteOffsetBits.W)))
+  val tlMask = Mux(!req.bits.write && !isAligned, Fill(tlulP.w, 1.U(1.W)), strobe)
+
+  io.tlul.a.valid       := memCmdActive && !memTxInFlight
+  io.tlul.a.bits.opcode := Mux(
+    req.bits.write,
+    TLULOpcodesA.PutPartialData.asUInt,
+    TLULOpcodesA.Get.asUInt
+  )
+  io.tlul.a.bits.param   := 0.U
+  io.tlul.a.bits.size    := tlSize
+  io.tlul.a.bits.source  := 0.U
+  io.tlul.a.bits.address := tlAddr
+  io.tlul.a.bits.mask    := tlMask
+  io.tlul.a.bits.data    := Mux(req.bits.write, writeDataBits, 0.U)
+  io.tlul.a.bits.user    := 0.U.asTypeOf(io.tlul.a.bits.user)
+
+  io.tlul.d.ready := Mux(memCmdActive && memTxInFlight && !memTxOrphaned, rsp.ready, true.B)
 }

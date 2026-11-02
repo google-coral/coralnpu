@@ -617,5 +617,68 @@ async def core_mini_axi_debug_trigger_match(fixture):
         assert x1_val_final == 3, f"Expected final x1 to be 3, got {x1_val_final} (Duplicate execution detected!)"
 
 
+@coralflow_test
+async def core_mini_axi_debug_abstract_access_memory(fixture):
+    core_mini_axi = fixture.core_mini_axi
+
+    r = runfiles.Create()
+    with open(r.Rlocation("coralnpu_hw/tests/cocotb/noop.elf"), "rb") as f:
+        entry_point = await core_mini_axi.load_elf(f)
+        await core_mini_axi.dm_request_halt()
+        await core_mini_axi.execute_from(entry_point)
+        await core_mini_axi.dm_wait_for_halted()
+
+        # 1. ITCM read/write via DM TL-UL port
+        itcm_addr = 0x1F00
+        await core_mini_axi.dm_write_mem(itcm_addr, 0xCAFEBABE, 4)
+        assert (await core_mini_axi.dm_read_mem(itcm_addr, 4)) == 0xCAFEBABE
+        await core_mini_axi.dm_write_mem(itcm_addr + 2, 0x1234, 2)
+        assert (await core_mini_axi.dm_read_mem(itcm_addr, 4)) == 0x1234BABE
+
+        # 2. DTCM write/read with post-increment check
+        dtcm_addr = 0x10100
+        await core_mini_axi.dm_write(0x05, dtcm_addr)
+        await core_mini_axi.dm_write(0x04, 0xDEADC0DE)
+        cmd_write_inc = ((DmCmdType.ACCESS_MEMORY << 24)
+                         | (2 << 20)
+                         | (1 << 19)
+                         | (1 << 16))
+        rsp = await core_mini_axi.dm_write(0x17, cmd_write_inc)
+        assert rsp["op"] == DmRspOp.SUCCESS
+        assert (await core_mini_axi.dm_read(0x05)) == dtcm_addr + 4
+        assert (await core_mini_axi.dm_read_mem(dtcm_addr, 4)) == 0xDEADC0DE
+
+        # 3. External memory read/write via ExtArbiter -> TLUL2Axi
+        ext_addr = core_mini_axi.memory_base_addr + 0x100
+        await core_mini_axi.dm_write_mem(ext_addr, 0x89ABCDEF, 4)
+        assert (await core_mini_axi.dm_read_mem(ext_addr, 4)) == 0x89ABCDEF
+        await core_mini_axi.dm_write_mem(ext_addr + 1, 0x5A, 1)
+        assert (
+            await core_mini_axi.dm_read_mem(ext_addr + 1, 1) & 0xFF
+        ) == 0x5A
+        assert (await core_mini_axi.dm_read_mem(ext_addr, 4)) == 0x89AB5AEF
+
+        # 4. CSR region must be blocked by dmRouter (cmderr == 5, CSR untouched)
+        pc_csr_addr = core_mini_axi.csr_base_addr + 0x4
+        orig_pc_csr = int.from_bytes(
+            await core_mini_axi.read_word(pc_csr_addr), byteorder="little"
+        )
+        await core_mini_axi.dm_write(0x05, pc_csr_addr)
+        await core_mini_axi.dm_write(0x04, 0xBAD0BEEF)
+        rsp = await core_mini_axi.dm_write(0x17, cmd_write_inc)
+        assert rsp["op"] == DmRspOp.SUCCESS
+        abstractcs = await core_mini_axi.dm_read(0x16)
+        assert ((abstractcs >> 8) & 0x7) == 5
+        # Post-increment must not advance data1 on bus error
+        assert (await core_mini_axi.dm_read(0x05)) == pc_csr_addr
+        # Clear cmderr (W1C) and verify CSR value was not modified
+        await core_mini_axi.dm_write(0x16, 0x7 << 8)
+        assert (((await core_mini_axi.dm_read(0x16)) >> 8) & 0x7) == 0
+        new_pc_csr = int.from_bytes(
+            await core_mini_axi.read_word(pc_csr_addr), byteorder="little"
+        )
+        assert new_pc_csr == orig_pc_csr
+
+
 if __name__ == "__main__":
     coralflow_main()

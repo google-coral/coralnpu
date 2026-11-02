@@ -20,6 +20,58 @@ import chisel3.util._
 import bus._
 import common._
 
+class ExtArbiter(p: TLULParameters, numHosts: Int) extends Module {
+  require(numHosts >= 2, "ExtArbiter requires at least 2 hosts")
+  val hostIdBits  = log2Ceil(numHosts)
+  val innerIdBits = p.o - hostIdBits
+  require(
+    innerIdBits > 0,
+    s"Not enough TL-UL source ID bits (${p.o}) to encode $numHosts hosts"
+  )
+
+  val io = IO(new Bundle {
+    val hosts = Vec(numHosts, Flipped(new TLULHost2Device[NoUser, NoUser](p)))
+    val out   = new TLULHost2Device[NoUser, NoUser](p)
+  })
+
+  val pInner = p.shrinkId(hostIdBits)
+  val arb    = Module(new Arbiter(new TileLink_A_Channel(pInner), numHosts))
+
+  for (i <- 0 until numHosts) {
+    arb.io.in(i).valid        := io.hosts(i).a.valid
+    io.hosts(i).a.ready       := arb.io.in(i).ready
+    arb.io.in(i).bits.opcode  := io.hosts(i).a.bits.opcode
+    arb.io.in(i).bits.param   := io.hosts(i).a.bits.param
+    arb.io.in(i).bits.size    := io.hosts(i).a.bits.size
+    arb.io.in(i).bits.source  := io.hosts(i).a.bits.source(innerIdBits - 1, 0)
+    arb.io.in(i).bits.address := io.hosts(i).a.bits.address
+    arb.io.in(i).bits.mask    := io.hosts(i).a.bits.mask
+    arb.io.in(i).bits.data    := io.hosts(i).a.bits.data
+    arb.io.in(i).bits.user    := io.hosts(i).a.bits.user
+  }
+
+  io.out.a.valid        := arb.io.out.valid
+  arb.io.out.ready      := io.out.a.ready
+  io.out.a.bits.opcode  := arb.io.out.bits.opcode
+  io.out.a.bits.param   := arb.io.out.bits.param
+  io.out.a.bits.size    := arb.io.out.bits.size
+  io.out.a.bits.source  := Cat(arb.io.chosen, arb.io.out.bits.source)
+  io.out.a.bits.address := arb.io.out.bits.address
+  io.out.a.bits.mask    := arb.io.out.bits.mask
+  io.out.a.bits.data    := arb.io.out.bits.data
+  io.out.a.bits.user    := arb.io.out.bits.user
+
+  val dHost = io.out.d.bits.source(p.o - 1, innerIdBits)
+  for (i <- 0 until numHosts) {
+    io.hosts(i).d.valid       := io.out.d.valid && (dHost === i.U)
+    io.hosts(i).d.bits        := io.out.d.bits
+    io.hosts(i).d.bits.source := Cat(0.U(hostIdBits.W), io.out.d.bits.source(innerIdBits - 1, 0))
+  }
+  io.out.d.ready := MuxLookup(dHost, false.B)(
+    (0 until numHosts).map(i => i.U -> io.hosts(i).d.ready)
+  )
+}
+
 class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
   override val desiredName = coreModuleName + "Axi"
   val memoryRegions        = p.m
@@ -194,7 +246,7 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
       new BankedDtcm(
         p = p.toTLUL(),
         numBanks = dtcmNumBanks,
-        numHosts = 3, // AXI RD, AXI WR, core tlul
+        numHosts = 4, // AXI RD, AXI WR, Core LSU, DM
         bankSizeBytes = dtcmBankSizeBytes,
         bankBaseAddresses = dtcmBankBaseAddresses,
         routeFn = dtcmRouteFn
@@ -214,7 +266,7 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
       new BankedItcm(
         p = p.toTLUL(),
         numBanks = itcmNumBanks,
-        numHosts = 3, // AXI RD, AXI WR, Core IBus
+        numHosts = 4, // AXI RD, AXI WR, Core IBus, DM
         bankSizeBytes = itcmBankSizeBytes,
         bankBaseAddresses = itcmBankBaseAddresses,
         routeFn = itcmRouteFn
@@ -301,6 +353,19 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
     val tlulRouter = Module(new TlulRouter(p.toTLUL(), n = 2, route = masterRouteFn))
     tlulRouter.io.tl_h <> lsuBridge.io.tl_d
 
+    val dmRouteFn = (a: TileLink_A_Channel) => {
+      val inItcm     = itcmRegion.contains(a.address)
+      val inDtcm     = dtcmRegion.contains(a.address)
+      val inCsr      = csrRegion.contains(a.address)
+      val isExternal = !inItcm && !inDtcm && !inCsr
+      Seq(inItcm, inDtcm, isExternal, inCsr)
+    }
+
+    val dmRouter = Module(new TlulRouter(p.toTLUL(), n = 3, route = dmRouteFn))
+    dmRouter.io.tl_h <> dm.io.tlul
+    bankedItcm.io.tl_h(3) <> dmRouter.io.tl_d(0)
+    bankedDtcm.io.tl_h(3) <> dmRouter.io.tl_d(1)
+
     val tlul2Axi = Module(
       new TLUL2Axi(
         p.toTLUL(),
@@ -312,19 +377,20 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
       )
     )
 
-    // Core DBus -> BankedDtcm or AXI
+    // Core DBus -> BankedDtcm; arbitrate external bus between LSU and DM
     bankedDtcm.io.tl_h(2) <> tlulRouter.io.tl_d(0)
-    tlul2Axi.io.tl_a <> tlulRouter.io.tl_d(1).a
-    tlul2Axi.io.tl_d <> tlulRouter.io.tl_d(1).d
+
+    val extArbiter = Module(new ExtArbiter(p.toTLUL(), numHosts = 2))
+    extArbiter.io.hosts(0) <> tlulRouter.io.tl_d(1)
+    extArbiter.io.hosts(1) <> dmRouter.io.tl_d(2)
+
+    tlul2Axi.io.tl_a <> extArbiter.io.out.a
+    extArbiter.io.out.d <> tlul2Axi.io.tl_d
 
     io.axi_master.write.addr <> GateDecoupled(tlul2Axi.io.axi.write.addr, axiEnable)
     io.axi_master.write.data <> GateDecoupled(tlul2Axi.io.axi.write.data, axiEnable)
     tlul2Axi.io.axi.write.resp <> GateDecoupled(io.axi_master.write.resp, axiEnable)
     io.axi_master.read.addr <> GateDecoupled(tlul2Axi.io.axi.read.addr, axiEnable)
     tlul2Axi.io.axi.read.data <> GateDecoupled(io.axi_master.read.data, axiEnable)
-
-    // DM Tie-offs
-    dm.io.itcm := DontCare
-    dm.io.dtcm := DontCare
   }
 }
