@@ -74,6 +74,19 @@ class TileLink_A_ChannelBase[T <: Data](
     result.user    := this.user
     result
   }
+
+  def withAddress(newAddr: UInt) = {
+    val result = Wire(new TileLink_A_ChannelBase(p.withAddrBits(newAddr.getWidth), userGen))
+    result.opcode  := this.opcode
+    result.param   := this.param
+    result.size    := this.size
+    result.source  := this.source
+    result.address := newAddr
+    result.mask    := this.mask
+    result.data    := this.data
+    result.user    := this.user
+    result
+  }
 }
 
 class TileLink_D_ChannelBase[T <: Data](
@@ -116,6 +129,13 @@ class TLULHost2Device[A_USER <: Data, D_USER <: Data](
 
   def extendSource(extraBits: Int) = {
     new TLULHost2Device(p.augmentId(extraBits), userAGen, userDGen)
+  }
+
+  def connectNarrowAddr(dev: TLULHost2Device[A_USER, D_USER], newAddr: UInt): Unit = {
+    dev.a.valid  := this.a.valid
+    this.a.ready := dev.a.ready
+    dev.a.bits   := this.a.bits.withAddress(newAddr)
+    this.d <> dev.d
   }
 }
 

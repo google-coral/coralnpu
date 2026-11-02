@@ -38,6 +38,8 @@ class CoreTlulAxiCSRSpec extends AnyFreeSpec with ChiselSim {
         dut.io.axi.write.addr.valid.poke(false.B)
         dut.io.axi.write.data.valid.poke(false.B)
         dut.io.axi.write.resp.ready.poke(false.B)
+        dut.io.debug.req.ready.poke(false.B)
+        dut.io.debug.rsp.valid.poke(false.B)
       }
 
       // Initialization
@@ -215,6 +217,96 @@ class CoreTlulAxiCSRSpec extends AnyFreeSpec with ChiselSim {
         dut.io.cg.expect(1)
         dut.io.reset.expect(1)
         dut.io.pcStart.expect(0)
+      }
+
+      resetDut()
+
+      // Debug CSR request pulse and response dequeue
+      {
+        def axiWriteWord(addr: Int, value: BigInt): Int = {
+          val laneShift = (addr % p.axi2DataBytes) * 8
+          val laneStrb  = BigInt(0xf) << (addr % p.axi2DataBytes)
+          dut.io.axi.write.addr.valid.poke(true.B)
+          dut.io.axi.write.addr.bits.addr.poke(addr.U)
+          dut.io.axi.write.addr.bits.len.poke(0.U)
+          dut.io.axi.write.addr.bits.size.poke(2.U)
+          dut.io.axi.write.data.bits.data.poke((value << laneShift).U)
+          dut.io.axi.write.data.bits.strb.poke(laneStrb.U)
+          dut.io.axi.write.data.bits.last.poke(true.B)
+          dut.io.axi.write.data.valid.poke(true.B)
+          dut.clock.step()
+          dut.io.axi.write.addr.valid.poke(false.B)
+          dut.io.axi.write.data.valid.poke(false.B)
+          while (dut.io.axi.write.resp.valid.peek().litValue != 1) {
+            dut.clock.step()
+          }
+          val resp = dut.io.axi.write.resp.bits.resp.peek().litValue.toInt
+          dut.io.axi.write.resp.ready.poke(true.B)
+          dut.clock.step()
+          dut.io.axi.write.resp.ready.poke(false.B)
+          resp
+        }
+
+        def axiReadWord(addr: Int): BigInt = {
+          val laneShift = (addr % p.axi2DataBytes) * 8
+          dut.io.axi.read.addr.valid.poke(true.B)
+          dut.io.axi.read.addr.bits.addr.poke(addr.U)
+          dut.io.axi.read.addr.bits.len.poke(0.U)
+          dut.io.axi.read.addr.bits.size.poke(2.U)
+          dut.clock.step()
+          dut.io.axi.read.addr.valid.poke(false.B)
+          while (dut.io.axi.read.data.valid.peek().litValue != 1) {
+            dut.clock.step()
+          }
+          val word = (dut.io.axi.read.data.bits.data.peek().litValue >> laneShift) & 0xffffffffL
+          dut.io.axi.read.data.ready.poke(true.B)
+          dut.clock.step()
+          dut.io.axi.read.data.ready.poke(false.B)
+          word
+        }
+
+        dut.io.debug.req.ready.poke(true.B)
+        assert(axiWriteWord(0x30800, 0x10) == 0)
+        assert(axiWriteWord(0x30804, 0x80000001L) == 0)
+
+        // Writing DbgReqOp pulses io.debug.req.valid for one cycle.
+        val opShift = (0x30808 % p.axi2DataBytes) * 8
+        val opStrb  = BigInt(0xf) << (0x30808 % p.axi2DataBytes)
+        dut.io.axi.write.addr.valid.poke(true.B)
+        dut.io.axi.write.addr.bits.addr.poke(0x30808.U)
+        dut.io.axi.write.addr.bits.len.poke(0.U)
+        dut.io.axi.write.addr.bits.size.poke(2.U)
+        dut.io.axi.write.data.bits.data.poke((BigInt(2) << opShift).U)
+        dut.io.axi.write.data.bits.strb.poke(opStrb.U)
+        dut.io.axi.write.data.bits.last.poke(true.B)
+        dut.io.axi.write.data.valid.poke(true.B)
+        dut.clock.step()
+        dut.io.axi.write.addr.valid.poke(false.B)
+        dut.io.axi.write.data.valid.poke(false.B)
+        dut.io.debug.req.valid.expect(true.B)
+        dut.io.debug.req.bits.address.expect(0x10.U)
+        dut.io.debug.req.bits.data.expect(0x80000001L.U)
+        assert(dut.io.debug.req.bits.op.peekValue().asBigInt == DmReqOp.WRITE.litValue)
+
+        dut.io.axi.write.resp.ready.poke(true.B)
+        dut.clock.step()
+        dut.io.axi.write.resp.ready.poke(false.B)
+        dut.io.debug.req.valid.expect(false.B)
+
+        // Enqueue a debug response and verify DbgStatus/DbgRspData + dequeue on DbgStatus write.
+        dut.io.debug.rsp.valid.poke(true.B)
+        dut.io.debug.rsp.bits.data.poke(0x12345678L.U)
+        dut.io.debug.rsp.bits.op.poke(DmRspOp.SUCCESS)
+        dut.clock.step()
+        dut.io.debug.rsp.valid.poke(false.B)
+
+        assert(axiReadWord(0x30814) == 3)
+        assert(axiReadWord(0x3080c) == 0x12345678L)
+        assert(axiWriteWord(0x30814, 0) == 0)
+        assert(axiReadWord(0x30814) == 1)
+
+        // Out-of-region write returns SLVERR via router error responder.
+        assert(axiWriteWord(0x10004, 0xdeadbeefL) == 2)
       }
     }
   }

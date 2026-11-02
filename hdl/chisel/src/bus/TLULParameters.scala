@@ -28,6 +28,8 @@ class TLULParameters(
   val o = idBits
   val i = sinkBits
 
+  def withAddrBits(newAddrBits: Int) =
+    new TLULParameters(dataBits, newAddrBits, idBits, sinkBits)
   def augmentId(extraBits: Int) =
     new TLULParameters(dataBits, addrBits, idBits + extraBits, sinkBits)
   def shrinkId(extraBits: Int) = {

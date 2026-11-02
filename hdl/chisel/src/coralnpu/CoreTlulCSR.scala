@@ -28,9 +28,11 @@ object CoreTlulCsrAddrs {
   val DbgStatus  = 0x814.U
 }
 
-class CoreTlulCSR(p: Parameters, extraIdBits: Int = 0) extends Module {
+class CoreTlulCSR(p: Parameters, addrBits: Int = 12, extraIdBits: Int = 0) extends Module {
   val io = IO(new Bundle {
-    val tl = Flipped(new TLULHost2Device[NoUser, NoUser](p.toTLUL().augmentId(extraIdBits)))
+    val tl = Flipped(
+      new TLULHost2Device[NoUser, NoUser](p.toTLUL().withAddrBits(addrBits).augmentId(extraIdBits))
+    )
     // Input indicating that the transaction is coming from inside CoralNPU.
     val internal = Input(Bool())
 
@@ -43,9 +45,6 @@ class CoreTlulCSR(p: Parameters, extraIdBits: Int = 0) extends Module {
     val coralnpu_csr = Input(new CsrOutIO(p))
     val debug        = Flipped(new DebugModuleIO(p))
   })
-
-  val csrRegion = p.m.find(_.memType == MemoryRegionType.Peripheral).get
-  val csrBase   = csrRegion.memStart
 
   // Bit 0 - Reset (Active High)
   // Bit 1 - Clock Gate (Active High)
@@ -110,27 +109,27 @@ class CoreTlulCSR(p: Parameters, extraIdBits: Int = 0) extends Module {
 
   // Map of core control registers.
   val coreRegMap = Map(
-    (csrBase + 0x0) -> resetReg,
-    (csrBase + 0x4) -> pcStartReg,
-    (csrBase + 0x8) -> statusReg
+    0x0 -> resetReg,
+    0x4 -> pcStartReg,
+    0x8 -> statusReg
   )
 
   // Map of CoralNPU's internal CSRs.
   val csrRegs   = io.coralnpu_csr.value
   val csrRegMap = (0 until p.csrOutCount).map { i =>
-    (csrBase + kCsrBaseAddr + i * kRegWidthBytes) -> csrRegs(i)
+    (kCsrBaseAddr + i * kRegWidthBytes) -> csrRegs(i)
   }.toMap
 
   // Map of debug registers, conditionally present.
   val debugStatusReg = Cat(rsp_queue.io.deq.valid, io.debug.req.ready)
-  val debugReadMap   = Seq(
-    CoreTlulCsrAddrs.DbgReqAddr -> debugReqAddrReg,
-    CoreTlulCsrAddrs.DbgReqData -> debugReqDataReg,
-    CoreTlulCsrAddrs.DbgReqOp   -> debugReqOpReg,
-    CoreTlulCsrAddrs.DbgRspData -> rsp_queue.io.deq.bits.data,
-    CoreTlulCsrAddrs.DbgRspOp   -> rsp_queue.io.deq.bits.op.asUInt,
-    CoreTlulCsrAddrs.DbgStatus  -> debugStatusReg
-  ).map { case (k, v) => (csrBase + k.litValue.toInt) -> v }.toMap
+  val debugReadMap   = Map(
+    CoreTlulCsrAddrs.DbgReqAddr.litValue.toInt -> debugReqAddrReg,
+    CoreTlulCsrAddrs.DbgReqData.litValue.toInt -> debugReqDataReg,
+    CoreTlulCsrAddrs.DbgReqOp.litValue.toInt   -> debugReqOpReg,
+    CoreTlulCsrAddrs.DbgRspData.litValue.toInt -> rsp_queue.io.deq.bits.data,
+    CoreTlulCsrAddrs.DbgRspOp.litValue.toInt   -> rsp_queue.io.deq.bits.op.asUInt,
+    CoreTlulCsrAddrs.DbgStatus.litValue.toInt  -> debugStatusReg
+  )
 
   // Combine all register maps.
   val allReadRegs = coreRegMap ++ csrRegMap ++ debugReadMap
@@ -161,40 +160,40 @@ class CoreTlulCSR(p: Parameters, extraIdBits: Int = 0) extends Module {
   statusReg  := Cat(io.fault, io.halted)
 
   // Register write logic.
-  resetReg   := Mux(writeEn && writeAddr === (csrBase + 0x0).U, writeData(31, 0), resetReg)
+  resetReg   := Mux(writeEn && writeAddr === 0x0.U, writeData(31, 0), resetReg)
   pcStartReg := Mux(
     bootAddrCapture,
     io.bootAddr,
-    Mux(writeEn && writeAddr === (csrBase + 0x4).U, writeData(63, 32), pcStartReg)
+    Mux(writeEn && writeAddr === 0x4.U, writeData(63, 32), pcStartReg)
   )
   bootAddrCapture := false.B
   debugReqAddrReg := Mux(
-    writeEn && writeAddr === (csrBase.U + CoreTlulCsrAddrs.DbgReqAddr),
+    writeEn && writeAddr === CoreTlulCsrAddrs.DbgReqAddr,
     writeData(31, 0),
     debugReqAddrReg
   )
   debugReqDataReg := Mux(
-    writeEn && writeAddr === (csrBase.U + CoreTlulCsrAddrs.DbgReqData),
+    writeEn && writeAddr === CoreTlulCsrAddrs.DbgReqData,
     writeData(63, 32),
     debugReqDataReg
   )
   debugReqOpReg := Mux(
-    writeEn && writeAddr === (csrBase.U + CoreTlulCsrAddrs.DbgReqOp),
+    writeEn && writeAddr === CoreTlulCsrAddrs.DbgReqOp,
     writeData(95, 64),
     debugReqOpReg
   )
 
   // Map of valid write addresses for the debug module.
   val debugWriteValidMap = Map(
-    (csrBase + CoreTlulCsrAddrs.DbgReqAddr.litValue.toInt) -> true.B,
-    (csrBase + CoreTlulCsrAddrs.DbgReqData.litValue.toInt) -> true.B,
-    (csrBase + CoreTlulCsrAddrs.DbgReqOp.litValue.toInt)   -> true.B,
-    (csrBase + CoreTlulCsrAddrs.DbgStatus.litValue.toInt)  -> true.B
+    CoreTlulCsrAddrs.DbgReqAddr.litValue.toInt -> true.B,
+    CoreTlulCsrAddrs.DbgReqData.litValue.toInt -> true.B,
+    CoreTlulCsrAddrs.DbgReqOp.litValue.toInt   -> true.B,
+    CoreTlulCsrAddrs.DbgStatus.litValue.toInt  -> true.B
   )
 
   val allWriteRegs = Map(
-    (csrBase + 0x0) -> true.B,
-    (csrBase + 0x4) -> true.B
+    0x0 -> true.B,
+    0x4 -> true.B
   ) ++ debugWriteValidMap
 
   // TL-UL D-channel response generation
@@ -250,20 +249,32 @@ class CoreTlulAxiCSR(p: Parameters, axiReadAddrDelay: Int = 0, axiReadDataDelay:
     val debug        = Flipped(new DebugModuleIO(p))
   })
 
-  val readConv  = Module(new AxiRead2TLUL(p.toTLUL()))
-  val writeConv = Module(new AxiWrite2TLUL(p.toTLUL()))
-  val arbiter   = Module(new TlulArbiter(p.toTLUL(), M = 2))
-  val csr       = Module(new CoreTlulCSR(p, extraIdBits = 1))
+  val csrRegion   = p.m.find(_.memType == MemoryRegionType.Peripheral).get
+  val csrAddrBits = log2Ceil(csrRegion.memSize)
+  val routeFn     = (a: TileLink_A_Channel) => {
+    val inCsr = csrRegion.contains(a.address)
+    Seq(inCsr, !inCsr)
+  }
+
+  val readConv    = Module(new AxiRead2TLUL(p.toTLUL()))
+  val writeConv   = Module(new AxiWrite2TLUL(p.toTLUL()))
+  val readRouter  = Module(new TlulRouter(p.toTLUL(), n = 1, route = routeFn))
+  val writeRouter = Module(new TlulRouter(p.toTLUL(), n = 1, route = routeFn))
+  val arbiter     = Module(new TlulArbiter(p.toTLUL(), M = 2))
+  val csr         = Module(new CoreTlulCSR(p, addrBits = csrAddrBits, extraIdBits = 1))
 
   // Connect AXI ports to converters (with optional delay)
   readConv.io.axiRead.addr <> Queue(io.axi.read.addr, axiReadAddrDelay)
   io.axi.read.data <> Queue(readConv.io.axiRead.data, axiReadDataDelay)
   writeConv.io.axiWrite <> io.axi.write
 
-  // Arbitrate CSR access
-  arbiter.io.tl_h(0) <> readConv.io.tl
-  arbiter.io.tl_h(1) <> writeConv.io.tl
-  csr.io.tl <> arbiter.io.tl_d
+  // Route and arbitrate CSR access, stripping region base address at the boundary
+  readRouter.io.tl_h <> readConv.io.tl
+  writeRouter.io.tl_h <> writeConv.io.tl
+  arbiter.io.tl_h(0) <> readRouter.io.tl_d(0)
+  arbiter.io.tl_h(1) <> writeRouter.io.tl_d(0)
+  val csrOffset = (arbiter.io.tl_d.a.bits.address - csrRegion.memStart.U)(csrAddrBits - 1, 0)
+  arbiter.io.tl_d.connectNarrowAddr(csr.io.tl, csrOffset)
 
   csr.io.internal := io.internal
 
