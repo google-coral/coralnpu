@@ -137,9 +137,7 @@ cat <<EOF >"${WORKDIR}/bazel.sh"
 SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 
 \${SCRIPT_DIR}/bazel \$* \\
-    --vendor_dir="\${SCRIPT_DIR}/vendor" \\
-    --test_tag_filters="-verilator" \\
-    --build_tag_filters="-verilator"
+    --vendor_dir="\${SCRIPT_DIR}/vendor"
 EOF
 chmod +x "${WORKDIR}/bazel.sh"
 
