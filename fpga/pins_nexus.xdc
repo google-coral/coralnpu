@@ -148,5 +148,5 @@ set_property MAX_FANOUT 16 [get_nets -quiet -hierarchical -filter {NAME =~ *USE_
 set_property MAX_FANOUT 16 [get_nets -quiet -hierarchical -filter {NAME =~ *USE_UPSIZER.upsizer_d2*wstrb*}]
 
 # Enforce all on-chip memories in URAM (192 URAM288 blocks = 15% device URAM, 0 BRAMs)
-set_property RAM_STYLE ultra [get_cells -quiet -hierarchical -filter {NAME =~ *dtcm*mem_reg* || NAME =~ *itcm*mem_reg* || NAME =~ *sram*mem_reg*}]
+set_property RAM_STYLE ultra [get_cells -quiet -hierarchical -filter {NAME =~ *sram*mem_reg*}]
 
