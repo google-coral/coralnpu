@@ -35,7 +35,7 @@ if {[llength $sram_slr1] > 0} {
 }
 
 # SLR3: CPU Core + ITCM (32 URAMs) + DTCM (32 URAMs) + ISP Subsystem (16 URAMs)
-set tcm_slr3 [get_cells -quiet -hierarchical -filter {IS_PRIMITIVE == 0 && (NAME =~ *itcm* || NAME =~ *dtcm*)}]
+set tcm_slr3 [get_cells -quiet -hierarchical -filter {IS_PRIMITIVE == 0 && (NAME =~ *itcm* || NAME =~ *dtcm* || NAME =~ *bankedItcm* || NAME =~ *bankedDtcm*)}]
 if {[llength $tcm_slr3] > 0} {
     set_property USER_SLR_ASSIGNMENT SLR3 $tcm_slr3
     puts "INFO: Assigned USER_SLR_ASSIGNMENT SLR3 to [llength $tcm_slr3] TCM cells."
