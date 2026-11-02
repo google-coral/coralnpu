@@ -568,22 +568,6 @@ chisel_cc_library(
     module_name = "Alu",
 )
 
-chisel_cc_library(
-    name = "core_mini_cc_library",
-    chisel_lib = ":coralnpu",
-    emit_class = "coralnpu.EmitCore",
-    extra_outs = [
-        "VCoreMini_parameters.h",
-    ],
-    gen_flags = [
-        "--fetchDataBits=128",
-        "--lsuDataBits=128",
-        "--moduleName=CoreMini",
-    ],
-    module_name = "CoreMini",
-    verilog_file_path = "CoreMini.sv",
-)
-
 template_rule(
     chisel_cc_library,
     {

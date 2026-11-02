@@ -57,17 +57,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "coralnpu_if",
-    hdrs = [
-        "coralnpu/coralnpu_cfg.h",
-        "coralnpu/core_if.h",
-        "coralnpu/debug_if.h",
-        "coralnpu/memory_if.h",
-    ],
-    defines = ["CORALNPU_SIMD=256"],
-)
-
 CORE_MINI_AXI_TB_CC_LIBRARY_COMMON_SRCS = [
     "coralnpu/core_mini_axi_tb.cc",
 ]
@@ -267,26 +256,6 @@ cc_test(
         ":core_mini_axi_tb",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:initialize",
-    ],
-)
-
-cc_binary(
-    name = "core_mini_sim",
-    srcs = [
-        "coralnpu/core_tb.cc",
-        "@coralnpu_hw//hdl/chisel/src/coralnpu:VCoreMini_parameters.h",
-    ],
-    defines = [
-        "VERILATOR_MODEL=VCoreMini",
-    ],
-    deps = [
-        ":coralnpu_if",
-        ":sim_libs",
-        ":util",
-        "//hdl/chisel/src/coralnpu:core_mini_cc_library",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/flags:usage",
     ],
 )
 
