@@ -178,7 +178,18 @@ module top;
       .io_axi_master_read_data_bits_data(master_rdata),
       .io_axi_master_read_data_bits_id(master_rid),
       .io_axi_master_read_data_bits_resp(master_rresp),
-      .io_axi_master_read_data_bits_last(master_rlast)
+      .io_axi_master_read_data_bits_last(master_rlast),
+
+      // Debug module (tied off)
+      .io_dm_req_ready(),
+      .io_dm_req_valid(1'b0),
+      .io_dm_req_bits_address(32'h0),
+      .io_dm_req_bits_data(32'h0),
+      .io_dm_req_bits_op(2'b0),
+      .io_dm_rsp_ready(1'b0),
+      .io_dm_rsp_valid(),
+      .io_dm_rsp_bits_data(),
+      .io_dm_rsp_bits_op()
   );
 
   // Clock generator

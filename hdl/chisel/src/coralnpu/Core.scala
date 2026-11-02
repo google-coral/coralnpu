@@ -37,7 +37,6 @@ class Core(p: Parameters, moduleName: String) extends Module with RequireAsyncRe
     val irq          = Input(Bool())
     val timer_irq    = Input(Bool())
     val software_irq = Input(Bool())
-    val debug_req    = Input(Bool())
     val dm           = new CoreDMIO(p)
 
     // Bus between core and instruction memories.

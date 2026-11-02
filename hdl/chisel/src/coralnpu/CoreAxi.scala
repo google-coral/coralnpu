@@ -117,7 +117,6 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
     csr.io.halted           := core.io.halted
     csr.io.fault            := core.io.fault
     csr.io.coralnpu_csr     := core.io.csr.out
-    core.io.debug_req       := true.B
     core.io.csr.in.value(0) := csr.io.pcStart
     for (i <- 1 until p.csrInCount) {
       core.io.csr.in.value(i) := 0.U

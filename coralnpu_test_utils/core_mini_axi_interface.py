@@ -761,12 +761,6 @@ class CoreMiniAxiInterface:
             retries += 1
             assert retries < retry_count
 
-    async def debug_req(self):
-        await RisingEdge(self.dut.io_aclk)
-        self.dut.io_debug_req.value = 1
-        await RisingEdge(self.dut.io_aclk)
-        self.dut.io_debug_req.value = 0
-
     async def _write_addr(
         self, addr, size, burst_len=1, axi_id=0, burst=AxiBurst.INCR
     ):
