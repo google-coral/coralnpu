@@ -258,14 +258,3 @@ cc_test(
         "@com_google_absl//absl/log:initialize",
     ],
 )
-
-cc_test(
-    name = "dbus2axi_tb",
-    srcs = [
-        "coralnpu/dbus2axi_tb.cc",
-    ],
-    deps = [
-        ":sim_libs",
-        "//hdl/chisel/src/coralnpu:dbus2axi_cc_library",
-    ],
-)

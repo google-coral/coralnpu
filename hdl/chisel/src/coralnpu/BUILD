@@ -385,45 +385,6 @@ chisel_test(
     ],
 )
 
-chisel_test(
-    name = "coralnpu_dbus2axi_tests",
-    size = "large",
-    srcs = [
-        "DBus2AxiTest.scala",
-    ],
-    deps = [
-        ":coralnpu",
-        ":coralnpu_base",
-        "//hdl/chisel/src/bus",
-    ],
-)
-
-chisel_test(
-    name = "coralnpu_fabric_arbiter_tests",
-    size = "large",
-    srcs = [
-        "FabricArbiterSpec.scala",
-    ],
-    deps = [
-        ":coralnpu",
-        ":coralnpu_base",
-        "//hdl/chisel/src/bus",
-    ],
-)
-
-chisel_test(
-    name = "coralnpu_fabric_mux_tests",
-    size = "large",
-    srcs = [
-        "FabricMuxSpec.scala",
-    ],
-    deps = [
-        ":coralnpu",
-        ":coralnpu_base",
-        "//hdl/chisel/src/bus",
-    ],
-)
-
 chisel_library(
     name = "clock_gate",
     srcs = [
@@ -462,8 +423,6 @@ autogen_scm_info(name = "CoralNPUScmInfo")
 chisel_library(
     name = "coralnpu_base",
     srcs = [
-        "DBus2Axi.scala",
-        "IBus2Axi.scala",
         "Interfaces.scala",
         "Library.scala",
         "Parameters.scala",
@@ -530,18 +489,13 @@ chisel_library(
 chisel_library(
     name = "coralnpu",
     srcs = [
-        "AxiSlave.scala",
         "BankedDtcm.scala",
         "BankedItcm.scala",
         "Core.scala",
         "CoreAxi.scala",
-        "CoreAxiCSR.scala",
         "CoreDomainTlulBridge.scala",
         "CoreTlul.scala",
         "CoreTlulCSR.scala",
-        "Fabric.scala",
-        "SRAM.scala",
-        "TCM.scala",
     ],
     deps = [
         ":RstSync",
@@ -878,13 +832,6 @@ vcstatic_lint(
 verilog_zip_bundle(
     name = "core_mini_axi_bundle",
     lib = ":core_mini_axi_cc_library_verilog",
-)
-
-chisel_cc_library(
-    name = "dbus2axi_cc_library",
-    chisel_lib = ":coralnpu",
-    emit_class = "coralnpu.EmitDBus2Axi",
-    module_name = "DBus2AxiV2",
 )
 
 chisel_cc_library(

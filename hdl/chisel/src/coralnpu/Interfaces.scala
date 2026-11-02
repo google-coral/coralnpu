@@ -42,21 +42,6 @@ class RegfileBusPortIO(p: Parameters) extends Bundle {
   val data = Vec(p.instructionLanes, UInt(p.xlen.W))
 }
 
-// When `valid` as asserted, `addr` must remain constant
-// until `ready` is fired.
-class IBusIO(p: Parameters) extends Bundle {
-  // Control Phase.
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-  val addr  = Output(UInt(p.fetchAddrBits.W))
-  // Read Phase.
-  val rdata = Input(UInt(p.fetchDataBits.W))
-  // Fault information.
-  val fault = Input(Valid(new FaultInfo(p)))
-
-  def fire: Bool = valid && ready
-}
-
 class FetchInstruction(p: Parameters) extends Bundle {
   val addr    = UInt(p.programCounterBits.W)
   val inst    = UInt(p.instructionBits.W)
@@ -129,62 +114,16 @@ object LsuFaultInfo {
   }
 }
 
-class DBusIO(p: Parameters, bank: Boolean = false) extends Bundle {
-  // Control Phase.
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-  val write = Output(Bool())
-  val pc    = Output(UInt(p.programCounterBits.W))
-  val addr  = Output(UInt((p.lsuAddrBits - (if (bank) 1 else 0)).W))
-  val adrx  = Output(UInt((p.lsuAddrBits - (if (bank) 1 else 0)).W))
-  val size  = Output(UInt(p.dbusSize.W))
-  val wdata = Output(UInt(p.lsuDataBits.W))
-  val wmask = Output(UInt((p.lsuDataBits / 8).W))
-  // Read Phase.
-  val rdata = Input(UInt(p.lsuDataBits.W))
-}
-
 class DBus2Resp(p: Parameters) extends Bundle {
   val txid  = UInt(p.lsuSlotTxidWidth.W)
   val rdata = UInt(p.lsuDataBits.W)
   val fault = Bool()
 }
 
-// TODO: add txid
-class DBus2IO(p: Parameters, bank: Boolean = false) extends Bundle {
-  // Control Phase.
-  val ctrl = Decoupled(new Bundle {
-    val write = Bool()
-    val pc    = UInt(32.W)
-    val addr  = UInt((p.lsuAddrBits - (if (bank) 1 else 0)).W)
-    val adrx  = UInt((p.lsuAddrBits - (if (bank) 1 else 0)).W)
-    val size  = UInt(p.dbusSize.W)
-    val wdata = UInt(p.lsuDataBits.W)
-    val wmask = UInt(p.lsuDataBytes.W)
-  })
-  // Response Phase
-  val resp = Flipped(Decoupled(new DBus2Resp(p)))
-}
-
-class EBusIO(p: Parameters) extends Bundle {
-  val dbus     = new DBusIO(p)
-  val internal = Output(Bool())
-  val fault    = Flipped(Valid(new FaultInfo(p)))
-}
-
 class IFlushIO(p: Parameters) extends Bundle {
   val valid  = Output(Bool())
   val pcNext = Output(UInt(p.programCounterBits.W))
   val ready  = Input(Bool())
-
-  def fire: Bool = valid && ready
-}
-
-class DFlushIO(p: Parameters) extends Bundle {
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-  val all   = Output(Bool()) // all=0, see io.dbus.addr for line address.
-  val clean = Output(Bool()) // clean and flush
 
   def fire: Bool = valid && ready
 }
@@ -317,15 +256,6 @@ class VectorWriteDataIO(p: Parameters) extends Bundle {
   val uop_pc         = Option.when(p.enableVerification)(Input(UInt(p.programCounterBits.W)))
   val last_uop_valid = Input(Bool())
   val rob_tag        = Input(UInt(log2Ceil(p.retirementBufferSize).W))
-}
-
-class FabricIO(p: Parameters) extends Bundle {
-  val readDataAddr  = Output(Valid(UInt(p.axi2AddrBits.W)))
-  val readData      = Input(Valid(UInt(p.axi2DataBits.W)))
-  val writeDataAddr = Output(Valid(UInt(p.axi2AddrBits.W)))
-  val writeDataBits = Output(UInt(p.axi2DataBits.W))
-  val writeDataStrb = Output(UInt((p.axi2DataBits / 8).W))
-  val writeResp     = Input(Bool())
 }
 
 object CsrOp extends ChiselEnum {
