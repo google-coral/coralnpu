@@ -21,7 +21,7 @@ package coralnpu_tlul_pkg_128;
   localparam int TL_DW = 128;
   localparam int TL_DBW = TL_DW / 8;
   localparam int TL_SZW = $clog2(TL_DW);
-  localparam int TL_AIW = 8;
+  localparam int TL_AIW = 10;
 
   typedef struct packed {
     logic [RsvdWidth - 1 : 0] rsvd;

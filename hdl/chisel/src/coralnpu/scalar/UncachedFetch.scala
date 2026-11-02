@@ -17,6 +17,7 @@ package coralnpu
 import chisel3._
 import chisel3.util._
 import common._
+import bus._
 
 class PredecodeOutput(p: Parameters) extends Bundle {
   val insts     = Vec(p.fetchInstrSlots, new FetchInstruction(p))
@@ -326,7 +327,7 @@ class Fetcher(p: Parameters) extends Module {
     val ctrl    = Flipped(Irrevocable(UInt(p.fetchAddrBits.W)))
     val flushTx = Input(Bool())
     val fetch   = Decoupled(new FetchResponse(p))
-    val ibus    = new IBusIO(p)
+    val tlul    = new TLULHost2Device[NoUser, NoUser](p.tlParams)
   })
 
   val lsb = log2Ceil(p.fetchDataBits / 8)
@@ -349,25 +350,32 @@ class Fetcher(p: Parameters) extends Module {
   )
 
   val canStartFetch = io.ctrl.valid && reorderBuffer.io.newTx.ready && txidAllocator.io.alloc.valid
-  // The fetch request goes through without stopping.
-  io.ibus.valid := canStartFetch
-  io.ibus.addr  := Cat(io.ctrl.bits(p.fetchAddrBits - 1, lsb), 0.U(lsb.W))
 
-  val ibusAddrFire = io.ibus.fire
-  // TODO(davidgao): Add txid to ibus interface
-  // io.ibus.txid := txidAllocator.io.alloc.bits
+  // TL-UL Channel A (Get request)
+  io.tlul.a.valid        := canStartFetch
+  io.tlul.a.bits.opcode  := TLULOpcodesA.Get.asUInt
+  io.tlul.a.bits.param   := 0.U
+  io.tlul.a.bits.size    := lsb.U
+  io.tlul.a.bits.source  := txidAllocator.io.alloc.bits
+  io.tlul.a.bits.address := Cat(io.ctrl.bits(p.fetchAddrBits - 1, lsb), 0.U(lsb.W))
+  io.tlul.a.bits.mask    := Fill(p.fetchDataBits / 8, 1.U)
+  io.tlul.a.bits.data    := 0.U
+
+  val ibusAddrFire = io.tlul.a.fire
   txidAllocator.io.alloc.ready     := ibusAddrFire
   reorderBuffer.io.newTx.valid     := ibusAddrFire
   reorderBuffer.io.newTx.bits.addr := io.ctrl.bits
   reorderBuffer.io.newTx.bits.txid := txidAllocator.io.alloc.bits
-  // TODO(davidgao): remove this adapter when we decouple data from addr on ibus
-  reorderBuffer.io.busResp.valid           := RegNext(ibusAddrFire, false.B)
-  reorderBuffer.io.busResp.bits.txid       := RegNext(txidAllocator.io.alloc.bits)
-  reorderBuffer.io.busResp.bits.resp.data  := io.ibus.rdata
-  reorderBuffer.io.busResp.bits.resp.fault := RegNext(io.ibus.fault.valid)
+  io.ctrl.ready                    := ibusAddrFire
+
+  // TL-UL Channel D (AccessAckData response)
+  io.tlul.d.ready                          := true.B
+  reorderBuffer.io.busResp.valid           := io.tlul.d.valid
+  reorderBuffer.io.busResp.bits.txid       := io.tlul.d.bits.source
+  reorderBuffer.io.busResp.bits.resp.data  := io.tlul.d.bits.data
+  reorderBuffer.io.busResp.bits.resp.fault := io.tlul.d.bits.error
   reorderBuffer.io.commit.ready            := io.fetch.ready
   reorderBuffer.io.flush                   := io.flushTx
-  io.ctrl.ready                            := ibusAddrFire
 
   txidAllocator.io.free.valid := reorderBuffer.io.freeTxid.valid
   txidAllocator.io.free.bits  := reorderBuffer.io.freeTxid.bits
@@ -564,7 +572,7 @@ class UncachedFetch(p: Parameters) extends FetchUnit(p) {
   fetcher.io.ctrl <> ctrl.io.fetchAddr
   fetcher.io.flushTx := ctrl.io.flushTx
   ctrl.io.fetchData <> fetcher.io.fetch
-  fetcher.io.ibus <> io.ibus
+  fetcher.io.tlul <> io.tlul
 
   val window            = p.fetchInstrSlots * 2
   val instructionBuffer = Module(

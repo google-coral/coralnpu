@@ -22,8 +22,8 @@ import common.{ChiselEmitter, ChiselEmitterOptions}
 
 class BankedItcm(
   p: TLULParameters,
-  numBanks: Int = 2,
-  numHosts: Int = 3,
+  numBanks: Int = 1,
+  numHosts: Int = 5,
   bankSizeBytes: Int,
   bankBaseAddresses: Seq[Int],
   routeFn: TileLink_A_Channel => Seq[Bool]
@@ -56,8 +56,8 @@ object BankedItcmEmitter extends App {
   val p = new Parameters
   p.m = MemoryRegions.default
 
-  var numBanks   = 2
-  var numHosts   = 3
+  var numBanks   = 1
+  var numHosts   = 5
   var moduleName = "BankedItcm"
 
   // Simple arg parser
@@ -88,10 +88,13 @@ object BankedItcmEmitter extends App {
   val routeFn = (a: TileLink_A_Channel) => {
     val addr     = a.address
     val in_range = (addr >= itcmBase.U) && (addr < (itcmBase + itcmSize).U)
-    val offset   = addr - itcmBase.U
-    val bank_sel = offset(log2Ceil(itcmSize) - 1, log2Ceil(bankSizeBytes))
-
-    val sel       = (0 until numBanks).map { j => in_range && (bank_sel === j.U) }
+    val sel      = if (numBanks > 1) {
+      val offset   = addr - itcmBase.U
+      val bank_sel = offset(log2Ceil(itcmSize) - 1, log2Ceil(bankSizeBytes))
+      (0 until numBanks).map { j => in_range && (bank_sel === j.U) }
+    } else {
+      Seq(in_range)
+    }
     val error_sel = !in_range
     sel ++ Seq(error_sel)
   }

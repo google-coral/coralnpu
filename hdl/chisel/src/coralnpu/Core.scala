@@ -41,7 +41,7 @@ class Core(p: Parameters, moduleName: String) extends Module with RequireAsyncRe
     val dm           = new CoreDMIO(p)
 
     // Bus between core and instruction memories.
-    val ibus = new IBusIO(p)
+    val tlul_fetch = new TLULHost2Device[NoUser, NoUser](p.tlParams)
     // Bus between core and data memories, external memories, or peripherals.
     val tlul_lsu = new TLULHost2Device[NoUser, NoUser](p.tlParams)
 
@@ -57,7 +57,7 @@ class Core(p: Parameters, moduleName: String) extends Module with RequireAsyncRe
   // ---------------------------------------------------------------------------
   // Scalar Core outputs.
   io.csr <> score.io.csr
-  io.ibus <> score.io.ibus
+  io.tlul_fetch <> score.io.tlul_fetch
   io.tlul_lsu <> score.io.tlul_lsu
   io.halted             := score.io.halted
   io.fault              := score.io.fault

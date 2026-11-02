@@ -143,7 +143,7 @@ module autoboot
   assign tl_o.a_opcode = a_opcode;
   assign tl_o.a_param = 3'h0;
   assign tl_o.a_size = 2'h2;  // 4 bytes
-  assign tl_o.a_source = 8'h0;
+  assign tl_o.a_source = '0;
   assign tl_o.a_address = a_addr;
   assign tl_o.a_mask = 4'hF;
   assign tl_o.a_data = a_data;

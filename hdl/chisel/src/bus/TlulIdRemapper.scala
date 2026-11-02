@@ -59,13 +59,9 @@ class TlulIdRemapper[A_USER <: Data, D_USER <: Data](
   val d_fire   = io.tl_d_in.fire
   val d_source = io.tl_d_in.bits.source
 
-  outstanding_reg := MuxCase(
-    outstanding_reg,
-    Seq(
-      a_fire -> (outstanding_reg | (1.U << truncated_id)),
-      d_fire -> (outstanding_reg & ~(1.U << d_source))
-    )
-  )
+  val set_mask = Mux(a_fire, UIntToOH(truncated_id, numTrackerSlots), 0.U(numTrackerSlots.W))
+  val clr_mask = Mux(d_fire, UIntToOH(d_source, numTrackerSlots), 0.U(numTrackerSlots.W))
+  outstanding_reg := (outstanding_reg & ~clr_mask) | set_mask
 
   saved_source_id_map(truncated_id) := Mux(
     a_fire,

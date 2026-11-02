@@ -194,6 +194,8 @@ module coralnpu_soc #(
 
   coralnpu_tlul_pkg_32::tl_h2d_t tl_autoboot_h2d;
   coralnpu_tlul_pkg_32::tl_d2h_t tl_autoboot_d2h;
+  logic [5:0] autoboot_d_source;
+  assign tl_autoboot_d2h.d_source = top_pkg::TL_AIW'(autoboot_d_source);
 
   localparam logic [31:0] CsrBaseAddr = (ItcmSizeKBytes == 8 && DtcmSizeKBytes == 32) ? 32'h00030000 : 32'h00200000;
 
@@ -699,7 +701,7 @@ module coralnpu_soc #(
       .io_ispyocto_ctrl_a_bits_opcode(isp_tl_h2d.a_opcode),
       .io_ispyocto_ctrl_a_bits_param(isp_tl_h2d.a_param),
       .io_ispyocto_ctrl_a_bits_size(isp_tl_h2d.a_size),
-      .io_ispyocto_ctrl_a_bits_source(isp_tl_h2d.a_source[5:0]),  // Map to 6-bit port
+      .io_ispyocto_ctrl_a_bits_source(isp_tl_h2d.a_source),
       .io_ispyocto_ctrl_a_bits_address(isp_tl_h2d.a_address),
       .io_ispyocto_ctrl_a_bits_mask(isp_tl_h2d.a_mask),
       .io_ispyocto_ctrl_a_bits_data(isp_tl_h2d.a_data),
@@ -712,7 +714,7 @@ module coralnpu_soc #(
       .io_ispyocto_ctrl_d_bits_opcode(isp_tl_d2h.d_opcode),
       .io_ispyocto_ctrl_d_bits_param(isp_tl_d2h.d_param),
       .io_ispyocto_ctrl_d_bits_size(isp_tl_d2h.d_size),
-      .io_ispyocto_ctrl_d_bits_source(isp_tl_d2h.d_source[5:0]),
+      .io_ispyocto_ctrl_d_bits_source(isp_tl_d2h.d_source),
       .io_ispyocto_ctrl_d_bits_sink(isp_tl_d2h.d_sink),
       .io_ispyocto_ctrl_d_bits_data(isp_tl_d2h.d_data),
       .io_ispyocto_ctrl_d_bits_error(isp_tl_d2h.d_error),
@@ -789,7 +791,7 @@ module coralnpu_soc #(
       .io_external_hosts_autoboot_a_bits_opcode(tl_autoboot_h2d.a_opcode),
       .io_external_hosts_autoboot_a_bits_param(tl_autoboot_h2d.a_param),
       .io_external_hosts_autoboot_a_bits_size(tl_autoboot_h2d.a_size),
-      .io_external_hosts_autoboot_a_bits_source(tl_autoboot_h2d.a_source),
+      .io_external_hosts_autoboot_a_bits_source(tl_autoboot_h2d.a_source[5:0]),
       .io_external_hosts_autoboot_a_bits_address(tl_autoboot_h2d.a_address),
       .io_external_hosts_autoboot_a_bits_mask(tl_autoboot_h2d.a_mask),
       .io_external_hosts_autoboot_a_bits_data(tl_autoboot_h2d.a_data),
@@ -802,7 +804,7 @@ module coralnpu_soc #(
       .io_external_hosts_autoboot_d_bits_opcode(tl_autoboot_d2h.d_opcode),
       .io_external_hosts_autoboot_d_bits_param(tl_autoboot_d2h.d_param),
       .io_external_hosts_autoboot_d_bits_size(tl_autoboot_d2h.d_size),
-      .io_external_hosts_autoboot_d_bits_source(tl_autoboot_d2h.d_source),
+      .io_external_hosts_autoboot_d_bits_source(autoboot_d_source),
       .io_external_hosts_autoboot_d_bits_sink(tl_autoboot_d2h.d_sink),
       .io_external_hosts_autoboot_d_bits_data(tl_autoboot_d2h.d_data),
       .io_external_hosts_autoboot_d_bits_error(tl_autoboot_d2h.d_error),

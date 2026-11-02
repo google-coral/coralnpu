@@ -39,8 +39,8 @@ class SCore(p: Parameters) extends Module {
     val timer_irq    = Input(Bool())
     val software_irq = Input(Bool())
 
-    val ibus     = new IBusIO(p)
-    val tlul_lsu = new TLULHost2Device[NoUser, NoUser](p.tlParams)
+    val tlul_fetch = new TLULHost2Device[NoUser, NoUser](p.tlParams)
+    val tlul_lsu   = new TLULHost2Device[NoUser, NoUser](p.tlParams)
 
     val rvvcore = Option.when(p.enableRvv)(Flipped(new RvvCoreIO(p)))
 
@@ -563,11 +563,7 @@ class SCore(p: Parameters) extends Module {
 
   // ---------------------------------------------------------------------------
   // Fetch Bus
-  io.ibus.valid       := fetch.io.ibus.valid
-  io.ibus.addr        := fetch.io.ibus.addr
-  fetch.io.ibus.ready := io.ibus.ready
-  fetch.io.ibus.fault := io.ibus.fault
-  fetch.io.ibus.rdata := io.ibus.rdata
+  io.tlul_fetch <> fetch.io.tlul
 
   // ---------------------------------------------------------------------------
   // Data Bus (TileLink-UL)

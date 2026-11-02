@@ -30,6 +30,8 @@ class TLULParameters(
 
   def withAddrBits(newAddrBits: Int) =
     new TLULParameters(dataBits, newAddrBits, idBits, sinkBits)
+  def withIdBits(newIdBits: Int) =
+    new TLULParameters(dataBits, addrBits, newIdBits, sinkBits)
   def augmentId(extraBits: Int) =
     new TLULParameters(dataBits, addrBits, idBits + extraBits, sinkBits)
   def shrinkId(extraBits: Int) = {

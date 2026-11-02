@@ -17,6 +17,7 @@ package coralnpu
 import common._
 import chisel3._
 import chisel3.util._
+import bus._
 
 class CsrInIO(p: Parameters) extends Bundle {
   val value = Input(Vec(p.csrInCount, UInt(p.xlen.W)))
@@ -70,7 +71,7 @@ abstract class FetchUnit(p: Parameters) extends Module {
   val io = IO(new Bundle {
     val csr      = new CsrInIO(p)
     val debug_pc = Flipped(Valid(UInt(p.fetchAddrBits.W)))
-    val ibus     = new IBusIO(p)
+    val tlul     = new TLULHost2Device[NoUser, NoUser](p.tlParams)
     val inst     = new FetchIO(p)
     val branch   = Flipped(Vec(p.instructionLanes, Valid(UInt(p.programCounterBits.W))))
     val linkPort = Flipped(new RegfileLinkPortIO(p))

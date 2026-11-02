@@ -362,6 +362,7 @@ chisel_test(
     deps = [
         ":coralnpu_base",
         ":coralnpu_scalar",
+        "//hdl/chisel/src/bus",
         "//hdl/chisel/src/common",
         "//hdl/chisel/src/common:instruction_buffer",
     ],

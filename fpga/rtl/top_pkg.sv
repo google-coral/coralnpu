@@ -18,7 +18,7 @@ package top_pkg;
   // Toplevel constants for the CoralNPU SoC will be added here.
   localparam int TL_AW = 32;
   localparam int TL_DW = 32;
-  localparam int TL_AIW = 8;
+  localparam int TL_AIW = 10;
   localparam int TL_DIW = 1;
   localparam int TL_AUW = 23;
   localparam int TL_DUW = 14;

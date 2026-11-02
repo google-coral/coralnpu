@@ -17,16 +17,21 @@ package coralnpu
 import chisel3._
 import bus._
 
-class CoreTlul(p: Parameters, coreModuleName: String) extends RawModule {
+class CoreTlul(
+  p: Parameters,
+  coreModuleName: String,
+  deviceIdBits: Option[Int] = None
+) extends RawModule {
   override val desiredName = coreModuleName + "Tlul"
   val memoryRegions        = p.m
   val tlul_p               = p.toTLUL()
+  val device_tlul_p        = tlul_p.withIdBits(deviceIdBits.getOrElse(tlul_p.o))
   val io                   = IO(new Bundle {
     val clk    = Input(Clock())
     val rst_ni = Input(AsyncReset())
 
-    val tl_host   = new OpenTitanTileLink.Host2Device(p.toTLUL())
-    val tl_device = new OpenTitanTileLink.Device2Host(p.toTLUL())
+    val tl_host   = new OpenTitanTileLink.Host2Device(tlul_p)
+    val tl_device = new OpenTitanTileLink.Device2Host(device_tlul_p)
 
     // Core status interrupts
     val halted       = Output(Bool())
@@ -46,7 +51,7 @@ class CoreTlul(p: Parameters, coreModuleName: String) extends RawModule {
   val hostBridge = withClockAndReset(io.clk, (!io.rst_ni.asBool).asAsyncReset) {
     Module(
       new Axi2TLUL(
-        p.toTLUL(),
+        tlul_p,
         () => new OpenTitanTileLink_A_User,
         () => new OpenTitanTileLink_D_User
       )
@@ -55,7 +60,7 @@ class CoreTlul(p: Parameters, coreModuleName: String) extends RawModule {
   val deviceBridge = withClockAndReset(io.clk, (!io.rst_ni.asBool).asAsyncReset) {
     Module(
       new TLUL2Axi(
-        p.toTLUL(),
+        device_tlul_p,
         p.axi2DataBits,
         p.axi2AddrBits,
         p.axi2IdBits,

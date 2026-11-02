@@ -15,7 +15,7 @@
 package coralnpu.soc
 
 import chisel3._
-import chisel3.util.MuxCase
+import chisel3.util.{log2Ceil, MuxCase}
 import bus._
 import bus.TlulWidthBridge
 import coralnpu.MemorySize
@@ -103,15 +103,16 @@ class CoralNPUXbar(
   // The top-level reset is active-low, so we invert it for the active-high
   // modules instantiated within this block.
   // Define common parameters for the unified internal bus.
+  val commonWidth  = 128
   val commonParams = {
-    val max_xlen = hostParams.map(_.a).max
+    val max_xlen    = hostParams.map(_.a).max
+    val max_host_id = hostParams.map(_.o).max
     new bus.TLULParameters(
-      dataBits = 128,
+      dataBits = commonWidth,
       addrBits = max_xlen,
-      idBits = 8
+      idBits = max_host_id
     )
   }
-  val commonWidth = 128
 
   // --- 2. Programmatic Instantiation and Interface Standardization ---
   // All modules are instantiated and wired within their correct clock domains.
@@ -171,9 +172,21 @@ class CoralNPUXbar(
       // The conversion logic is wired up here, connecting these standardized interfaces
       // to the final output ports.
       val deviceInterfaces = cfg.devices.map { device =>
-        val deviceId = deviceMap(device.name)
+        val deviceId          = deviceMap(device.name)
+        val fanIn             = deviceFanIn(device.name).length
+        val stIdW             = if (fanIn > 1) log2Ceil(fanIn) else 0
+        val devInternalParams = commonParams.augmentId(stIdW)
+        val devWidth          = deviceParams(deviceId).w * 8
+        val bridgeExtraIdBits =
+          if (devWidth < commonWidth) log2Ceil(commonWidth / devWidth) else 0
+        require(
+          devInternalParams.o + bridgeExtraIdBits <= deviceParams(deviceId).o,
+          s"Device '${device.name}' requires ${devInternalParams.o + bridgeExtraIdBits} source ID bits " +
+            s"(host=${commonParams.o}, fanIn=$fanIn, bridge=+$bridgeExtraIdBits), " +
+            s"but deviceParams provides ${deviceParams(deviceId).o}"
+        )
         // This is the standardized interface, in the main clock domain at the common width.
-        val standardizedIface = Wire(new bus.OpenTitanTileLink.Host2Device(commonParams))
+        val standardizedIface = Wire(new bus.OpenTitanTileLink.Host2Device(devInternalParams))
         var currentIface: bus.OpenTitanTileLink.Host2Device = standardizedIface
 
         // Step 1: Clock Domain Crossing (if necessary)
@@ -181,7 +194,8 @@ class CoralNPUXbar(
         if (device.clockDomain != "main") {
           val domainPorts =
             io.async_ports_devices(device.clockDomain).asInstanceOf[ClockResetBundle]
-          val fifo = Module(new TlulFifoAsync(commonParams)).suggestName(s"${device.name}_fifo")
+          val fifo =
+            Module(new TlulFifoAsync(devInternalParams)).suggestName(s"${device.name}_fifo")
           fifo.io.clk_h_i := clock
           fifo.io.rst_h_i := reset.asBool
           fifo.io.clk_d_i := domainPorts.clock
@@ -191,7 +205,7 @@ class CoralNPUXbar(
         } else if (device.name == "clk_table") {
           val buf = Module(
             new TlulFifoSync(
-              commonParams,
+              devInternalParams,
               reqDepth = 2,
               rspDepth = 2,
               reqPass = false,
@@ -206,16 +220,16 @@ class CoralNPUXbar(
 
         // Step 2: Width Conversion (if necessary)
         // This bridge is in the device's clock domain.
-        if ((deviceParams(deviceId).w * 8) != commonWidth) {
+        if (devWidth != commonWidth) {
           val bridge = if (device.clockDomain != "main") {
             val domainPorts =
               io.async_ports_devices(device.clockDomain).asInstanceOf[ClockResetBundle]
             withClockAndReset(domainPorts.clock, domainPorts.reset) {
-              Module(new TlulWidthBridge(commonParams, deviceParams(deviceId)))
+              Module(new TlulWidthBridge(devInternalParams, deviceParams(deviceId)))
                 .suggestName(s"${device.name}_bridge")
             }
           } else {
-            Module(new TlulWidthBridge(commonParams, deviceParams(deviceId)))
+            Module(new TlulWidthBridge(devInternalParams, deviceParams(deviceId)))
               .suggestName(s"${device.name}_bridge")
           }
           bridge.io.tl_h <> currentIface

@@ -169,7 +169,8 @@ class CoralNPUChiselSubsystem(
       val p          = spi2tlul_config.params.asInstanceOf[Spi2TlulParameters]
       val spi2tlul_p = new Parameters(xlen = xlen)
       spi2tlul_p.lsuDataBits = p.lsuDataBits
-      spi2tlul_p.axi2IdBits = 8
+      spi2tlul_p.axi2IdBits =
+        hostParams(cfg.hosts(enableTestHarness).indexWhere(_.name == "spi2tlul")).o
       val m = Module(new Spi2TLUL(spi2tlul_p.toTLUL()))
       m.suggestName("spi2tlul")
       m
@@ -208,7 +209,9 @@ class CoralNPUChiselSubsystem(
             core_p.enableAxiInstructionFetch = p.enableAxiInstructionFetch
             core_p.itcmSizeKBytes = itcmSize.kBytes
             core_p.dtcmSizeKBytes = dtcmSize.kBytes
-            Module(new CoreTlul(core_p, config.name))
+            val coreDevIdBits =
+              deviceParams(cfg.devices.indexWhere(_.name == "coralnpu_device")).o
+            Module(new CoreTlul(core_p, config.name, deviceIdBits = Some(coreDevIdBits)))
 
           case p: Spi2TlulParameters => null
 
@@ -248,7 +251,7 @@ class CoralNPUChiselSubsystem(
           case p: TlulSramParameters =>
             val sram_p = new Parameters(xlen = xlen)
             sram_p.lsuDataBits = 128
-            sram_p.axi2IdBits = 8
+            sram_p.axi2IdBits = deviceParams(cfg.devices.indexWhere(_.name == "sram")).o
             Module(new TlulSram(sram_p, p.sramSizeBytes, p.globalBaseAddr))
 
           case p: IspParameters => null // Handled externally
@@ -435,7 +438,7 @@ class CoralNPUChiselSubsystem(
     ddr_mem_buf.io.host <> xbar.io.devices("ddr_mem")
 
     // Instantiate the bridge: 128-bit (from xbar) to 256-bit.
-    val ddr_mem_bridge = Module(new TlulWidthBridge(xbar.commonParams, ddr_mem_256_tlul_p))
+    val ddr_mem_bridge = Module(new TlulWidthBridge(ddr_mem_tlul_p, ddr_mem_256_tlul_p))
 
     // Instantiate the AXI converter: 256-bit TL to 256-bit AXI.
     val ddr_mem_axi_conv = Module(
