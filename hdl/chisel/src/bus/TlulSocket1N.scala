@@ -11,14 +11,18 @@ class TlulErrorResponder(p: TLULParameters) extends Module {
     val tl_h = Flipped(new OpenTitanTileLink.Host2Device(p))
   })
 
-  io.tl_h.a.ready := true.B
-
   val d = RegInit(MakeInvalid(new OpenTitanTileLink.D_Channel(p)))
 
-  d.valid               := io.tl_h.a.fire
-  d.bits.size           := Mux(io.tl_h.a.fire, io.tl_h.a.bits.size, d.bits.size)
-  d.bits.source         := Mux(io.tl_h.a.fire, io.tl_h.a.bits.source, d.bits.source)
-  d.bits.opcode         := TLULOpcodesD.AccessAck.asUInt
+  // We are ready for a new request only if we are not holding a pending response
+  io.tl_h.a.ready := !d.valid
+
+  // Hold valid until consumed by the host (io.tl_h.d.fire)
+  d.valid       := (d.valid || io.tl_h.a.fire) && !io.tl_h.d.fire
+  d.bits.size   := Mux(io.tl_h.a.fire, io.tl_h.a.bits.size, d.bits.size)
+  d.bits.source := Mux(io.tl_h.a.fire, io.tl_h.a.bits.source, d.bits.source)
+  val is_get        = io.tl_h.a.bits.opcode === TLULOpcodesA.Get.asUInt
+  val next_d_opcode = Mux(is_get, TLULOpcodesD.AccessAckData.asUInt, TLULOpcodesD.AccessAck.asUInt)
+  d.bits.opcode         := Mux(io.tl_h.a.fire, next_d_opcode, d.bits.opcode)
   d.bits.param          := 0.U
   d.bits.sink           := 0.U
   d.bits.data           := 0.U
