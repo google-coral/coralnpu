@@ -72,6 +72,11 @@ module coralnpu_tb_top;
       .resetn(resetn)
   );
 
+  coralnpu_lsu_if lsu_if (
+      .clk(clk),
+      .resetn(resetn)
+  );
+
   typedef virtual rvviTrace #(
       .ILEN  (32),
       .XLEN  (32),
@@ -342,6 +347,32 @@ module coralnpu_tb_top;
   `undef DEBUG_CORE_PORTS
   `undef DUT_MODULE
 
+  //--------------------------------------------------------------------------
+  // LSU Probe Assignments (pre-AXI internal LSU bus requests/responses)
+  //--------------------------------------------------------------------------
+  assign lsu_if.uop_valid        = u_dut.core.score.lsu.slot.io_uop_valid;
+  assign lsu_if.uop_ready        = u_dut.core.score.lsu.slot.io_uop_ready;
+  assign lsu_if.uop_pc           = u_dut.core.score.lsu.slot.io_uop_bits_pc;
+  assign lsu_if.uop_store        = u_dut.core.score.lsu.slot.io_uop_bits_store;
+  assign lsu_if.slot_active      = u_dut.core.score.lsu.slot.io_active;
+  assign lsu_if.slot_pc          = u_dut.core.score.lsu.slot.io_pc;
+  assign lsu_if.store_complete   = u_dut.core.score.lsu.slot.io_storeComplete;
+  assign lsu_if.slot_fault_valid = u_dut.core.score.lsu.slot.io_fault_valid;
+  assign lsu_if.bus_req_valid    = u_dut.core.score.lsu.slot.io_busReq_valid;
+  assign lsu_if.bus_req_ready    = u_dut.core.score.lsu.slot.io_busReq_ready;
+  assign lsu_if.bus_req_txid     = u_dut.core.score.lsu.slot.io_busReq_bits_txid;
+  assign lsu_if.bus_req_row_addr = u_dut.core.score.lsu.slot.io_busReq_bits_req_rowAddr;
+  assign lsu_if.bus_req_offset   = u_dut.core.score.lsu.slot.io_busReq_bits_req_offset;
+  assign lsu_if.bus_req_size     = u_dut.core.score.lsu.slot.io_busReq_bits_req_size;
+  assign lsu_if.bus_req_write    = u_dut.core.score.lsu.slot.io_busReq_bits_req_write;
+  assign lsu_if.bus_req_wdata    = u_dut.core.score.lsu.slot.io_busReq_bits_req_wdata;
+  assign lsu_if.bus_req_wmask    = u_dut.core.score.lsu.slot.io_busReq_bits_req_wmask;
+  assign lsu_if.bus_resp_valid   = u_dut.core.score.lsu.slot.io_busResp_valid;
+  assign lsu_if.bus_resp_txid    = u_dut.core.score.lsu.slot.io_busResp_bits_txid;
+  assign lsu_if.bus_resp_rdata   = u_dut.core.score.lsu.slot.io_busResp_bits_rdata;
+  assign lsu_if.bus_resp_fault   = u_dut.core.score.lsu.slot.io_busResp_bits_fault;
+  assign lsu_if.lsu_fault_valid  = u_dut.core.score.lsu.io_fault_valid;
+
 
   //--------------------------------------------------------------------------
   // Clock Generation
@@ -495,6 +526,7 @@ module coralnpu_tb_top;
     uvm_config_db#(virtual coralnpu_irq_if.DUT_IRQ_PORT)::set(null, "*", "irq_vif", irq_if);
 
     uvm_config_db#(rvvi_trace_vif_t)::set(null, "*.env.m_cosim_checker*", "rvvi_vif", rvvi_vif);
+    uvm_config_db#(virtual coralnpu_lsu_if)::set(null, "*.env.m_cosim_checker*", "lsu_vif", lsu_if);
     uvm_config_db#(rvvi_trace_vif_t)::set(null, "*.env.m_rvvi_agent*", "rvvi_vif", rvvi_vif);
 
     uvm_config_db#(time)::set(null, "*", "clk_period", ClkPeriod);

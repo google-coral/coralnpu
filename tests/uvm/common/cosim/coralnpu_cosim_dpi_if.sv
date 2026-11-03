@@ -100,4 +100,23 @@ package coralnpu_cosim_dpi_if;
     output int unsigned valid_word_count
   );
 
+  // Functions to query 16-byte coalesced memory write/read transactions from the last step.
+  import "DPI-C" context function int mpact_get_num_mem_writes(output int unsigned num_writes);
+
+  import "DPI-C" context function int mpact_get_mem_write(
+    input int unsigned index,
+    output int unsigned addr,
+    output logic [127:0] wdata,
+    output int unsigned wmask
+  );
+
+  import "DPI-C" context function int mpact_get_num_mem_reads(output int unsigned num_reads);
+
+  import "DPI-C" context function int mpact_get_mem_read(
+    input int unsigned index,
+    output int unsigned addr,
+    output logic [127:0] rdata,
+    output int unsigned rmask
+  );
+
 endpackage : coralnpu_cosim_dpi_if

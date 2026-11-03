@@ -14,6 +14,7 @@
 
 #include "sw/coralnpu_sim/spike_simulator.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -29,6 +30,7 @@
 #include "riscv/csrs.h"
 #include "riscv/encoding.h"
 #include "riscv/extension.h"
+#include "riscv/memtracer.h"
 #include "riscv/mmu.h"
 #include "riscv/processor.h"
 #include "riscv/sim.h"
@@ -152,6 +154,93 @@ static void ConfigureCoralNpuCsrs(processor_t *proc) {
                  state->mtvec = std::make_shared<masked_csr_t>(proc, CSR_MTVEC, ~(reg_t)3, 0));
 }
 
+class CoralNpuMemTracer : public memtracer_t {
+ public:
+  explicit CoralNpuMemTracer(sim_t **sim_ptr) : sim_ptr_(sim_ptr) {}
+
+  bool interested_in_range(uint64_t /*begin*/, uint64_t /*end*/, access_type type) override {
+    return type == LOAD || type == STORE;
+  }
+
+  void trace(uint64_t addr, size_t bytes, access_type type) override {
+    if (!enabled_ || !sim_ptr_ || !(*sim_ptr_)) {
+      return;
+    }
+    if (type != LOAD && type != STORE) {
+      return;
+    }
+    auto &vec = (type == STORE) ? writes_ : reads_;
+    for (size_t i = 0; i < bytes; ++i) {
+      uint64_t byte_addr     = addr + i;
+      uint32_t row_addr      = static_cast<uint32_t>(byte_addr & ~0xFULL);
+      uint32_t byte_off      = static_cast<uint32_t>(byte_addr & 0xFULL);
+      SpikeMemTransaction *t = nullptr;
+      for (auto &entry : vec) {
+        if (entry.addr == row_addr) {
+          t = &entry;
+          break;
+        }
+      }
+      if (!t) {
+        vec.push_back(SpikeMemTransaction{row_addr, {0, 0, 0, 0}, 0});
+        t = &vec.back();
+      }
+      t->mask |= static_cast<uint16_t>(1U << byte_off);
+      if (type == LOAD) {
+        char *host_ptr =
+            static_cast<simif_t *>(*sim_ptr_)->addr_to_mem(static_cast<reg_t>(byte_addr));
+        uint8_t val           = host_ptr ? static_cast<uint8_t>(*host_ptr) : 0;
+        uint32_t word_idx     = byte_off >> 2;
+        uint32_t byte_in_word = (byte_off & 0x3U) * 8U;
+        t->data[word_idx] &= ~(0xFFU << byte_in_word);
+        t->data[word_idx] |= (static_cast<uint32_t>(val) << byte_in_word);
+      }
+    }
+  }
+
+  void clean_invalidate(uint64_t /*addr*/, size_t /*bytes*/, bool /*clean*/,
+                        bool /*inval*/) override {}
+
+  void Clear() {
+    writes_.clear();
+    reads_.clear();
+  }
+
+  void Finalize() {
+    if (sim_ptr_ && *sim_ptr_) {
+      for (auto &entry : writes_) {
+        for (uint32_t b = 0; b < 16; ++b) {
+          if (entry.mask & (1U << b)) {
+            uint64_t byte_addr = static_cast<uint64_t>(entry.addr) + b;
+            char *host_ptr =
+                static_cast<simif_t *>(*sim_ptr_)->addr_to_mem(static_cast<reg_t>(byte_addr));
+            uint8_t val           = host_ptr ? static_cast<uint8_t>(*host_ptr) : 0;
+            uint32_t word_idx     = b >> 2;
+            uint32_t byte_in_word = (b & 0x3U) * 8U;
+            entry.data[word_idx] &= ~(0xFFU << byte_in_word);
+            entry.data[word_idx] |= (static_cast<uint32_t>(val) << byte_in_word);
+          }
+        }
+      }
+    }
+    auto cmp = [](const SpikeMemTransaction &a, const SpikeMemTransaction &b) {
+      return a.addr < b.addr;
+    };
+    std::sort(writes_.begin(), writes_.end(), cmp);
+    std::sort(reads_.begin(), reads_.end(), cmp);
+  }
+
+  void set_enabled(bool enabled) { enabled_ = enabled; }
+  const std::vector<SpikeMemTransaction> &writes() const { return writes_; }
+  const std::vector<SpikeMemTransaction> &reads() const { return reads_; }
+
+ private:
+  sim_t **sim_ptr_ = nullptr;
+  bool enabled_    = false;
+  std::vector<SpikeMemTransaction> writes_;
+  std::vector<SpikeMemTransaction> reads_;
+};
+
 }  // namespace
 
 struct SpikeSimulator::Impl {
@@ -161,8 +250,10 @@ struct SpikeSimulator::Impl {
   std::vector<std::unique_ptr<abstract_mem_t>> mem_storage;
   std::vector<std::pair<reg_t, abstract_mem_t *>> mems;
   std::unique_ptr<sim_t> sim;
+  sim_t *sim_raw      = nullptr;
   processor_t *proc   = nullptr;
   uint64_t step_count = 0;
+  CoralNpuMemTracer mem_tracer{&sim_raw};
 
   explicit Impl(const SpikeSimulatorOptions &options) {
     isa_str              = options.isa;
@@ -209,7 +300,9 @@ struct SpikeSimulator::Impl {
                                   /*cmd_file=*/nullptr,
                                   /*instruction_limit=*/std::nullopt);
 
-    proc = sim->get_core(0);
+    sim_raw = sim.get();
+    proc    = sim->get_core(0);
+    proc->get_mmu()->register_memtracer(&mem_tracer);
 
     // Override mpause to avoid process exit(0)
     insn_desc_t mpause_desc = {
@@ -234,6 +327,7 @@ struct SpikeSimulator::Impl {
   }
 
   ~Impl() {
+    sim_raw = nullptr;
     sim.reset();
     mem_storage.clear();
     mems.clear();
@@ -256,6 +350,7 @@ void SpikeSimulator::Reset() {
     impl_->proc->VU.vstart_alu               = true;
     ConfigureCoralNpuCsrs(impl_->proc);
   }
+  impl_->mem_tracer.Clear();
   impl_->step_count = 0;
 }
 
@@ -285,11 +380,13 @@ bool SpikeSimulator::LoadProgram(const std::string &elf_path, std::optional<uint
 }
 
 int SpikeSimulator::Step(int num_steps) {
+  impl_->mem_tracer.Clear();
   if (num_steps <= 0 || !impl_->proc)
     return 0;
   if (impl_->proc->get_state()->debug_mode)
     return 0;
   int executed = 0;
+  impl_->mem_tracer.set_enabled(true);
   for (int i = 0; i < num_steps; ++i) {
     impl_->proc->step(1);
     impl_->step_count++;
@@ -297,6 +394,8 @@ int SpikeSimulator::Step(int num_steps) {
     if (impl_->proc->get_state()->debug_mode)
       break;
   }
+  impl_->mem_tracer.set_enabled(false);
+  impl_->mem_tracer.Finalize();
   return executed;
 }
 
@@ -307,6 +406,14 @@ uint64_t SpikeSimulator::GetPC() const {
 }
 
 uint64_t SpikeSimulator::GetCycleCount() const { return impl_->step_count; }
+
+const std::vector<SpikeMemTransaction> &SpikeSimulator::GetLastStepMemWrites() const {
+  return impl_->mem_tracer.writes();
+}
+
+const std::vector<SpikeMemTransaction> &SpikeSimulator::GetLastStepMemReads() const {
+  return impl_->mem_tracer.reads();
+}
 
 uint64_t SpikeSimulator::ReadRegister(const std::string &name) {
   if (!impl_->proc)

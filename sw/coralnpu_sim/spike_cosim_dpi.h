@@ -66,6 +66,18 @@ int spike_get_current_matrix_tile(uint32_t tile, svLogicVecVal *value, uint32_t 
 // Returns 0 on success, non-zero on failure.
 int spike_apply_memory_patch(const char *patch_file);
 
+// Returns the number of 16-byte coalesced memory write transactions from the last step.
+int spike_get_num_mem_writes(uint32_t *num_writes);
+
+// Reads the `index`-th coalesced 16-byte memory write transaction from the last step.
+int spike_get_mem_write(uint32_t index, uint32_t *addr, svLogicVecVal *wdata, uint32_t *wmask);
+
+// Returns the number of 16-byte coalesced memory read transactions from the last step.
+int spike_get_num_mem_reads(uint32_t *num_reads);
+
+// Reads the `index`-th coalesced 16-byte memory read transaction from the last step.
+int spike_get_mem_read(uint32_t index, uint32_t *addr, svLogicVecVal *rdata, uint32_t *rmask);
+
 // Finalizes and frees Spike simulator resources.
 // Returns 0 on success.
 int spike_fini();

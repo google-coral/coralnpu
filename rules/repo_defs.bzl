@@ -110,6 +110,7 @@ def define_mpact_repos():
             "@coralnpu_hw//third_party/coralnpu_mpact:0007-Add-matrix-tile-DPI-accessors.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0008-CoralNPU-M4-alignment.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0009-Validate-rvv-lsu-legality.patch",
+            "@coralnpu_hw//third_party/coralnpu_mpact:0010-Add-memory-transaction-DPI-accessors.patch",
         ],
         patch_args = ["-p1"],
     )

@@ -117,6 +117,28 @@ class spike_cosim_checker extends uvm_object;
     return (spike_get_current_matrix_tile(tile, value, tew, valid_word_count) == 0);
   endfunction
 
+  // Function: get_num_mem_writes
+  function bit get_num_mem_writes(output int unsigned num_writes);
+    return (spike_get_num_mem_writes(num_writes) == 0);
+  endfunction
+
+  // Function: get_mem_write
+  function bit get_mem_write(input int unsigned index, output int unsigned addr,
+                             output logic [127:0] wdata, output int unsigned wmask);
+    return (spike_get_mem_write(index, addr, wdata, wmask) == 0);
+  endfunction
+
+  // Function: get_num_mem_reads
+  function bit get_num_mem_reads(output int unsigned num_reads);
+    return (spike_get_num_mem_reads(num_reads) == 0);
+  endfunction
+
+  // Function: get_mem_read
+  function bit get_mem_read(input int unsigned index, output int unsigned addr,
+                            output logic [127:0] rdata, output int unsigned rmask);
+    return (spike_get_mem_read(index, addr, rdata, rmask) == 0);
+  endfunction
+
   // Function: is_halted
   // Returns true if Spike is in debug mode / halted.
   function bit is_halted();

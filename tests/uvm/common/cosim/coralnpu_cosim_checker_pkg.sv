@@ -36,6 +36,9 @@ package coralnpu_cosim_checker_pkg;
   //   x_wb         - One-hot mask of GPR register written by this instruction.
   //   f_wb         - One-hot mask of FPR register written by this instruction.
   //   v_wb         - Bitmask of vector registers written by this instruction.
+  //   t_wb         - Bitmask of matrix tile registers written by this
+  //                  instruction.
+  //   trap         - Indicates whether this instruction trapped on retirement.
   //   retire_index - The channel index (0-7) on which this instruction retired
   //                  on the RVVI bus.
   //----------------------------------------------------------------------------
@@ -46,8 +49,65 @@ package coralnpu_cosim_checker_pkg;
     logic [31:0] f_wb;
     logic [31:0] v_wb;
     logic [15:0] t_wb;
+    logic        trap;
     int          retire_index;
   } retired_instr_info_s;
+
+  //----------------------------------------------------------------------------
+  // Struct: lsu_mem_tx_s
+  // Description: A struct representing a coalesced 16-byte-aligned memory row
+  //              transaction (read or write).
+  //
+  // Fields:
+  //   addr - 16-byte-aligned base byte address of the memory row ({addr[31:4], 4'h0}).
+  //   data - 128-bit memory payload for the 16-byte row.
+  //   mask - 16-bit byte enable mask indicating active bytes within the row.
+  //----------------------------------------------------------------------------
+  typedef struct {
+    logic [31:0]  addr;
+    logic [127:0] data;
+    logic [15:0]  mask;
+  } lsu_mem_tx_s;
+
+  //----------------------------------------------------------------------------
+  // Struct: completed_lsu_instr_s
+  // Description: Holds all coalesced RTL LSU memory read and write row
+  //              transactions captured for a single completed LSU instruction.
+  //
+  // Fields:
+  //   pc     - The program counter of the LSU instruction.
+  //   writes - Queue of coalesced 16-byte memory write transactions, sorted by
+  //            ascending row address.
+  //   reads  - Queue of coalesced 16-byte memory read transactions, sorted by
+  //            ascending row address.
+  //----------------------------------------------------------------------------
+  typedef struct {
+    logic [31:0] pc;
+    lsu_mem_tx_s writes[$];
+    lsu_mem_tx_s reads[$];
+  } completed_lsu_instr_s;
+
+  //----------------------------------------------------------------------------
+  // Struct: expected_lsu_instr_s
+  // Description: Holds the expected MPACT and Spike memory read and write row
+  //              transactions for a retired instruction.
+  //
+  // Fields:
+  //   pc           - The program counter of the retired instruction.
+  //   insn         - The instruction bit pattern.
+  //   mpact_writes - Queue of coalesced 16-byte memory writes from MPACT.
+  //   spike_writes - Queue of coalesced 16-byte memory writes from Spike.
+  //   mpact_reads  - Queue of coalesced 16-byte memory reads from MPACT.
+  //   spike_reads  - Queue of coalesced 16-byte memory reads from Spike.
+  //----------------------------------------------------------------------------
+  typedef struct {
+    logic [31:0] pc;
+    logic [31:0] insn;
+    lsu_mem_tx_s mpact_writes[$];
+    lsu_mem_tx_s spike_writes[$];
+    lsu_mem_tx_s mpact_reads[$];
+    lsu_mem_tx_s spike_reads[$];
+  } expected_lsu_instr_s;
 
   `include "spike_cosim_checker.sv"
 
@@ -70,9 +130,11 @@ package coralnpu_cosim_checker_pkg;
         .RETIRE(8)
     ) rvvi_vif;
     virtual coralnpu_irq_if.DUT_IRQ_PORT irq_vif;
+    virtual coralnpu_lsu_if lsu_vif;
 
     // Event triggered by the RVVI monitor when instructions retire
     uvm_event instruction_retired_event;
+    uvm_event cosim_mismatch_event;
     string test_elf;
     int unsigned initial_misa_value;
     int unsigned entry_point = 0;
@@ -82,6 +144,136 @@ package coralnpu_cosim_checker_pkg;
     bit mismatch_detected = 0;
     bit [31:0] dirty_gprs = 0;
     bit dirty_stack[int];
+
+    completed_lsu_instr_s completed_lsu_q[$];
+    expected_lsu_instr_s pending_expected_lsu_q[$];
+    lsu_mem_tx_s cur_lsu_writes[$];
+    lsu_mem_tx_s cur_lsu_reads[$];
+    bit cur_lsu_faulted = 0;
+    bit pending_tx_valid[8];
+    bit pending_tx_write[8];
+    logic [31:0] pending_tx_addr[8];
+    logic [127:0] pending_tx_wdata[8];
+    logic [15:0] pending_tx_mask[8];
+
+    // Function: reset_cur_lsu_tracking
+    // Clears in-flight LSU bus transaction tracking state for the active slot.
+    function void reset_cur_lsu_tracking();
+      cur_lsu_writes.delete();
+      cur_lsu_reads.delete();
+      cur_lsu_faulted = 0;
+      for (int t = 0; t < 8; t++) begin
+        pending_tx_valid[t] = 0;
+        pending_tx_write[t] = 0;
+        pending_tx_addr[t]  = 0;
+        pending_tx_wdata[t] = 0;
+        pending_tx_mask[t]  = 0;
+      end
+    endfunction
+
+    // Function: coalesce_mem_tx
+    // Coalesces a 16-byte-aligned memory access into an instruction's transaction
+    // queue, merging byte masks and data for accesses targeting the same row.
+    function void coalesce_mem_tx(ref lsu_mem_tx_s tx_q[$], input logic [31:0] row_addr,
+                                  input logic [127:0] data, input logic [15:0] mask,
+                                  input bit mask_data);
+      int found_idx = -1;
+      for (int i = 0; i < tx_q.size(); i++) begin
+        if (tx_q[i].addr == row_addr) begin
+          found_idx = i;
+          break;
+        end
+      end
+      if (found_idx == -1) begin
+        lsu_mem_tx_s new_tx;
+        new_tx.addr = row_addr;
+        new_tx.data = 0;
+        new_tx.mask = 0;
+        tx_q.push_back(new_tx);
+        found_idx = tx_q.size() - 1;
+      end
+      for (int b = 0; b < 16; b++) begin
+        if (mask_data) begin
+          if (mask[b]) begin
+            tx_q[found_idx].data[b*8+:8] = data[b*8+:8];
+          end
+        end else begin
+          tx_q[found_idx].data[b*8+:8] = data[b*8+:8];
+        end
+      end
+      tx_q[found_idx].mask |= mask;
+    endfunction
+
+    // Function: sample_lsu_cycle
+    // Samples the internal LSU bus interface on each clock cycle, coalescing
+    // 128-bit memory reads/writes per instruction and matching completed LSU
+    // instructions against retired RVVI instructions.
+    function void sample_lsu_cycle();
+      if (lsu_vif == null) return;
+      if (!lsu_vif.resetn) begin
+        reset_cur_lsu_tracking();
+        completed_lsu_q.delete();
+        pending_expected_lsu_q.delete();
+        return;
+      end
+
+      if (lsu_vif.slot_fault_valid || lsu_vif.lsu_fault_valid) begin
+        cur_lsu_faulted = 1;
+      end
+
+      // 1. Process bus response for the active instruction in slot
+      if (lsu_vif.bus_resp_valid) begin
+        logic [2:0] r_txid = lsu_vif.bus_resp_txid;
+        if (lsu_vif.bus_resp_fault) begin
+          cur_lsu_faulted = 1;
+        end else if (pending_tx_valid[r_txid]) begin
+          if (pending_tx_write[r_txid]) begin
+            coalesce_mem_tx(cur_lsu_writes, pending_tx_addr[r_txid], pending_tx_wdata[r_txid],
+                            pending_tx_mask[r_txid], 1'b1);
+          end else begin
+            coalesce_mem_tx(cur_lsu_reads, pending_tx_addr[r_txid], lsu_vif.bus_resp_rdata,
+                            pending_tx_mask[r_txid], 1'b0);
+          end
+        end
+        pending_tx_valid[r_txid] = 0;
+      end
+
+      // 2. Process bus request handshake for the active instruction in slot
+      if (lsu_vif.bus_req_valid && lsu_vif.bus_req_ready) begin
+        logic [2:0] req_txid = lsu_vif.bus_req_txid;
+        pending_tx_valid[req_txid] = 1;
+        pending_tx_write[req_txid] = lsu_vif.bus_req_write;
+        pending_tx_addr[req_txid]  = {lsu_vif.bus_req_row_addr, 4'h0};
+        pending_tx_wdata[req_txid] = lsu_vif.bus_req_wdata;
+        pending_tx_mask[req_txid]  = lsu_vif.bus_req_wmask;
+      end
+
+      // 3. Finalize instruction when slot completes (slot_active && uop_ready)
+      if (lsu_vif.slot_active && lsu_vif.uop_ready) begin
+        if (!cur_lsu_faulted && (cur_lsu_writes.size() > 0 || cur_lsu_reads.size() > 0)) begin
+          completed_lsu_instr_s done_instr;
+          cur_lsu_writes.sort(x) with (x.addr);
+          cur_lsu_reads.sort(x) with (x.addr);
+          done_instr.pc     = lsu_vif.slot_pc;
+          done_instr.writes = cur_lsu_writes;
+          done_instr.reads  = cur_lsu_reads;
+          if (pending_expected_lsu_q.size() > 0 &&
+              pending_expected_lsu_q[0].pc == done_instr.pc) begin
+            expected_lsu_instr_s exp_instr = pending_expected_lsu_q.pop_front();
+            if (!compare_lsu_transactions(done_instr, exp_instr)) begin
+              mismatch_detected = 1;
+              uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 1);
+              if (cosim_mismatch_event != null) cosim_mismatch_event.trigger();
+            end
+          end else begin
+            completed_lsu_q.push_back(done_instr);
+          end
+        end
+        reset_cur_lsu_tracking();
+      end else if (!lsu_vif.slot_active) begin
+        reset_cur_lsu_tracking();
+      end
+    endfunction
 
     // Function: is_varying_csr_read
     // Checks if the instruction is a CSR read of varying counters (mcycle, cycle, time)
@@ -243,6 +435,10 @@ package coralnpu_cosim_checker_pkg;
         `uvm_fatal(get_type_name(), "'initial_misa_value' not found in config_db")
       end
 
+      if (!uvm_config_db#(virtual coralnpu_lsu_if)::get(this, "", "lsu_vif", lsu_vif)) begin
+        `uvm_warning(get_type_name(), "LSU virtual interface 'lsu_vif' not found in config_db")
+      end
+
       if ($test$plusargs("COSIM_TRACE_LOG")) begin
         trace_logging_enabled = 1;
       end
@@ -253,24 +449,32 @@ package coralnpu_cosim_checker_pkg;
     endfunction
 
     // Task: collect_retired_instructions
+    // Samples the LSU interface every clock cycle and collects all instructions
+    // retiring on the RVVI trace interface in the current cycle.
     virtual task collect_retired_instructions(ref retired_instr_info_s retired_instr_q[$]);
-      instruction_retired_event.wait_trigger();
       retired_instr_q.delete();
 
-      for (int i = 0; i < rvvi_vif.RETIRE; i++) begin
-        if (rvvi_vif.valid[0][i]) begin
-          retired_instr_info_s info;
-          info.pc = rvvi_vif.pc_rdata[0][i];
-          info.insn = rvvi_vif.insn[0][i];
-          info.x_wb = rvvi_vif.x_wb[0][i];
-          info.f_wb = rvvi_vif.f_wb[0][i];
-          info.v_wb = rvvi_vif.v_wb[0][i];
-          info.t_wb = rvvi_vif.t_wb[0][i];
-          info.retire_index = i;
-          retired_instr_q.push_back(info);
-          `uvm_info(get_type_name(), $sformatf("RTL Retired: PC=0x%h, Insn=0x%h", info.pc,
-                                               info.insn), UVM_HIGH)
+      forever begin
+        @(posedge rvvi_vif.clk);
+        sample_lsu_cycle();
+
+        for (int i = 0; i < rvvi_vif.RETIRE; i++) begin
+          if (rvvi_vif.valid[0][i]) begin
+            retired_instr_info_s info;
+            info.pc = rvvi_vif.pc_rdata[0][i];
+            info.insn = rvvi_vif.insn[0][i];
+            info.x_wb = rvvi_vif.x_wb[0][i];
+            info.f_wb = rvvi_vif.f_wb[0][i];
+            info.v_wb = rvvi_vif.v_wb[0][i];
+            info.t_wb = rvvi_vif.t_wb[0][i];
+            info.trap = rvvi_vif.trap[0][i];
+            info.retire_index = i;
+            retired_instr_q.push_back(info);
+            `uvm_info(get_type_name(), $sformatf("RTL Retired: PC=0x%h, Insn=0x%h", info.pc,
+                                                 info.insn), UVM_HIGH)
+          end
         end
+        if (retired_instr_q.size() > 0) break;
       end
     endtask
 
@@ -376,6 +580,7 @@ package coralnpu_cosim_checker_pkg;
           if (skip_mask[r]) begin
             logic [31:0] rtl_val = rvvi_vif.x_wdata[0][retired_instr_q[match_index].retire_index][r];
             string rname = $sformatf("x%0d", r);
+            void'(mpact_set_register(rname, rtl_val));
             void'(spike_checker.set_register(rname, rtl_val));
           end
         end
@@ -398,7 +603,6 @@ package coralnpu_cosim_checker_pkg;
       logic [31:0] itcm_start_address;
       logic [31:0] itcm_length;
       uvm_event test_start_event;
-      uvm_event cosim_mismatch_event;
 
       if (!uvm_config_db#(uvm_event)::get(this, "", "test_start_event", test_start_event)) begin
         `uvm_fatal(get_type_name(), "'test_start_event' handle not found in config_db!")
@@ -433,10 +637,21 @@ package coralnpu_cosim_checker_pkg;
         string mem_patch_file = "";
         bit has_entry_point;
 
+        if (!mismatch_detected && pending_expected_lsu_q.size() > 0) begin
+          `uvm_error(
+              "COSIM_MISMATCH",
+              $sformatf(
+                  "Test ended with %0d unverified in-flight LSU transaction(s) (first PC=0x%08h)",
+                  pending_expected_lsu_q.size(), pending_expected_lsu_q[0].pc))
+        end
+
         mismatch_detected = 0;
         dirty_gprs = 0;
         dirty_stack.delete();
         retired_instr_q.delete();
+        completed_lsu_q.delete();
+        pending_expected_lsu_q.delete();
+        reset_cur_lsu_tracking();
         uvm_config_db#(bit)::set(null, "*", "cosim_mismatch_detected", 0);
         if (uvm_config_db#(string)::get(this, "", "current_test_elf", current_test_elf)) begin
           test_elf = current_test_elf;
@@ -497,6 +712,18 @@ package coralnpu_cosim_checker_pkg;
                 end
               end
               if (mismatch_detected) break;
+              if (pending_expected_lsu_q.size() > 0 && mpact_is_halted()) begin
+                int drain_cycles = 0;
+                phase.raise_objection(this, "Draining in-flight LSU transactions");
+                while (pending_expected_lsu_q.size() > 0 && !mismatch_detected &&
+                       drain_cycles < 512) begin
+                  @(posedge rvvi_vif.clk);
+                  sample_lsu_cycle();
+                  drain_cycles++;
+                end
+                phase.drop_objection(this, "Drained in-flight LSU transactions");
+                if (mismatch_detected) break;
+              end
             end
           end
           begin : wait_for_next_test
@@ -512,6 +739,20 @@ package coralnpu_cosim_checker_pkg;
         end
       end
     endtask
+
+    // Function: check_phase
+    // Verifies at end of test that all expected in-flight LSU transactions
+    // have completed and been checked.
+    virtual function void check_phase(uvm_phase phase);
+      super.check_phase(phase);
+      if (!mismatch_detected && pending_expected_lsu_q.size() > 0) begin
+        `uvm_error(
+            "COSIM_MISMATCH",
+            $sformatf(
+                "Test ended with %0d unverified in-flight LSU transaction(s) (first PC=0x%08h)",
+                pending_expected_lsu_q.size(), pending_expected_lsu_q[0].pc))
+      end
+    endfunction
 
     // Function: diagnose_and_report_mismatch
     // Formats a structured 3-way diagnosis table comparing RTL, MPACT, and Spike.
@@ -556,9 +797,158 @@ package coralnpu_cosim_checker_pkg;
                  ))
     endfunction
 
+    // Function: compare_lsu_transactions
+    // Compares coalesced 16-byte LSU memory write (addr, wdata, wmask) and read
+    // (addr, rdata, rmask) transactions for a retired instruction across RTL,
+    // MPACT, and Spike.
+    virtual function bit compare_lsu_transactions(completed_lsu_instr_s rtl_entry,
+                                                  expected_lsu_instr_s exp_entry);
+      int num_rtl_writes = rtl_entry.writes.size();
+      int num_mpact_writes = exp_entry.mpact_writes.size();
+      int num_spike_writes = exp_entry.spike_writes.size();
+      int num_rtl_reads = rtl_entry.reads.size();
+      int num_mpact_reads = exp_entry.mpact_reads.size();
+      int num_spike_reads = exp_entry.spike_reads.size();
+
+      // 6a. Memory Write Transactions (mem_addr, mem_wdata, mem_wmask)
+      if (num_rtl_writes != num_mpact_writes || num_rtl_writes != num_spike_writes) begin
+        report_3way_mismatch("LSU_MEM_WRITE_COUNT", exp_entry.pc, exp_entry.insn, $sformatf(
+                             "%0d", num_rtl_writes), $sformatf("%0d", num_mpact_writes), $sformatf(
+                             "%0d", num_spike_writes), (num_rtl_writes == num_mpact_writes),
+                             (num_rtl_writes == num_spike_writes),
+                             (num_mpact_writes == num_spike_writes));
+        return 0;
+      end
+
+      for (int i = 0; i < num_rtl_writes; i++) begin
+        logic [31:0]  rtl_addr    = rtl_entry.writes[i].addr;
+        logic [15:0]  rtl_wmask   = rtl_entry.writes[i].mask;
+        logic [31:0]  mpact_addr  = exp_entry.mpact_writes[i].addr;
+        logic [15:0]  mpact_wmask = exp_entry.mpact_writes[i].mask;
+        logic [31:0]  spike_addr  = exp_entry.spike_writes[i].addr;
+        logic [15:0]  spike_wmask = exp_entry.spike_writes[i].mask;
+        logic [127:0] rtl_wdata_masked   = 0;
+        logic [127:0] mpact_wdata_masked = 0;
+        logic [127:0] spike_wdata_masked = 0;
+        bit rtl_eq_mpact;
+        bit rtl_eq_spike;
+        bit mpact_eq_spike;
+
+        for (int b = 0; b < 16; b++) begin
+          if (rtl_wmask[b]) rtl_wdata_masked[b*8+:8] = rtl_entry.writes[i].data[b*8+:8];
+          if (mpact_wmask[b]) mpact_wdata_masked[b*8+:8] = exp_entry.mpact_writes[i].data[b*8+:8];
+          if (spike_wmask[b]) spike_wdata_masked[b*8+:8] = exp_entry.spike_writes[i].data[b*8+:8];
+        end
+
+        if (trace_logging_enabled) begin
+          `uvm_info(
+              "COSIM_TRACE",
+              $sformatf(
+                  "PC=0x%08h Insn=0x%08h | MEM_WRITE[%0d] RTL: addr=0x%08h mask=0x%04h data=0x%032h | MPACT: addr=0x%08h mask=0x%04h data=0x%032h | Spike: addr=0x%08h mask=0x%04h data=0x%032h",
+                  exp_entry.pc, exp_entry.insn, i, rtl_addr, rtl_wmask, rtl_wdata_masked,
+                  mpact_addr, mpact_wmask, mpact_wdata_masked, spike_addr, spike_wmask,
+                  spike_wdata_masked), UVM_NONE)
+        end
+
+        rtl_eq_mpact = (rtl_addr == mpact_addr) && (rtl_wmask == mpact_wmask) &&
+                       (rtl_wdata_masked == mpact_wdata_masked);
+        rtl_eq_spike = (rtl_addr == spike_addr) && (rtl_wmask == spike_wmask) &&
+                       (rtl_wdata_masked == spike_wdata_masked);
+        mpact_eq_spike = (mpact_addr == spike_addr) && (mpact_wmask == spike_wmask) &&
+                         (mpact_wdata_masked == spike_wdata_masked);
+
+        if (!rtl_eq_mpact || !rtl_eq_spike) begin
+          report_3way_mismatch(
+              $sformatf("LSU_MEM_WRITE[%0d]", i), exp_entry.pc, exp_entry.insn, $sformatf(
+              "addr=0x%08h wmask=0x%04h wdata=0x%032h", rtl_addr, rtl_wmask, rtl_wdata_masked),
+              $sformatf(
+              "addr=0x%08h wmask=0x%04h wdata=0x%032h", mpact_addr, mpact_wmask, mpact_wdata_masked
+              ), $sformatf(
+              "addr=0x%08h wmask=0x%04h wdata=0x%032h", spike_addr, spike_wmask, spike_wdata_masked
+              ), rtl_eq_mpact, rtl_eq_spike, mpact_eq_spike);
+          return 0;
+        end
+      end
+
+      // 6b. Memory Read Transactions (mem_addr, mem_rdata, mem_rmask)
+      if (num_rtl_reads != num_mpact_reads || num_rtl_reads != num_spike_reads) begin
+        report_3way_mismatch("LSU_MEM_READ_COUNT", exp_entry.pc, exp_entry.insn, $sformatf(
+                             "%0d", num_rtl_reads), $sformatf("%0d", num_mpact_reads), $sformatf(
+                             "%0d", num_spike_reads), (num_rtl_reads == num_mpact_reads),
+                             (num_rtl_reads == num_spike_reads),
+                             (num_mpact_reads == num_spike_reads));
+        return 0;
+      end
+
+      for (int i = 0; i < num_rtl_reads; i++) begin
+        logic [31:0]  rtl_addr    = rtl_entry.reads[i].addr;
+        logic [15:0]  rtl_rmask   = rtl_entry.reads[i].mask;
+        logic [31:0]  mpact_addr  = exp_entry.mpact_reads[i].addr;
+        logic [15:0]  mpact_rmask = exp_entry.mpact_reads[i].mask;
+        logic [31:0]  spike_addr  = exp_entry.spike_reads[i].addr;
+        logic [15:0]  spike_rmask = exp_entry.spike_reads[i].mask;
+        logic [127:0] rtl_rdata_masked   = 0;
+        logic [127:0] mpact_rdata_masked = 0;
+        logic [127:0] spike_rdata_masked = 0;
+        bit rtl_eq_mpact;
+        bit rtl_eq_spike;
+        bit mpact_eq_spike;
+
+        for (int b = 0; b < 16; b++) begin
+          if (mpact_rmask[b]) begin
+            rtl_rdata_masked[b*8+:8]   = rtl_entry.reads[i].data[b*8+:8];
+            mpact_rdata_masked[b*8+:8] = exp_entry.mpact_reads[i].data[b*8+:8];
+          end
+          if (spike_rmask[b]) begin
+            spike_rdata_masked[b*8+:8] = exp_entry.spike_reads[i].data[b*8+:8];
+          end
+        end
+
+        if (trace_logging_enabled) begin
+          `uvm_info(
+              "COSIM_TRACE",
+              $sformatf(
+                  "PC=0x%08h Insn=0x%08h | MEM_READ[%0d] RTL: addr=0x%08h mask=0x%04h data=0x%032h | MPACT: addr=0x%08h mask=0x%04h data=0x%032h | Spike: addr=0x%08h mask=0x%04h data=0x%032h",
+                  exp_entry.pc, exp_entry.insn, i, rtl_addr, rtl_rmask, rtl_rdata_masked,
+                  mpact_addr, mpact_rmask, mpact_rdata_masked, spike_addr, spike_rmask,
+                  spike_rdata_masked), UVM_NONE)
+        end
+
+        // In LsuSuperSlot (Lsu.scala), bus_req_wmask on reads is driven from the
+        // active byte cells in the 16-cell scheduling window (bundle.reduce(_ | _)).
+        // For multi-window vector loads (>16 cells), subsequent cells targeting the
+        // same 16-byte row snoop the full 128-bit read response without re-requesting,
+        // so rtl_rmask is a non-empty subset of mpact_rmask/spike_rmask while all
+        // architecturally read bytes in the 128-bit row are checked in rtl_rdata_masked.
+        rtl_eq_mpact = (rtl_addr == mpact_addr) && (rtl_rmask != 16'h0) &&
+                       ((rtl_rmask & ~mpact_rmask) == 16'h0) &&
+                       (rtl_rdata_masked == mpact_rdata_masked);
+        rtl_eq_spike = (rtl_addr == spike_addr) && (rtl_rmask != 16'h0) &&
+                       ((rtl_rmask & ~spike_rmask) == 16'h0) &&
+                       (mpact_rmask == spike_rmask) &&
+                       (rtl_rdata_masked == spike_rdata_masked);
+        mpact_eq_spike = (mpact_addr == spike_addr) && (mpact_rmask == spike_rmask) &&
+                         (mpact_rdata_masked == spike_rdata_masked);
+
+        if (!rtl_eq_mpact || !rtl_eq_spike) begin
+          report_3way_mismatch(
+              $sformatf("LSU_MEM_READ[%0d]", i), exp_entry.pc, exp_entry.insn, $sformatf(
+              "addr=0x%08h rmask=0x%04h rdata=0x%032h", rtl_addr, rtl_rmask, rtl_rdata_masked),
+              $sformatf(
+              "addr=0x%08h rmask=0x%04h rdata=0x%032h", mpact_addr, mpact_rmask, mpact_rdata_masked
+              ), $sformatf(
+              "addr=0x%08h rmask=0x%04h rdata=0x%032h", spike_addr, spike_rmask, spike_rdata_masked
+              ), rtl_eq_mpact, rtl_eq_spike, mpact_eq_spike);
+          return 0;
+        end
+      end
+
+      return 1;
+    endfunction
+
     // Function: step_and_compare_3way
-    // Compares register writeback state across RTL, MPACT, and Spike at the
-    // retired instruction boundary.
+    // Compares register writeback, CSR, and LSU memory transaction state across
+    // RTL, MPACT, and Spike at the retired instruction boundary.
     virtual function bit step_and_compare_3way(retired_instr_info_s rtl_info,
                                                input bit [31:0] skip_mask);
       int unsigned rd_index;
@@ -858,6 +1248,113 @@ package coralnpu_cosim_checker_pkg;
                     csr_label, rtl_info.pc, rtl_info.insn, rtl_csr_wdata, mpact_csr_val,
                     spike_csr_val, check_mask), UVM_HIGH)
           end
+        end
+      end
+
+      // 6. LSU Memory Write and Read Transaction Verification (3-Way: RTL vs MPACT vs Spike)
+      if (!rtl_info.trap && lsu_vif != null) begin
+        int unsigned mpact_num_writes = 0;
+        int unsigned spike_num_writes = 0;
+        int unsigned mpact_num_reads = 0;
+        int unsigned spike_num_reads = 0;
+        expected_lsu_instr_s exp_entry;
+
+        if (mpact_get_num_mem_writes(mpact_num_writes) != 0) begin
+          `uvm_error("COSIM_API_FAIL", "Failed to get num_mem_writes from MPACT")
+          return 0;
+        end
+        if (!spike_checker.get_num_mem_writes(spike_num_writes)) begin
+          `uvm_error("COSIM_API_FAIL", "Failed to get num_mem_writes from Spike")
+          return 0;
+        end
+        if (mpact_get_num_mem_reads(mpact_num_reads) != 0) begin
+          `uvm_error("COSIM_API_FAIL", "Failed to get num_mem_reads from MPACT")
+          return 0;
+        end
+        if (!spike_checker.get_num_mem_reads(spike_num_reads)) begin
+          `uvm_error("COSIM_API_FAIL", "Failed to get num_mem_reads from Spike")
+          return 0;
+        end
+
+        exp_entry.pc   = rtl_info.pc;
+        exp_entry.insn = rtl_info.insn;
+
+        for (int i = 0; i < mpact_num_writes; i++) begin
+          int unsigned addr = 0;
+          logic [127:0] wdata = 0;
+          int unsigned wmask_u = 0;
+          lsu_mem_tx_s tx;
+          if (mpact_get_mem_write(i, addr, wdata, wmask_u) != 0) begin
+            `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get MPACT mem_write[%0d]", i))
+            return 0;
+          end
+          tx.addr = addr;
+          tx.data = wdata;
+          tx.mask = wmask_u[15:0];
+          exp_entry.mpact_writes.push_back(tx);
+        end
+
+        for (int i = 0; i < spike_num_writes; i++) begin
+          int unsigned addr = 0;
+          logic [127:0] wdata = 0;
+          int unsigned wmask_u = 0;
+          lsu_mem_tx_s tx;
+          if (!spike_checker.get_mem_write(i, addr, wdata, wmask_u)) begin
+            `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get Spike mem_write[%0d]", i))
+            return 0;
+          end
+          tx.addr = addr;
+          tx.data = wdata;
+          tx.mask = wmask_u[15:0];
+          exp_entry.spike_writes.push_back(tx);
+        end
+
+        for (int i = 0; i < mpact_num_reads; i++) begin
+          int unsigned addr = 0;
+          logic [127:0] rdata = 0;
+          int unsigned rmask_u = 0;
+          lsu_mem_tx_s tx;
+          if (mpact_get_mem_read(i, addr, rdata, rmask_u) != 0) begin
+            `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get MPACT mem_read[%0d]", i))
+            return 0;
+          end
+          tx.addr = addr;
+          tx.data = rdata;
+          tx.mask = rmask_u[15:0];
+          exp_entry.mpact_reads.push_back(tx);
+        end
+
+        for (int i = 0; i < spike_num_reads; i++) begin
+          int unsigned addr = 0;
+          logic [127:0] rdata = 0;
+          int unsigned rmask_u = 0;
+          lsu_mem_tx_s tx;
+          if (!spike_checker.get_mem_read(i, addr, rdata, rmask_u)) begin
+            `uvm_error("COSIM_API_FAIL", $sformatf("Failed to get Spike mem_read[%0d]", i))
+            return 0;
+          end
+          tx.addr = addr;
+          tx.data = rdata;
+          tx.mask = rmask_u[15:0];
+          exp_entry.spike_reads.push_back(tx);
+        end
+
+        if (pending_expected_lsu_q.size() == 0 &&
+            completed_lsu_q.size() > 0 &&
+            completed_lsu_q[0].pc == rtl_info.pc) begin
+          completed_lsu_instr_s rtl_entry = completed_lsu_q.pop_front();
+          if (!compare_lsu_transactions(rtl_entry, exp_entry)) begin
+            return 0;
+          end
+        end else if (mpact_num_writes > 0 || spike_num_writes > 0 ||
+                     mpact_num_reads > 0 || spike_num_reads > 0) begin
+          // RTL LSU transaction is still in flight in lsu.rs / lsu.slot (e.g. tight loop stores);
+          // queue expected MPACT & Spike transactions to be verified as soon as lsu.slot completes.
+          pending_expected_lsu_q.push_back(exp_entry);
+        end
+      end else if (rtl_info.trap) begin
+        if (completed_lsu_q.size() > 0 && completed_lsu_q[0].pc == rtl_info.pc) begin
+          void'(completed_lsu_q.pop_front());
         end
       end
 

@@ -292,6 +292,58 @@ int spike_apply_memory_patch(const char *patch_file) {
   }
 }
 
+int spike_get_num_mem_writes(uint32_t *num_writes) {
+  if (num_writes == nullptr || g_spike_sim == nullptr) {
+    return -1;
+  }
+  *num_writes = static_cast<uint32_t>(g_spike_sim->GetLastStepMemWrites().size());
+  return 0;
+}
+
+int spike_get_mem_write(uint32_t index, uint32_t *addr, svLogicVecVal *wdata, uint32_t *wmask) {
+  if (addr == nullptr || wdata == nullptr || wmask == nullptr || g_spike_sim == nullptr) {
+    return -1;
+  }
+  const auto &writes = g_spike_sim->GetLastStepMemWrites();
+  if (index >= writes.size()) {
+    return -1;
+  }
+  const auto &t = writes[index];
+  *addr         = t.addr;
+  *wmask        = static_cast<uint32_t>(t.mask);
+  for (int i = 0; i < 4; ++i) {
+    wdata[i].aval = t.data[i];
+    wdata[i].bval = 0;
+  }
+  return 0;
+}
+
+int spike_get_num_mem_reads(uint32_t *num_reads) {
+  if (num_reads == nullptr || g_spike_sim == nullptr) {
+    return -1;
+  }
+  *num_reads = static_cast<uint32_t>(g_spike_sim->GetLastStepMemReads().size());
+  return 0;
+}
+
+int spike_get_mem_read(uint32_t index, uint32_t *addr, svLogicVecVal *rdata, uint32_t *rmask) {
+  if (addr == nullptr || rdata == nullptr || rmask == nullptr || g_spike_sim == nullptr) {
+    return -1;
+  }
+  const auto &reads = g_spike_sim->GetLastStepMemReads();
+  if (index >= reads.size()) {
+    return -1;
+  }
+  const auto &t = reads[index];
+  *addr         = t.addr;
+  *rmask        = static_cast<uint32_t>(t.mask);
+  for (int i = 0; i < 4; ++i) {
+    rdata[i].aval = t.data[i];
+    rdata[i].bval = 0;
+  }
+  return 0;
+}
+
 int spike_fini() {
   try {
     g_spike_sim.reset();

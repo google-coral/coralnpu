@@ -29,6 +29,12 @@ struct SpikeMemoryRegion {
   size_t length          = 0;
 };
 
+struct SpikeMemTransaction {
+  uint32_t addr    = 0;
+  uint32_t data[4] = {0, 0, 0, 0};
+  uint16_t mask    = 0;
+};
+
 struct SpikeSimulatorOptions {
   std::string isa =
       "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zicclsm_zfbfmin_zvfbfmin_zvfbfwma_zvfbfa_"
@@ -65,6 +71,8 @@ class SpikeSimulator {
   // Status
   uint64_t GetPC() const;
   uint64_t GetCycleCount() const;
+  const std::vector<SpikeMemTransaction> &GetLastStepMemWrites() const;
+  const std::vector<SpikeMemTransaction> &GetLastStepMemReads() const;
 
  private:
   struct Impl;

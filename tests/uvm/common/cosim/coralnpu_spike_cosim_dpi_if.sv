@@ -78,6 +78,25 @@ package coralnpu_spike_cosim_dpi_if;
   // Returns 0 on success.
   import "DPI-C" function int spike_apply_memory_patch(input string patch_file);
 
+  // Functions to query 16-byte coalesced memory write/read transactions from the last step.
+  import "DPI-C" function int spike_get_num_mem_writes(output int unsigned num_writes);
+
+  import "DPI-C" function int spike_get_mem_write(
+    input int unsigned index,
+    output int unsigned addr,
+    output logic [127:0] wdata,
+    output int unsigned wmask
+  );
+
+  import "DPI-C" function int spike_get_num_mem_reads(output int unsigned num_reads);
+
+  import "DPI-C" function int spike_get_mem_read(
+    input int unsigned index,
+    output int unsigned addr,
+    output logic [127:0] rdata,
+    output int unsigned rmask
+  );
+
   // Function to finalize and free Spike simulator resources.
   // Returns 0 on success.
   import "DPI-C" function int spike_fini();

@@ -234,7 +234,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "SVX2mlI833n7+y0HN1pUjV9CoiOcChXNIUii8N3E/Z8=",
+        "bzlTransitiveDigest": "Ml3t3oiNFn+Ym/hfSUS2HciM+ELIs4GPyaCy1EJjlcs=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -449,7 +449,8 @@
                 "@@//third_party/coralnpu_mpact:0006-Fix-svdpi-includes.patch",
                 "@@//third_party/coralnpu_mpact:0007-Add-matrix-tile-DPI-accessors.patch",
                 "@@//third_party/coralnpu_mpact:0008-CoralNPU-M4-alignment.patch",
-                "@@//third_party/coralnpu_mpact:0009-Validate-rvv-lsu-legality.patch"
+                "@@//third_party/coralnpu_mpact:0009-Validate-rvv-lsu-legality.patch",
+                "@@//third_party/coralnpu_mpact:0010-Add-memory-transaction-DPI-accessors.patch"
               ],
               "patch_args": [
                 "-p1"
