@@ -31,11 +31,6 @@ class CsrInOutIO(p: Parameters) extends Bundle {
   val out = new CsrOutIO(p)
 }
 
-class BranchTakenIO(p: Parameters) extends Bundle {
-  val valid = Output(Bool())
-  val value = Output(UInt(p.programCounterBits.W))
-}
-
 class RegfileLinkPortIO(p: Parameters) extends Bundle {
   val valid = Output(Bool())
   val value = Output(UInt(p.programCounterBits.W))
@@ -77,7 +72,7 @@ abstract class FetchUnit(p: Parameters) extends Module {
     val debug_pc = Flipped(Valid(UInt(p.fetchAddrBits.W)))
     val ibus     = new IBusIO(p)
     val inst     = new FetchIO(p)
-    val branch   = Flipped(Vec(p.instructionLanes, new BranchTakenIO(p)))
+    val branch   = Flipped(Vec(p.instructionLanes, Valid(UInt(p.programCounterBits.W))))
     val linkPort = Flipped(new RegfileLinkPortIO(p))
     val iflush   = Flipped(new IFlushIO(p))
     val pc       = UInt(p.fetchAddrBits.W)

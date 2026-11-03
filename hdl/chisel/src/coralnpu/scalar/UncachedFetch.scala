@@ -539,10 +539,9 @@ class FetchControl(p: Parameters) extends Module {
 }
 
 class UncachedFetch(p: Parameters) extends FetchUnit(p) {
-  // TODO(derekjchow): Make Bru use valid interface
   val branch = MuxCase(
     MakeInvalid(UInt(p.fetchAddrBits.W)),
-    (0 until p.instructionLanes).map(i => io.branch(i).valid -> MakeValid(io.branch(i).value))
+    (0 until p.instructionLanes).map(i => io.branch(i).valid -> io.branch(i))
   )
 
   val ctrl = Module(new FetchControl(p))

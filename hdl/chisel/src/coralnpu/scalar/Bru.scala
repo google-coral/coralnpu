@@ -95,7 +95,7 @@ class Bru(p: Parameters, first: Boolean) extends Module {
     val rs1            = Input(new RegfileReadDataIO(p))
     val rs2            = Input(new RegfileReadDataIO(p))
     val rd             = Valid(Flipped(new RegfileWriteDataIO(p)))
-    val taken          = new BranchTakenIO(p)
+    val taken          = Valid(UInt(p.programCounterBits.W))
     val actually_taken = Output(Bool())
     val real_target    = Output(UInt(p.programCounterBits.W))
     val pc             = Output(UInt(p.programCounterBits.W))
@@ -239,7 +239,7 @@ class Bru(p: Parameters, first: Boolean) extends Module {
   )
   io.pc := stateReg.bits.pcEx
 
-  io.taken.value := Mux(interrupt_taken, mtvec, stateReg.bits.target)
+  io.taken.bits := Mux(interrupt_taken, mtvec, stateReg.bits.target)
 
   io.rd.valid     := stateReg.valid && stateReg.bits.linkValid
   io.rd.bits.addr := stateReg.bits.linkAddr
