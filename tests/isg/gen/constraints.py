@@ -136,21 +136,20 @@ FORBIDDEN_OPS = frozenset({"mret", "wfi", "ebreak", "mpause"})
 # Alphabet opcodes used only as controlled trap stimuli (traps enabled).
 TRAP_STIMULUS_OPS = frozenset({"ecall"})
 
-# Floating-point (RV32F) opcode groups. Zfbfmin is intentionally absent:
-# FloatInstruction.table exports only the 26 RV32F base instructions (see
-# "Anomaly 4" in instruction_stream_generation.md).
-FLOAT_LOAD_OPS = {"flw"}
-FLOAT_STORE_OPS = {"fsw"}
+# Floating-point (RV32F + Zfbfmin) opcode groups.
+FLOAT_LOAD_OPS = {"flw", "flh"}
+FLOAT_STORE_OPS = {"fsw", "fsh"}
 FLOAT_R4_OPS = {"fmadd.s", "fmsub.s", "fnmsub.s", "fnmadd.s"}
 FLOAT_R2_RM_OPS = {"fadd.s", "fsub.s", "fmul.s", "fdiv.s"}
-FLOAT_R1_RM_OPS = {"fsqrt.s"}
+FLOAT_R1_RM_OPS = {"fsqrt.s", "fcvt.bf16.s"}
+FLOAT_R1_NO_RM_OPS = {"fcvt.s.bf16"}
 FLOAT_SGNJ_OPS = {"fsgnj.s", "fsgnjn.s", "fsgnjx.s"}
 FLOAT_MINMAX_OPS = {"fmin.s", "fmax.s"}
 FLOAT_CMP_OPS = {"feq.s", "flt.s", "fle.s"}
 FLOAT_CVT_TO_INT_OPS = {"fcvt.w.s", "fcvt.wu.s"}
-FLOAT_MISC_TO_INT_OPS = {"fmv.x.w", "fclass.s"}
+FLOAT_MISC_TO_INT_OPS = {"fmv.x.w", "fmv.x.h", "fclass.s"}
 FLOAT_CVT_FROM_INT_OPS = {"fcvt.s.w", "fcvt.s.wu"}
-FLOAT_MV_FROM_INT_OPS = {"fmv.w.x"}
+FLOAT_MV_FROM_INT_OPS = {"fmv.w.x", "fmv.h.x"}
 
 # Opcodes that carry a rounding-mode (rm) field.
 FLOAT_RM_OPS = (
@@ -168,6 +167,7 @@ FLOAT_ARITH_OPS = (
     FLOAT_R4_OPS
     | FLOAT_R2_RM_OPS
     | FLOAT_R1_RM_OPS
+    | FLOAT_R1_NO_RM_OPS
     | FLOAT_SGNJ_OPS
     | FLOAT_MINMAX_OPS
     | FLOAT_CMP_OPS
@@ -180,10 +180,9 @@ SYSTEM_OPS = {
     "fence", "fencei", "fence.i", "fencetso", "fence.tso", "ecall", "undef"
 }
 
-# Zfbfmin / Zfh-style opcodes that must never appear in a payload.
-UNSUPPORTED_FLOAT_OPS = {
-    "fcvt.s.bf16", "fcvt.bf16.s", "fmv.x.h", "fmv.h.x", "flh", "fsh"
-}
+# Unsupported floating-point opcodes (Zfh half-precision arithmetic, etc.)
+# that must never appear in a payload.
+UNSUPPORTED_FLOAT_OPS: set[str] = set()
 
 # Static rounding modes only; "dyn" is excluded (see "Anomaly 2").
 ROUNDING_MODES = ["rne", "rtz", "rdn", "rup", "rmm"]
@@ -280,7 +279,7 @@ def get_access_size(op: str) -> int:
     """Returns memory access size in bytes for a load or store opcode."""
     if op in ("lb", "lbu", "sb"):
         return 1
-    if op in ("lh", "lhu", "sh"):
+    if op in ("lh", "lhu", "sh", "flh", "fsh"):
         return HALFWORD_BYTES
     if op in ("lw", "sw", "flw", "fsw"):
         return WORD_BYTES
@@ -596,6 +595,12 @@ def _synthesize_float(
         rm = rng.choice(ROUNDING_MODES)
         return [
             f"{op} f{fd}, f{fs1}, {rm}"
+        ], None, fd, last_store_offset, last_store_size
+    if op in FLOAT_R1_NO_RM_OPS:
+        fd = rng.choice(fpr_pool)
+        fs1 = _pick_fs1(rng, prev_frd, avoid_fpr=avoid_fpr, raw_prob=raw_prob)
+        return [
+            f"{op} f{fd}, f{fs1}"
         ], None, fd, last_store_offset, last_store_size
     if op in FLOAT_SGNJ_OPS or op in FLOAT_MINMAX_OPS:
         fd = rng.choice(fpr_pool)

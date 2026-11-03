@@ -410,11 +410,12 @@ This log records hardware and simulator behaviors that diverge or require genera
 * **Co-Simulation Discrepancy:** When an ISG program executed a CSR read from `fcsr` (`0x003`) or `fflags` (`0x001`) via `csrrs rd, fcsr, rs1`, RTL retired with `fcsr = 0x1` (`NX` set). MPACT retired with `fcsr = 0x0`. This difference caused a false CSR retirement mismatch.
 * **ISG Resolution:** `tests/isg/gen/constraints.py` excludes `0x001` (`fflags`) and `0x003` (`fcsr`) from `SAFE_READABLE_CSRS`. They remain in the writable set. Random overwrites (`csrrw` and `csrrwi`) interleave with floating-point arithmetic, but they always use `rd = x0`. This avoids reading diverging previous values. The generator does not use set or clear forms (`csrrs` and `csrrc`) on these CSRs. Those forms fold diverging previous flags into the written value (for example, `csrrc x0, fcsr, x7` produced RTL `0x10` versus MPACT `0x0`). The source validator and post-link checker reject any non-`x0` destination for these CSRs. Directed tests check flag updates and interlocks (`core_mini_axi_float_csr_test` and `core_mini_axi_frm_test`).
 
-### Anomaly 4: Scalar Floating-Point Alphabet Scope (`RV32F` vs `Zfbfmin`)
+### Anomaly 4: Scalar `Zfbfmin` Static Rounding Mode & NaN-Boxing Semantics
 
-* **Observation:** CoralNPU RTL, MPACT (`coralnpu_m3` and `coralnpu_m4`), and Spike implement `RV32F` (26 instructions) and `Zfbfmin` (`fcvt.s.bf16`, `fcvt.bf16.s`, `fmv.x.h`, `fmv.h.x`, `flh`, `fsh`).
-  * `FloatInstruction.table` in `FloatCoreInterface.scala` exports only `fBase` (the 26 `RV32F` instructions) and omits `Zfbfmin`.
-* **ISG Resolution:** `DecodeTableDump.scala` exports `FloatInstruction.table`, which scopes random scalar floating-point generation to `RV32F`. The generator defines no synthesis rules for `Zfbfmin`. The source validator and post-link checker reject `Zfbfmin` opcodes because they match neither the alphabet nor approved stimulus words. Dedicated CoralFlow testbenches verify `Zfbfmin` directly (`//tests/cocotb:zfbfmin_cocotb_test`).
+* **Observation:** CoralNPU RTL, MPACT (`coralnpu_v2` and `coralnpu_m3`), and Spike implement `RV32F` (26 instructions) and scalar `Zfbfmin`. The `Zfbfmin` set includes `flh`, `fsh`, `fcvt.s.bf16`, `fcvt.bf16.s`, `fmv.x.h`, and `fmv.h.x`.
+  * `FloatInstruction.table(p)` in `FloatCoreInterface.scala` exports the six `Zfbfmin` instructions when `p.enableZfbfmin` is true.
+  * `fcvt.bf16.s` carries a 3-bit rounding mode (`rm`) field and requires a static rounding mode (see Anomaly 2). `fcvt.s.bf16` is always exact and uses two operands (`fcvt.s.bf16 fd, fs1`).
+* **ISG Resolution:** `DecodeTableDump.scala` exports all 32 scalar floating-point instructions (`RV32F` plus `Zfbfmin`). `tests/isg/gen/constraints.py` synthesizes `flh` and `fsh` as 2-byte memory accesses. It synthesizes `fcvt.bf16.s` with a static rounding mode from `ROUNDING_MODES` and `fcvt.s.bf16` as a two-operand conversion. It synthesizes `fmv.x.h` and `fmv.h.x` as cross-domain moves. The source validator and post-link checker verify `flh` and `fsh` bounds and `fcvt.bf16.s` static rounding modes.
 
 ### Anomaly 5: Debug Scratch CSR Divergence (`dscratch0`) and `mscratch` Save Area Preservation
 

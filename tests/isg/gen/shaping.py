@@ -105,12 +105,16 @@ def resolve_shaping_mode(
 
 MLU_OPS = ["mul", "mulh", "mulhsu", "mulhu"]
 DVU_OPS = ["div", "divu", "rem", "remu"]
-LSU_OPS = ["lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw", "flw", "fsw"]
-STRADDLE_LSU_OPS = ["lh", "lw", "lhu", "sh", "sw", "flw", "fsw"]
-STORE_OPS = ["sb", "sh", "sw", "fsw"]
-LOAD_OPS = ["lb", "lh", "lw", "lbu", "lhu", "flw"]
+LSU_OPS = [
+    "lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw", "flw", "fsw", "flh",
+    "fsh"
+]
+STRADDLE_LSU_OPS = ["lh", "lw", "lhu", "sh", "sw", "flw", "fsw", "flh", "fsh"]
+STORE_OPS = ["sb", "sh", "sw", "fsw", "fsh"]
+LOAD_OPS = ["lb", "lh", "lw", "lbu", "lhu", "flw", "flh"]
 FPU_TO_GPR_OPS = [
     "fmv.x.w",
+    "fmv.x.h",
     "fcvt.w.s",
     "fcvt.wu.s",
     "feq.s",
@@ -131,6 +135,8 @@ FPU_MULTI_OPS = [
     "fmsub.s",
     "fnmsub.s",
     "fnmadd.s",
+    "fcvt.s.bf16",
+    "fcvt.bf16.s",
 ]
 FAST_ALU_OPS = [
     "add",

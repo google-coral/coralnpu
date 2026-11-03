@@ -136,16 +136,23 @@ class ValidatorTest(unittest.TestCase):
         with self.assertRaises(InvariantViolationError):
             validate_assembly_lines(invalid_lines)
 
-    def test_zfbfmin_ops_rejected(self):
-        for insn in [
-                "fcvt.s.bf16 f5, f4",
-                "fcvt.bf16.s f6, f5, rne",
-                "fmv.x.h x7, f6",
-                "fmv.h.x f7, x7",
-        ]:
-            with self.subTest(insn=insn):
-                with self.assertRaises(InvariantViolationError):
-                    validate_assembly_lines(self._wrap_payload([insn]))
+    def test_zfbfmin_ops_validated(self):
+        valid_lines = self._wrap_payload([
+            "flh f0, 64(x31)",
+            "fsh f1, 128(x31)",
+            "fcvt.s.bf16 f5, f4",
+            "fcvt.bf16.s f6, f5, rne",
+            "fmv.x.h x7, f6",
+            "fmv.h.x f7, x7",
+        ])
+        validate_assembly_lines(valid_lines)
+
+        with self.assertRaises(InvariantViolationError):
+            validate_assembly_lines(self._wrap_payload(["fcvt.bf16.s f6, f5"]))
+        with self.assertRaises(InvariantViolationError):
+            validate_assembly_lines(
+                self._wrap_payload(["fcvt.bf16.s f6, f5, dyn"])
+            )
 
     def test_branch_target_must_be_exactly_plus_4(self):
         for insn in ["beq x4, x4, . + 40", "bne x4, x4, . + 8",
