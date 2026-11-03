@@ -430,9 +430,10 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       d.rvvWritesRd()
   )
 
-  val rdScoreboard = (0 until p.instructionLanes).map(i =>
-    Mux(writesRd(i), UIntToOH(rdAddr(i), p.scalarRegCount), 0.U(p.scalarRegCount.W))
-  )
+  val rdScoreboard = (0 until p.instructionLanes).map { i =>
+    val rdOneHot = MuxOR(writesRd(i), UIntToOH(rdAddr(i), p.scalarRegCount))
+    Cat(rdOneHot(p.scalarRegCount - 1, 1), 0.U(1.W))
+  }
   val scoreboardScan = rdScoreboard.scan(0.U(p.scalarRegCount.W))(_ | _)
   // Note: regd comes from directly from registers, accessible on the same cycle
   // via the busPort of the register file. comb includes write forwarding.
