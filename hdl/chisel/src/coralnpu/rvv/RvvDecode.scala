@@ -53,12 +53,24 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     bits(24, 19)
   }
 
+  def vm(): Bool = {
+    bits(18)
+  }
+
+  def vs2(): UInt = {
+    bits(17, 13)
+  }
+
   def vs1(): UInt = {
     bits(12, 8)
   }
 
   def funct3(): UInt = {
     bits(7, 5)
+  }
+
+  def vd(): UInt = {
+    bits(4, 0)
   }
 
   /** Checks if a vector floating-point instruction is illegal and should trap.
@@ -161,7 +173,9 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
               "b000101".U -> true.B, // vfredmin
               "b000111".U -> true.B  // vfredmax
             )
-          ))
+          )) ||
+        ((funct3() === "b000".U) && ((funct6() === "b110000".U) || (funct6() === "b110001".U))) ||
+        isVtxmm()
     )
   }
 
@@ -220,81 +234,12 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     isLoadStore() && (bits(21, 18) === "b1001".U) && (funct3() === "b111".U) && (bits(4, 0) === 0.U)
   }
 
-  /** Checks dynamic vtype-dependent legality for standard RVV load/store instructions (RVV 1.0
-    * Sections 7.2, 7.3, 7.8):
-    *   - Effective EMUL (data EMUL for unit-stride/strided, index EMUL for indexed) must be within
-    *     supported bounds [1/4, 8] (log2(EMUL) in [-2, 3]).
-    *   - Segment register group size (NFIELDS * ceil(EMUL_data)) must not exceed 8.
-    *   - Destination/source vector register group vd/vs3 must be aligned to EMUL_data and fit
-    *     within v0..v31 (vd + NFIELDS * ceil(EMUL_data) <= 32).
-    *   - Index vector register group vs2 (for indexed loads/stores) must be aligned to EMUL_index,
-    *     and for indexed loads must obey destination/index overlap rules.
-    */
   def isIllegalLsuConfig(sew: UInt, lmul_orig: UInt): Bool = {
-    val isStandardRvvLsu =
-      isLoadStore() && !isVmeLdSt() && !isWholeRegisterLoadStore() && !isMaskLoadStore()
-    val isStore   = opcode === RvvCompressedOpcode.RVVSTORE
-    val isIndexed = mop.isOneOf(
-      RvvAddressingMode.INDEXED_UNORDERED,
-      RvvAddressingMode.INDEXED_ORDERED
-    )
-    val nf    = bits(24, 22)
-    val vs2   = bits(17, 13)
-    val width = funct3()
-    val vd    = bits(4, 0)
-
-    val instShift = MuxLookup(width, 0.U(2.W))(
-      Seq(
-        "b000".U -> 0.U(2.W),
-        "b101".U -> 1.U(2.W),
-        "b110".U -> 2.U(2.W)
-      )
-    )
-    val sewShift = sew(1, 0)
-    val lmulS    = lmul_orig.asSInt
-
-    // SEW must be <= 32 (sew <= 2) and SEW/LMUL <= ELEN (lmulS - sewShift >= -2)
-    val vtypeValid = (sew <= 2.U) && ((lmulS - Cat(0.U(1.W), sewShift).asSInt) >= (-2).S)
-
-    // Signed log2(EMUL_inst) = log2(LMUL) + log2(EEW_inst) - log2(SEW)
-    val instEmulLog2: SInt =
-      lmulS +& (Cat(0.U(1.W), instShift).asSInt - Cat(0.U(1.W), sewShift).asSInt)
-    val emulInRange = vtypeValid && (instEmulLog2 >= (-2).S) && (instEmulLog2 <= 3.S)
-
-    val dataEmulLog2: SInt = Mux(isIndexed, lmulS.pad(instEmulLog2.getWidth), instEmulLog2)
-    val idxEmulLog2: SInt  = instEmulLog2
-
-    val dataEmulRegs: UInt =
-      Mux(dataEmulLog2 <= 0.S, 1.U(4.W), (1.U(4.W) << dataEmulLog2(1, 0).asUInt)(3, 0))
-    val idxEmulRegs: UInt =
-      Mux(idxEmulLog2 <= 0.S, 1.U(4.W), (1.U(4.W) << idxEmulLog2(1, 0).asUInt)(3, 0))
-    val dataEmulMask: UInt = (dataEmulRegs - 1.U).pad(5)
-    val idxEmulMask: UInt  = (idxEmulRegs - 1.U).pad(5)
-
-    val nfields: UInt    = nf +& 1.U
-    val segRegs: UInt    = nfields * dataEmulRegs
-    val segEmulInRange   = segRegs <= 8.U
-    val vdAligned        = (vd & dataEmulMask) === 0.U
-    val vdInRange        = (vd +& segRegs) <= 32.U
-    val vs2Aligned       = !isIndexed || ((vs2 & idxEmulMask) === 0.U)
-    val noOverlap        = ((vs2 +& idxEmulRegs) <= vd) || ((vd +& segRegs) <= vs2)
-    val idxLoadOverlapOk = MuxCase(
-      false.B,
-      Seq(
-        (!isIndexed || isStore || noOverlap) -> true.B,
-        (nf =/= 0.U)                         -> false.B,
-        (instShift === sewShift)             -> true.B,
-        (instShift > sewShift)               -> ((vd & idxEmulMask) === 0.U),
-        (instShift < sewShift)               -> (
-          (idxEmulLog2 >= 0.S) &&
-            ((vs2 & dataEmulMask) === (dataEmulRegs - idxEmulRegs).pad(5))
-        )
-      )
-    )
-
-    isStandardRvvLsu && !(
-      emulInRange && segEmulInRange && vdAligned && vdInRange && vs2Aligned && idxLoadOverlapOk
-    )
+    val lmulLog2   = Cat(Fill(2, lmul_orig(2)), lmul_orig).asSInt
+    val sewLog2    = Cat(0.U(3.W), sew(1, 0)).asSInt
+    val vtypeValid = (sew <= 2.U) && (lmul_orig =/= "b100".U) &&
+      (lmul_orig =/= "b101".U) && ((lmulLog2 - sewLog2) >= -2.S(5.W))
+    isLoadStore() && !isLegalLsuDynamic(sew, lmul_orig, !vtypeValid, 1.U)
   }
 
   def readsRs1(): Bool = {
@@ -451,97 +396,312 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     !isVset() && !writesRd() && !writesFrd() && !writesTile() && !isVtdiscard()
   }
 
+  /** Checks dynamic RVV / Zvt load/store legality against architectural configuration state (`sew`,
+    * `lmulOrig`, `vill`, `mtwiden`). Assumes static legality has already been verified by
+    * `RvvCompressedInstruction.from_uncompressed`.
+    */
+  def isLegalLsuDynamic(sew: UInt, lmulOrig: UInt, vill: Bool, mtwiden: UInt): Bool = {
+    import RvvCompressedInstruction._
+    val (vs2Idx, f3, vdIdx) = (vs2(), funct3(), vd())
+    val (nf, mopBits)       = (bits(24, 22), bits(20, 19))
+    val lmulLog2            = Cat(Fill(2, lmulOrig(2)), lmulOrig).asSInt
+    val sewLog2             = Cat(0.U(3.W), sew(1, 0)).asSInt
+
+    MuxCase(
+      {
+        val widthEewLog2 = MuxLookup(f3, 0.S(5.W))(
+          Seq("b000".U -> 0.S(5.W), "b101".U -> 1.S(5.W), "b110".U -> 2.S(5.W))
+        )
+        val isIndexed    = mopBits(0)
+        val eewDataLog2  = Mux(isIndexed, sewLog2, widthEewLog2)
+        val emulDataLog2 = lmulLog2 + eewDataLog2 - sewLog2
+        val shiftData    = emulShift(emulDataLog2)
+        val totalRegs    = (nf +& 1.U(4.W)) * (1.U(4.W) << shiftData)(3, 0)
+        val baseOk       = !vill && emulValid(emulDataLog2) && (totalRegs <= 8.U) &&
+          ((vdIdx +& totalRegs) <= 32.U) && isAligned(vdIdx, shiftData)
+
+        val emulIdxLog2         = lmulLog2 + widthEewLog2 - sewLog2
+        val shiftIdx            = emulShift(emulIdxLog2)
+        val idxRegs             = (1.U(4.W) << shiftIdx)(3, 0)
+        val (vdStart, vs2Start) = (Cat(0.U(1.W), vdIdx), Cat(0.U(1.W), vs2Idx))
+        val segNoOverlap        = ((vs2Start + Cat(0.U(2.W), idxRegs)) <= vdStart) ||
+          (vs2Start >= (vdStart + totalRegs(5, 0)))
+
+        val idxOverlapOk = Mux(
+          opcode =/= RvvCompressedOpcode.RVVLOAD,
+          (widthEewLog2 === sewLog2) || segNoOverlap,
+          Mux(
+            nf =/= 0.U,
+            segNoOverlap,
+            MuxCase(
+              true.B,
+              Seq(
+                (widthEewLog2 > sewLog2)                -> narrowOverlapOk(vdIdx, vs2Idx, shiftIdx),
+                ((widthEewLog2 + 1.S(5.W)) === sewLog2) ->
+                  widen2to1OverlapOk(vdIdx, shiftData, vs2Idx, emulIdxLog2),
+                ((widthEewLog2 + 2.S(5.W)) === sewLog2) ->
+                  widen4to1OverlapOk(vdIdx, shiftData, vs2Idx)
+              )
+            )
+          )
+        )
+        baseOk && (!isIndexed || (emulValid(emulIdxLog2) && isAligned(
+          vs2Idx,
+          shiftIdx
+        ) && idxOverlapOk))
+      },
+      Seq(
+        isWholeRegisterLoadStore() -> true.B,
+        isVmeLdSt()                -> (!vill && (mtwiden =/= 0.U)),
+        isMaskLoadStore()          -> !vill
+      )
+    )
+  }
+
   override def toPrintable: Printable = {
     cf"[opcode=$opcode, bits=$bits%b]"
   }
 }
 
 object RvvCompressedInstruction {
+  def matches(x: UInt, pats: String*): Bool =
+    pats.map(p => x === BitPat("b" + p)).reduce(_ || _)
+
+  def emulValid(emulLog2: SInt): Bool = (emulLog2 >= -2.S(5.W)) && (emulLog2 <= 3.S(5.W))
+  def emulShift(e: SInt): UInt        = Mux(e <= 0.S, 0.U(2.W), Mux(e >= 3.S, 3.U(2.W), e(1, 0)))
+  def alignMask(shift: UInt): UInt    = ((1.U(4.W) << shift) - 1.U)(2, 0)
+  def isAligned(reg: UInt, shift: UInt): Bool        = (reg(2, 0) & alignMask(shift)) === 0.U
+  def sameGroup(a: UInt, b: UInt, shift: UInt): Bool =
+    ((a ^ b) & ~Cat(0.U(2.W), alignMask(shift))) === 0.U
+  def noGroupOverlap(a: UInt, sA: UInt, b: UInt, sB: UInt): Bool =
+    !sameGroup(a, b, Mux(sA > sB, sA, sB))
+  def narrowOverlapOk(vd: UInt, src: UInt, sSrc: UInt): Bool =
+    !sameGroup(vd, src, sSrc) || isAligned(vd, sSrc)
+  def widen2to1OverlapOk(vd: UInt, sVd: UInt, src: UInt, emulSrcLog2: SInt): Bool =
+    !sameGroup(vd, src, sVd) || ((emulSrcLog2 >= 0.S) &&
+      ((src(2, 0) & alignMask(sVd)) === (1.U(3.W) << (sVd - 1.U))(2, 0)))
+  def widen4to1OverlapOk(vd: UInt, sVd: UInt, src: UInt): Bool =
+    !sameGroup(vd, src, sVd) || ((sVd === 2.U) && (src(1, 0) === 3.U)) ||
+      ((sVd === 3.U) && (src(2, 0) === 6.U))
+
+  def isStaticAluLegal(inst: UInt, p: Parameters): Bool = {
+    val (vd, funct3, vs1, vs2) = (inst(11, 7), inst(14, 12), inst(19, 15), inst(24, 20))
+    val (vm, funct6, funct7)   = (inst(25), inst(31, 26), inst(31, 25))
+
+    val (vdNotV0, vs2NotV0, vs1NotV0) =
+      (vm || (vd =/= 0.U), vm || (vs2 =/= 0.U), vm || (vs1 =/= 0.U))
+    val (vvvMaskOk, vvxMaskOk)     = (vdNotV0 && vs2NotV0 && vs1NotV0, vdNotV0 && vs2NotV0)
+    val (vvSrcMaskOk, vxSrcMaskOk) = (vs2NotV0 && vs1NotV0, vs2NotV0)
+    val (widenNoEqVv, widenNoEqVx) =
+      ((vd =/= vs2) && (vd =/= vs1) && vvvMaskOk, (vd =/= vs2) && vvxMaskOk)
+    val vmergeVxOk = (!vm && (vd =/= 0.U) && vxSrcMaskOk) || (vm && (vs2 === 0.U))
+
+    // Shared OPI* (OPIVV=000, OPIVI=011, OPIVX=100) checks.
+    val (isOpiVv, isOpiVx)      = (funct3 === "b000".U, funct3 === "b100".U)
+    val (opiMaskOk, opiSrcMask) =
+      (Mux(isOpiVv, vvvMaskOk, vvxMaskOk), Mux(isOpiVv, vvSrcMaskOk, vxSrcMaskOk))
+    val opiValid =
+      // vadd, vand/or/xor, vsaddu/vsadd, vsll, vsrl/vsra/vssrl/vssra
+      (matches(funct6, "000000", "001001", "00101?", "10000?", "100101", "1010??") && opiMaskOk) ||
+        // vsub, vminu/vmin/vmaxu/vmax, vssubu/vssub, vsmul (OPIVV & OPIVX)
+        (!funct3(0) && matches(funct6, "000010", "0001??", "10001?", "100111") && opiMaskOk) ||
+        // vrsub, vslidedown, vnsrl/vnsra/vnclipu/vnclip (OPIVX & OPIVI)
+        (!isOpiVv && matches(funct6, "000011", "001111", "1011??") && vvxMaskOk) ||
+        // vnsrl.wv, vnsra.wv, vnclipu.wv, vnclip.wv (OPIVV: vs2 != vs1)
+        (isOpiVv && matches(funct6, "1011??") && (vs1 =/= vs2) && vvvMaskOk) ||
+        // vrgather.vv / vrgatherei16.vv (OPIVV) and vrgather.vx/.vi, vslideup.vx/.vi (OPIVX/OPIVI)
+        (matches(funct6, "001100", "001110") && Mux(isOpiVv, widenNoEqVv, widenNoEqVx)) ||
+        // vadc, vsbc (require vm=0, vd!=v0; vsbc is OPIVV/OPIVX only)
+        (((funct6 === "b010000".U) || (!funct3(0) && (funct6 === "b010010".U))) &&
+          !vm && (vd =/= 0.U) && opiSrcMask) ||
+        // vmadc, vmseq, vmsne, vmsleu, vmsle (all OPI*)
+        (matches(funct6, "010001", "01100?", "01110?") && opiSrcMask) ||
+        // vmsbc, vmsltu, vmslt (OPIVV & OPIVX); vmsgtu, vmsgt (OPIVX & OPIVI)
+        (((!funct3(0) && matches(funct6, "010011", "01101?")) ||
+          (!isOpiVv && matches(funct6, "01111?"))) && opiSrcMask) ||
+        // vmerge / vmv.v.*
+        ((funct6 === "b010111".U) && ((!vm && (vd =/= 0.U) && opiSrcMask) || (vm && (vs2 === 0.U)))) ||
+        // vwredsumu.vs, vwredsum.vs (OPIVV)
+        (isOpiVv && matches(funct6, "11000?") && (vs1 =/= vs2) && vvSrcMaskOk) ||
+        // vmv<nr>r.v (OPIVI)
+        (funct3(0) && (funct6 === "b100111".U) && vm &&
+          matches(vs1, "00000", "00001", "00011", "00111") && (((vd | vs2) & vs1) === 0.U))
+
+    val opmvvValid =
+      (matches(funct6, "000???") && vvSrcMaskOk) || // vred*
+        (matches(
+          funct6,
+          "0010??",
+          "100???",
+          "101??1"
+        ) && vvvMaskOk) || // vmul*, vdiv*, vaver*, vmacc*
+        ((funct6 === "b010000".U) && ((vm && (vs1 === 0.U)) || matches(
+          vs1,
+          "1000?"
+        ))) || // vmv.x.s, vcpop, vfirst
+        ((funct6 === "b010010".U) && (vs1(
+          4,
+          2
+        ) === "b001".U) && widenNoEqVx) ||        // vzext/vsext.vf2/vf4
+        ((funct6 === "b010100".U) && vdNotV0 && ( // vmsbf/vmsof/vmsif/viota, vid.v
+          (matches(vs1, "00001", "0001?", "10000") && (vd =/= vs2)) ||
+            ((vs1 === "b10001".U) && (vs2 === 0.U))
+        )) ||
+        ((funct6 === "b010111".U) && vm && (vd =/= vs2) && (vd =/= vs1) && (vs1 =/= vs2)) || // vcompress.vm
+        (matches(funct6, "011???") && vm) || // vmand*, vmor*, vmxor*, vmnand*, vmnor*, vmxnor*
+        (matches(
+          funct6,
+          "1100??",
+          "111000",
+          "11101?",
+          "11110?",
+          "111111"
+        ) && widenNoEqVv) || // vwadd/sub.vv, vwmul*, vwmacc*
+        (matches(
+          funct6,
+          "1101??"
+        ) && (vd =/= vs1) && (vs2 =/= vs1) && vvvMaskOk) // vwadd.wv, vwsub.wv
+
+    val opmvxValid =
+      (matches(
+        funct6,
+        "0010??",
+        "001111",
+        "100???",
+        "101??1",
+        "1101??"
+      ) && vvxMaskOk) || // vslide1down, vdiv*, vmul*, vmacc*, vwadd/sub.wx
+        ((funct6 === "b001110".U) && widenNoEqVx) || // vslide1up.vx
+        ((funct6 === "b010000".U) && vm && (         // vmv.s.x, vtdiscard, vtzero.t, vtmv.v.t
+          (vs2 === 0.U) || (p.enableVme.B && (
+            ((vs2 === "b11100".U) && (vs1 === 0.U) && (vd === 0.U)) ||
+              ((vs2 === "b11110".U) && (vs1 === 0.U) && !vd(0)) || (vs2 === "b11111".U)
+          ))
+        )) ||
+        ((funct6 === "b010111".U) && p.enableVme.B && vm && (vd === 0.U)) || // vtmv.t.v
+        (matches(
+          funct6,
+          "1100??",
+          "111000",
+          "11101?",
+          "1111??"
+        ) && widenNoEqVx) // vwadd/sub.vx, vwmul*, vwmacc*
+
+    val opfvvValid =
+      (p.enableFloat.B && (
+        // vfadd, vfsub, vfmin, vfmax, vfsgnj*, vfdiv, vfmul, vfmadd/vfmsub/vfmacc/vfmsac
+        (matches(
+          funct6,
+          "000??0",
+          "00100?",
+          "001010",
+          "100000",
+          "100100",
+          "101???"
+        ) && vvvMaskOk) ||
+          // vfred*, vmfeq, vmfne, vmflt, vmfle
+          (matches(funct6, "000??1", "01100?", "011011", "011100") && vvSrcMaskOk) ||
+          ((funct6 === "b010000".U) && vm && (vs1 === 0.U)) || // vfmv.f.s
+          ((funct6 === "b010011".U) && matches(
+            vs1,
+            "00000",
+            "0010?",
+            "10000"
+          ) && vvxMaskOk) // vfsqrt, vfrsqrt7, vfrec7, vfclass
+      )) ||
+        ((funct6 === "b010010".U) && ( // vfcvt*, vfwcvt*, vfncvt*, vfwcvtbf16, vfncvtbf16
+          (((p.enableFloat.B && matches(vs1, "000??", "0011?", "1000?", "1011?")) ||
+            (p.enableVectorBf16.B && (vs1 === "b11101".U))) && vvxMaskOk) ||
+            (((p.enableFloat.B && matches(vs1, "0101?")) ||
+              (p.enableVectorBf16.B && (vs1 === "b01101".U))) && widenNoEqVx)
+        )) ||
+        (p.enableVectorBf16.B && (funct6 === "b111011".U) && widenNoEqVv) // vfwmaccbf16.vv
+
+    val opfvfValid =
+      (p.enableFloat.B && (
+        // vfadd, vfsub, vfmin, vfmax, vfsgnj*, vslide1down, vfdiv, vfrdiv, vfmul, vfrsub, vfmadd/vfmacc
+        (matches(
+          funct6,
+          "000??0",
+          "00100?",
+          "001010",
+          "001111",
+          "10000?",
+          "100100",
+          "100111",
+          "101???"
+        ) && vvxMaskOk) ||
+          ((funct6 === "b001110".U) && widenNoEqVx) ||         // vfslide1up.vf
+          ((funct6 === "b010000".U) && vm && (vs2 === 0.U)) || // vfmv.s.f
+          ((funct6 === "b010111".U) && vmergeVxOk) ||          // vfmerge.vfm / vfmv.v.f
+          (matches(funct6, "01100?", "011011", "01110?", "011111") && vxSrcMaskOk) // vmfeq..vmfgt
+      )) ||
+        (p.enableVectorBf16.B && (funct6 === "b111011".U) && widenNoEqVx) // vfwmaccbf16.vf
+
+    val opcfgValid = (!inst(31)) || (inst(31, 30) === "b11".U) || (funct7 === "b1000000".U) || (
+      p.enableVme.B && (
+        ((funct7 === "b1000010".U) && (vd === 0.U)) ||
+          ((funct7 === "b1000100".U) && matches(vs2, "0000?", "00010")) ||
+          ((inst(31, 29) === "b100".U) && (inst(27, 25) === "b100".U) &&
+            (inst(22, 20) === "b100".U) && (inst(19, 17) === "b000".U) && (vd === 0.U))
+      )
+    )
+
+    MuxLookup(funct3, false.B)(
+      Seq(
+        "b000".U -> opiValid,
+        "b001".U -> opfvvValid,
+        "b010".U -> opmvvValid,
+        "b011".U -> opiValid,
+        "b100".U -> opiValid,
+        "b101".U -> opfvfValid,
+        "b110".U -> opmvxValid,
+        "b111".U -> opcfgValid
+      )
+    )
+  }
+
   def from_uncompressed(p: Parameters, inst: UInt, pc: UInt): Valid[RvvCompressedInstruction] = {
-    val old_opcode = inst(6, 0)
-    val bits       = inst(31, 7)
+    val (old_opcode, bits)   = (inst(6, 0), inst(31, 7))
+    val (vd, width, vs2, vm) = (inst(11, 7), inst(14, 12), inst(24, 20), inst(25))
+    val (mop, mew, nf)       = (inst(27, 26), inst(28), inst(31, 29))
+    val (isLoad, isStore)    = (old_opcode === "b0000111".U, old_opcode === "b0100111".U)
+    val (vdNotV0, vs2NotV0)  = (vm || (vd =/= 0.U), vm || (vs2 =/= 0.U))
+    val validStdWidth        = !mew && matches(width, "000", "101", "110")
 
-    // mew must be 0 for valid standard RVV load/stores, or 1 for VME tile loads/stores
-    val mew  = inst(28)
-    val nf   = inst(31, 29)
-    val mop  = inst(27, 26)
-    val vm   = inst(25)
-    val umop = inst(24, 20)
-    // RVVLOAD and RVVSTORE op codes are shared with "f" extension. Use "width"
-    // to discriminate between the two.
-    val width   = inst(14, 12)
-    val vd      = inst(11, 7)
-    val isStore = old_opcode === "b0100111".U
-
-    val validEewWidth = MuxLookup(width, false.B)(
+    val unitStrideLegal = MuxLookup(vs2, false.B)(
       Seq(
-        "b000".U -> true.B, // 8b
-        "b101".U -> true.B, // 16b
-        "b110".U -> true.B  // 32b
-        // "b111".U -> true.B,  // 64b, unused for coralnpu
+        "b00000".U -> vdNotV0,
+        "b01000".U -> (vm && (isLoad || (isStore && (width === "b000".U))) && (
+          (nf === "b000".U) ||
+            ((nf === "b001".U) && !vd(0)) ||
+            ((nf === "b011".U) && (vd(1, 0) === 0.U)) ||
+            ((nf === "b111".U) && (vd(2, 0) === 0.U))
+        )),
+        "b01011".U -> (vm && (width === "b000".U) && (nf === "b000".U)),
+        "b10000".U -> (isLoad && vdNotV0)
       )
     )
-    // Masked loads (vm=0) cannot use v0 as destination register (overlaps mask register v0.t).
-    val vdOverlapV0Ok = isStore || vm || (vd =/= 0.U)
-
-    val validUnitStride = MuxLookup(umop, false.B)(
-      Seq(
-        // US_REGULAR (vle/vse, vlseg/vsseg)
-        "b00000".U -> (validEewWidth && vdOverlapV0Ok),
-        // US_WHOLE_REGISTER (vl<nr>r / vs<nr>r): unmasked, nf in {0,1,3,7}, vd aligned to nf+1,
-        // store only supports e8 width encoding.
-        "b01000".U -> (
-          vm &&
-            (nf === "b000".U || nf === "b001".U || nf === "b011".U || nf === "b111".U) &&
-            ((vd & nf) === 0.U) &&
-            Mux(isStore, width === "b000".U, validEewWidth)
-        ),
-        // US_MASK (vlm.v / vsm.v): unmasked, nf=0, e8 width encoding only.
-        "b01011".U -> (vm && (nf === "b000".U) && (width === "b000".U)),
-        // US_FAULT_FIRST (vle<eew>ff.v / vlseg<nf>e<eew>ff.v): load only.
-        "b10000".U -> (!isStore && validEewWidth && vdOverlapV0Ok)
-      )
-    )
-
-    val isRvvLdSt = !mew && Mux(
-      mop === "b00".U,
-      validUnitStride,
-      validEewWidth && vdOverlapV0Ok
-    )
-
-    val isVmeLdSt = if (p.enableVme) {
-      mew && (width === "b111".U) && (inst(11, 7) === 0.U) && inst(25) && (inst(27, 26) === 0.U) &&
-      MuxLookup(inst(31, 29), false.B)(
-        Seq(
-          "b000".U -> true.B, // 8b
-          "b001".U -> true.B, // 16b
-          "b010".U -> true.B  // 32b
-        )
-      )
-    } else {
-      false.B
-    }
-
-    val validWidth = isRvvLdSt || isVmeLdSt
+    val indexedLegal = vdNotV0 && vs2NotV0 && (!(isLoad && (nf =/= 0.U)) || (vd =/= vs2))
+    val isRvvLdSt    =
+      validStdWidth && Mux(mop(0), indexedLegal, Mux(mop(1), vdNotV0, unitStrideLegal))
+    val isVmeLdSt = p.enableVme.B && mew && (width === "b111".U) && (vd === 0.U) &&
+      vm && (mop === 0.U) && matches(nf, "00?", "010")
+    val validLdSt = isRvvLdSt || isVmeLdSt
 
     val temp_inst = Wire(new RvvCompressedInstruction(p))
     temp_inst.bits    := bits
     temp_inst.opcode  := RvvCompressedOpcode.RVVALU
     temp_inst.pc      := pc
     temp_inst.rob_tag := 0.U
-    val illegal_float = temp_inst.isIllegalFloat(p)
-    // In OP-V (0x57), funct6=111100 with funct3=000 (OPIVV) is reserved and
-    // must not alias onto OP-VE (0x77) VTXMMXTVV (vtmmu/vtmms).
-    val illegal_opv = illegal_float || (inst(31, 26) === "b111100".U && inst(14, 12) === "b000".U)
-
-    val isOpVeValid = RvvCompressedInstruction.isOpVeValid(inst, p)
+    val staticAluOk = !temp_inst.isIllegalFloat(p) && isStaticAluLegal(inst, p)
 
     val new_opcode = MuxLookup(old_opcode, MakeInvalid(RvvCompressedOpcode()))(
       Seq(
-        "b0000111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVLOAD),
-        "b0100111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVSTORE),
-        "b1010111".U -> MakeValid(!illegal_opv, RvvCompressedOpcode.RVVALU),
-        "b1110111".U -> MakeValid(isOpVeValid, RvvCompressedOpcode.RVVALU)
+        "b0000111".U -> MakeValid(validLdSt, RvvCompressedOpcode.RVVLOAD),
+        "b0100111".U -> MakeValid(validLdSt, RvvCompressedOpcode.RVVSTORE),
+        "b1010111".U -> MakeValid(staticAluOk, RvvCompressedOpcode.RVVALU),
+        "b1110111".U -> MakeValid(isOpVeValid(inst, p), RvvCompressedOpcode.RVVALU)
       )
     )
 
@@ -558,14 +718,16 @@ object RvvCompressedInstruction {
 
   def isOpVeValid(inst: UInt, p: Parameters): Bool = {
     if (p.enableVme) {
-      val opcode  = inst(6, 0)
-      val funct6  = inst(31, 26)
-      val funct3  = inst(14, 12)
-      val vm      = inst(25)
-      val isFp    = funct3 === "b001".U
-      val isInt   = funct3 === "b000".U
-      val fpValid = p.enableFloat.B
-      (opcode === "b1110111".U) && (funct6 === "b111100".U) && vm && (isInt || (isFp && fpValid))
+      val opcode    = inst(6, 0)
+      val funct6    = inst(31, 26)
+      val funct3    = inst(14, 12)
+      val vm        = inst(25)
+      val isFp      = (funct3 === "b001".U) && !inst(15) && !inst(20)
+      val isInt     = (funct3 === "b000".U) && (inst(17, 16) === 0.U) && (inst(22, 21) === 0.U)
+      val fpValid   = p.enableFloat.B
+      val mtdAlign4 = inst(9, 8) === 0.U
+      (opcode === "b1110111".U) && (funct6 === "b111100".U) && vm && mtdAlign4 &&
+      (isInt || (isFp && fpValid))
     } else {
       false.B
     }

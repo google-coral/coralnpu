@@ -631,6 +631,333 @@ module RvvFrontEnd#(parameter N = 4,
     end
   end
 
+  function automatic logic [1:0] rvv_emul_shift(input logic signed [4:0] emul_log2);
+    return (emul_log2 <= 5'sd0) ? 2'd0 : ((emul_log2 >= 5'sd3) ? 2'd3 : emul_log2[1:0]);
+  endfunction
+
+  function automatic logic [2:0] rvv_align_mask(input logic [1:0] shift);
+    return (4'd1 << shift) - 4'd1;
+  endfunction
+
+  function automatic logic rvv_reg_aligned(input logic [4:0] reg_idx, input logic [1:0] shift);
+    return (reg_idx[2:0] & rvv_align_mask(shift)) == 3'd0;
+  endfunction
+
+  function automatic logic rvv_same_group(
+      input logic [4:0] reg_a, input logic [4:0] reg_b, input logic [1:0] shift);
+    return ((reg_a ^ reg_b) & ~{2'b00, rvv_align_mask(shift)}) == 5'd0;
+  endfunction
+
+  function automatic logic rvv_no_group_overlap(
+      input logic [4:0] reg_a, input logic [1:0] shift_a,
+      input logic [4:0] reg_b, input logic [1:0] shift_b);
+    return !rvv_same_group(reg_a, reg_b, (shift_a > shift_b) ? shift_a : shift_b);
+  endfunction
+
+  function automatic logic rvv_narrow_overlap_ok(
+      input logic [4:0] vd, input logic [4:0] src, input logic [1:0] shift_src);
+    return !rvv_same_group(vd, src, shift_src) || rvv_reg_aligned(vd, shift_src);
+  endfunction
+
+  function automatic logic rvv_widen_2to1_overlap_ok(
+      input logic [4:0] vd, input logic [1:0] shift_vd,
+      input logic [4:0] src, input logic signed [4:0] emul_src_log2);
+    return !rvv_same_group(vd, src, shift_vd) ||
+           ((emul_src_log2 >= 5'sd0) &&
+            ((src[2:0] & rvv_align_mask(shift_vd)) == (3'd1 << (shift_vd - 2'd1))));
+  endfunction
+
+  function automatic logic rvv_widen_4to1_overlap_ok(
+      input logic [4:0] vd, input logic [1:0] shift_vd, input logic [4:0] src);
+    return !rvv_same_group(vd, src, shift_vd) ||
+           ((shift_vd == 2'd2) && (src[1:0] == 2'd3)) ||
+           ((shift_vd == 2'd3) && (src[2:0] == 3'd6));
+  endfunction
+
+  function automatic logic rvv_emul_valid(input logic signed [4:0] emul_log2);
+    return (emul_log2 >= -5'sd2) && (emul_log2 <= 5'sd3);
+  endfunction
+
+  function automatic logic rvv_alu_is_legal_dynamic(
+      input logic [24:0] bits,
+      input RVVConfigState arch_state,
+      input logic [`VSTART_WIDTH-1:0] vstart);
+    logic [4:0] vd, vs1, vs2;
+    logic [2:0] funct3;
+    logic [5:0] funct6;
+    logic vm;
+    logic signed [4:0] lmul_log2, emul2_log2, emul_half_log2, emul_quart_log2, eew16_log2;
+    logic [1:0] shift1, shift2, shift_half, shift_quart, shift_eew16;
+    logic vd_align1, vs2_align1, vs1_align1, vd_align2, vs2_align2, vs1_align2;
+    logic widen_supported;
+    logic require_zero_vstart;
+    logic is_vtxmm_op;
+
+    vd = bits[4:0];
+    funct3 = bits[7:5];
+    vs1 = bits[12:8];
+    vs2 = bits[17:13];
+    vm = bits[18];
+    funct6 = bits[24:19];
+
+    case (arch_state.lmul_orig)
+      LMUL1_4: lmul_log2 = -5'sd2;
+      LMUL1_2: lmul_log2 = -5'sd1;
+      LMUL1:   lmul_log2 = 5'sd0;
+      LMUL2:   lmul_log2 = 5'sd1;
+      LMUL4:   lmul_log2 = 5'sd2;
+      LMUL8:   lmul_log2 = 5'sd3;
+      default: return 1'b0;
+    endcase
+
+    emul2_log2 = lmul_log2 + 5'sd1;
+    emul_half_log2 = lmul_log2 - 5'sd1;
+    emul_quart_log2 = lmul_log2 - 5'sd2;
+    eew16_log2 = lmul_log2 + 5'sd1 - $signed({3'b000, arch_state.sew[1:0]});
+
+    shift1 = rvv_emul_shift(lmul_log2);
+    shift2 = rvv_emul_shift(emul2_log2);
+    shift_half = rvv_emul_shift(emul_half_log2);
+    shift_quart = rvv_emul_shift(emul_quart_log2);
+    shift_eew16 = rvv_emul_shift(eew16_log2);
+
+    vd_align1 = rvv_reg_aligned(vd, shift1);
+    vs2_align1 = rvv_reg_aligned(vs2, shift1);
+    vs1_align1 = rvv_reg_aligned(vs1, shift1);
+    vd_align2 = rvv_reg_aligned(vd, shift2);
+    vs2_align2 = rvv_reg_aligned(vs2, shift2);
+    vs1_align2 = rvv_reg_aligned(vs1, shift2);
+
+    widen_supported = ((arch_state.sew == SEW8) || (arch_state.sew == SEW16)) &&
+                      rvv_emul_valid(emul2_log2);
+
+`ifdef ZVT_ON
+    is_vtxmm_op = (funct6 == 6'b111100) && ((funct3 == 3'b000) || (funct3 == 3'b001));
+`else
+    is_vtxmm_op = 1'b0;
+`endif
+
+    require_zero_vstart =
+        is_vtxmm_op ||
+        ((funct3 == OPIVV) && (funct6[5:1] == 5'b11000)) ||
+        ((funct3 == OPMVV) && (
+            (funct6[5:3] == 3'b000) ||
+            ((funct6 == 6'b010000) && (vs1[4:1] == 4'b1000)) ||
+            ((funct6 == 6'b010100) && ((vs1 == 5'b00001) || (vs1 == 5'b00010) || (vs1 == 5'b00011) || (vs1 == 5'b10000))) ||
+            (funct6 == 6'b010111)
+        )) ||
+        ((funct3 == OPFVV) && (funct6[5:3] == 3'b000) && funct6[0]);
+
+    if (require_zero_vstart && (vstart != '0)) begin
+      return 1'b0;
+    end
+
+    case (funct3)
+      OPIVV: begin
+        if (is_vtxmm_op) begin
+`ifdef ZVT_ON
+          return (arch_state.sew == SEW8) && (arch_state.lmul_orig == LMUL1) &&
+                 (arch_state.mtwiden == 2'd3);
+`else
+          return 1'b0;
+`endif
+        end
+        case (funct6)
+          6'b001100: return vd_align1 && vs2_align1 && vs1_align1 &&
+                            rvv_no_group_overlap(vd, shift1, vs2, shift1) &&
+                            rvv_no_group_overlap(vd, shift1, vs1, shift1);
+          6'b001110: return rvv_emul_valid(eew16_log2) &&
+                            vd_align1 && vs2_align1 && rvv_reg_aligned(vs1, shift_eew16) &&
+                            rvv_no_group_overlap(vd, shift1, vs2, shift1) &&
+                            rvv_no_group_overlap(vd, shift1, vs1, shift_eew16) &&
+                            ((arch_state.sew == SEW16) || rvv_no_group_overlap(vs2, shift1, vs1, shift_eew16));
+          6'b010000, 6'b010010: return vd_align1 && vs2_align1 && vs1_align1 && (vd != 5'd0) && (vs2 != 5'd0) && (vs1 != 5'd0);
+          6'b010001, 6'b010011, 6'b011000, 6'b011001,
+          6'b011010, 6'b011011, 6'b011100, 6'b011101: return vs2_align1 && vs1_align1 &&
+                            rvv_narrow_overlap_ok(vd, vs2, shift1) &&
+                            rvv_narrow_overlap_ok(vd, vs1, shift1);
+          6'b010111: return vd_align1 && (vm ? vs1_align1 : (vs2_align1 && vs1_align1 && (vd != 5'd0)));
+          6'b101100, 6'b101101, 6'b101110, 6'b101111: return widen_supported &&
+                            vd_align1 && vs2_align2 && vs1_align1 &&
+                            rvv_narrow_overlap_ok(vd, vs2, shift2) &&
+                            rvv_no_group_overlap(vs2, shift2, vs1, shift1);
+          6'b110000, 6'b110001: return ((arch_state.sew == SEW8) || (arch_state.sew == SEW16)) &&
+                            vs2_align1 && rvv_no_group_overlap(vs2, shift1, vs1, 2'd0);
+          default: return vd_align1 && vs2_align1 && vs1_align1;
+        endcase
+      end
+      OPIVX, OPIVI: begin
+        case (funct6)
+          6'b001100, 6'b001110: return vd_align1 && vs2_align1 && rvv_no_group_overlap(vd, shift1, vs2, shift1);
+          6'b001111: return vd_align1 && vs2_align1;
+          6'b010000, 6'b010010: return vd_align1 && vs2_align1 && (vd != 5'd0) && (vs2 != 5'd0);
+          6'b010001, 6'b010011, 6'b011000, 6'b011001,
+          6'b011010, 6'b011011, 6'b011100, 6'b011101,
+          6'b011110, 6'b011111: return vs2_align1 && rvv_narrow_overlap_ok(vd, vs2, shift1);
+          6'b010111: return vd_align1 && (vm || (vs2_align1 && (vd != 5'd0)));
+          6'b101100, 6'b101101, 6'b101110, 6'b101111: return widen_supported &&
+                            vd_align1 && vs2_align2 &&
+                            rvv_narrow_overlap_ok(vd, vs2, shift2);
+          default: return vd_align1 && vs2_align1;
+        endcase
+      end
+      OPMVV: begin
+        case (funct6)
+          6'b000000, 6'b000001, 6'b000010, 6'b000011,
+          6'b000100, 6'b000101, 6'b000110, 6'b000111: return vs2_align1;
+          6'b010000: return 1'b1;
+          6'b010010: begin
+            if (vs1[1]) begin
+              return ((arch_state.sew == SEW16) || (arch_state.sew == SEW32)) &&
+                     rvv_emul_valid(emul_half_log2) &&
+                     vd_align1 && rvv_reg_aligned(vs2, shift_half) &&
+                     rvv_widen_2to1_overlap_ok(vd, shift1, vs2, emul_half_log2);
+            end else begin
+              return (arch_state.sew == SEW32) &&
+                     rvv_emul_valid(emul_quart_log2) &&
+                     vd_align1 && rvv_reg_aligned(vs2, shift_quart) &&
+                     rvv_widen_4to1_overlap_ok(vd, shift1, vs2);
+            end
+          end
+          6'b010100: begin
+            case (vs1)
+              5'b00001, 5'b00010, 5'b00011: return (vd != vs2) && (vm || (vd != 5'd0));
+              5'b10000: return vd_align1 && rvv_no_group_overlap(vd, shift1, vs2, 2'd0) && (vm || (vd != 5'd0));
+              5'b10001: return vd_align1 && (vs2 == 5'd0) && (vm || (vd != 5'd0));
+              default: return 1'b0;
+            endcase
+          end
+          6'b010111: return vm && vd_align1 && vs2_align1 &&
+                            rvv_no_group_overlap(vd, shift1, vs2, shift1) &&
+                            rvv_no_group_overlap(vd, shift1, vs1, 2'd0) &&
+                            rvv_no_group_overlap(vs2, shift1, vs1, 2'd0);
+          6'b011000, 6'b011001, 6'b011010, 6'b011011,
+          6'b011100, 6'b011101, 6'b011110, 6'b011111: return vm;
+          6'b110000, 6'b110001, 6'b110010, 6'b110011, 6'b111000, 6'b111010, 6'b111011:
+            return widen_supported && vd_align2 && vs2_align1 && vs1_align1 &&
+                   rvv_widen_2to1_overlap_ok(vd, shift2, vs2, lmul_log2) &&
+                   rvv_widen_2to1_overlap_ok(vd, shift2, vs1, lmul_log2);
+          6'b110100, 6'b110101, 6'b110110, 6'b110111:
+            return widen_supported && vd_align2 && vs2_align2 && vs1_align1 &&
+                   rvv_widen_2to1_overlap_ok(vd, shift2, vs1, lmul_log2) &&
+                   rvv_no_group_overlap(vs2, shift2, vs1, shift1);
+          6'b111100, 6'b111101, 6'b111111:
+            return widen_supported && vd_align2 && vs2_align1 && vs1_align1 &&
+                   rvv_no_group_overlap(vd, shift2, vs2, shift1) &&
+                   rvv_no_group_overlap(vd, shift2, vs1, shift1);
+          default: return vd_align1 && vs2_align1 && vs1_align1;
+        endcase
+      end
+      OPMVX: begin
+        case (funct6)
+          6'b001110: return vd_align1 && vs2_align1 && rvv_no_group_overlap(vd, shift1, vs2, shift1);
+          6'b010000: begin
+            case (vs2)
+              5'b00000: return vm;
+`ifdef ZVT_ON
+              5'b11100: return vm && (vs1 == 5'd0) && (vd == 5'd0);
+              5'b11110: begin
+                logic eew_mt_16, eew_mt_32;
+                eew_mt_16 = ((arch_state.sew == SEW8) && (arch_state.mtwiden == 2'd2)) ||
+                            ((arch_state.sew == SEW16) && (arch_state.mtwiden == 2'd1));
+                eew_mt_32 = ((arch_state.sew == SEW8) && (arch_state.mtwiden == 2'd3)) ||
+                            ((arch_state.sew == SEW16) && (arch_state.mtwiden == 2'd2)) ||
+                            ((arch_state.sew == SEW32) && (arch_state.mtwiden == 2'd1));
+                return vm && (vs1 == 5'd0) && (vd[0] == 1'b0) && (arch_state.mtwiden != 2'b00) &&
+                       (!eew_mt_16 || (vd[1] == 1'b0)) && (!eew_mt_32 || (vd[2:1] == 2'b00));
+              end
+              5'b11111: return vm && (arch_state.mtwiden != 2'b00) && (
+                       ((arch_state.sew == SEW8) && ((arch_state.lmul_orig == LMUL1_4) || (arch_state.lmul_orig == LMUL1_2) || (arch_state.lmul_orig == LMUL1))) ||
+                       ((arch_state.sew == SEW16) && (arch_state.lmul_orig == LMUL2) && (vd[0] == 1'b0)) ||
+                       ((arch_state.sew == SEW32) && (arch_state.lmul_orig == LMUL4) && (vd[1:0] == 2'b00)));
+`endif
+              default: return 1'b0;
+            endcase
+          end
+`ifdef ZVT_ON
+          6'b010111: return vm && (vd == 5'd0) && (arch_state.mtwiden != 2'b00) && (
+                     ((arch_state.sew == SEW8) && ((arch_state.lmul_orig == LMUL1_4) || (arch_state.lmul_orig == LMUL1_2) || (arch_state.lmul_orig == LMUL1))) ||
+                     ((arch_state.sew == SEW16) && (arch_state.lmul_orig == LMUL2) && (vs2[0] == 1'b0)) ||
+                     ((arch_state.sew == SEW32) && (arch_state.lmul_orig == LMUL4) && (vs2[1:0] == 2'b00)));
+`endif
+          6'b110000, 6'b110001, 6'b110010, 6'b110011,
+          6'b111000, 6'b111010, 6'b111011:
+            return widen_supported && vd_align2 && vs2_align1 &&
+                   rvv_widen_2to1_overlap_ok(vd, shift2, vs2, lmul_log2);
+          6'b110100, 6'b110101, 6'b110110, 6'b110111:
+            return widen_supported && vd_align2 && vs2_align2;
+          6'b111100, 6'b111101, 6'b111110, 6'b111111:
+            return widen_supported && vd_align2 && vs2_align1 &&
+                   rvv_no_group_overlap(vd, shift2, vs2, shift1);
+          default: return vd_align1 && vs2_align1;
+        endcase
+      end
+      OPFVV: begin
+`ifdef ZVE32F_ON
+        if (arch_state.frm >= 3'd5) return 1'b0;
+`endif
+        if (is_vtxmm_op) begin
+`ifdef ZVT_ON
+          return ((arch_state.sew == SEW32) && (arch_state.lmul_orig == LMUL4) && (arch_state.mtwiden == 2'd1) && !arch_state.altfmt &&
+                  (vs1[1:0] == 2'b00) && (vs2[1:0] == 2'b00)) ||
+                 ((arch_state.sew == SEW16) && (arch_state.lmul_orig == LMUL2) && (arch_state.mtwiden == 2'd2) && arch_state.altfmt &&
+                  (vs1[2] == 1'b0) && (vs1[0] == 1'b0) && (vs2[2] == 1'b0) && (vs2[0] == 1'b0));
+`else
+          return 1'b0;
+`endif
+        end
+        case (funct6)
+          6'b000001, 6'b000011, 6'b000101, 6'b000111: return (arch_state.sew == SEW32) && vs2_align1;
+          6'b010000: return (arch_state.sew == SEW32);
+          6'b010011: return (arch_state.sew == SEW32) && vd_align1 && vs2_align1;
+          6'b010010: begin
+            case (vs1)
+              5'b01010, 5'b01011, 5'b01101:
+                return (arch_state.sew == SEW16) && rvv_emul_valid(emul2_log2) &&
+                       vd_align2 && vs2_align1 &&
+                       rvv_widen_2to1_overlap_ok(vd, shift2, vs2, lmul_log2);
+              5'b10000, 5'b10001, 5'b10110, 5'b10111, 5'b11101:
+                return (arch_state.sew == SEW16) && rvv_emul_valid(emul2_log2) &&
+                       vd_align1 && vs2_align2 &&
+                       rvv_narrow_overlap_ok(vd, vs2, shift2);
+              default: return (arch_state.sew == SEW32) && vd_align1 && vs2_align1;
+            endcase
+          end
+          6'b011000, 6'b011001, 6'b011011, 6'b011100:
+            return (arch_state.sew == SEW32) && vs2_align1 && vs1_align1 &&
+                   rvv_narrow_overlap_ok(vd, vs2, shift1) &&
+                   rvv_narrow_overlap_ok(vd, vs1, shift1);
+          6'b111011:
+            return (arch_state.sew == SEW16) && rvv_emul_valid(emul2_log2) &&
+                   vd_align2 && vs2_align1 && vs1_align1 &&
+                   rvv_no_group_overlap(vd, shift2, vs2, shift1) &&
+                   rvv_no_group_overlap(vd, shift2, vs1, shift1);
+          default: return (arch_state.sew == SEW32) && vd_align1 && vs2_align1 && vs1_align1;
+        endcase
+      end
+      OPFVF: begin
+`ifdef ZVE32F_ON
+        if (arch_state.frm >= 3'd5) return 1'b0;
+`endif
+        case (funct6)
+          6'b001110: return (arch_state.sew == SEW32) && vd_align1 && vs2_align1 &&
+                            rvv_no_group_overlap(vd, shift1, vs2, shift1);
+          6'b010000: return (arch_state.sew == SEW32);
+          6'b010111: return (arch_state.sew == SEW32) && vd_align1 && (vm || (vs2_align1 && (vd != 5'd0)));
+          6'b011000, 6'b011001, 6'b011011, 6'b011100, 6'b011101, 6'b011111:
+            return (arch_state.sew == SEW32) && vs2_align1 &&
+                   rvv_narrow_overlap_ok(vd, vs2, shift1);
+          6'b111011:
+            return (arch_state.sew == SEW16) && rvv_emul_valid(emul2_log2) &&
+                   vd_align2 && vs2_align1 &&
+                   rvv_no_group_overlap(vd, shift2, vs2, shift1);
+          default: return (arch_state.sew == SEW32) && vd_align1 && vs2_align1;
+        endcase
+      end
+      default: return 1'b1;
+    endcase
+  endfunction
+
   always_comb begin
     logic seen_trap;
     seen_trap = 1'b0;
@@ -644,13 +971,17 @@ module RvvFrontEnd#(parameter N = 4,
                         (inst_q[i].bits[18] == 1'b1) &&
                         (inst_q[i].bits[12:11] == 2'b00);
 
+      // Dynamic legality is checked here for vector arithmetic/ALU instructions (opcode == RVV).
       // Defensive fallback: vill==1 and mtwiden==0 are trapped upstream at
-      // Slot 0 in scalar Decode.scala before dispatch. These checks are
-      // retained here to guard the frontend/backend if RvvFrontEnd is driven
-      // directly (e.g., standalone unit tests). Configuration instructions
-      // (vset*/msetmtype*/msettn) and whole-register moves do not trap on vill.
+      // Slot 0 in scalar Decode.scala before dispatch, and retained here to
+      // guard the frontend/backend if RvvFrontEnd is driven directly.
+      // Vector loads and stores (and whole-register moves) are excluded: loads/stores that
+      // violate vill or dynamic legality are trapped in scalar decode to avoid hanging the scalar LSU.
+      // Configuration instructions (vset*/msetmtype*/msettn) do not trap on vill.
       unaligned_trap_valid[i] = valid_inst_q[i] && (
-          ((inst_q[i].opcode == RVV) && !vconfig_change[i] && !is_whole_reg[i] && inst_config_state[i+1].vill)
+          ((inst_q[i].opcode == RVV) && !vconfig_change[i] && !is_whole_reg[i] &&
+           (inst_config_state[i+1].vill ||
+            !rvv_alu_is_legal_dynamic(inst_q[i].bits, inst_config_state[i+1], inst_config_state[i].vstart)))
 `ifdef ZVT_ON
           || mset_illegal_trap[i]
           || ((inst_q[i].opcode == RVV) && !vconfig_change[i] && (inst_config_state[i+1].mtwiden == 2'b00) && (

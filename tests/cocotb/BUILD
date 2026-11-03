@@ -383,6 +383,7 @@ coralflow_test(
     data = ["//tests/cocotb/rvv:rvv_assem_tests"],
     exclude_testcases = {
         "uvm": [
+            "rvv_reserved_inst_test",
             "rvv_vill_loop_trap_test",
             "rvv_vill_trap_squashed_load_test",
             "rvv_vstart_forwarding_squash_test",

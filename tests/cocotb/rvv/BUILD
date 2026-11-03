@@ -128,6 +128,9 @@ template_rule(
         "rvv_vill_trap_squashed_load_test": {
             "srcs": ["rvv_vill_trap_squashed_load_test.cc"],
         },
+        "rvv_reserved_inst_test": {
+            "srcs": ["rvv_reserved_inst_test.cc"],
+        },
         "vwredsumu_test": {
             "srcs": ["vwredsumu_test.cc"],
         },
@@ -141,6 +144,7 @@ filegroup(
         "rvv_flush_race_test.elf",
         "rvv_load.elf",
         "rvv_lsu_indexed_short_vl_test.elf",
+        "rvv_reserved_inst_test.elf",
         "rvv_small_loop_test.elf",
         "rvv_vfrdiv_test.elf",
         "rvv_vill_loop_trap_test.elf",

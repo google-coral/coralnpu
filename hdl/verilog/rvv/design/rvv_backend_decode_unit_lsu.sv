@@ -3367,22 +3367,32 @@ module rvv_backend_decode_unit_lsu
             {SEW_32,SEW16},            
             // 4:1
             {SEW_32,SEW8}: begin            
-              check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vd_part_overlap_vs2 : 1'b1;
+              check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vd_part_overlap_vs2 : check_vd_overlap_vs2;
             end
             // 1:2
             {SEW_8,SEW16},
             {SEW_16,SEW32}: begin            
-              check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vs2_part_overlap_vd_2_1 : 1'b1;
+              check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vs2_part_overlap_vd_2_1 : check_vd_overlap_vs2;
             end
             // 1:4
             {SEW_8,SEW32}: begin            
-              check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vs2_part_overlap_vd_4_1 : 1'b1;
+              check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vs2_part_overlap_vd_4_1 : check_vd_overlap_vs2;
             end
           endcase
         end
         else begin
-          // segment indexed ld, vd group cannot overlap vs2 group fully
-          check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vd_overlap_vs2 : 1'b1;
+          // segment indexed ld/st: ld vd group cannot overlap vs2 group;
+          // st vs3 group cannot overlap vs2 group when EEW_vs2 != EEW_vd
+          case({inst_funct3,csr_sew})
+            {SEW_8,SEW8},
+            {SEW_16,SEW16},
+            {SEW_32,SEW32}: begin
+              check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vd_overlap_vs2 : 1'b1;
+            end
+            default: begin
+              check_special = (inst_opcode==LOAD) ? check_vd_overlap_v0&check_vd_overlap_vs2 : check_vd_overlap_vs2;
+            end
+          endcase
         end        
       end
 

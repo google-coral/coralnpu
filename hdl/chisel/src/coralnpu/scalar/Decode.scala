@@ -522,11 +522,26 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     Seq.fill(p.instructionLanes)(false.B)
   }
 
+  // Every RVV instruction resets vstart to zero, so an LSU op behind an older
+  // RVV instruction in the same packet uses vstart = 0. This matches
+  // RvvFrontEnd and the retirement buffer, which use the same rvv.valid
+  // predicate. An older RVV instruction that doesn't reset vstart must trap,
+  // and then this op is squashed. rvvVillRobEmptyInterlock ensures such a
+  // squashed op is never a vector load/store.
+  val rvvVstartCleared = Option.when(p.enableRvv) {
+    decodedInsts.map(_.rvv.get.valid).scan(false.B)(_ || _)
+  }
+
   val rvvConfigInterlock = if (p.enableRvv) {
     val canDispatchRvv = (0 until p.instructionLanes).map(i =>
       !decodedInsts(i).rvv.get.valid ||                // Don't lock non-rvv
         !decodedInsts(i).rvv.get.bits.isLoadStore() || // Non-LSU can handle change
-        !configInvalid(i) // If config is valid, can dispatch load store
+        // Wait for any older RVV instruction in an earlier lane or in RvvFrontEnd
+        // to be validated before dispatching a vector load/store into the scalar LSU,
+        // and require valid vtype state for non-whole-register loads/stores.
+        (!rvvVstartCleared.get(i) &&
+          io.rvvState.get.valid &&
+          (decodedInsts(i).rvv.get.bits.isWholeRegisterLoadStore() || !configInvalid(i)))
     )
     canDispatchRvv
   } else {
@@ -547,16 +562,6 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     })
   } else {
     Seq.fill(p.instructionLanes)(true.B)
-  }
-
-  // Every RVV instruction resets vstart to zero, so an LSU op behind an older
-  // RVV instruction in the same packet uses vstart = 0. This matches
-  // RvvFrontEnd and the retirement buffer, which use the same rvv.valid
-  // predicate. An older RVV instruction that doesn't reset vstart must trap,
-  // and then this op is squashed. rvvVillRobEmptyInterlock ensures such a
-  // squashed op is never a vector load/store.
-  val rvvVstartCleared = Option.when(p.enableRvv) {
-    decodedInsts.map(_.rvv.get.valid).scan(false.B)(_ || _)
   }
 
   // ---------------------------------------------------------------------------
@@ -586,40 +591,33 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   }
 
   // ---------------------------------------------------------------------------
-  // Rvv Vill
+  // Rvv Dynamic Legality (vill, EMUL bounds, NF*EMUL <= 8, register group
+  // alignment, indexed load/store overlap, and VME mtwiden != 0)
   // Check vill and mtwiden=0 at scalar dispatch so trapping RVV/Zvt instructions
   // fault at Slot 0 in Decode and never allow younger scalar instructions in
   // the same decode packet to execute ahead of the trap.
   // Whole-register loads/stores (vl<nf>r.v / vs<nf>r.v) and whole-register moves
   // (vmv<nr>r.v) ignore vtype and vill (RVV 1.0 §7.9, §16.8).
-  val rvvVillInterlock = if (p.enableRvv) {
+  val rvvDynamicInterlock = if (p.enableRvv) {
     (0 until p.instructionLanes).map(i => {
-      val isNonWrLdSt = decodedInsts(i).rvv.get.valid &&
-        decodedInsts(i).rvv.get.bits.isLoadStore() &&
-        !decodedInsts(i).rvv.get.bits.isWholeRegisterLoadStore()
-      val reqVillClear = decodedInsts(i).rvv.get.valid &&
-        decodedInsts(i).rvv.get.bits.requiresVillClear()
-      val invalidVill =
-        (isNonWrLdSt && (configInvalid(i) || io.rvvState.get.bits.vill)) ||
-          (reqVillClear && (vtypeMtwidenInvalid(i) || io.rvvState.get.bits.vill))
-      val invalidLsuConfig = isNonWrLdSt && (
-        configInvalid(i) ||
-          decodedInsts(i).rvv.get.bits.isIllegalLsuConfig(
-            io.rvvState.get.bits.sew,
-            io.rvvState.get.bits.lmul_orig
-          )
-      )
-      val invalidVme = if (p.enableVme) {
-        decodedInsts(i).rvv.get.valid &&
-        decodedInsts(i).rvv.get.bits.isVmeLdSt() &&
-        (configInvalid(i) || !io.rvvState.get.bits.mtwiden.get.orR) ||
-        decodedInsts(i).rvv.get.valid &&
-        decodedInsts(i).rvv.get.bits.requiresValidMtwiden() &&
+      val dRvv         = decodedInsts(i).rvv.get
+      val reqVillClear = dRvv.valid && dRvv.bits.requiresVillClear()
+      val invalidVill  = reqVillClear && (vtypeMtwidenInvalid(i) || io.rvvState.get.bits.vill)
+      val invalidVme   = if (p.enableVme) {
+        dRvv.valid &&
+        dRvv.bits.requiresValidMtwiden() &&
         (vtypeMtwidenInvalid(i) || !io.rvvState.get.bits.mtwiden.get.orR)
       } else {
         false.B
       }
-      !invalidVill && !invalidLsuConfig && !invalidVme
+      val isLsuLegal = dRvv.bits.isLegalLsuDynamic(
+        io.rvvState.get.bits.sew,
+        io.rvvState.get.bits.lmul_orig,
+        io.rvvState.get.bits.vill,
+        io.rvvState.get.bits.mtwiden.getOrElse(0.U)
+      )
+      val invalidLsu = dRvv.valid && dRvv.bits.isLoadStore() && !configInvalid(i) && !isLsuLegal
+      !invalidVill && !invalidVme && !invalidLsu
     })
   } else {
     Seq.fill(p.instructionLanes)(true.B)
@@ -735,7 +733,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       slot0Interlock(i) &&        // Special instructions execute out of slot 0 only
       rvvConfigInterlock(i) &&    // Rvv interlock rules
       rvvVstartInterlock(i) &&    // Don't dispatch illegal vstart != 0
-      rvvVillInterlock(i) &&      // Don't dispatch illegal vill != 0 on non-WR load/store
+      rvvDynamicInterlock(i) &&   // Don't dispatch dynamically illegal RVV instructions
       vmeMsOffInterlock(i) && // Don't dispatch tile instructions or vtdiscard if mstatus.MS == Off
       vmeDiscardVillInterlock(i) &&  // Don't dispatch vtdiscard if vill == 1
       rvvVillRobEmptyInterlock(i) && // Stall RVV instructions until ROB drains when vill == 1
@@ -1092,13 +1090,6 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
                                  decodedInsts(0).rvv.get.bits.requiresVillClear()
                                val villIsSet   = io.rvvState.get.valid && io.rvvState.get.bits.vill
                                val invalidVill = (isNonWrLdSt || reqVillClear) && villIsSet
-                               val invalidLsuConfig = isNonWrLdSt &&
-                                 io.rvvState.get.valid &&
-                                 !io.rvvState.get.bits.vill &&
-                                 decodedInsts(0).rvv.get.bits.isIllegalLsuConfig(
-                                   io.rvvState.get.bits.sew,
-                                   io.rvvState.get.bits.lmul_orig
-                                 )
 
                                // Return fault if mstatus.MS == Off (0) for tile instructions or vtdiscard.
                                val isTileOrDiscard = decodedInsts(0).accessesTile()
@@ -1118,13 +1109,18 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
                                  false.B
                                }
 
+                               val invalidRvvDynamic = !rvvDynamicInterlock(0)
+
                                !io.halted &&
                                !io.interlock &&
-                               singleStepInterlock(0) &&
+                               !io.branchTaken &&
                                io.inst(0).valid &&
-                               (invalidVstart || invalidVill || invalidLsuConfig || invalidMs || invalidVillVtdiscard || invalidVme) &&
+                               (invalidVstart || invalidVill || invalidMs ||
+                                 invalidVillVtdiscard || invalidVme || invalidRvvDynamic) &&
+                               io.retirement_buffer_empty &&
                                (0.U < io.retirement_buffer_nSpace) &&
-                               !io.retirement_buffer_trap_pending
+                               !io.retirement_buffer_trap_pending &&
+                               singleStepInterlock(0)
                              } else {
                                false.B
                              })

@@ -28,6 +28,7 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
     val params = new Parameters
     params.enableFloat = true
     params.enableVectorBf16 = true
+    params.enableVme = true
     params
   }
   class Tester extends Module {
@@ -240,17 +241,17 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
     (0xae000057L, RvvAluOp.VSSRA), // vssra.vv v0, v0, v0
     (0xae004057L, RvvAluOp.VSSRA), // vssra.vx v0, v0, x0
     (0xae003057L, RvvAluOp.VSSRA), // vssra.vi v0, v0, 0
-    (0xb2000057L, RvvAluOp.VNSRL), // vnsrl.wv v0, v0, v0
+    (0xb2010057L, RvvAluOp.VNSRL), // vnsrl.wv v0, v0, v2
     (0xb2004057L, RvvAluOp.VNSRL), // vnsrl.wx v0, v0, x0
     (0xb2003057L, RvvAluOp.VNSRL), // vnsrl.wi v0, v0, 0
-    (0xb6000057L, RvvAluOp.VNSRA), // vnsra.wv v0, v0, v0
+    (0xb6010057L, RvvAluOp.VNSRA), // vnsra.wv v0, v0, v2
     (0xb6004057L, RvvAluOp.VNSRA), // vnsra.wx v0, v0, x0
     (0xb6003057L, RvvAluOp.VNSRA), // vnsra.wi v0, v0, 0
 
-    (0xba000057L, RvvAluOp.VNCLIPU), // vnclipu.wv v0, v0, v0
+    (0xba010057L, RvvAluOp.VNCLIPU), // vnclipu.wv v0, v0, v2
     (0xba004057L, RvvAluOp.VNCLIPU), // vnclipu.wx v0, v0, x0
     (0xba003057L, RvvAluOp.VNCLIPU), // vnclipu.wi v0, v0, 0
-    (0xbe000057L, RvvAluOp.VNCLIP),  // vnclip.wv v0, v0, v0
+    (0xbe010057L, RvvAluOp.VNCLIP),  // vnclip.wv v0, v0, v2
     (0xbe004057L, RvvAluOp.VNCLIP),  // vnclip.wx v0, v0, x0
     (0xbe003057L, RvvAluOp.VNCLIP)   // vnclip.wi v0, v0, 0
   )
@@ -274,25 +275,25 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
     (0x1c1080d7L, RvvAluOp.VMAX),  // vmax.vv v1, v1, v1, v0.t
     (0x1c1040d7L, RvvAluOp.VMAX),  // vmax.vx v1, v1, x0, v0.t
 
-    (0x241000d7L, RvvAluOp.VAND), // vand.vv v1, v1, v1, v0.t
+    (0x241080d7L, RvvAluOp.VAND), // vand.vv v1, v1, v1, v0.t
     (0x241040d7L, RvvAluOp.VAND), // vand.vx v1, v1, x0, v0.t
     (0x241030d7L, RvvAluOp.VAND), // vand.vi v1, v1, 0, v0.t
-    (0x281000d7L, RvvAluOp.VOR),  // vor.vv v1, v1, v1, v0.t
+    (0x281080d7L, RvvAluOp.VOR),  // vor.vv v1, v1, v1, v0.t
     (0x281040d7L, RvvAluOp.VOR),  // vor.vx v1, v1, x0, v0.t
     (0x281030d7L, RvvAluOp.VOR),  // vor.vi v1, v1, 0, v0.t
-    (0x2c1000d7L, RvvAluOp.VXOR), // vxor.vv v1, v1, v1, v0.t
+    (0x2c1080d7L, RvvAluOp.VXOR), // vxor.vv v1, v1, v1, v0.t
     (0x2c1040d7L, RvvAluOp.VXOR), // vxor.vx v1, v1, x0, v0.t
     (0x2c1030d7L, RvvAluOp.VXOR), // vxor.vi v1, v1, 0, v0.t
 
-    (0x300000d7L, RvvAluOp.VRGATHER),     // vrgather.vv v1, v0, v0, v0.t
-    (0x300040d7L, RvvAluOp.VRGATHER),     // vrgather.vx v1, v0, x0, v0.t
-    (0x300030d7L, RvvAluOp.VRGATHER),     // vrgather.vi v1, v0, 0, v0.t
-    (0x380000d7L, RvvAluOp.VRGATHEREI16), // vrgatherei16.vv v1, v0, v0, v0.t
+    (0x302100d7L, RvvAluOp.VRGATHER),     // vrgather.vv v1, v2, v2, v0.t
+    (0x302040d7L, RvvAluOp.VRGATHER),     // vrgather.vx v1, v2, x0, v0.t
+    (0x302030d7L, RvvAluOp.VRGATHER),     // vrgather.vi v1, v2, 0, v0.t
+    (0x382100d7L, RvvAluOp.VRGATHEREI16), // vrgatherei16.vv v1, v2, v2, v0.t
 
-    (0x380040d7L, RvvAluOp.VSLIDEUP),   // vslideup.vx v1, v0, x0, v0.t
-    (0x380030d7L, RvvAluOp.VSLIDEUP),   // vslideup.vi v1, v0, 0, v0.t
-    (0x3c0040d7L, RvvAluOp.VSLIDEDOWN), // vslidedown.vx v1, v0, x0, v0.t
-    (0x3c0030d7L, RvvAluOp.VSLIDEDOWN), // vslidedown.vi v1, v0, 0, v0.t
+    (0x382040d7L, RvvAluOp.VSLIDEUP),   // vslideup.vx v1, v2, x0, v0.t
+    (0x382030d7L, RvvAluOp.VSLIDEUP),   // vslideup.vi v1, v2, 0, v0.t
+    (0x3c2040d7L, RvvAluOp.VSLIDEDOWN), // vslidedown.vx v1, v2, x0, v0.t
+    (0x3c2030d7L, RvvAluOp.VSLIDEDOWN), // vslidedown.vi v1, v2, 0, v0.t
 
     (0x401080d7L, RvvAluOp.VADC),  // vadc.vvm v1, v1, v1, v0
     (0x401040d7L, RvvAluOp.VADC),  // vadc.vxm v1, v1, x0, v0
@@ -300,8 +301,8 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
     (0x441080d7L, RvvAluOp.VMADC), // vmadc.vvm v1, v1, v1, v0
     (0x441040d7L, RvvAluOp.VMADC), // vmadc.vxm v1, v1, x0, v0
     (0x441030d7L, RvvAluOp.VMADC), // vmadc.vim v1, v1, 0, v0
-    (0x480000d7L, RvvAluOp.VSBC),  // vsbc.vvm v1, v0, v0, v0
-    (0x480040d7L, RvvAluOp.VSBC),  // vsbc.vxm v1, v0, x0, v0
+    (0x481080d7L, RvvAluOp.VSBC),  // vsbc.vvm v1, v1, v1, v0
+    (0x481040d7L, RvvAluOp.VSBC),  // vsbc.vxm v1, v1, x0, v0
     (0x4c1080d7L, RvvAluOp.VMSBC), // vmsbc.vvm v1, v1, v1, v0
     (0x4c1040d7L, RvvAluOp.VMSBC), // vmsbc.vxm v1, v1, x0, v0
 
@@ -310,26 +311,26 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
     (0x5c1030d7L, RvvAluOp.VMERGE), // vmerge.vim v1, v1, 0, v0
     // VMV does not allow mask.
 
-    (0x60000057L, RvvAluOp.VMSEQ),  // vmseq.vv v0, v0, v0, v0.t
-    (0x60004057L, RvvAluOp.VMSEQ),  // vmseq.vx v0, v0, x0, v0.t
-    (0x60003057L, RvvAluOp.VMSEQ),  // vmseq.vi v0, v0, 0, v0.t
-    (0x64000057L, RvvAluOp.VMSNE),  // vmsne.vv v0, v0, v0, v0.t
-    (0x64004057L, RvvAluOp.VMSNE),  // vmsne.vx v0, v0, x0, v0.t
-    (0x64003057L, RvvAluOp.VMSNE),  // vmsne.vi v0, v0, 0, v0.t
-    (0x68000057L, RvvAluOp.VMSLTU), // vmsltu.vv v0, v0, v0, v0.t
-    (0x68004057L, RvvAluOp.VMSLTU), // vmsltu.vx v0, v0, x0, v0.t
-    (0x6c000057L, RvvAluOp.VMSLT),  // vmslt.vv v0, v0, v0, v0.t
-    (0x6c004057L, RvvAluOp.VMSLT),  // vmslt.vx v0, v0, x0, v0.t
-    (0x70000057L, RvvAluOp.VMSLEU), // vmsleu.vv v0, v0, v0, v0.t
-    (0x70004057L, RvvAluOp.VMSLEU), // vmsleu.vx v0, v0, x0, v0.t
-    (0x70003057L, RvvAluOp.VMSLEU), // vmsleu.vi v0, v0, 0, v0.t
-    (0x74000057L, RvvAluOp.VMSLE),  // vmsle.vv v0, v0, v0, v0.t
-    (0x74004057L, RvvAluOp.VMSLE),  // vmsle.vx v0, v0, x0, v0.t
-    (0x74003057L, RvvAluOp.VMSLE),  // vmsle.vi v0, v0, 0, v0.t
-    (0x78004057L, RvvAluOp.VMSGTU), // vmsgtu.vx v0, v0, x0, v0.t
-    (0x78003057L, RvvAluOp.VMSGTU), // vmsgtu.vi v0, v0, 0, v0.t
-    (0x7c004057L, RvvAluOp.VMSGT),  // vmsgt.vx v0, v0, x0, v0.t
-    (0x7c003057L, RvvAluOp.VMSGT),  // vmsgt.vi v0, v0, 0, v0.t
+    (0x60108057L, RvvAluOp.VMSEQ),  // vmseq.vv v0, v1, v1, v0.t
+    (0x60104057L, RvvAluOp.VMSEQ),  // vmseq.vx v0, v1, x0, v0.t
+    (0x60103057L, RvvAluOp.VMSEQ),  // vmseq.vi v0, v1, 0, v0.t
+    (0x64108057L, RvvAluOp.VMSNE),  // vmsne.vv v0, v1, v1, v0.t
+    (0x64104057L, RvvAluOp.VMSNE),  // vmseq.vx v0, v1, x0, v0.t
+    (0x64103057L, RvvAluOp.VMSNE),  // vmsne.vi v0, v1, 0, v0.t
+    (0x68108057L, RvvAluOp.VMSLTU), // vmsltu.vv v0, v1, v1, v0.t
+    (0x68104057L, RvvAluOp.VMSLTU), // vmsltu.vx v0, v1, x0, v0.t
+    (0x6c108057L, RvvAluOp.VMSLT),  // vmslt.vv v0, v1, v1, v0.t
+    (0x6c104057L, RvvAluOp.VMSLT),  // vmslt.vx v0, v1, x0, v0.t
+    (0x70108057L, RvvAluOp.VMSLEU), // vmsleu.vv v0, v1, v1, v0.t
+    (0x70104057L, RvvAluOp.VMSLEU), // vmsleu.vx v0, v1, x0, v0.t
+    (0x70103057L, RvvAluOp.VMSLEU), // vmsleu.vi v0, v1, 0, v0.t
+    (0x74108057L, RvvAluOp.VMSLE),  // vmsle.vv v0, v1, v1, v0.t
+    (0x74104057L, RvvAluOp.VMSLE),  // vmsle.vx v0, v1, x0, v0.t
+    (0x74103057L, RvvAluOp.VMSLE),  // vmsle.vi v0, v1, 0, v0.t
+    (0x78104057L, RvvAluOp.VMSGTU), // vmsgtu.vx v0, v1, x0, v0.t
+    (0x78103057L, RvvAluOp.VMSGTU), // vmsgtu.vi v0, v1, 0, v0.t
+    (0x7c104057L, RvvAluOp.VMSGT),  // vmsgt.vx v0, v1, x0, v0.t
+    (0x7c103057L, RvvAluOp.VMSGT),  // vmsgt.vi v0, v1, 0, v0.t
 
     (0x801080d7L, RvvAluOp.VSADDU), // vsaddu.vv v1, v1, v1, v0.t
     (0x801040d7L, RvvAluOp.VSADDU), // vsaddu.vx v1, v1, x0, v0.t
@@ -365,17 +366,17 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
     (0xac1080d7L, RvvAluOp.VSSRA), // vssra.vv v1, v1, v1, v0.t
     (0xac1040d7L, RvvAluOp.VSSRA), // vssra.vx v1, v1, x0, v0.t
     (0xac1030d7L, RvvAluOp.VSSRA), // vssra.vi v1, v1, 0, v0.t
-    (0xb01080d7L, RvvAluOp.VNSRL), // vnsrl.wv v1, v1, v1, v0.t
+    (0xb02080d7L, RvvAluOp.VNSRL), // vnsrl.wv v1, v2, v1, v0.t
     (0xb01040d7L, RvvAluOp.VNSRL), // vnsrl.wx v1, v1, x0, v0.t
     (0xb01030d7L, RvvAluOp.VNSRL), // vnsrl.wi v1, v1, 0, v0.t
-    (0xb41080d7L, RvvAluOp.VNSRA), // vnsra.wv v1, v1, v1, v0.t
+    (0xb42080d7L, RvvAluOp.VNSRA), // vnsra.wv v1, v2, v1, v0.t
     (0xb41040d7L, RvvAluOp.VNSRA), // vnsra.wx v1, v1, x0, v0.t
     (0xb41030d7L, RvvAluOp.VNSRA), // vnsra.wi v1, v1, 0, v0.t
 
-    (0xb81080d7L, RvvAluOp.VNCLIPU), // vnclipu.wv v1, v1, v1, v0.t
+    (0xb82080d7L, RvvAluOp.VNCLIPU), // vnclipu.wv v1, v2, v1, v0.t
     (0xb81040d7L, RvvAluOp.VNCLIPU), // vnclipu.wx v1, v1, x0, v0.t
     (0xb81030d7L, RvvAluOp.VNCLIPU), // vnclipu.wi v1, v1, 0, v0.t
-    (0xbc1080d7L, RvvAluOp.VNCLIP),  // vnclip.wv v1, v1, v1, v0.t
+    (0xbc2080d7L, RvvAluOp.VNCLIP),  // vnclip.wv v1, v2, v1, v0.t
     (0xbc1040d7L, RvvAluOp.VNCLIP),  // vnclip.wx v1, v1, x0, v0.t
     (0xbc1030d7L, RvvAluOp.VNCLIP)   // vnclip.wi v1, v1, 0, v0.t
   )
@@ -530,8 +531,27 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
       // Decode VAlu ops (with mask) correctly
       test_decode_compressed(dut, test_cases_with_mask)
 
-      // Errata 1: Decode VAlu ops with vd=vm
-      test_decode_compressed(dut, test_cases_errata1)
+      // Masked reductions with vd=v0, vs2!=v0, vs1!=v0, vm=0 are legal per RVV 1.0 Section 5.3.
+      val validMaskedReductionsToV0 = Seq(
+        (0x04109057L, RvvAluOp.VFREDUSUM), // vfredusum.vs v0, v1, v1, v0.t
+        (0x0c109057L, RvvAluOp.VFREDOSUM), // vfredosum.vs v0, v1, v1, v0.t
+        (0x14109057L, RvvAluOp.VFREDMIN),  // vfredmin.vs v0, v1, v1, v0.t
+        (0x1c109057L, RvvAluOp.VFREDMAX)   // vfredmax.vs v0, v1, v1, v0.t
+      )
+      test_decode_compressed(dut, validMaskedReductionsToV0)
+
+      // Reserved encodings (RVV 1.0 Sections 5.2 & 5.3: vd=v0 or vs=v0 with vm=0,
+      // and narrowing .wv with vs2 == vs1) must be rejected by from_uncompressed.
+      val reservedCases = test_cases_errata1.map(_._1) ++ Seq(
+        0xb2000057L, // vnsrl.wv v0, v0, v0
+        0xb6000057L, // vnsra.wv v0, v0, v0
+        0xba000057L, // vnclipu.wv v0, v0, v0
+        0xbe000057L  // vnclip.wv v0, v0, v0
+      )
+      for (inst <- reservedCases) {
+        dut.io.inst.poke(inst)
+        dut.io.out_valid.expect(0)
+      }
     }
   }
 
@@ -696,6 +716,7 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
           ),
           true
         ), // vle8.v v0, (a0)
+        // Masked load/store using v0 is illegal (overlaps mask register v0.t)
         (
           encodeLsu(
             isStore = true,
@@ -708,9 +729,8 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
             width = 0,
             vdOrVs3 = 0
           ),
-          true
+          false
         ), // vse8.v v0, (a0), v0.t
-        // Masked load into v0 is illegal (overlaps mask register v0.t)
         (
           encodeLsu(
             isStore = false,

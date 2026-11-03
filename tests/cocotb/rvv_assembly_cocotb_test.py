@@ -2768,5 +2768,68 @@ async def core_mini_rvv_vill_trap_squashed_load_test(fixture):
     assert await word("vstart_final") == 0
 
 
+@coralflow_test
+async def core_mini_rvv_reserved_inst_test(fixture):
+    """Reserved RVV encodings & illegal operand overlaps must trap (mcause=2)."""
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation("coralnpu_hw/tests/cocotb/rvv/rvv_reserved_inst_test.elf"),
+        ["num_cases", "num_passed", "num_failures", "failures"],
+    )
+
+    hung = False
+    try:
+        await fixture.run_to_halt(timeout_cycles=200000)
+    except AssertionError:
+        hung = True
+        if hasattr(fixture, "core_mini_axi"):
+            cm = fixture.core_mini_axi
+            await cm.dm_request_halt()
+            await cm.dm_wait_for_halted()
+            dpc = await cm.dm_read_reg(_CSR_DPC)
+            logging.error(f"core hung, dpc={hex(dpc)}")
+
+    num_cases = await fixture.read_word("num_cases")
+    num_passed = await fixture.read_word("num_passed")
+    num_failures = await fixture.read_word("num_failures")
+    logging.info(
+        f"rvv_reserved_inst_test: cases={num_cases} passed={num_passed}"
+        f" failures={num_failures} hung={hung}"
+    )
+
+    if num_failures > 0:
+        count = min(num_failures, 96)
+        raw = (await
+               fixture.read("failures",
+                            count * 32)).view(np.uint32).reshape(count, 8)
+        failed_ids = []
+        for row in raw:
+            (
+                case_id,
+                exp_trap,
+                got_trap,
+                got_mcause,
+                got_mepc,
+                exp_pc,
+                got_mtval,
+                exp_mtval,
+            ) = [int(x) for x in row]
+            failed_ids.append(case_id)
+            logging.error(
+                f"  FAIL case {case_id}: exp_trap={exp_trap} got_trap={got_trap}"
+                f" mcause={got_mcause} mepc={hex(got_mepc)} (exp {hex(exp_pc)})"
+                f" mtval={hex(got_mtval)} (exp {hex(exp_mtval)})"
+            )
+        assert False, (
+            f"{num_failures}/{num_cases} cases failed (hung={hung}):"
+            f" {failed_ids}"
+        )
+
+    assert not hung, (
+        f"core hung after {num_cases} cases (passed={num_passed})"
+    )
+    assert num_passed == num_cases and num_cases > 0
+
+
 if __name__ == "__main__":
     coralflow_main()

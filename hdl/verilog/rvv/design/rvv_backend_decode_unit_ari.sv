@@ -75,6 +75,7 @@ module rvv_backend_decode_unit_ari
   logic                           check_vd_part_overlap_vs1;
   logic                           check_vd_overlap_vs2;
   logic                           check_vd_overlap_vs1;
+  logic                           check_vs2_overlap_vs1;
   logic                           check_vs2_part_overlap_vd_2_1;
   logic                           check_vs1_part_overlap_vd_2_1;
   logic                           check_vs2_part_overlap_vd_4_1;
@@ -3147,13 +3148,28 @@ module rvv_backend_decode_unit_ari
       check_vd_overlap_vs1 = 'b0;
   end
 
+  // vs2 cannot overlap vs1 when EEW_vs2 != EEW_vs1
+  // check_vs2_overlap_vs1=1 means that check pass (vs2 group does NOT overlap vs1 group)
+  always_comb begin
+    if((emul_vs2==EMUL8)|(emul_vs1==EMUL8)) 
+      check_vs2_overlap_vs1 = !(inst_vs2[`REGIDX_WIDTH-1:3]==inst_vs1[`REGIDX_WIDTH-1:3]);
+    else if((emul_vs2==EMUL4)|(emul_vs1==EMUL4)) 
+      check_vs2_overlap_vs1 = !(inst_vs2[`REGIDX_WIDTH-1:2]==inst_vs1[`REGIDX_WIDTH-1:2]);
+    else if((emul_vs2==EMUL2)|(emul_vs1==EMUL2)) 
+      check_vs2_overlap_vs1 = !(inst_vs2[`REGIDX_WIDTH-1:1]==inst_vs1[`REGIDX_WIDTH-1:1]);
+    else if((emul_vs2==EMUL1)|(emul_vs1==EMUL1)) 
+      check_vs2_overlap_vs1 = (inst_vs2!=inst_vs1);
+    else 
+      check_vs2_overlap_vs1 = 'b0;
+  end
+
   // check whether vs2 group partially overlaps vd group for EEW_vd:EEW_vs2=2:1
   always_comb begin
     check_vs2_part_overlap_vd_2_1 = 'b0;
 
     case(emul_vd)
       EMUL1: begin
-        check_vs2_part_overlap_vd_2_1 = 1'b1;
+        check_vs2_part_overlap_vd_2_1 = (inst_vd!=inst_vs2);
       end
       EMUL2: begin
         check_vs2_part_overlap_vd_2_1 = !((inst_vd[`REGIDX_WIDTH-1:1]==inst_vs2[`REGIDX_WIDTH-1:1])&(inst_vs2[0]!=1'b1));
@@ -3173,7 +3189,7 @@ module rvv_backend_decode_unit_ari
 
     case(emul_vd)
       EMUL1: begin
-        check_vs1_part_overlap_vd_2_1 = 1'b1;
+        check_vs1_part_overlap_vd_2_1 = (inst_vd!=inst_vs1);
       end
       EMUL2: begin
         check_vs1_part_overlap_vd_2_1 = !((inst_vd[`REGIDX_WIDTH-1:1]==inst_vs1[`REGIDX_WIDTH-1:1])&(inst_vs1[0]!=1'b1));
@@ -3193,10 +3209,10 @@ module rvv_backend_decode_unit_ari
 
     case(emul_vd)
       EMUL1: begin
-        check_vs2_part_overlap_vd_4_1 = 1'b1;
+        check_vs2_part_overlap_vd_4_1 = (inst_vd!=inst_vs2);
       end
       EMUL2: begin
-        check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGIDX_WIDTH-1:1]==inst_vs2[`REGIDX_WIDTH-1:1])&(inst_vs2[0]!=1'b1));
+        check_vs2_part_overlap_vd_4_1 = !(inst_vd[`REGIDX_WIDTH-1:1]==inst_vs2[`REGIDX_WIDTH-1:1]);
       end
       EMUL4: begin
         check_vs2_part_overlap_vd_4_1 = !((inst_vd[`REGIDX_WIDTH-1:2]==inst_vs2[`REGIDX_WIDTH-1:2])&(inst_vs2[1:0]!=2'b11));
@@ -3296,7 +3312,7 @@ module rvv_backend_decode_unit_ari
           VNSRA,
           VNCLIPU,
           VNCLIP: begin
-            check_special = check_vd_overlap_v0&check_vd_part_overlap_vs2;
+            check_special = check_vd_overlap_v0&check_vd_part_overlap_vs2&check_vs2_overlap_vs1;
           end
           
           VMERGE_VMV: begin
@@ -3306,10 +3322,16 @@ module rvv_backend_decode_unit_ari
                
           VWREDSUMU,
           VWREDSUM: begin
-            check_special = (csr_vstart=='b0);
+            check_special = (csr_vstart=='b0)&check_vs2_overlap_vs1;
           end
 
-          VSLIDEUP_RGATHEREI16,
+          VSLIDEUP_RGATHEREI16: begin
+            // destination register group cannot overlap the source register group,
+            // and when SEW != 16, vs2 (EEW=SEW) cannot overlap vs1 (EEW=16)
+            check_special = check_vd_overlap_v0&check_vd_overlap_vs2&check_vd_overlap_vs1&
+                            ((csr_sew==SEW16) | check_vs2_overlap_vs1);
+          end
+
           VRGATHER: begin
             // destination register group cannot overlap the source register group
             check_special = check_vd_overlap_v0&check_vd_overlap_vs2&check_vd_overlap_vs1;                
@@ -3450,12 +3472,16 @@ module rvv_backend_decode_unit_ari
           VWSUB,
           VWMUL,
           VWMULU,
-          VWMULSU,
+          VWMULSU: begin
+            // overlap constraint
+            check_special = check_vd_overlap_v0&check_vs2_part_overlap_vd_2_1&check_vs1_part_overlap_vd_2_1;                
+          end
+
           VWMACCU,
           VWMACC,
           VWMACCSU: begin
-            // overlap constraint
-            check_special = check_vd_overlap_v0&check_vs2_part_overlap_vd_2_1&check_vs1_part_overlap_vd_2_1;                
+            // vd is also a source accumulator with EEW=2*SEW; cannot overlap vs1/vs2 (EEW=SEW)
+            check_special = check_vd_overlap_v0&check_vd_overlap_vs2&check_vd_overlap_vs1;
           end
 
           VWADDU_W,
@@ -3463,7 +3489,7 @@ module rvv_backend_decode_unit_ari
           VWADD_W,
           VWSUB_W: begin
             // overlap constraint
-            check_special = check_vd_overlap_v0&check_vs1_part_overlap_vd_2_1;                
+            check_special = check_vd_overlap_v0&check_vs1_part_overlap_vd_2_1&check_vs2_overlap_vs1;                
           end
           
           VXUNARY0: begin
@@ -3551,8 +3577,9 @@ module rvv_backend_decode_unit_ari
           end
 
           VCOMPRESS_VTMVTV: begin
-            // destination register group cannot overlap the source register group
-            check_special = (csr_vstart=='b0)&inst_vm&check_vd_overlap_vs2&check_vd_overlap_vs1;
+            // destination register group cannot overlap the source register group,
+            // and vs2 (EEW=SEW) cannot overlap mask vs1 (EEW=1)
+            check_special = (csr_vstart=='b0)&inst_vm&check_vd_overlap_vs2&check_vd_overlap_vs1&check_vs2_overlap_vs1;
           end
         endcase
       end
@@ -3564,13 +3591,17 @@ module rvv_backend_decode_unit_ari
           VWSUB,
           VWMUL,
           VWMULU,
-          VWMULSU,
+          VWMULSU: begin
+            // overlap constraint
+            check_special = check_vd_overlap_v0&check_vs2_part_overlap_vd_2_1;                
+          end
+
           VWMACCU,
           VWMACC,
           VWMACCSU,
           VWMACCUS: begin
-            // overlap constraint
-            check_special = check_vd_overlap_v0&check_vs2_part_overlap_vd_2_1;                
+            // vd is also a source accumulator with EEW=2*SEW; cannot overlap vs2 (EEW=SEW)
+            check_special = check_vd_overlap_v0&check_vd_overlap_vs2;
           end
 
           VWADDU_W,
@@ -3629,7 +3660,7 @@ module rvv_backend_decode_unit_ari
         case(inst_funct6)
           `ifdef ZVFBFWMA_ON
           VFWMACCBF16: begin
-            check_special = check_vd_overlap_v0&check_vs2_part_overlap_vd_2_1&check_vs1_part_overlap_vd_2_1;
+            check_special = check_vd_overlap_v0&check_vd_overlap_vs2&check_vd_overlap_vs1;
           end
           `endif
 
@@ -3728,7 +3759,7 @@ module rvv_backend_decode_unit_ari
         case(inst_funct6)
           `ifdef ZVFBFWMA_ON
           VFWMACCBF16: begin
-            check_special = check_vd_overlap_v0&check_vs2_part_overlap_vd_2_1;
+            check_special = check_vd_overlap_v0&check_vd_overlap_vs2;
           end
           `endif
 
