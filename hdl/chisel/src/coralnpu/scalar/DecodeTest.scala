@@ -61,6 +61,27 @@ class DecodeInstructionSpec extends AnyFreeSpec with Matchers with ChiselSim {
       }
     }
 
+    "should decode all float and Zfbfmin table instructions as valid" in {
+      val fpParams = new Parameters()
+      fpParams.enableFloat = true
+      fpParams.enableZfbfmin = true
+      simulate(new DecodeTester(fpParams)) { dut =>
+        val tbl = FloatInstruction.table(fpParams)
+        for ((name, pat) <- tbl) {
+          dut.io.inst.poke(pat.value.U(32.W))
+          dut.clock.step()
+          assert(
+            dut.io.undef.peek().litValue == 0,
+            s"Float instruction $name (0x${pat.value.toString(16)}) decoded as undef"
+          )
+          assert(
+            dut.io.floatValid.peek().litValue == 1,
+            s"Float instruction $name (0x${pat.value.toString(16)}) did not set float.valid"
+          )
+        }
+      }
+    }
+
     "should not alias R4 rs3 with OP-FP funct5 in FloatInstruction.decode" in {
       val fpParams = new Parameters()
       fpParams.enableFloat = true
