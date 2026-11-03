@@ -104,6 +104,9 @@ template_rule(
             "srcs": ["lsu_fault_cases.cc"],
             "hdrs": ["rvv_lsu_test_utils.h"],
         },
+        "load_unit_ff_fault": {
+            "srcs": ["load_unit_ff_fault.cc"],
+        },
         "load_store8_fault": {
             "srcs": ["load_store8_fault.cc"],
         },
@@ -291,6 +294,7 @@ filegroup(
         ":load_store_whole_register.elf",
         ":load_stride_vtype.elf",
         ":load_unit_ff.elf",
+        ":load_unit_ff_fault.elf",
         ":load_unit_masked.elf",
         ":load_unit_vtype.elf",
         ":lsu_decode_test.elf",

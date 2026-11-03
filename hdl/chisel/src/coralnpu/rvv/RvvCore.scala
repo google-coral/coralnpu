@@ -55,7 +55,11 @@ object GenerateCoreShimSource {
         |    input logic vxsat,
         |    input logic [2:0] frm,
         |    input logic flush,
-        |""".stripMargin.replaceAll("VSTART_LEN", vstartLen.toString)
+        |    input logic lsu_vl_update_valid,
+        |    input logic [VL_LEN:0] lsu_vl_update_data,
+        |""".stripMargin
+        .replaceAll("VSTART_LEN", vstartLen.toString)
+        .replaceAll("VL_LEN", vlLen.toString)
 
     // Add instruction interface inputs
     for (i <- 0 until instructionLanes) {
@@ -427,6 +431,8 @@ object GenerateCoreShimSource {
         |      .vxsat(vxsat),
         |      .frm(frm),
         |      .flush(flush),
+        |      .lsu_vl_update_valid(lsu_vl_update_valid),
+        |      .lsu_vl_update_data(lsu_vl_update_data),
         |      .inst_valid(inst_valid),
         |      .inst_data(inst_data),
         |      .inst_ready(inst_ready),
@@ -703,12 +709,14 @@ class RvvCoreWrapper(p: Parameters)
     val clk  = Input(Clock())
     val rstn = Input(AsyncReset())
 
-    val vstart       = Input(UInt(log2Ceil(p.rvvVlen).W))
-    val vstart_valid = Input(Bool())
-    val vxrm         = Input(UInt(2.W))
-    val vxsat        = Input(UInt(1.W))
-    val frm          = Input(UInt(3.W))
-    val flush        = Input(Bool())
+    val vstart              = Input(UInt(log2Ceil(p.rvvVlen).W))
+    val vstart_valid        = Input(Bool())
+    val vxrm                = Input(UInt(2.W))
+    val vxsat               = Input(UInt(1.W))
+    val frm                 = Input(UInt(3.W))
+    val flush               = Input(Bool())
+    val lsu_vl_update_valid = Input(Bool())
+    val lsu_vl_update_data  = Input(UInt(log2Ceil(p.rvvVlen + 1).W))
 
     val inst = Vec(p.instructionLanes, Flipped(Decoupled(new RvvCompressedInstruction(p))))
 
@@ -982,9 +990,11 @@ class RvvCoreShim(p: Parameters) extends Module {
 
   val rstn           = (!reset.asBool).asAsyncReset
   val rvvCoreWrapper = Module(new RvvCoreWrapper(p))
-  rvvCoreWrapper.io.clk   := clock
-  rvvCoreWrapper.io.rstn  := rstn
-  rvvCoreWrapper.io.flush := io.flush
+  rvvCoreWrapper.io.clk                 := clock
+  rvvCoreWrapper.io.rstn                := rstn
+  rvvCoreWrapper.io.flush               := io.flush
+  rvvCoreWrapper.io.lsu_vl_update_valid := io.vl_update.valid
+  rvvCoreWrapper.io.lsu_vl_update_data  := io.vl_update.bits
   rvvCoreWrapper.io.inst <> io.inst
   rvvCoreWrapper.io.rs <> io.rs
   rvvCoreWrapper.io.rd <> io.rd
@@ -1040,7 +1050,8 @@ class RvvCoreShim(p: Parameters) extends Module {
     !rvvCoreWrapper.io.vcsr_valid &&
     !io.csr.vstart_write.valid &&
     !io.csr.vxrm_write.valid &&
-    !io.csr.vxsat_write.valid
+    !io.csr.vxsat_write.valid &&
+    !io.vl_update.valid
   io.configState.bits.vl        := rvvCoreWrapper.io.configVl
   io.configState.bits.vstart    := rvvCoreWrapper.io.configVstart
   io.configState.bits.ma        := rvvCoreWrapper.io.configMa

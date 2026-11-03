@@ -497,6 +497,8 @@ class SCore(p: Parameters) extends Module {
     dispatch.io.rvvState.get         := io.rvvcore.get.configState
     dispatch.io.rvvIdle.get          := io.rvvcore.get.rvv_idle
     dispatch.io.rvvQueueCapacity.get := io.rvvcore.get.queue_capacity
+    dispatch.io.lsuFfLoadActive.get  := lsu.io.ffLoadActive.get
+    io.rvvcore.get.vl_update         := lsu.io.vlUpdate.get
 
     // Register inputs
     io.rvvcore.get.rs := regfile.io.readData

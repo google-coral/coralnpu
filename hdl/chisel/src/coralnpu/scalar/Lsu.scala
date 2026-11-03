@@ -46,8 +46,12 @@ class Lsu(p: Parameters) extends Module {
     val lsu2vme = Option.when(p.enableVme)(Decoupled(new Lsu2Vme(p)))
 
     // Pipeline control and status.
-    val flush         = new IFlushIO(p)
-    val fault         = Valid(new LsuFaultInfo(p))
+    val flush = new IFlushIO(p)
+    val fault = Valid(new LsuFaultInfo(p))
+
+    // RVV config state
+    val vlUpdate      = Option.when(p.enableRvv)(Output(Valid(UInt(log2Ceil(p.rvvVlen + 1).W))))
+    val ffLoadActive  = Option.when(p.enableRvv)(Output(Bool()))
     val queueCapacity = Output(UInt(3.W))
     val active        = Output(Bool())
     val storeComplete = Output(Valid(UInt(p.programCounterBits.W)))
@@ -157,6 +161,15 @@ class LsuCmd(p: Parameters) extends Bundle {
     }
   }
 
+  def isFaultOnlyFirst(): Bool = {
+    if (p.enableRvv) {
+      (umop.get === "b10000".U) &&
+      (op === LsuOp.VLOAD_UNIT)
+    } else {
+      false.B
+    }
+  }
+
   override def toPrintable: Printable = {
     cf"LsuCmd(store -> ${store}, addr -> 0x${addr}%x, op -> ${op}, " +
       cf"pc -> 0x${pc}%x, elemWidth -> ${elemWidth}, nfields -> ${nfields})"
@@ -187,7 +200,8 @@ class LsuUOp(p: Parameters) extends Bundle {
   val vl             = Option.when(p.enableRvv) { UInt(log2Ceil(p.rvvVlen + 1).W) }
   val vstart         = Option.when(p.enableRvv) { UInt(log2Ceil(p.rvvVlen).W) }
   // Whether or not a vector L/S instruction is masked. Unused in other ops.
-  val masked = Option.when(p.enableRvv) { Bool() }
+  val masked         = Option.when(p.enableRvv) { Bool() }
+  val faultOnlyFirst = Option.when(p.enableRvv) { Bool() }
 
   // Inclusive lower bound: cells at indices < startCell are pre-start (inactive).
   val startCell = Option.when(p.enableRvv) { UInt(ctrWidth.W) }
@@ -358,8 +372,9 @@ object LsuUOp {
           cmd.rs2.get =/= 0.U &&
           sbus.data(i) === 0.U
       )
-      result.masked.get        := isVector && !cmd.vm.get && !isTile
-      result.initAsConstStride := isStrided || isIndexed
+      result.masked.get         := isVector && !cmd.vm.get && !isTile
+      result.faultOnlyFirst.get := cmd.isFaultOnlyFirst()
+      result.initAsConstStride  := isStrided || isIndexed
 
       val rawSegMult    = cmd.nfields.get +& 1.U
       val segMultiplier = Mux(isMask || isWholeReg || isTile, 1.U, rawSegMult)
@@ -778,6 +793,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
 
     val vector = Option.when(p.enableRvv)(new Bundle {
       val isVme                     = Option.when(p.enableVme)(Bool())
+      val faultOnlyFirst            = Bool()
       val indexSliceSel             = new IndexSliceSel
       val segmentStep               = UInt(3.W)
       val emulStep                  = UInt(indexWidth.W)
@@ -1004,6 +1020,9 @@ class LsuSuperSlot(p: Parameters) extends Module {
       val vectorWritebackValid = Option
         .when(p.enableRvv) {
           vector.get.writebackActiveCells.valid &&
+          (!vector.get.faultOnlyFirst || cells.forall { c =>
+            c.state === LsuCellState.DONE || c.state === LsuCellState.W_WB
+          }) &&
           vector.get.writebackActiveCells.bits
             .map { x =>
               // TODO: subvector mask
@@ -1307,9 +1326,10 @@ class LsuSuperSlot(p: Parameters) extends Module {
       )
       ret.vector.foreach { x =>
         val curr = vector.get
-        x.endCell       := curr.endCell
-        x.faultingCell  := Mux(fault && !faulted, busRespCellIndex.get, curr.faultingCell)
-        x.dataSubvector := Mux(
+        x.faultOnlyFirst := curr.faultOnlyFirst
+        x.endCell        := curr.endCell
+        x.faultingCell   := Mux(fault && !faulted, faultCurrCell.get, curr.faultingCell)
+        x.dataSubvector  := Mux(
           vectorDataValid.get,
           curr.dataSubvector.next(),
           curr.dataSubvector
@@ -1672,7 +1692,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
         )
 
         x.isVme.foreach(_ := isTile)
-        x.indexSliceSel := IndexSliceSel.fromEew(
+        x.faultOnlyFirst := uop.faultOnlyFirst.getOrElse(false.B)
+        x.indexSliceSel  := IndexSliceSel.fromEew(
           dataEew = Mux(isIndexed, indexedElemWidthEnum, elemWidthEnum),
           indexEew = Mux(isIndexed, elemWidthEnum, LsuVectorElementWidth.E8)
         )
@@ -1769,6 +1790,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
       }
       ret.vector.foreach { x =>
         x.isVme.foreach(_ := false.B)
+        x.faultOnlyFirst            := false.B
         x.indexSliceSel             := ret.IndexSliceSel()
         x.segmentStep               := 0.U
         x.emulStep                  := 0.U
@@ -1807,6 +1829,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
     val active          = Bool()
     val storeComplete   = Bool()
     val fault           = Output(Valid(new LsuFaultInfo(p)))
+    val vlUpdate        = Option.when(p.enableRvv)(Output(Valid(UInt(log2Ceil(p.rvvVlen + 1).W))))
+    val ffActive        = Option.when(p.enableRvv)(Output(Bool()))
   })
 
   val state    = RegInit(State())
@@ -1887,6 +1911,44 @@ class LsuSuperSlot(p: Parameters) extends Module {
   val busRespMask      = respEntry.mask
   val busRespCellIndex = respEntry.cellIndex
 
+  val faultElemAndCell = Option.when(p.enableRvv) {
+    val rawCell = busRespCellIndex.get
+    // 1. Divide rawCell by (NF + 1) in [1..8]
+    val divByNf = MuxLookup(state.vector.get.dataSegment.max, rawCell)(
+      Seq(
+        0.U -> rawCell,
+        1.U -> (rawCell >> 1),
+        2.U -> (rawCell / 3.U),
+        3.U -> (rawCell >> 2),
+        4.U -> (rawCell / 5.U),
+        5.U -> (rawCell / 6.U),
+        6.U -> (rawCell / 7.U),
+        7.U -> (rawCell >> 3)
+      )
+    )
+    // 2. Right-shift by element width (elemBytes = segmentStep: 1, 2, or 4)
+    val elemIdx = MuxLookup(state.vector.get.segmentStep, divByNf)(
+      Seq(
+        1.U -> divByNf,
+        2.U -> (divByNf >> 1),
+        4.U -> (divByNf >> 2)
+      )
+    )
+    val elemBytesOffset = MuxLookup(state.vector.get.segmentStep, elemIdx)(
+      Seq(
+        1.U -> elemIdx,
+        2.U -> (elemIdx << 1),
+        4.U -> (elemIdx << 2)
+      )
+    )
+    val segStartCell =
+      (elemBytesOffset * (state.vector.get.dataSegment.max +& 1.U))(ctrWidth - 1, 0)
+    val currCell = Mux(state.vector.get.faultOnlyFirst, segStartCell, rawCell)
+    (elemIdx, currCell)
+  }
+  val faultingElem  = faultElemAndCell.map(_._1)
+  val faultCurrCell = faultElemAndCell.map(_._2)
+
   val (writebackReq, writebacks) = state.maybeWriteback()
   io.intWriteback.valid     := writebackReq.integer.valid
   io.intWriteback.bits.addr := state.rd
@@ -1901,7 +1963,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
     x.valid := writebackReq.vector.get.valid && !state.vector
       .map(_.isVme.getOrElse(false.B))
       .getOrElse(false.B)
-    val faultLimit  = Mux(state.faulted, state.vector.get.faultingCell, busRespCellIndex.get)
+    val faultLimit  = Mux(state.faulted, state.vector.get.faultingCell, faultCurrCell.get)
     val isFault     = state.faulted || newFault
     val validLimit  = Mux(isFault, faultLimit, state.vector.get.endCell)
     val ffTailIndex = PopCount(VecInit.tabulate(p.rvvVlenb) { i =>
@@ -1965,6 +2027,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
   io.active := !state.cells.forall { x =>
     x.state === LsuCellState.DONE
   }
+
   // storeComplete is raised iff we've completed all cells and writebacks
   io.storeComplete := state.write && !state.cells.forall { x =>
     x.state === LsuCellState.DONE
@@ -1982,43 +2045,33 @@ class LsuSuperSlot(p: Parameters) extends Module {
       state.vector.get.isVme.get
   }
 
-  val isNewFault = io.busResp.valid && io.busResp.bits.fault && !state.faulted
+  val isNewFault       = io.busResp.valid && io.busResp.bits.fault && !state.faulted
+  val isFfNonZeroFault = isNewFault && state.vector
+    .map(v => v.faultOnlyFirst && (faultingElem.get =/= 0.U))
+    .getOrElse(false.B)
+
+  io.vlUpdate.foreach { v =>
+    v.valid := isFfNonZeroFault
+    v.bits  := faultingElem.get(log2Ceil(p.rvvVlen + 1) - 1, 0)
+  }
+  io.ffActive.foreach { f =>
+    f := state.vector.get.faultOnlyFirst && !state.isDone
+  }
 
   val rawFault = MakeWireBundle[ValidIO[FaultInfo]](
     Valid(new FaultInfo(p)),
-    _.valid      -> isNewFault,
+    _.valid      -> (isNewFault && !isFfNonZeroFault),
     _.bits.write -> state.write,
     _.bits.addr  -> respEntry.addr,
     _.bits.epc   -> state.pc
   )
 
   val vstartVal = Option.when(p.enableRvv) {
-    val isVector     = state.vector.get.segmentStep =/= 0.U
-    val faultingCell = busRespCellIndex.get
-
-    // 1. Divide faultingCell by (NF + 1) in [1..8]
-    val divByNf = MuxLookup(state.vector.get.dataSegment.max, faultingCell)(
-      Seq(
-        0.U -> faultingCell,
-        1.U -> (faultingCell >> 1),
-        2.U -> (faultingCell / 3.U),
-        3.U -> (faultingCell >> 2),
-        4.U -> (faultingCell / 5.U),
-        5.U -> (faultingCell / 6.U),
-        6.U -> (faultingCell / 7.U),
-        7.U -> (faultingCell >> 3)
-      )
+    val isVector = state.vector.get.segmentStep =/= 0.U
+    MakeValid(
+      isVector && isNewFault && !isFfNonZeroFault,
+      faultingElem.get(log2Ceil(p.rvvVlen) - 1, 0)
     )
-
-    // 2. Right-shift by element width (elemBytes = segmentStep: 1, 2, or 4)
-    val vstart = MuxLookup(state.vector.get.segmentStep, divByNf)(
-      Seq(
-        1.U -> divByNf,
-        2.U -> (divByNf >> 1),
-        4.U -> (divByNf >> 2)
-      )
-    )
-    MakeValid(isVector && isNewFault, vstart(log2Ceil(p.rvvVlen) - 1, 0))
   }
 
   io.fault := LsuFaultInfo(p)(rawFault, vstartVal)
@@ -2122,6 +2175,22 @@ class LsuV3(p: Parameters) extends Lsu(p) {
 
   // Immediate RS flush on initial fault or pipeline flush
   rs.io.flush := io.pipelineFlush || fireNewFault
+
+  if (p.enableRvv) {
+    val rsEntries = math.max(4, p.instructionLanes)
+    val rsFfCount = RegInit(0.U(log2Ceil(rsEntries + 1).W))
+    val rsFfEnq   = PopCount(ops.map(o => o.valid && o.bits.faultOnlyFirst.get))
+    val rsFfDeq   = (slot.io.uop.fire && slot.io.uop.bits.faultOnlyFirst.get).asUInt
+    rsFfCount := Mux(rs.io.flush, 0.U, rsFfCount + rsFfEnq - rsFfDeq)
+
+    val rawVlUpdateValid =
+      slot.io.vlUpdate.get.valid && !isFaulted && !isFlushing && !io.pipelineFlush
+    val vlUpdateReg = Pipe(rawVlUpdateValid, slot.io.vlUpdate.get.bits, 1)
+    io.vlUpdate.get.valid := vlUpdateReg.valid && !isFlushing && !io.pipelineFlush
+    io.vlUpdate.get.bits  := vlUpdateReg.bits
+    io.ffLoadActive.get   :=
+      (rsFfCount =/= 0.U) || slot.io.ffActive.get || vlUpdateReg.valid
+  }
 
   // Block dispatch from rs while faulted or flushing
   val canDispatch = !isFaulted && !isFlushing && !io.pipelineFlush

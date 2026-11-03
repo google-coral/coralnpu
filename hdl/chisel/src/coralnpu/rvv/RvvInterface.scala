@@ -117,6 +117,7 @@ class RvvCoreIO(p: Parameters) extends Bundle {
   val queue_capacity = Output(UInt(4.W))
   val flush          = Input(Bool())
   val clear_vstart   = Input(Bool())
+  val vl_update      = Input(Valid(UInt(log2Ceil(p.rvvVlen + 1).W)))
 
   // ROB to RT stage writes.
   val rd_rob2rt_o = Vec(p.rvvRetireLanes, new Rob2Rt(p))

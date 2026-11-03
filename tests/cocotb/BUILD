@@ -772,6 +772,7 @@ coralflow_test(
     exclude_testcases = {
         "uvm": [
             "load_store8_fault",
+            "load_unit_ff_fault",
             "lsu_fault_cases",
         ],
     },
@@ -797,6 +798,7 @@ coralflow_test(
     exclude_testcases = {
         "uvm": [
             "load_store8_fault",
+            "load_unit_ff_fault",
             "lsu_fault_cases",
         ],
     },

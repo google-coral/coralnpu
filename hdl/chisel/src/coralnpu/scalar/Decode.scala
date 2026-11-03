@@ -372,6 +372,7 @@ class Dispatch(p: Parameters) extends Module {
     val rvvState         = Option.when(p.enableRvv)(Input(Valid(new RvvConfigState(p))))
     val rvvIdle          = Option.when(p.enableRvv)(Input(Bool()))
     val rvvQueueCapacity = Option.when(p.enableRvv)(Input(UInt(4.W)))
+    val lsuFfLoadActive  = Option.when(p.enableRvv)(Input(Bool()))
     val mstatusMs        = Option.when(p.enableVme)(Input(UInt(2.W)))
     val vmeDiscard       = Option.when(p.enableVme)(Output(Bool()))
     val vmeMsDirty       = Option.when(p.enableVme)(Output(Bool()))
@@ -533,15 +534,20 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   }
 
   val rvvConfigInterlock = if (p.enableRvv) {
+    val ffLoadChange =
+      decodedInsts.map(x => x.rvv.get.valid && x.rvv.get.bits.isFaultOnlyFirstLoad())
+    val ffPending      = ffLoadChange.scan(io.lsuFfLoadActive.get)(_ || _)
     val canDispatchRvv = (0 until p.instructionLanes).map(i =>
-      !decodedInsts(i).rvv.get.valid ||                // Don't lock non-rvv
+      (!decodedInsts(i).rvv.get.valid ||               // Don't lock non-rvv
         !decodedInsts(i).rvv.get.bits.isLoadStore() || // Non-LSU can handle change
         // Wait for any older RVV instruction in an earlier lane or in RvvFrontEnd
         // to be validated before dispatching a vector load/store into the scalar LSU,
         // and require valid vtype state for non-whole-register loads/stores.
         (!rvvVstartCleared.get(i) &&
           io.rvvState.get.valid &&
-          (decodedInsts(i).rvv.get.bits.isWholeRegisterLoadStore() || !configInvalid(i)))
+          (decodedInsts(i).rvv.get.bits.isWholeRegisterLoadStore() || !configInvalid(i)))) &&
+        !(decodedInsts(i).rvv.get.valid && ffPending(i)) && // Wait for fault-only-first vl update
+        !(decodedInsts(i).isCsr() && ffPending(i))          // Wait before reading CSR vl
     )
     canDispatchRvv
   } else {

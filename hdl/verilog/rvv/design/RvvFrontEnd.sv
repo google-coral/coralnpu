@@ -36,6 +36,8 @@ module RvvFrontEnd#(parameter N = 4,
   input logic [`VCSR_VXSAT_WIDTH-1:0] vxsat_i,
   input logic [2:0]                   frm_i,
   input logic                         flush_i,
+  input logic                         lsu_vl_update_valid_i,
+  input logic [`VL_WIDTH-1:0]         lsu_vl_update_data_i,
 
   // Instruction input.
   input logic [N-1:0] inst_valid_i,
@@ -149,7 +151,6 @@ module RvvFrontEnd#(parameter N = 4,
   RegDataT vlmax [N-1:0];
   logic vconfig_change [N-1:0];
   logic setvl_reserved_bits [N-1:0];
-  logic [`VL_WIDTH-1:0] vl_minus_one [N-1:0];
 `ifdef ZVT_ON
   // tm = min(tm, LMUL*EVE, ETE) = min(tm, 16)
   localparam logic [13:0] TILE_EDGE_DIM = 14'd16;
@@ -162,6 +163,82 @@ module RvvFrontEnd#(parameter N = 4,
   logic is_msettn [N-1:0];
   logic is_msettype [N-1:0];
 `endif
+
+  function automatic RVVLMUL compute_reduced_lmul(
+      input RVVSEW sew,
+      input logic [`VL_WIDTH-1:0] vl,
+      input RVVLMUL default_lmul
+  );
+    logic [`VL_WIDTH-1:0] vl_m1;
+    compute_reduced_lmul = default_lmul;
+    vl_m1 = (vl == (`VL_WIDTH)'('b0)) ? (`VL_WIDTH)'('b0) : (vl - (`VL_WIDTH)'('b1));
+    unique case (sew)
+      SEW8: begin
+        if (vl_m1[`VL_WIDTH-2+:2] != 'b00) begin
+          // vl from VLEN/2+1 to VLEN
+          compute_reduced_lmul = LMUL8;
+        end else if (vl_m1[`VL_WIDTH-3] == 'b1) begin
+          // vl from VLEN/4+1 to VLEN/2
+          compute_reduced_lmul = LMUL4;
+        end else if (vl_m1[`VL_WIDTH-4] == 'b1) begin
+          // vl from VLEN/8+1 to VLEN/4
+          compute_reduced_lmul = LMUL2;
+        end else if (vl_m1[`VL_WIDTH-5] == 'b1) begin
+          // vl from VLEN/16+1 to VLEN/8
+          compute_reduced_lmul = LMUL1;
+        end else if (vl_m1[`VL_WIDTH-6] == 'b1) begin
+          // vl from VLEN/32+1 to VLEN/16
+          compute_reduced_lmul = LMUL1_2;
+        end else begin
+          // vl from 0 to VLEN/32
+          compute_reduced_lmul = LMUL1_4;
+        end
+      end
+      SEW16: begin
+        if (vl_m1[`VL_WIDTH-3+:2] != 'b00) begin
+          // vl from VLEN/4+1 to VLEN/2
+          compute_reduced_lmul = LMUL8;
+        end else if (vl_m1[`VL_WIDTH-4] == 'b1) begin
+          // vl from VLEN/8+1 to VLEN/4
+          compute_reduced_lmul = LMUL4;
+        end else if (vl_m1[`VL_WIDTH-5] == 'b1) begin
+          // vl from VLEN/16+1 to VLEN/8
+          compute_reduced_lmul = LMUL2;
+        end else if (vl_m1[`VL_WIDTH-6] == 'b1) begin
+          // vl from VLEN/32+1 to VLEN/16
+          compute_reduced_lmul = LMUL1;
+        end else if (vl_m1[`VL_WIDTH-7] == 'b1) begin
+          // vl from VLEN/64+1 to VLEN/32
+          compute_reduced_lmul = LMUL1_2;
+        end else begin
+          // vl from 0 to VLEN/64
+          compute_reduced_lmul = LMUL1_4;
+        end
+      end
+      SEW32: begin
+        if (vl_m1[`VL_WIDTH-4+:2] != 'b00) begin
+          // vl from VLEN/8+1 to VLEN/4
+          compute_reduced_lmul = LMUL8;
+        end else if (vl_m1[`VL_WIDTH-5] == 'b1) begin
+          // vl from VLEN/16+1 to VLEN/8
+          compute_reduced_lmul = LMUL4;
+        end else if (vl_m1[`VL_WIDTH-6] == 'b1) begin
+          // vl from VLEN/32+1 to VLEN/16
+          compute_reduced_lmul = LMUL2;
+        end else if (vl_m1[`VL_WIDTH-7] == 'b1) begin
+          // vl from VLEN/64+1 to VLEN/32
+          compute_reduced_lmul = LMUL1;
+        end else if (vl_m1[`VL_WIDTH-8] == 'b1) begin
+          // vl from VLEN/128+1 to VLEN/64
+          compute_reduced_lmul = LMUL1_2;
+        end else begin
+          // vl from 0 to VLEN/128
+          compute_reduced_lmul = LMUL1_4;
+        end
+      end
+    endcase
+  endfunction
+
   always_comb begin
     inst_config_state[0] = config_state_q;
     if (vstart_valid_i) begin
@@ -516,74 +593,11 @@ module RvvFrontEnd#(parameter N = 4,
           //   we don't increase it, so we cannot generate emul>8.
           // - we must keep lmul valid for the current sew, like lmul>=m1 for
           //   sew=e32. The resulting enul must also be valid.
-          vl_minus_one[i] = (inst_config_state[i+1].vl == (`VL_WIDTH)'('b0)) ?
-              (`VL_WIDTH)'('b0) :
-              inst_config_state[i+1].vl - (`VL_WIDTH)'('b1);
-          unique case (inst_config_state[i+1].sew)
-            SEW8: begin
-              if (vl_minus_one[i][`VL_WIDTH-2+:2] != 'b00) begin
-                // vl from VLEN/2+1 to VLEN
-                inst_config_state[i+1].lmul = LMUL8;
-              end else if (vl_minus_one[i][`VL_WIDTH-3] == 'b1) begin
-                // vl from VLEN/4+1 to VLEN/2
-                inst_config_state[i+1].lmul = LMUL4;
-              end else if (vl_minus_one[i][`VL_WIDTH-4] == 'b1) begin
-                // vl from VLEN/8+1 to VLEN/4
-                inst_config_state[i+1].lmul = LMUL2;
-              end else if (vl_minus_one[i][`VL_WIDTH-5] == 'b1) begin
-                // vl from VLEN/16+1 to VLEN/8
-                inst_config_state[i+1].lmul = LMUL1;
-              end else if (vl_minus_one[i][`VL_WIDTH-6] == 'b1) begin
-                // vl from VLEN/32+1 to VLEN/16
-                inst_config_state[i+1].lmul = LMUL1_2;
-              end else begin
-                // vl from 0 to VLEN/32
-                inst_config_state[i+1].lmul = LMUL1_4;
-              end
-            end
-            SEW16: begin
-              if (vl_minus_one[i][`VL_WIDTH-3+:2] != 'b00) begin
-                // vl from VLEN/4+1 to VLEN/2
-                inst_config_state[i+1].lmul = LMUL8;
-              end else if (vl_minus_one[i][`VL_WIDTH-4] == 'b1) begin
-                // vl from VLEN/8+1 to VLEN/4
-                inst_config_state[i+1].lmul = LMUL4;
-              end else if (vl_minus_one[i][`VL_WIDTH-5] == 'b1) begin
-                // vl from VLEN/16+1 to VLEN/8
-                inst_config_state[i+1].lmul = LMUL2;
-              end else if (vl_minus_one[i][`VL_WIDTH-6] == 'b1) begin
-                // vl from VLEN/32+1 to VLEN/16
-                inst_config_state[i+1].lmul = LMUL1;
-              end else if (vl_minus_one[i][`VL_WIDTH-7] == 'b1) begin
-                // vl from VLEN/64+1 to VLEN/32
-                inst_config_state[i+1].lmul = LMUL1_2;
-              end else begin
-                // vl from 0 to VLEN/64
-                inst_config_state[i+1].lmul = LMUL1_4;
-              end
-            end
-            SEW32: begin
-              if (vl_minus_one[i][`VL_WIDTH-4+:2] != 'b00) begin
-                // vl from VLEN/8+1 to VLEN/4
-                inst_config_state[i+1].lmul = LMUL8;
-              end else if (vl_minus_one[i][`VL_WIDTH-5] == 'b1) begin
-                // vl from VLEN/16+1 to VLEN/8
-                inst_config_state[i+1].lmul = LMUL4;
-              end else if (vl_minus_one[i][`VL_WIDTH-6] == 'b1) begin
-                // vl from VLEN/32+1 to VLEN/16
-                inst_config_state[i+1].lmul = LMUL2;
-              end else if (vl_minus_one[i][`VL_WIDTH-7] == 'b1) begin
-                // vl from VLEN/64+1 to VLEN/32
-                inst_config_state[i+1].lmul = LMUL1;
-              end else if (vl_minus_one[i][`VL_WIDTH-8] == 'b1) begin
-                // vl from VLEN/128+1 to VLEN/64
-                inst_config_state[i+1].lmul = LMUL1_2;
-              end else begin
-                // vl from 0 to VLEN/128
-                inst_config_state[i+1].lmul = LMUL1_4;
-              end
-            end
-          endcase
+          inst_config_state[i+1].lmul = compute_reduced_lmul(
+              inst_config_state[i+1].sew,
+              inst_config_state[i+1].vl,
+              inst_config_state[i+1].lmul
+          );
         end
       end
     end
@@ -625,6 +639,21 @@ module RvvFrontEnd#(parameter N = 4,
     end else begin
       // Update config state next cycle, stopping before the first trapping lane.
       config_state_q <= next_config_state;
+      if (lsu_vl_update_valid_i && !flush_i) begin
+        config_state_q.vl <= lsu_vl_update_data_i;
+        config_state_q.lmul <= config_state_q.lmul_orig;
+        if (REDUCE_LMUL && !config_state_q.vill
+`ifdef ZVT_ON
+            && (config_state_q.mtwiden == 2'b00)
+`endif
+        ) begin
+          config_state_q.lmul <= compute_reduced_lmul(
+              config_state_q.sew,
+              lsu_vl_update_data_i,
+              config_state_q.lmul_orig
+          );
+        end
+      end
       if (flush_i || vstart_valid_i) begin
         config_state_q.vstart <= vstart_i;
       end

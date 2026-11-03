@@ -4315,5 +4315,245 @@ async def load_store_stride_masked_test(fixture):
     assert (stride_output == expected_stride_output).all(), debug_msg
 
 
+@coralflow_test
+async def load_unit_ff_fault(fixture):
+    """Verify RVV §7.7 & §7.8 fault-only-first load behavior."""
+    r = runfiles.Create()
+    await fixture.load_elf_and_lookup_symbols(
+        r.Rlocation(
+            'coralnpu_hw/tests/cocotb/rvv/load_store/load_unit_ff_fault.elf'
+        ),
+        [
+            'impl',
+            'fault_count',
+            'fault_mcause',
+            'fault_mtval',
+            'fault_vstart',
+            'req_vl',
+            'req_vtype',
+            'req_vstart',
+            'load_filler',
+            'load_addr',
+            'post_vl',
+            'post_vstart',
+            'mask_data',
+            'dtcm_top_snap',
+            'store_data',
+            'dep_data',
+            'test_vle8ff_unmasked',
+            'test_vle16ff_unmasked',
+            'test_vle32ff_unmasked',
+            'test_vle8ff_masked',
+            'test_vle16ff_masked',
+            'test_vlseg2e16ff_unmasked',
+            'test_vlseg3e32ff_unmasked',
+        ],
+    )
+
+    axi_base = fixture.core_mini_axi.memory_base_addr
+    axi_size = len(fixture.core_mini_axi.memory)
+    axi_end = axi_base + axi_size
+    dtcm_end = 0x00018000
+
+    # Seed the last 128 bytes of AXI memory with deterministic non-trivial values.
+    pattern = np.array([(i * 13 + 0x21) & 0xFF for i in range(128)],
+                       dtype=np.uint8)
+    fixture.core_mini_axi.memory[axi_size - 128:axi_size] = pattern
+
+    async def run_ff_case(
+        fn_name,
+        vtype,
+        vl,
+        addr,
+        vstart=0,
+        mask_bytes=None,
+        filler=0x5A5A5A5A
+    ):
+        if mask_bytes is None:
+            mask_arr = np.full(16, 0xFF, dtype=np.uint8)
+        else:
+            mask_arr = np.zeros(16, dtype=np.uint8)
+            mask_arr[:len(mask_bytes)] = np.array(mask_bytes, dtype=np.uint8)
+        await fixture.write_ptr('impl', fn_name)
+        await fixture.write_word('req_vl', vl)
+        await fixture.write_word('req_vtype', vtype)
+        await fixture.write_word('req_vstart', vstart)
+        await fixture.write_word('load_filler', filler)
+        await fixture.write_word('load_addr', addr)
+        await fixture.write('mask_data', mask_arr)
+        await fixture.run_to_halt()
+        fc = await fixture.read_word('fault_count')
+        f_mcause = await fixture.read_word('fault_mcause')
+        f_mtval = await fixture.read_word('fault_mtval')
+        p_vl = await fixture.read_word('post_vl')
+        p_vs = await fixture.read_word('post_vstart')
+        v8_dump = await fixture.read('store_data', 128)
+        v16_dump = await fixture.read('dep_data', 128)
+        return fc, f_mcause, f_mtval, p_vl, p_vs, v8_dump, v16_dump
+
+    # 1. Unmasked vle8ff / vle16ff / vle32ff faulting at element k > 0 (vta=0 and vta=1, m1 and m2)
+    unmasked_cases = [
+        # (fn, dtype, lmul_enc, vta, req_vl, valid_elems)
+        ('test_vle8ff_unmasked', np.uint8, 0b000, 0, 16, 5),
+        ('test_vle8ff_unmasked', np.uint8, 0b001, 1, 32, 19),
+        ('test_vle16ff_unmasked', np.uint16, 0b000, 0, 8, 3),
+        ('test_vle16ff_unmasked', np.uint16, 0b001, 1, 16, 11),
+        ('test_vle32ff_unmasked', np.uint32, 0b000, 0, 4, 2),
+        ('test_vle32ff_unmasked', np.uint32, 0b001, 0, 8, 5),
+    ]
+    for fn, dtype, lmul_enc, vta, req_vl, k in unmasked_cases:
+        ebytes = np.dtype(dtype).itemsize
+        valid_bytes = k * ebytes
+        addr = axi_end - valid_bytes
+        vtype = construct_vtype(1, vta, DTYPE_TO_SEW[dtype], lmul_enc)
+        fc, mcause, _, p_vl, p_vs, v8_raw, v16_raw = await run_ff_case(
+            fn, vtype, req_vl, addr
+        )
+        assert fc == 0, f"{fn} (k={k}, vta={vta}) trapped unexpectedly with mcause={mcause}"
+        assert p_vl == k, f"{fn} expected post_vl={k}, got {p_vl}"
+        assert p_vs == 0, f"{fn} expected post_vstart=0, got {p_vs}"
+
+        expected_load = pattern[128 - valid_bytes:128].view(dtype)
+        actual_v8 = v8_raw.view(dtype)
+        actual_v16 = v16_raw.view(dtype)
+        assert np.array_equal(
+            actual_v8[:k], expected_load
+        ), f"{fn} active prefix mismatch: got {actual_v8[:k]}, expected {expected_load}"
+        mask_mod = (1 << (8 * ebytes)) - 1
+        undisturbed_val = 0x5A5A5A5A & mask_mod
+        allowed_tail = (undisturbed_val,
+                        mask_mod) if vta else (undisturbed_val, )
+        for idx in range(k, req_vl):
+            assert int(actual_v8[idx]) in allowed_tail, (
+                f"{fn} tail elem {idx} expected one of {[hex(v) for v in allowed_tail]}, "
+                f"got 0x{int(actual_v8[idx]):x}"
+            )
+        # Dependent vadd.vi v16, v8, 1 WITHOUT vsetvl must only update elements 0..k-1
+        # (if ffPending interlock were missing, v16[idx>=k] would become (v8[idx]+1) = 0x5b/0x00).
+        for idx in range(k):
+            exp_dep = (int(expected_load[idx]) + 1) & mask_mod
+            assert int(actual_v16[idx]) == exp_dep, (
+                f"{fn} dep v16[{idx}] expected 0x{exp_dep:x}, got 0x{int(actual_v16[idx]):x}"
+            )
+        dep_init = 0x33333333 & mask_mod
+        allowed_dep_tail = (dep_init, mask_mod) if vta else (dep_init, )
+        for idx in range(k, req_vl):
+            assert int(actual_v16[idx]) in allowed_dep_tail, (
+                f"{fn} dep tail v16[{idx}] overwritten (missing decode interlock?): "
+                f"got 0x{int(actual_v16[idx]):x}, expected one of {[hex(v) for v in allowed_dep_tail]}"
+            )
+
+    # 2. Unaligned cross-boundary element fault: vle32ff at axi_end - 6 (elem 0 valid, elem 1 half-valid/half-fault)
+    vtype_e32_tu = construct_vtype(1, 0, DTYPE_TO_SEW[np.uint32], 0b000)
+    fc, mcause, _, p_vl, _, v8_raw, _ = await run_ff_case(
+        'test_vle32ff_unmasked', vtype_e32_tu, 4, axi_end - 6
+    )
+    assert fc == 0, f"unaligned vle32ff trapped unexpectedly: mcause={mcause}"
+    assert p_vl == 1, f"unaligned vle32ff expected vl=1, got {p_vl}"
+    v8_u32 = v8_raw.view(np.uint32)
+    exp_elem0 = pattern[128 - 6:128 - 2].view(np.uint32)[0]
+    assert v8_u32[0] == exp_elem0
+    assert v8_u32[
+        1
+    ] == 0x5A5A5A5A, f"unaligned vle32ff corrupted partial faulting elem 1: 0x{int(v8_u32[1]):08x}"
+
+    # 3. Fast DTCM (0x17FF0..0x17FFF) -> slow ebus (0x18000 SLVERR) cross-bus race check
+    vtype_e8_m2_tu = construct_vtype(1, 0, DTYPE_TO_SEW[np.uint8], 0b001)
+    fc, mcause, _, p_vl, _, v8_raw, _ = await run_ff_case(
+        'test_vle8ff_unmasked', vtype_e8_m2_tu, 24, dtcm_end - 12
+    )
+    dtcm_tail = await fixture.read('dtcm_top_snap', 16)
+    assert fc == 0 and p_vl == 12, f"DTCM->ebus vle8ff failed: fc={fc}, mcause={mcause}, vl={p_vl}"
+    assert np.array_equal(v8_raw[:12], dtcm_tail[4:16])
+    assert np.all(v8_raw[12:24] == 0x5A)
+
+    # 4. Masked vle8ff / vle16ff cases
+    vtype_e8_mu_tu = construct_vtype(0, 0, DTYPE_TO_SEW[np.uint8], 0b000)
+    # 4a: Masked-off elements at >= k (faulting addresses) must NOT fault or reduce vl!
+    fc, _, _, p_vl, _, v8_raw, _ = await run_ff_case(
+        'test_vle8ff_masked',
+        vtype_e8_mu_tu,
+        8,
+        axi_end - 4,
+        mask_bytes=[0b00001111]
+    )
+    assert fc == 0 and p_vl == 8, f"masked-off tail should not reduce vl: fc={fc}, vl={p_vl}"
+    assert np.array_equal(v8_raw[:4], pattern[124:128])
+    assert np.all(v8_raw[4:8] == 0x5A)
+
+    # 4b: Element 0 masked-off at faulting address, element 2 active at faulting address -> NO trap, vl=2!
+    fc, mcause, _, p_vl, _, v8_raw, _ = await run_ff_case(
+        'test_vle8ff_masked',
+        vtype_e8_mu_tu,
+        8,
+        axi_end,
+        mask_bytes=[0b00000100]
+    )
+    assert fc == 0 and p_vl == 2, f"elem0 masked-off + elem2 fault failed: fc={fc}, mcause={mcause}, vl={p_vl}"
+    assert np.all(v8_raw[:8] == 0x5A)
+
+    # 4c: Mixed active/inactive before active fault at k=5
+    fc, _, _, p_vl, _, v8_raw, _ = await run_ff_case(
+        'test_vle8ff_masked',
+        vtype_e8_mu_tu,
+        8,
+        axi_end - 5,
+        mask_bytes=[0b00101011]
+    )
+    assert fc == 0 and p_vl == 5, f"masked active fault at k=5 failed: fc={fc}, vl={p_vl}"
+    for idx in range(5):
+        exp_b = pattern[123 + idx] if ((0b00101011 >> idx) & 1) else 0x5A
+        assert v8_raw[idx] == exp_b
+    assert np.all(v8_raw[5:8] == 0x5A)
+
+    # 5. vstart = 2 < k = 5 on vle16ff: prestart 0..1 preserved, 2..4 loaded, >=5 undisturbed, vl=5, vstart=0
+    vtype_e16_tu = construct_vtype(1, 0, DTYPE_TO_SEW[np.uint16], 0b000)
+    fc, _, _, p_vl, p_vs, v8_raw, _ = await run_ff_case(
+        'test_vle16ff_unmasked', vtype_e16_tu, 8, axi_end - 10, vstart=2
+    )
+    assert fc == 0 and p_vl == 5 and p_vs == 0, f"vstart=2 vle16ff failed: fc={fc}, vl={p_vl}, vs={p_vs}"
+    v8_u16 = v8_raw.view(np.uint16)
+    exp_u16 = pattern[118:128].view(np.uint16)
+    assert v8_u16[0] == 0x5A5A and v8_u16[1] == 0x5A5A
+    assert np.array_equal(v8_u16[2:5], exp_u16[2:5])
+    assert np.all(v8_u16[5:8] == 0x5A5A)
+
+    # 6. Segment fault-only-first: vlseg3e32ff faulting on field 2 of segment k=1 (fields 0..1 in valid AXI!)
+    # Segment 0: 12B at axi_end - 20 .. axi_end - 9 (OK)
+    # Segment 1: field 0 at -8..-5 (OK), field 1 at -4..-1 (OK), field 2 at axi_end (FAULT!)
+    fc, mcause, _, p_vl, _, v8_raw, _ = await run_ff_case(
+        'test_vlseg3e32ff_unmasked', vtype_e32_tu, 4, axi_end - 20
+    )
+    assert fc == 0 and p_vl == 1, f"vlseg3e32ff seg1 field2 fault failed: fc={fc}, mcause={mcause}, vl={p_vl}"
+    seg_u32 = v8_raw.view(np.uint32)
+    exp_seg0 = pattern[108:120].view(np.uint32)
+    # v8 = seg_u32[0..3], v9 = seg_u32[4..7], v10 = seg_u32[8..11]
+    for f in range(3):
+        assert seg_u32[f * 4 + 0] == exp_seg0[f]
+        assert np.all(seg_u32[f * 4 + 1:f * 4 + 4] == 0x5A5A5A5A
+                      ), (f"vlseg3e32ff field {f} corrupted at segment >= 1!")
+
+    # 7. Element 0 / Segment 0 active fault MUST trap with mcause=5, preserve vl, and NOT overwrite vd!
+    # 7a: vle8ff at axi_end
+    fc, mcause, mtval, p_vl, _, v8_raw, _ = await run_ff_case(
+        'test_vle8ff_unmasked',
+        construct_vtype(1, 0, DTYPE_TO_SEW[np.uint8], 0b000), 12, axi_end
+    )
+    assert fc == 1 and mcause == 5 and mtval == axi_end and p_vl == 12, (
+        f"vle8ff elem0 fault mismatch: fc={fc}, mcause={mcause}, mtval=0x{mtval:x}, vl={p_vl}"
+    )
+    assert np.all(v8_raw[:16] == 0x5A)
+
+    # 7b: vlseg3e32ff at dtcm_end - 8 (segment 0 fields 0..1 in fast DTCM, field 2 at 0x18000 faults!)
+    fc, mcause, mtval, p_vl, _, v8_raw, _ = await run_ff_case(
+        'test_vlseg3e32ff_unmasked', vtype_e32_tu, 4, dtcm_end - 8
+    )
+    assert fc == 1 and mcause == 5 and mtval == dtcm_end and p_vl == 4, (
+        f"vlseg3e32ff seg0 field2 fault mismatch: fc={fc}, mcause={mcause}, mtval=0x{mtval:x}, vl={p_vl}"
+    )
+    assert np.all(v8_raw.view(np.uint32)[:12] == 0x5A5A5A5A
+                  ), ("vlseg3e32ff seg0 trap leaked early writeback to VRF!")
+
+
 if __name__ == "__main__":
     coralflow_main()

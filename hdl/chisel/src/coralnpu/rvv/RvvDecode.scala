@@ -230,6 +230,11 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     isLoadStore() && !bits(21) && (bits(20, 19) === 0.U) && (bits(17, 13) === "b01011".U)
   }
 
+  def isFaultOnlyFirstLoad(): Bool = {
+    (opcode === RvvCompressedOpcode.RVVLOAD) && !bits(21) && (bits(20, 19) === 0.U) &&
+    (bits(17, 13) === "b10000".U)
+  }
+
   def isVmeLdSt(): Bool = {
     isLoadStore() && (bits(21, 18) === "b1001".U) && (funct3() === "b111".U) && (bits(4, 0) === 0.U)
   }
