@@ -16,6 +16,7 @@ package coralnpu
 
 import chisel3._
 import chisel3.simulator.scalatest.ChiselSim
+import coralnpu.float.FpFormat
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -24,12 +25,22 @@ class DecodeInstructionSpec extends AnyFreeSpec with Matchers with ChiselSim {
 
   class DecodeTester(p: Parameters) extends Module {
     val io = IO(new Bundle {
-      val inst  = Input(UInt(32.W))
-      val undef = Output(Bool())
+      val inst       = Input(UInt(32.W))
+      val undef      = Output(Bool())
+      val floatValid = Output(Bool())
+      val floatRs1   = Output(Bool())
+      val scalarRs1  = Output(Bool())
+      val srcFmt     = Output(UInt(3.W))
+      val dstFmt     = Output(UInt(3.W))
     })
 
-    val d = DecodeInstruction(p, pipeline = 0, addr = 0.U, op = io.inst, csrFrm = 0.U)
-    io.undef := d.undef
+    val d = DecodeInstruction(p, pipeline = 0, addr = 0.U, op = io.inst, csrFrm = 0.U(3.W))
+    io.undef      := d.undef
+    io.floatValid := d.float.map(_.valid).getOrElse(false.B)
+    io.floatRs1   := d.float.map(_.bits.float_rs1).getOrElse(false.B)
+    io.scalarRs1  := d.float.map(_.bits.scalar_rs1).getOrElse(false.B)
+    io.srcFmt     := d.float.map(_.bits.src_fmt.asUInt).getOrElse(0.U)
+    io.dstFmt     := d.float.map(_.bits.dst_fmt.asUInt).getOrElse(0.U)
   }
 
   "DecodeInstruction" - {
@@ -42,6 +53,70 @@ class DecodeInstructionSpec extends AnyFreeSpec with Matchers with ChiselSim {
           assert(
             dut.io.undef.peek().litValue == 0,
             s"Instruction $name (0x${pat.value.toString(16)}) decoded as undef"
+          )
+        }
+      }
+    }
+
+    "should not alias R4 rs3 with OP-FP funct5 in FloatInstruction.decode" in {
+      val fpParams = new Parameters()
+      fpParams.enableFloat = true
+      fpParams.enableZfbfmin = true
+      simulate(new DecodeTester(fpParams)) { dut =>
+        val r4Opcodes = Seq(
+          0x43L, // FMADD.S
+          0x47L, // FMSUB.S
+          0x4bL, // FNMSUB.S
+          0x4fL  // FNMADD.S
+        )
+        // rs3 = 26 (5'b11010, aliases FCVT.S.W funct5) and rs3 = 30 (5'b11110, aliases FMV.W.X funct5)
+        // rs3 = 8 (5'b01000) with rs2 = 6 (5'b00110) aliases FCVT.S.BF16 funct5/rs2
+        for {
+          opc <- r4Opcodes
+          rs3 <- Seq(8L, 26L, 30L)
+        } {
+          val rs2  = 6L
+          val rs1  = 6L
+          val rm   = 0L
+          val rd   = 1L
+          val word =
+            (rs3 << 27) | (0L << 25) | (rs2 << 20) | (rs1 << 15) | (rm << 12) | (rd << 7) | opc
+          dut.io.inst.poke(word.U(32.W))
+          dut.clock.step()
+          assert(
+            dut.io.floatValid.peek().litValue == 1,
+            s"R4 opcode 0x${opc.toHexString} with rs3=$rs3 should be valid"
+          )
+          assert(
+            dut.io.floatRs1.peek().litValue == 1,
+            s"R4 opcode 0x${opc.toHexString} with rs3=$rs3 must set float_rs1=1"
+          )
+          assert(
+            dut.io.scalarRs1.peek().litValue == 0,
+            s"R4 opcode 0x${opc.toHexString} with rs3=$rs3 must set scalar_rs1=0"
+          )
+          assert(
+            dut.io.srcFmt.peek().litValue == FpFormat.FP32.litValue,
+            s"R4 opcode 0x${opc.toHexString} with rs3=$rs3 must use FP32 src_fmt"
+          )
+          assert(
+            dut.io.dstFmt.peek().litValue == FpFormat.FP32.litValue,
+            s"R4 opcode 0x${opc.toHexString} with rs3=$rs3 must use FP32 dst_fmt"
+          )
+        }
+        // R4 opcodes with fmt=2 (2'b10, BF16) are not valid Zfbfmin instructions even if rs3/rs2 match fcvt.bf16.s or fmv.x.h
+        for (opc <- r4Opcodes) {
+          val illegalBf16R4 =
+            (8L << 27) | (2L << 25) | (8L << 20) | (1L << 15) | (0L << 12) | (1L << 7) | opc
+          dut.io.inst.poke(illegalBf16R4.U(32.W))
+          dut.clock.step()
+          assert(
+            dut.io.floatValid.peek().litValue == 0,
+            s"R4 opcode 0x${opc.toHexString} with fmt=2 must be invalid"
+          )
+          assert(
+            dut.io.undef.peek().litValue == 1,
+            s"R4 opcode 0x${opc.toHexString} with fmt=2 must decode as undef"
           )
         }
       }

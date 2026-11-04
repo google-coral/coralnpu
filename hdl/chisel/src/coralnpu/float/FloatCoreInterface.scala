@@ -160,10 +160,11 @@ object FloatInstruction {
       )
     )
 
-    val fcvt_s_bf16 = (funct5 === "b01000".U) && (rs2 === "b00110".U) && (fmt === 0.U)
-    val fcvt_bf16_s = (funct5 === "b01000".U) && (rs2 === "b01000".U) && (fmt === 2.U)
+    val is_opfp     = opcode.bits === FloatOpcode.OPFP
+    val fcvt_s_bf16 = is_opfp && (funct5 === "b01000".U) && (rs2 === "b00110".U) && (fmt === 0.U)
+    val fcvt_bf16_s = is_opfp && (funct5 === "b01000".U) && (rs2 === "b01000".U) && (fmt === 2.U)
     val fmv_h       =
-      (funct5 === "b11110".U || funct5 === "b11100".U) && (rs2 === "b00000".U) && (fmt === 2.U) && (rm === "b000".U)
+      is_opfp && (funct5 === "b11110".U || funct5 === "b11100".U) && (rs2 === "b00000".U) && (fmt === 2.U) && (rm === "b000".U)
     val is_zfbfmin = (fcvt_s_bf16 || fcvt_bf16_s || fmv_h) && p.enableZfbfmin.B
 
     // TODO(atv): Hook scalar_rd and scalar_rs1 into scalar scoreboard
@@ -175,14 +176,14 @@ object FloatInstruction {
         "b11100".U -> true.B, // FCLASS
         "b11000".U -> true.B  // FCVT.W.S
       )
-    ) && (opcode.bits === FloatOpcode.OPFP)
+    ) && is_opfp
 
     val scalar_rs1 = MuxLookup(funct5, false.B)(
       Seq(
         "b11110".U -> true.B, // FMV.W.X
         "b11010".U -> true.B  // FCVT.S.W
       )
-    )
+    ) && is_opfp
 
     val uses_rs3 =
       opcode.bits.isOneOf(FloatOpcode.MADD, FloatOpcode.MSUB, FloatOpcode.NMADD, FloatOpcode.NMSUB)

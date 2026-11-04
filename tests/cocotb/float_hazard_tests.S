@@ -98,6 +98,36 @@ main:
     li t1, 0x40c00000 # 6.0f
     bne t0, t1, fail
 
+    # =========================================================================
+    # Test 7: RAW on rs1 for fnmsub.s when rs3 = f30 (5'b11110)
+    # Regression test: R4 rs3 in inst[31:27] must not alias OP-FP funct5
+    # for fmv.w.x (5'b11110), which previously set scalar_rs1=1, float_rs1=0.
+    # =========================================================================
+    fmv.s f30, f3 # f30 = 3.0f
+    fmv.s f4, f1  # f4 = stale 1.0f
+    flw f4, 12(sp) # load f4 = 4.0f
+    sb t2, 0(sp)
+    fnmsub.s f5, f4, f2, f30, rne # -(4.0f * 2.0f - 3.0f) = -5.0f
+
+    fmv.x.w t0, f5
+    li t1, 0xc0a00000 # -5.0f
+    bne t0, t1, fail
+
+    # =========================================================================
+    # Test 8: RAW on rs1 for fmadd.s when rs3 = f26 (5'b11010)
+    # Regression test: R4 rs3 in inst[31:27] must not alias OP-FP funct5
+    # for fcvt.s.w (5'b11010), which previously set scalar_rs1=1, float_rs1=0.
+    # =========================================================================
+    fmv.s f26, f3 # f26 = 3.0f
+    fmv.s f4, f1  # f4 = stale 1.0f
+    flw f4, 12(sp) # load f4 = 4.0f
+    sb t2, 0(sp)
+    fmadd.s f5, f4, f2, f26, rne # 4.0f * 2.0f + 3.0f = 11.0f
+
+    fmv.x.w t0, f5
+    li t1, 0x41300000 # 11.0f
+    bne t0, t1, fail
+
     # Restore stack
     addi sp, sp, 32
     j pass
