@@ -1257,7 +1257,8 @@ class LsuSuperSlot(p: Parameters) extends Module {
           cellWriteback(i)
           // We don't need to worry about invalidate because it doesn't skip WB.
         }
-        .reduce(_ && _)
+        .asUInt
+        .andR
 
       val nextRowAddrCandidates = VecInit.tabulate(windowSizeNormal + 1) { i =>
         val idx         = leadIndex +& i.U
@@ -1920,12 +1921,13 @@ class LsuSuperSlot(p: Parameters) extends Module {
   io.active := state.cells.forall { x =>
     x.state === LsuCellState.DONE
   }
-  // storeComplete is raised iff we've completed all cells and writebacks
-  io.storeComplete := state.write && !state.cells.forall { x =>
-    x.state === LsuCellState.DONE
-  } && stateFromAction.cells.forall { x =>
-    x.state === LsuCellState.DONE
-  }
+  // Reuse the completion predicate from act rather than re-decoding every
+  // cell's next-state mux on the store-completion path. Retain the old
+  // expression as a verification check, including the final-writeback cycle.
+  val currentCellsDone = VecInit(state.cells.map(_.state === LsuCellState.DONE)).asUInt.andR
+  val nextCellsDone = VecInit(stateFromAction.cells.map(_.state === LsuCellState.DONE)).asUInt.andR
+  assert(stateFromAction.isDone === nextCellsDone)
+  io.storeComplete := state.write && !currentCellsDone && stateFromAction.isDone
   io.pc := state.pc
 
   io.vectorData.map { x =>
