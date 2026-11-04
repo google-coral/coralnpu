@@ -82,7 +82,11 @@ if [[ -z "${SHAS}" ]]; then
     exit 1
 fi
 
-for SHA in ${SHAS}; do
+mapfile -t SHA_LIST <<< "${SHAS}"
+EXPECTED_SHA="${SHA_LIST[0]}"
+COMMITS_BEHIND=0
+
+for SHA in "${SHA_LIST[@]}"; do
     LAST_SHA="${SHA}"
 
     # Artifact Registry Generic format uses colons as delimiters.
@@ -97,9 +101,18 @@ for SHA in ${SHAS}; do
 
     if curl -sL --fail -o "${PROJECT_ROOT}/fpga/bitstreams/${TARGET_FILE}" "${URL}"; then
         echo "SUCCESS: Found artifact for commit ${SHA}"
+        if [[ "${SHA}" == "${EXPECTED_SHA}" ]]; then
+            echo "[NOTICE] Matched expected bitstream commit (${SHA:0:8}) for ${START_REF}."
+        else
+            echo "[WARNING] Bitstream is out of date by ${COMMITS_BEHIND} fpga/hdl commit(s)!" >&2
+            echo "[WARNING]   Expected commit: ${EXPECTED_SHA}" >&2
+            echo "[WARNING]   Fetched commit:  ${SHA}" >&2
+        fi
         echo "File saved as: ${PROJECT_ROOT}/fpga/bitstreams/${TARGET_FILE}"
         exit 0
     fi
+
+    COMMITS_BEHIND=$((COMMITS_BEHIND + 1))
 done
 
 echo "ERROR: No matching artifact found in the previous ${LIMIT} commits."
