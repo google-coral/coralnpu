@@ -19,23 +19,34 @@ import bus._
 import chisel3._
 import chisel3.util._
 
-class DmaCore(p: TLULParameters) extends Module {
-  val M     = 2           // fill, drain
-  val StIdW = log2Ceil(M) // = 1
-  val p_d   = p.augmentId(StIdW)
+// deviceP sizes the CSR (device) port; hostP sizes the memory (host) port.
+// The engines run one source bit narrower than hostP.
+// The fill/drain arbiter's index bit brings them back to exactly hostP.o.
+class DmaCore(deviceP: TLULParameters, hostP: TLULParameters) extends Module {
+  val M       = 2           // fill, drain
+  val StIdW   = log2Ceil(M) // = 1
+  val engineP = hostP.shrinkId(StIdW)
+
+  require(deviceP.w == hostP.w, "device and host ports must share a data width")
+  require(deviceP.a == hostP.a, "device and host ports must share an address width")
+  require(
+    engineP.o >= DmaGeometry.sWidth(engineP),
+    s"hostP.o (${hostP.o}) leaves ${engineP.o} engine source bits; fill needs " +
+      s"${DmaGeometry.sWidth(engineP)} to tag rows"
+  )
 
   val io = IO(new Bundle {
-    val tl_device = Flipped(new TLULHost2Device[NoUser, NoUser](p))
-    val tl_host   = new TLULHost2Device[NoUser, NoUser](p_d)
+    val tl_device = Flipped(new TLULHost2Device[NoUser, NoUser](deviceP))
+    val tl_host   = new TLULHost2Device[NoUser, NoUser](hostP)
     val busy      = Output(Bool())
     val error     = Output(Bool())
   })
 
-  val buffer = Module(new TransposeBuffer(p))
-  val fill   = Module(new DmaFillEngine(p))
-  val drain  = Module(new DmaDrainEngine(p))
-  val csr    = Module(new DmaCsr(p))
-  val arb    = Module(new TlulArbiter(p, M))
+  val buffer = Module(new TransposeBuffer(engineP))
+  val fill   = Module(new DmaFillEngine(engineP))
+  val drain  = Module(new DmaDrainEngine(engineP))
+  val csr    = Module(new DmaCsr(deviceP))
+  val arb    = Module(new TlulArbiter(engineP, M))
 
   // The engines no longer talk to each other. They stay in lockstep purely
   // through the buffer: cfg.ready stops fill from starting a pass before drain
@@ -76,6 +87,7 @@ class DmaCore(p: TLULParameters) extends Module {
 import common.ChiselEmitter
 
 object DmaCoreEmitter extends App {
+  // Both ports at 6 source bits
   val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
-  ChiselEmitter.emit(new DmaCore(tlul_p), args)
+  ChiselEmitter.emit(new DmaCore(deviceP = tlul_p, hostP = tlul_p), args)
 }
