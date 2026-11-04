@@ -30,13 +30,15 @@ async def core_mini_rvv_mobilenet_v1(fixture):
     await fixture.run_to_halt(timeout_cycles=130_000_000)
     cycle_count = fixture.get_cycle_count()
     print(f'Total number of execution cycles: {cycle_count} \n', flush=True)
-    tflite_inference_status = (await
-                               fixture.read_word('inference_status')).view(
-                                   np.int32
-                               )
-    tflite_inference_message = bytes(
-        (await fixture.read('inference_status_message', 31))
-    ).decode()
+    tflite_inference_status = int(
+        (await fixture.read('inference_status', size=1, dtype=np.int8))[0]
+    )
+    tflite_inference_message = (
+        bytes(await
+              fixture.read('inference_status_message',
+                           31)).split(b'\x00',
+                                      1)[0].decode('utf-8', errors='replace')
+    )
     assert tflite_inference_status == 0, tflite_inference_message
     print(' \n Partial mobilenet Invoke() successful \n', flush=True)
 

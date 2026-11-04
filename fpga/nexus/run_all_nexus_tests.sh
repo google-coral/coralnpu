@@ -31,9 +31,7 @@ fi
 
 # Tests expected to fail on Nexus FPGA hardware (XFAIL).
 # If any of these pass, the script flags them as XPASS so they can be removed.
-EXPECTED_FAILURES=(
-    "//tests/cocotb/tutorial/tfmicro:cocotb_run_mobilenet_v1_nexus_fpga"
-)
+EXPECTED_FAILURES=()
 
 is_expected_failure() {
     local target="$1"
