@@ -131,56 +131,72 @@ package coralnpu_axi_master_agent_pkg;
       `uvm_info(get_type_name(), $sformatf("Starting WRITE: Addr=0x%h, Len=%0d, ID=%0d", req.addr,
                                            req.len, req.id), UVM_MEDIUM)
 
-      // --- 1. Drive Write Address Channel ---
-      @(vif.tb_master_cb);
-      if (vif.resetn === 1'b0) return;
-      vif.tb_master_cb.awvalid <= 1'b1;
-      vif.tb_master_cb.awid    <= req.id;
-      vif.tb_master_cb.awaddr  <= req.addr;
-      vif.tb_master_cb.awlen   <= req.len;
-      vif.tb_master_cb.awsize  <= req.size;
-      vif.tb_master_cb.awburst <= req.burst;
-      vif.tb_master_cb.awlock  <= req.lock;
-      vif.tb_master_cb.awcache <= req.cache;
-      vif.tb_master_cb.awprot  <= req.prot;
-      vif.tb_master_cb.awqos   <= req.qos;
-      vif.tb_master_cb.awregion <= req.region;
-      do begin
-        @(vif.tb_master_cb);
-        if (vif.resetn === 1'b0) begin
-          vif.tb_master_cb.awvalid <= 1'b0;
-          return;
+      fork
+        // --- 1. Drive Write Address Channel ---
+        begin
+          @(vif.tb_master_cb);
+          if (vif.resetn !== 1'b0) begin
+            vif.tb_master_cb.awvalid  <= 1'b1;
+            vif.tb_master_cb.awid     <= req.id;
+            vif.tb_master_cb.awaddr   <= req.addr;
+            vif.tb_master_cb.awlen    <= req.len;
+            vif.tb_master_cb.awsize   <= req.size;
+            vif.tb_master_cb.awburst  <= req.burst;
+            vif.tb_master_cb.awlock   <= req.lock;
+            vif.tb_master_cb.awcache  <= req.cache;
+            vif.tb_master_cb.awprot   <= req.prot;
+            vif.tb_master_cb.awqos    <= req.qos;
+            vif.tb_master_cb.awregion <= req.region;
+            do begin
+              @(vif.tb_master_cb);
+              if (vif.resetn === 1'b0) begin
+                break;
+              end
+            end while (!vif.tb_master_cb.awready);
+            vif.tb_master_cb.awvalid <= 1'b0;
+            if (vif.resetn !== 1'b0) begin
+              `uvm_info(get_type_name(), "AW Handshake complete", UVM_HIGH)
+            end
+          end
         end
-      end while (!vif.tb_master_cb.awready);
-      vif.tb_master_cb.awvalid <= 1'b0;
-      `uvm_info(get_type_name(), "AW Handshake complete", UVM_HIGH)
 
-      // --- 2. Drive Write Data Channel ---
-      for (beat_count = 0; beat_count < num_beats; beat_count++) begin
-        @(vif.tb_master_cb);
-        if (vif.resetn === 1'b0) return;
-        vif.tb_master_cb.wvalid <= 1'b1;
-        if (beat_count < req.data.size()) vif.tb_master_cb.wdata <= req.data[beat_count];
-        else
-          `uvm_error(get_type_name(), $sformatf("Data queue underflow for beat %0d!", beat_count))
-        if (beat_count < req.strb.size()) vif.tb_master_cb.wstrb <= req.strb[beat_count];
-        else
-          `uvm_error(get_type_name(), $sformatf("Strobe queue underflow for beat %0d!", beat_count))
-        vif.tb_master_cb.wlast <= (beat_count == req.len);
-        do begin
+        // --- 2. Drive Write Data Channel ---
+        begin
+          bit reset_aborted = 1'b0;
           @(vif.tb_master_cb);
           if (vif.resetn === 1'b0) begin
-            vif.tb_master_cb.wvalid <= 1'b0;
-            vif.tb_master_cb.wlast  <= 1'b0;
-            return;
+            reset_aborted = 1'b1;
+          end else begin
+            for (beat_count = 0; beat_count < num_beats; beat_count++) begin
+              vif.tb_master_cb.wvalid <= 1'b1;
+              if (beat_count < req.data.size()) vif.tb_master_cb.wdata <= req.data[beat_count];
+              else
+                `uvm_error(get_type_name(), $sformatf(
+                           "Data queue underflow for beat %0d!", beat_count))
+              if (beat_count < req.strb.size()) vif.tb_master_cb.wstrb <= req.strb[beat_count];
+              else
+                `uvm_error(get_type_name(), $sformatf(
+                           "Strobe queue underflow for beat %0d!", beat_count))
+              vif.tb_master_cb.wlast <= (beat_count == req.len);
+              do begin
+                @(vif.tb_master_cb);
+                if (vif.resetn === 1'b0) begin
+                  reset_aborted = 1'b1;
+                  break;
+                end
+              end while (!vif.tb_master_cb.wready);
+              if (reset_aborted) break;
+              `uvm_info(get_type_name(), $sformatf("W Handshake complete for beat %0d", beat_count),
+                        UVM_HIGH)
+            end
           end
-        end while (!vif.tb_master_cb.wready);
-        `uvm_info(get_type_name(), $sformatf("W Handshake complete for beat %0d", beat_count),
-                  UVM_HIGH)
-      end
-      vif.tb_master_cb.wvalid <= 1'b0;
-      vif.tb_master_cb.wlast  <= 1'b0;
-      `uvm_info(get_type_name(), "W channel driving complete", UVM_MEDIUM)
+          vif.tb_master_cb.wvalid <= 1'b0;
+          vif.tb_master_cb.wlast  <= 1'b0;
+          if (!reset_aborted) begin
+            `uvm_info(get_type_name(), "W channel driving complete", UVM_MEDIUM)
+          end
+        end
+      join
 
       `uvm_info(get_type_name(), $sformatf("Finished WRITE Request: Addr=0x%h, Len=%0d, ID=%0d",
                                            req.addr, req.len, req.id), UVM_MEDIUM)
