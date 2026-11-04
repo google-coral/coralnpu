@@ -150,7 +150,8 @@ class SCore(p: Parameters) extends Module {
   dispatch.io.scoreboard.comb  := regfile.io.scoreboard.comb
   dispatch.io.scoreboard.regd  := regfile.io.scoreboard.regd
   dispatch.io.branchTaken      := branchTaken
-  dispatch.io.interlock        := bru(0).io.interlock.get || lsu.io.flush.valid
+  dispatch.io.interlock        := bru(0).io.interlock.get || lsu.io.flush.valid ||
+    io.rvvcore.map(_.trap.valid).getOrElse(false.B)
 
   // Connect fault signaling to FaultManager.
   for (i <- 0 until p.instructionLanes) {

@@ -99,6 +99,28 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
     io.illegalCfg := comp.valid && comp.bits.isIllegalLsuConfig(io.sew, io.lmul_orig)
   }
 
+  class TesterVtxmm(p: Parameters) extends Module {
+    val io = IO(new Bundle {
+      val inst                 = Input(UInt(32.W))
+      val compValid            = Output(Bool())
+      val isVtxmm              = Output(Bool())
+      val isVtfmm              = Output(Bool())
+      val requiresValidMtwiden = Output(Bool())
+      val accessesTile         = Output(Bool())
+      val writesVecReg         = Output(Bool())
+      val origEncoding         = Output(UInt(32.W))
+    })
+
+    val comp = RvvCompressedInstruction.from_uncompressed(p, io.inst, 0.U)
+    io.compValid            := comp.valid
+    io.isVtxmm              := comp.valid && comp.bits.isVtxmm()
+    io.isVtfmm              := comp.valid && comp.bits.isVtfmm()
+    io.requiresValidMtwiden := comp.valid && comp.bits.requiresValidMtwiden()
+    io.accessesTile         := comp.valid && comp.bits.accessesTile()
+    io.writesVecReg         := comp.valid && comp.bits.writesVectorRegister()
+    io.origEncoding         := comp.bits.originalEncoding()
+  }
+
   private def test_decode(
     dut: Tester,
     // Long because Scala has no unsigned int.
@@ -1167,6 +1189,104 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
         dut.io.lmul_orig.poke(c.lmul.U)
         dut.io.compValid.expect(true.B)
         dut.io.illegalCfg.expect(c.expectIllegal.B)
+      }
+    }
+  }
+
+  "Distinguish OP-VE Matrix Multiply from Standard RVV Widening MAC" in {
+    val vmeParams = {
+      val params = new Parameters
+      params.enableRvv = true
+      params.enableVme = true
+      params.enableFloat = true
+      params.enableVectorBf16 = true
+      params
+    }
+    simulate(new TesterVtxmm(vmeParams)) { dut =>
+      case class VtxmmCase(
+        inst: Long,
+        compValid: Boolean,
+        isVtxmm: Boolean,
+        isVtfmm: Boolean,
+        requiresValidMtwiden: Boolean,
+        accessesTile: Boolean,
+        writesVecReg: Boolean
+      )
+
+      val cases = Seq(
+        // vwmaccu.vv v4, v2, v8 (OP-V 0x57, funct6=111100, vm=1, funct3=010)
+        VtxmmCase(
+          inst = 0xf2812257L,
+          compValid = true,
+          isVtxmm = false,
+          isVtfmm = false,
+          requiresValidMtwiden = false,
+          accessesTile = false,
+          writesVecReg = true
+        ),
+        // vwmaccu.vx v4, x10, v8 (OP-V 0x57, funct6=111100, vm=1, funct3=110)
+        VtxmmCase(
+          inst = 0xf2856257L,
+          compValid = true,
+          isVtxmm = false,
+          isVtfmm = false,
+          requiresValidMtwiden = false,
+          accessesTile = false,
+          writesVecReg = true
+        ),
+        // vtmmu.tvv mt0, v8, v16 (OP-VE 0x77, funct6=111100, vm=1, funct3=000)
+        VtxmmCase(
+          inst = 0xf2880077L,
+          compValid = true,
+          isVtxmm = true,
+          isVtfmm = false,
+          requiresValidMtwiden = true,
+          accessesTile = true,
+          writesVecReg = false
+        ),
+        // vtfmm.tvv mt0, v8, v16 (OP-VE 0x77, funct6=111100, vm=1, funct3=001)
+        VtxmmCase(
+          inst = 0xf2881077L,
+          compValid = true,
+          isVtxmm = true,
+          isVtfmm = true,
+          requiresValidMtwiden = true,
+          accessesTile = true,
+          writesVecReg = false
+        ),
+        // Reserved OP-V (0x57) with funct6=111100, vm=1, funct3=000 (must be rejected)
+        VtxmmCase(
+          inst = 0xf2880057L,
+          compValid = false,
+          isVtxmm = false,
+          isVtfmm = false,
+          requiresValidMtwiden = false,
+          accessesTile = false,
+          writesVecReg = false
+        ),
+        // Unsupported vfwmacc.vv (OP-V 0x57, funct6=111100, vm=1, funct3=001) (must be rejected)
+        VtxmmCase(
+          inst = 0xf2001057L,
+          compValid = false,
+          isVtxmm = false,
+          isVtfmm = false,
+          requiresValidMtwiden = false,
+          accessesTile = false,
+          writesVecReg = false
+        )
+      )
+
+      for (c <- cases) {
+        dut.io.inst.poke(c.inst.U)
+        dut.io.compValid.expect(c.compValid.B)
+        dut.io.isVtxmm.expect(c.isVtxmm.B)
+        dut.io.isVtfmm.expect(c.isVtfmm.B)
+        dut.io.requiresValidMtwiden.expect(c.requiresValidMtwiden.B)
+        dut.io.accessesTile.expect(c.accessesTile.B)
+        dut.io.writesVecReg.expect(c.writesVecReg.B)
+        if (c.compValid) {
+          dut.io.origEncoding.expect(c.inst.U)
+        }
       }
     }
   }

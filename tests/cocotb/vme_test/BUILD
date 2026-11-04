@@ -22,6 +22,7 @@ VME_TEST_TESTCASES = [
     "vme_matmul_bf16_test",
     "vme_matmul_fp32_test",
     "vme_decode_test",
+    "vme_mtwiden_test",
     "vme_load_store_test",
     "vme_transpose_test",
     "vme_msettk_clamp_test",
@@ -47,6 +48,7 @@ coralflow_test(
         ":vme_mset_test",
         ":vme_mset_vtmmu_sequence_test",
         ":vme_mstatus_ms_test",
+        ":vme_mtwiden_test",
         ":vme_rvvi_mtype_retire_test",
         ":vme_rvvi_v0_writeback_test",
         ":vme_transpose_test",
@@ -120,6 +122,12 @@ coralnpu_v2_binary(
 coralnpu_v2_binary(
     name = "vme_decode_test",
     srcs = ["vme_decode_test.cc"],
+    hdrs = ["vme_test_utils.h"],
+)
+
+coralnpu_v2_binary(
+    name = "vme_mtwiden_test",
+    srcs = ["vme_mtwiden_test.cc"],
     hdrs = ["vme_test_utils.h"],
 )
 

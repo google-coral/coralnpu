@@ -644,10 +644,11 @@ module RvvFrontEnd#(parameter N = 4,
                         (inst_q[i].bits[18] == 1'b1) &&
                         (inst_q[i].bits[12:11] == 2'b00);
 
-      // vill is checked here only for vector arithmetic/ALU instructions (opcode == RVV).
-      // Vector loads and stores (and whole-register moves) are excluded: loads/stores that
-      // violate vill are trapped in scalar decode to avoid hanging the scalar LSU.
-      // Configuration instructions (vset*/mset*) do not trap on vill.
+      // Defensive fallback: vill==1 and mtwiden==0 are trapped upstream at
+      // Slot 0 in scalar Decode.scala before dispatch. These checks are
+      // retained here to guard the frontend/backend if RvvFrontEnd is driven
+      // directly (e.g., standalone unit tests). Configuration instructions
+      // (vset*/msetmtype*/msettn) and whole-register moves do not trap on vill.
       unaligned_trap_valid[i] = valid_inst_q[i] && (
           ((inst_q[i].opcode == RVV) && !vconfig_change[i] && !is_whole_reg[i] && inst_config_state[i+1].vill)
 `ifdef ZVT_ON
@@ -656,7 +657,7 @@ module RvvFrontEnd#(parameter N = 4,
               ((inst_q[i].bits[7:5] == 3'b110) && (inst_q[i].bits[24:19] == 6'b010000) && (inst_q[i].bits[17:13] == 5'b11111)) || // vtmv.v.t
               ((inst_q[i].bits[7:5] == 3'b110) && (inst_q[i].bits[24:19] == 6'b010111)) || // vtmv.t.v
               ((inst_q[i].bits[7:5] == 3'b110) && (inst_q[i].bits[24:19] == 6'b010000) && (inst_q[i].bits[17:13] == 5'b11110)) || // vtzero
-              (inst_q[i].bits[24:19] == 6'b111100) // matmul (VTXMMXTVV)
+              ((inst_q[i].bits[24:18] == 7'b1111001) && (inst_q[i].bits[7:5] == 3'b000 || inst_q[i].bits[7:5] == 3'b001)) // matmul (VTXMMXTVV)
           ))
 `endif
       );

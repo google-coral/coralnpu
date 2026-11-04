@@ -43,7 +43,7 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
       Seq(
         RvvCompressedOpcode.RVVLOAD  -> "b0000111".U,
         RvvCompressedOpcode.RVVSTORE -> "b0100111".U,
-        RvvCompressedOpcode.RVVALU   -> "b1010111".U
+        RvvCompressedOpcode.RVVALU   -> Mux(isVtxmm(), "b1110111".U, "b1010111".U)
       )
     )
     Cat(bits, lower7bits)
@@ -346,7 +346,8 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
   def isVtxmm(): Bool = {
     if (!p.enableVme) { false.B }
     else {
-      (opcode === RvvCompressedOpcode.RVVALU) && (funct6() === "b111100".U)
+      (opcode === RvvCompressedOpcode.RVVALU) && (funct6() === "b111100".U) &&
+      bits(18) && (funct3() === "b000".U || funct3() === "b001".U)
     }
   }
 
@@ -410,6 +411,33 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     if (!p.enableVme) { false.B }
     else {
       readsTile() || writesTile() || isVtdiscard()
+    }
+  }
+
+  def isWholeRegisterMove(): Bool = {
+    (opcode === RvvCompressedOpcode.RVVALU) &&
+    (funct3() === "b011".U) &&
+    (funct6() === "b100111".U) &&
+    (bits(18) === 1.U) &&
+    (bits(12, 11) === "b00".U)
+  }
+
+  def changesVtypeOrMtwiden(): Bool = {
+    isVset() && !isMsettn() && !isMsettm() && !isMsettk()
+  }
+
+  def requiresVillClear(): Bool = {
+    Mux(
+      opcode === RvvCompressedOpcode.RVVALU,
+      (!isVset() && !isWholeRegisterMove()) || isMsettm() || isMsettk(),
+      !isWholeRegisterLoadStore()
+    )
+  }
+
+  def requiresValidMtwiden(): Bool = {
+    if (!p.enableVme) { false.B }
+    else {
+      readsTile() || writesTile() || isMsettm() || isMsettk()
     }
   }
 
@@ -502,6 +530,9 @@ object RvvCompressedInstruction {
     temp_inst.pc      := pc
     temp_inst.rob_tag := 0.U
     val illegal_float = temp_inst.isIllegalFloat(p)
+    // In OP-V (0x57), funct6=111100 with funct3=000 (OPIVV) is reserved and
+    // must not alias onto OP-VE (0x77) VTXMMXTVV (vtmmu/vtmms).
+    val illegal_opv = illegal_float || (inst(31, 26) === "b111100".U && inst(14, 12) === "b000".U)
 
     val isOpVeValid = RvvCompressedInstruction.isOpVeValid(inst, p)
 
@@ -509,7 +540,7 @@ object RvvCompressedInstruction {
       Seq(
         "b0000111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVLOAD),
         "b0100111".U -> MakeValid(validWidth, RvvCompressedOpcode.RVVSTORE),
-        "b1010111".U -> MakeValid(!illegal_float, RvvCompressedOpcode.RVVALU),
+        "b1010111".U -> MakeValid(!illegal_opv, RvvCompressedOpcode.RVVALU),
         "b1110111".U -> MakeValid(isOpVeValid, RvvCompressedOpcode.RVVALU)
       )
     )

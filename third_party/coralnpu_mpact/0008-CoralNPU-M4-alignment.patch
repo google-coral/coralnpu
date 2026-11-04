@@ -348,32 +348,36 @@ index be642b2..9133df8 100755
                        /*rd=*/3));  // msettn
    EXPECT_EQ(rvv_->vector_length(), 10u);
    EXPECT_EQ(GetXReg(3), 10u);
-@@ -190,10 +190,10 @@ TEST_F(CoralNPUM4ConfigTest, MsetTnWhenUnconfigured) {
+@@ -190,10 +190,11 @@ TEST_F(CoralNPUM4ConfigTest, MsetTnWhenUnconfigured) {
  TEST_F(CoralNPUM4ConfigTest, MsetTmWhenUnconfigured) {
    SetXReg(1, 0x0);  // mtwiden = 0
    SetXReg(2, 0x0);
 -  Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
 +  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
  
++  SetXReg(3, 0x1357'9bdfu);
    SetXReg(4, 10);
 -  Execute(MakeVConfig(0b100'0010, /*rs2=*/1, /*rs1=*/4, 0b111,
 +  Execute(MakeVConfig(0b100'0100, /*rs2=*/1, /*rs1=*/4, 0b111,
                        /*rd=*/3));  // msettm
    EXPECT_EQ(matrix_->tile_m(), 0u);
-   EXPECT_EQ(GetXReg(3), 0u);
-@@ -202,13 +202,108 @@ TEST_F(CoralNPUM4ConfigTest, MsetTmWhenUnconfigured) {
+-  EXPECT_EQ(GetXReg(3), 0u);
++  EXPECT_EQ(GetXReg(3), 0x1357'9bdfu);
+@@ -202,13 +203,109 @@ TEST_F(CoralNPUM4ConfigTest, MsetTmWhenUnconfigured) {
  TEST_F(CoralNPUM4ConfigTest, MsetTkWhenUnconfigured) {
    SetXReg(1, 0x0);  // mtwiden = 0
    SetXReg(2, 0x0);
 -  Execute(MakeVConfig(0b100'0001, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
 +  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/1, 0b111, /*rd=*/0));
  
++  SetXReg(3, 0x2468'ace0u);
    SetXReg(4, 10);
 -  Execute(MakeVConfig(0b100'0010, /*rs2=*/2, /*rs1=*/4, 0b111,
 +  Execute(MakeVConfig(0b100'0100, /*rs2=*/2, /*rs1=*/4, 0b111,
                        /*rd=*/3));  // msettk
    EXPECT_EQ(matrix_->tile_k(), 0u);
-   EXPECT_EQ(GetXReg(3), 0u);
+-  EXPECT_EQ(GetXReg(3), 0u);
++  EXPECT_EQ(GetXReg(3), 0x2468'ace0u);
  }
  
 +TEST_F(CoralNPUM4ConfigTest, MsetMtypeiDerivesVtypeAndLmul) {

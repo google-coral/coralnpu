@@ -822,7 +822,7 @@ index 9a7965b..1c70e2e 100644
    CHECK(row >= 0 && row < kEffectiveTileEdge) << "row out of bounds";
    CHECK(col >= 0 && col < kEffectiveTileEdge) << "col out of bounds";
    switch (tile_element_width) {
-@@ -132,12 +628,40 @@ void RiscVZvtMsetMtype(const Instruction* inst) {
+@@ -132,12 +628,35 @@ void RiscVZvtMsetMtype(const Instruction* inst) {
    const uint32_t kRs1 = GetInstructionSource<uint32_t>(inst, 0);  // rs1
    const uint32_t kRs2 = GetInstructionSource<uint32_t>(inst, 1);  // rs2
  
@@ -848,12 +848,8 @@ index 9a7965b..1c70e2e 100644
 +    return;
 +  }
 +
-+  // Validate rs2 under vsetvl semantics first, then derive vlmul and vma=vta=1.
-   vector_state->SetVectorType(kRs2);
-+  if (vector_state->is_vill()) {
-+    matrix_state->set_mtype(0);
-+    return;
-+  }
++  // When mtwiden != 0, derive vlmul from (mtwiden, vsew) and set vma=vta=1.
+-  vector_state->SetVectorType(kRs2);
  
 -  if (matrix_state->mtwiden() == 0) {
 +  const uint32_t kVsew = (kRs2 >> 3) & 0x7;

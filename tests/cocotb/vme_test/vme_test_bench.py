@@ -512,13 +512,9 @@ async def vme_decode_test(fixture):
         "vill1_load",
         "vill1_store",
         "opve_invalid_funct3",
+        "opv_reserved_funct6_111100",
+        "vwmaccu_vv_vill",
         "vfwmacc_vv_vill",
-        "msettm_unconfigured",
-        "msettk_unconfigured",
-        "vtle_unconfigured",
-        "vtse_unconfigured",
-        "vtmv_v_t_unconfigured",
-        "vtmv_t_v_unconfigured",
     ]
 
     r = runfiles.Create()
@@ -527,7 +523,12 @@ async def vme_decode_test(fixture):
     )
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
-        ["test_fn", "trap_count", "last_mcause", "last_mtval"] + test_names,
+        [
+            "test_fn",
+            "trap_count",
+            "last_mcause",
+            "last_mtval",
+        ] + test_names,
     )
 
     for name in tqdm(test_names, desc="VME decode tests"):
@@ -540,7 +541,11 @@ async def vme_decode_test(fixture):
         assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
         assert trap_count_val == 1, f"[{name}] Expected 1 trap, got {trap_count_val}"
         assert last_mcause_val == 2, f"[{name}] Expected mcause=2 (illegal), got {last_mcause_val}"
-        if name == "vfwmacc_vv_vill":
+        if name in (
+                "vfwmacc_vv_vill",
+                "vwmaccu_vv_vill",
+                "opv_reserved_funct6_111100",
+        ):
             opcode = last_mtval_val & 0x7F
             assert opcode == 0x57, (
                 f"[{name}] Expected mtval opcode 0x57 (OP-V), but got 0x{opcode:02x} "
@@ -551,6 +556,84 @@ async def vme_decode_test(fixture):
             assert opcode == 0x77, (
                 f"[{name}] Expected mtval opcode 0x77 (OP-VE), but got 0x{opcode:02x} "
                 f"(mtval=0x{last_mtval_val:08x})"
+            )
+
+
+@coralflow_test
+async def vme_mtwiden_test(fixture):
+    """Load and run vme_mtwiden_test to verify mtwiden unconfigured trap behavior."""
+    test_names = [
+        "msettm_unconfigured",
+        "msettk_unconfigured",
+        "vill1_msettm_unconfigured",
+        "vill1_msettk_unconfigured",
+        "vtzero_unconfigured",
+        "vtmmu_unconfigured",
+        "vtle_unconfigured",
+        "vtse_unconfigured",
+        "vtmv_v_t_unconfigured",
+        "vtmv_t_v_unconfigured",
+    ]
+
+    expected_rd_sentinels = {
+        "msettm_unconfigured": 0x13579BDF,
+        "msettk_unconfigured": 0x2468ACE0,
+        "vill1_msettm_unconfigured": 4,
+        "vill1_msettk_unconfigured": 7,
+    }
+    younger_probe_tests = {
+        "msettm_unconfigured",
+        "msettk_unconfigured",
+        "vill1_msettm_unconfigured",
+        "vill1_msettk_unconfigured",
+        "vtzero_unconfigured",
+        "vtmmu_unconfigured",
+    }
+
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/vme_test/vme_mtwiden_test.elf"
+    )
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        [
+            "test_fn",
+            "trap_count",
+            "last_mcause",
+            "last_mtval",
+            "unconfigured_rd_after_trap",
+            "unconfigured_younger_count",
+        ] + test_names,
+    )
+
+    for name in tqdm(test_names, desc="VME mtwiden tests"):
+        await fixture.write_ptr("test_fn", name)
+        await fixture.run_to_halt()
+
+        trap_count_val = await fixture.read_word("trap_count")
+        last_mcause_val = await fixture.read_word("last_mcause")
+        last_mtval_val = await fixture.read_word("last_mtval")
+        assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
+        assert trap_count_val == 1, f"[{name}] Expected 1 trap, got {trap_count_val}"
+        assert last_mcause_val == 2, f"[{name}] Expected mcause=2 (illegal), got {last_mcause_val}"
+        if name == "vtmmu_unconfigured":
+            opcode = last_mtval_val & 0x7F
+            assert opcode == 0x77, (
+                f"[{name}] Expected mtval opcode 0x77 (OP-VE), but got 0x{opcode:02x} "
+                f"(mtval=0x{last_mtval_val:08x})"
+            )
+        if name in expected_rd_sentinels:
+            rd_val = await fixture.read_word("unconfigured_rd_after_trap")
+            exp_rd = expected_rd_sentinels[name]
+            assert rd_val == exp_rd, (
+                f"[{name}] Trapping instruction modified rd: "
+                f"got 0x{rd_val:08x}, expected preserved 0x{exp_rd:08x}"
+            )
+        if name in younger_probe_tests:
+            younger_val = await fixture.read_word("unconfigured_younger_count")
+            assert younger_val == 1, (
+                f"[{name}] Younger scalar instruction after trapping instruction "
+                f"executed {younger_val} times (expected 1 after mret)"
             )
 
 
@@ -1327,7 +1410,7 @@ async def vme_mset_retire_test(fixture):
     """
     r = runfiles.Create()
     elf_path = r.Rlocation(
-        "coralnpu_hw/tests/cocotb/vme_test/vme_decode_test.elf"
+        "coralnpu_hw/tests/cocotb/vme_test/vme_mtwiden_test.elf"
     )
     await fixture.load_elf_and_lookup_symbols(
         elf_path,
@@ -1632,7 +1715,7 @@ async def vme_msettn_msettype_test(fixture):
 
     await fixture.run_to_halt()
 
-    num_words = 22
+    num_words = 31
     raw = await fixture.read("vme_msettn_msettype_result", num_words * 4)
     vals = [int(x) for x in np.frombuffer(raw, dtype=np.uint32)]
 
@@ -1664,6 +1747,17 @@ async def vme_msettn_msettype_test(fixture):
         ("mtwiden0_vill_rd", vals[19], 0),
         ("mtwiden0_vill_vl", vals[20], 0),
         ("mtwiden0_vill_vtype", vals[21], 0x80000000),
+        # Issue 2e: msetmtype with TEW > ELEN (mtwiden=2, SEW=32 -> TEW=64 > ELEN=32)
+        ("tew64_vill_mtype", vals[22], 0),
+        ("tew64_vill_vtype", vals[23], 0x80000000),
+        ("tew64_vill_rd", vals[24], 0),
+        ("tew64_vill_vl", vals[25], 0),
+        ("tew64_vill_rd_x0_rd", vals[26], 0),
+        ("tew64_vill_rd_x0_vl", vals[27], 0),
+        # Issue 2f: msetmtype with mtwiden != 0 derives vlmul from (mtwiden, vsew)
+        ("derived_vlmul_mtype", vals[28], 0x2021),
+        ("derived_vlmul_vtype", vals[29], 0x000000D2),
+        ("derived_vlmul_tn", vals[30], 16),
     ]
 
     mismatches = []

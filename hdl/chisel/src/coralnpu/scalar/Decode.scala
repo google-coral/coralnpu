@@ -560,18 +560,48 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
   }
 
   // ---------------------------------------------------------------------------
+  // In-flight vtype / VME mtwiden tracking
+  // Track instructions that modify vtype or mtwiden (vset* and msetmtype{i})
+  // without stalling back-to-back msettn/msettm/msettk dimension updates.
+  val vtypeMtwidenInFlight = if (p.enableRvv) {
+    RegNext(
+      (0 until p.instructionLanes)
+        .map(i =>
+          io.rvv.get(i).fire &&
+            decodedInsts(i).rvv.get.valid &&
+            decodedInsts(i).rvv.get.bits.changesVtypeOrMtwiden()
+        )
+        .reduce(_ || _),
+      false.B
+    )
+  } else {
+    false.B
+  }
+
+  val vtypeMtwidenInvalid = if (p.enableRvv) {
+    val change = decodedInsts.map(x => x.rvv.get.valid && x.rvv.get.bits.changesVtypeOrMtwiden())
+    change.scan(vtypeMtwidenInFlight)(_ || _)
+  } else {
+    Seq.fill(p.instructionLanes)(false.B)
+  }
+
+  // ---------------------------------------------------------------------------
   // Rvv Vill
-  // Only check vill at scalar dispatch for LSU instructions (vector loads/stores)
-  // because they dual-dispatch to both the scalar LSU and the RVV pipeline.
-  // Non-LSU instructions (vector arithmetic) have their vill check handled in the
-  // vector frontend (RvvFrontEnd).
-  // Whole-register loads/stores (vl<nf>r.v / vs<nf>r.v) ignore vtype and vill (RVV 1.0 §7.2).
+  // Check vill and mtwiden=0 at scalar dispatch so trapping RVV/Zvt instructions
+  // fault at Slot 0 in Decode and never allow younger scalar instructions in
+  // the same decode packet to execute ahead of the trap.
+  // Whole-register loads/stores (vl<nf>r.v / vs<nf>r.v) and whole-register moves
+  // (vmv<nr>r.v) ignore vtype and vill (RVV 1.0 §7.9, §16.8).
   val rvvVillInterlock = if (p.enableRvv) {
     (0 until p.instructionLanes).map(i => {
       val isNonWrLdSt = decodedInsts(i).rvv.get.valid &&
         decodedInsts(i).rvv.get.bits.isLoadStore() &&
         !decodedInsts(i).rvv.get.bits.isWholeRegisterLoadStore()
-      val invalidVill      = isNonWrLdSt && (configInvalid(i) || io.rvvState.get.bits.vill)
+      val reqVillClear = decodedInsts(i).rvv.get.valid &&
+        decodedInsts(i).rvv.get.bits.requiresVillClear()
+      val invalidVill =
+        (isNonWrLdSt && (configInvalid(i) || io.rvvState.get.bits.vill)) ||
+          (reqVillClear && (vtypeMtwidenInvalid(i) || io.rvvState.get.bits.vill))
       val invalidLsuConfig = isNonWrLdSt && (
         configInvalid(i) ||
           decodedInsts(i).rvv.get.bits.isIllegalLsuConfig(
@@ -582,7 +612,10 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       val invalidVme = if (p.enableVme) {
         decodedInsts(i).rvv.get.valid &&
         decodedInsts(i).rvv.get.bits.isVmeLdSt() &&
-        (configInvalid(i) || !io.rvvState.get.bits.mtwiden.get.orR)
+        (configInvalid(i) || !io.rvvState.get.bits.mtwiden.get.orR) ||
+        decodedInsts(i).rvv.get.valid &&
+        decodedInsts(i).rvv.get.bits.requiresValidMtwiden() &&
+        (vtypeMtwidenInvalid(i) || !io.rvvState.get.bits.mtwiden.get.orR)
       } else {
         false.B
       }
@@ -1051,13 +1084,14 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
                                  (io.rvvState.get.bits.vstart =/= 0.U)
                                val invalidVstart = requireZeroVstart && vStartNotZero
 
-                               // Return fault if vill is set for non-WR load/store (LSU instructions).
-                               // Non-LSU vector instructions are checked in the vector front-end.
+                               // Return fault if vill is set for instructions requiring a valid vtype.
                                val isNonWrLdSt = decodedInsts(0).rvv.get.valid &&
                                  decodedInsts(0).rvv.get.bits.isLoadStore() &&
                                  !decodedInsts(0).rvv.get.bits.isWholeRegisterLoadStore()
+                               val reqVillClear = decodedInsts(0).rvv.get.valid &&
+                                 decodedInsts(0).rvv.get.bits.requiresVillClear()
                                val villIsSet   = io.rvvState.get.valid && io.rvvState.get.bits.vill
-                               val invalidVill = isNonWrLdSt && villIsSet
+                               val invalidVill = (isNonWrLdSt || reqVillClear) && villIsSet
                                val invalidLsuConfig = isNonWrLdSt &&
                                  io.rvvState.get.valid &&
                                  !io.rvvState.get.bits.vill &&
@@ -1077,7 +1111,7 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
 
                                val invalidVme = if (p.enableVme) {
                                  decodedInsts(0).rvv.get.valid &&
-                                 decodedInsts(0).rvv.get.bits.isVmeLdSt() &&
+                                 decodedInsts(0).rvv.get.bits.requiresValidMtwiden() &&
                                  io.rvvState.get.valid &&
                                  !io.rvvState.get.bits.mtwiden.get.orR
                                } else {
