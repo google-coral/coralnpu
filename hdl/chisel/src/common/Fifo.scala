@@ -27,7 +27,7 @@ class Fifo[T <: Data](t: T, n: Int, passReady: Boolean) extends Module {
   val io = IO(new Bundle {
     val in    = Flipped(Decoupled(t))
     val out   = Decoupled(t)
-    val count = Output(UInt(log2Ceil(n + 1).W))
+    val count = Output(UInt(BitWidthForInt(n)))
   })
 
   // An (n-1) queue with a registered output stage.
@@ -40,7 +40,7 @@ class Fifo[T <: Data](t: T, n: Int, passReady: Boolean) extends Module {
   val wready = RegInit(false.B)
   val raddr  = RegInit(0.U(log2Ceil(m).W))
   val waddr  = RegInit(0.U(log2Ceil(m).W))
-  val count  = RegInit(0.U(log2Ceil(n + 1).W))
+  val count  = RegInit(0.U(BitWidthForInt(n)))
 
   // ---------------------------------------------------------------------------
   // Memory Addresses.

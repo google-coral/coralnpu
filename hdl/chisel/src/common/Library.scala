@@ -17,6 +17,14 @@ package common
 import chisel3._
 import chisel3.util._
 
+// Number of bits required to represent max in binary
+object BitWidthForInt {
+  def apply(max: Int): Width = {
+    require(max >= 0, "Count maximum must be nonnegative")
+    log2Ceil(BigInt(max) + 1).W
+  }
+}
+
 object MuxOR {
   def apply(valid: Bool, data: UInt): UInt = {
     Mux(valid, data, 0.U(data.getWidth.W))
