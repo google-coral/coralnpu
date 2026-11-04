@@ -981,19 +981,36 @@ async def core_mini_axi_csr_illegal_write_test(fixture):
 
 @coralflow_test
 async def core_mini_axi_csr_behavior_test(fixture):
-    """Tests verify misc CSR behaviors (e.g. MIE fields)."""
+    """Tests verify misc CSR behaviors (e.g. MIE fields, mtval on ECALL/EBREAK)."""
     r = runfiles.Create()
 
     await fixture.load_elf_and_lookup_symbols(
-        r.Rlocation("coralnpu_hw/tests/cocotb/csr_behavior.elf"), []
+        r.Rlocation("coralnpu_hw/tests/cocotb/csr_behavior.elf"),
+        ["ebreak_test"],
     )
     fixture.symbols["mie_result"] = 0x10000
+    fixture.symbols["ecall_mtval_result"] = 0x10004
     await fixture.run_to_wfi()
 
     # Read address 0x10000 (DTCM) where we stored the mie value
     mie_val = int(await fixture.read_word("mie_result"))
     # We expect 0x888 (MEIE | MTIE | MSIE).
     assert mie_val == 0x888, f"MIE register incorrect! Expecting 0x888, got Read value: {hex(mie_val)}"
+
+    # Read address 0x10004 (DTCM) where we stored mtval after ECALL
+    ecall_mtval = int(await fixture.read_word("ecall_mtval_result"))
+    assert ecall_mtval == 0, f"ECALL mtval incorrect! Expecting 0x0, got {hex(ecall_mtval)}"
+
+    # Verify EBREAK also clears mtval to 0
+    if hasattr(fixture, "core_mini_axi"):
+        await fixture.core_mini_axi.execute_from(
+            fixture.symbols["ebreak_test"]
+        )
+        await fixture.core_mini_axi.wait_for_halted()
+        ebreak_mtval = int(
+            (await fixture.core_mini_axi.read_word(0x30108)).view(np.uint32)[0]
+        )
+        assert ebreak_mtval == 0, f"EBREAK mtval incorrect! Expecting 0x0, got {hex(ebreak_mtval)}"
 
 
 if __name__ == "__main__":

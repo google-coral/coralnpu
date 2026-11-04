@@ -23,8 +23,10 @@ __attribute__((naked, aligned(64))) void isr_wrapper(void) {
       "csrw mepc, t0 \n"
       "csrr t0, mcause \n"
       "li t1, 11 \n"
-      "beq t0, t1, 0f \n"
-      "ebreak \n"
+      "bne t0, t1, 1f \n"
+      "csrr t0, mtval \n"
+      "beqz t0, 0f \n"
+      "1: ebreak \n"
       "0: .word 0x08000073 \n");
 }
 }  // extern "C"
@@ -57,7 +59,8 @@ int main(int argc, char **argv) {
   }
 
   // Trigger synchronous exception via ECALL (cause = 11 in M-mode).
-  // Traps must jump directly to BASE (isr_wrapper) in Direct mode.
+  // Traps must jump directly to BASE (isr_wrapper) in Direct mode and clear mtval to 0.
+  asm volatile("csrw mtval, %0" ::"r"(0xdeadbeefu));
   asm volatile("ecall");
 
   return 0;

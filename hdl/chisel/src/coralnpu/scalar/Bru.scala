@@ -284,13 +284,15 @@ class Bru(p: Parameters, first: Boolean) extends Module {
       )
     )
 
-    io.csr.get.in.mtval.valid :=
-      (stateReg.valid && usageFault) || io.fault_manager.get.valid
-    io.csr.get.in.mtval.bits := MuxCase(
-      stateReg.bits.pcEx,
-      Seq(
-        io.fault_manager.get.valid -> io.fault_manager.get.bits.mtval
-      )
+    io.csr.get.in.mtval.valid := (stateReg.valid &&
+      (
+        usageFault ||
+          (op === BruOp.ECALL)
+      ) || interrupt_taken || io.fault_manager.get.valid)
+    io.csr.get.in.mtval.bits := Mux(
+      io.fault_manager.get.valid,
+      io.fault_manager.get.bits.mtval,
+      0.U
     )
 
     // Pipeline will be halted.

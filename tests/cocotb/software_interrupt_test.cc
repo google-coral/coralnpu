@@ -34,10 +34,12 @@ __attribute__((naked)) __attribute__((aligned(4))) void isr_wrapper(void) {
       "sw t0, 0(sp)     \n"
       "sw t1, 4(sp)     \n"
 
-      // Check mcause
+      // Check mcause and that mtval was cleared to 0 on interrupt entry
       "csrr t0, mcause  \n"
       "li t1, 0x80000003\n"  // Machine software interrupt
       "bne t0, t1, 1f   \n"
+      "csrr t0, mtval   \n"
+      "bnez t0, 1f      \n"
 
       // Software interrupt: disable by clearing MSIP
       "li t0, 0x02000000\n"  // MSIP address
@@ -66,8 +68,9 @@ __attribute__((naked)) __attribute__((aligned(4))) void isr_wrapper(void) {
 }  // extern "C"
 
 int main() {
-  // 1. Set mtvec to our handler
+  // 1. Set mtvec to our handler and pre-load non-zero mtval
   asm volatile("csrw mtvec, %0" ::"r"((uint32_t)(&isr_wrapper)));
+  asm volatile("csrw mtval, %0" ::"r"(0xdeadbeefu));
 
   // 2. Enable mie.MSIE (bit 3)
   asm volatile("csrs mie, %0" ::"r"(1u << 3));

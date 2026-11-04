@@ -334,4 +334,99 @@ class CsrSpec extends AnyFreeSpec with ChiselSim {
       }
     }
   }
+
+  "BRU Trap mtval Behavior" in {
+    simulate(new Bru(p, first = true)) { dut =>
+      dut.io.req.valid.poke(false.B)
+      dut.io.req.bits.fwd.poke(false.B)
+      dut.io.req.bits.op.poke(BruOp.JAL)
+      dut.io.req.bits.pc.poke(0.U)
+      dut.io.req.bits.target.poke(0.U)
+      dut.io.req.bits.link.poke(0.U)
+      dut.io.req.bits.inst.poke(0.U)
+      dut.io.csr.get.out.mode.poke(CsrMode.Machine)
+      dut.io.csr.get.out.mepc.poke(0.U)
+      dut.io.csr.get.out.mtvec.poke("h00000100".U)
+      dut.io.csr.get.out.interrupt.poke(false.B)
+      dut.io.csr.get.out.interrupt_cause.poke(0.U)
+      dut.io.rs1.valid.poke(true.B)
+      dut.io.rs1.data.poke(0.U)
+      dut.io.rs2.valid.poke(true.B)
+      dut.io.rs2.data.poke(0.U)
+      dut.io.target.data.poke(0.U)
+      dut.io.fault_manager.get.valid.poke(false.B)
+      dut.io.fault_manager.get.bits.mepc.poke(0.U)
+      dut.io.fault_manager.get.bits.mcause.poke(0.U)
+      dut.io.fault_manager.get.bits.mtval.poke(0.U)
+      dut.io.fault_manager.get.bits.decode.poke(false.B)
+      dut.io.fault_manager.get.bits.is_rvv.get.poke(false.B)
+      dut.io.fault_manager.get.bits.rob_tag.get.poke(0.U)
+      dut.io.fault_manager.get.bits.vstart.get.valid.poke(false.B)
+      dut.io.fault_manager.get.bits.vstart.get.bits.poke(0.U)
+      dut.clock.step()
+
+      // 1. ECALL must write 0 to mtval
+      dut.io.req.valid.poke(true.B)
+      dut.io.req.bits.op.poke(BruOp.ECALL)
+      dut.io.req.bits.pc.poke("h00000200".U)
+      dut.clock.step()
+      dut.io.req.valid.poke(false.B)
+      assert(dut.io.csr.get.in.mcause.valid.peek().litToBoolean)
+      assert(dut.io.csr.get.in.mcause.bits.peek().litValue == 11)
+      assert(
+        dut.io.csr.get.in.mtval.valid.peek().litToBoolean,
+        "ECALL must assert mtval.valid"
+      )
+      assert(
+        dut.io.csr.get.in.mtval.bits.peek().litValue == 0,
+        s"ECALL must write 0 to mtval, got 0x${dut.io.csr.get.in.mtval.bits.peek().litValue.toString(16)}"
+      )
+
+      // 2. EBREAK must write 0 to mtval
+      dut.io.req.valid.poke(true.B)
+      dut.io.req.bits.op.poke(BruOp.EBREAK)
+      dut.io.req.bits.pc.poke("h00000204".U)
+      dut.clock.step()
+      dut.io.req.valid.poke(false.B)
+      assert(dut.io.csr.get.in.mcause.valid.peek().litToBoolean)
+      assert(dut.io.csr.get.in.mcause.bits.peek().litValue == 25)
+      assert(
+        dut.io.csr.get.in.mtval.valid.peek().litToBoolean,
+        "EBREAK must assert mtval.valid"
+      )
+      assert(
+        dut.io.csr.get.in.mtval.bits.peek().litValue == 0,
+        s"EBREAK must write 0 to mtval, got 0x${dut.io.csr.get.in.mtval.bits.peek().litValue.toString(16)}"
+      )
+
+      // 3. Asynchronous interrupt taken on an interruptible op must write 0 to mtval
+      dut.io.req.valid.poke(true.B)
+      dut.io.req.bits.op.poke(BruOp.JAL)
+      dut.io.req.bits.pc.poke("h00000208".U)
+      dut.clock.step()
+      dut.io.req.valid.poke(false.B)
+      dut.io.csr.get.out.interrupt.poke(true.B)
+      dut.io.csr.get.out.interrupt_cause.poke("h80000007".U)
+      assert(dut.io.csr.get.in.mcause.valid.peek().litToBoolean)
+      assert(dut.io.csr.get.in.mcause.bits.peek().litValue == BigInt("80000007", 16))
+      assert(
+        dut.io.csr.get.in.mtval.valid.peek().litToBoolean,
+        "Interrupt entry must assert mtval.valid"
+      )
+      assert(
+        dut.io.csr.get.in.mtval.bits.peek().litValue == 0,
+        s"Interrupt entry must write 0 to mtval, got 0x${dut.io.csr.get.in.mtval.bits.peek().litValue.toString(16)}"
+      )
+      dut.io.csr.get.out.interrupt.poke(false.B)
+
+      // 4. FaultManager exception must forward fault_manager.mtval
+      dut.io.fault_manager.get.valid.poke(true.B)
+      dut.io.fault_manager.get.bits.mepc.poke("h00000300".U)
+      dut.io.fault_manager.get.bits.mcause.poke(2.U)
+      dut.io.fault_manager.get.bits.mtval.poke("hdeadbeef".U)
+      assert(dut.io.csr.get.in.mtval.valid.peek().litToBoolean)
+      assert(dut.io.csr.get.in.mtval.bits.peek().litValue == BigInt("deadbeef", 16))
+      dut.io.fault_manager.get.valid.poke(false.B)
+    }
+  }
 }

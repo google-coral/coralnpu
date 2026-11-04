@@ -27,6 +27,8 @@ __attribute__((naked)) void isr_wrapper() {
       "csrr t0, mcause \n"
       "li t1, 11 \n"
       "bne t0, t1, 0f \n"
+      "csrr t0, mtval \n"
+      "bnez t0, 0f \n"
       "lw t0, 0(%[isr_ok]) \n"
       "addi t0, t0, 1 \n"
       "sw t0, 0(%[isr_ok]) \n"
@@ -76,6 +78,7 @@ __attribute__((naked, aligned(256))) void isr_vector_table() {
 
 int main(int argc, char **argv) {
   asm volatile("csrw mtvec, %0" ::"rK"((uint32_t)(&isr_vector_table)));
+  asm volatile("csrw mtval, %0" ::"r"(0xdeadbeefu));
   asm volatile("ecall");
   if (isr_ok == 0) {
     asm volatile("ebreak");
