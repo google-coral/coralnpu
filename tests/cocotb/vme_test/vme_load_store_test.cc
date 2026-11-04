@@ -592,6 +592,33 @@ VME_SUBTEST(test_vtle32_vtse32_vl_lt_vstart) {
       : "vl", "vtype");
 }
 
+// Case 10: Tile store stalled behind busy VME while younger RVV indexed store
+// presents vectorData.idx.valid on rvv2lsu.
+VME_SUBTEST(test_vtse32_rvv_indexed_hazard) {
+  uint32_t mtype   = (16 << 10) | (1 << 5) | 2;  // tm=16, tk=1, mtwiden=2
+  uint32_t vtype   = 0x108;                      // altfmt=1, e16, m1
+  uint32_t sixteen = 16;
+  uint32_t tss     = 0;  // Row access, tile 0, row 0
+  int8_t *scratch  = out_buf + 512;
+  asm volatile(
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[mtype], %[vtype] \n"    // msetmtype
+      ".insn r 0b1010111, 0b111, 0b1000100, x0, %[sixteen], x0 \n"        // msettn (vl=16)
+      ".insn r 0b0000111, 0b111, 0b0101001, zero, %[in_buf], %[tss] \n"   // vtle32 tile 0
+      ".insn r 0b1110111, 0b001, 0b1111001, x9, x8, x16 \n"               // vtfmm.alt.tvv mt4
+      ".word 0x43e06457 \n"                                               // vtzero mt4
+      ".insn r 0b0100111, 0b111, 0b0101001, zero, %[out_buf], %[tss] \n"  // vtse32 tile 0
+      "vsetivli x0, 4, e32, m1, tu, mu \n"
+      "vsetvli t0, x0, e8, m1, tu, mu \n"
+      "vid.v v7 \n"
+      "vsll.vi v7, v7, 2 \n"
+      "vsuxei8.v v16, (%[scratch]), v7 \n"
+      : "+m"(*(int32_t(*)[256])out_buf)
+      : [mtype] "r"(mtype), [vtype] "r"(vtype), [sixteen] "r"(sixteen), [in_buf] "r"(in_buf),
+        [out_buf] "r"(out_buf), [scratch] "r"(scratch), [tss] "r"(tss),
+        "m"(*(const int32_t(*)[256])in_buf)
+      : "t0", "v7", "vl", "vtype");
+}
+
 volatile test_func_t test_fn __attribute__((section(".data"))) = nullptr;
 
 static void run_and_verify_out_buf(test_func_t fn) {

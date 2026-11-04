@@ -1117,6 +1117,9 @@ class LsuSuperSlot(p: Parameters) extends Module {
         val vmeValid = vmeData.map(_.valid).getOrElse(false.B)
         Mux(isVmeInst, vmeValid, vectorData.get.valid && vectorData.get.bits.mask.valid)
       }
+      val vectorIndexValid = Option.when(p.enableRvv) {
+        !isVmeInst && vectorData.get.valid && vectorData.get.bits.idx.valid
+      }
       val enableLane = Option.when(p.enableRvv) {
         MuxLookup(
           Cat(vector.get.dataSubvector.curr, vector.get.dataSubvectorTheoretical),
@@ -1204,8 +1207,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
             MakeInvalid(UInt(32.W)),
             (0 until p.rvvVlenb).map { j =>
               (
-                vectorData.get.valid &&
-                  vectorData.get.bits.idx.valid &&
+                vectorIndexValid.get &&
                   vectorDataActive.get(j)(i) &&
                   cells(i).state === LsuCellState.W_DATA
               ) -> MakeValid(vectorIndices.get(j))
@@ -1293,8 +1295,7 @@ class LsuSuperSlot(p: Parameters) extends Module {
             MakeInvalid(UInt(32.W)),
             (0 until p.rvvVlenb).map { j =>
               (
-                vectorData.get.valid &&
-                  vectorData.get.bits.idx.valid &&
+                vectorIndexValid.get &&
                   (idx < nCells.U(ctrWidth.W)) &&
                   enableLane.get(j) &&
                   (vector.get.dataActiveCells(j) === idx(indexWidth - 1, 0)) &&

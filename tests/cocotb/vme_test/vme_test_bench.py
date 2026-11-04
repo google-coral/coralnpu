@@ -898,6 +898,10 @@ async def vme_load_store_test(fixture):
             "name": "test_vtle32_vtse32_vl_lt_vstart",
             "dtype": np.int32,
         },
+        {
+            "name": "test_vtse32_rvv_indexed_hazard",
+            "dtype": np.int32,
+        },
     ]
 
     test_names = [tc["name"] for tc in test_cases]
