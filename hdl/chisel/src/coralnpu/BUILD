@@ -262,6 +262,8 @@ chisel_test(
     size = "medium",
     srcs = [
         "scalar/DecodeTest.scala",
+        "scalar/DispatchScoreboardTest.scala",
+        "scalar/DispatchTestUtils.scala",
     ],
     deps = [
         ":coralnpu_base",
