@@ -57,6 +57,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         shellcheck \
         srecord \
         sudo \
+        tio \
         tzdata \
         unzip \
         xxd \
