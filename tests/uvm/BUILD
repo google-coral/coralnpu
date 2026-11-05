@@ -1,6 +1,6 @@
 # Copyright 2026 Antmicro
 
-load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
@@ -130,6 +130,19 @@ config_setting(
 config_setting(
     name = "dut_vme",
     flag_values = {":dut": "vme"},
+)
+
+# Controls 3-way LSU memory read/write transaction checking (RTL vs MPACT vs
+# Spike) in UVM co-simulation. Enabled by default; pass
+# --config=no_lsu_mem_check or --//tests/uvm:lsu_mem_check=false to disable.
+bool_flag(
+    name = "lsu_mem_check",
+    build_setting_default = True,
+)
+
+config_setting(
+    name = "enable_lsu_mem_check",
+    flag_values = {":lsu_mem_check": "True"},
 )
 
 UVM_VERILATOR_CFLAGS = [

@@ -746,6 +746,141 @@ class TestUvmTestFixture(unittest.IsolatedAsyncioTestCase):
         finally:
             _shutdown_all_workers()
 
+    async def test_lsu_mem_check_default_on_and_opt_out_oneshot_and_batch(
+        self
+    ):
+        elf1 = os.path.join(self._temp_dir.name, "prog_000.elf")
+        elf2 = os.path.join(self._temp_dir.name, "prog_001.elf")
+        for p in (elf1, elf2):
+            with open(p, "wb") as f:
+                f.write(b"\x7fELF")
+
+        captured_cmds: list[tuple[str, ...]] = []
+
+        async def fake_exec(*cmd, **_kwargs):
+            captured_cmds.append(cmd)
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            if any(a.startswith("+REGRESSION_LIST=") for a in cmd):
+                log = (
+                    "--- STARTING TEST: prog_000.elf ---\n"
+                    "** UVM TEST PASSED **\n"
+                    "--- FINISHED TEST: prog_000.elf ---\n"
+                    "--- STARTING TEST: prog_001.elf ---\n"
+                    "** UVM TEST PASSED **\n"
+                    "--- FINISHED TEST: prog_001.elf ---\n"
+                    "REGRESSION COMPLETE. Passed: 2/2\n"
+                )
+            else:
+                log = "** UVM TEST PASSED **\n"
+            mock_proc.communicate = AsyncMock(
+                return_value=(log.encode("utf-8"), b"")
+            )
+            return mock_proc
+
+        with (
+                patch(
+                    "coralnpu_test_utils.sim_backends.uvm_test_fixture.resolve_runfile_path",
+                    side_effect=lambda p: str(p),
+                ),
+                patch(
+                    "coralnpu_test_utils.sim_backends.uvm_test_fixture.parse_elf_symbols",
+                    return_value=(0x0, {}, {}),
+                ),
+                patch(
+                    "asyncio.create_subprocess_exec",
+                    side_effect=fake_exec,
+                ),
+        ):
+            # 1. Default (env unset): +COSIM_LSU_MEM_CHECK=1 is passed.
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("CORALFLOW_LSU_MEM_CHECK", None)
+                fixture = UvmTestFixture(sim_binary_path="/bin/simv")
+                fixture.elf_path = elf1
+                self.assertTrue(await fixture.run_to_halt())
+                self.assertIn("+COSIM_LSU_MEM_CHECK=1", captured_cmds[-1])
+
+                self.assertTrue(await fixture.run_batch([elf1, elf2]))
+                self.assertIn("+COSIM_LSU_MEM_CHECK=1", captured_cmds[-1])
+
+            # 2. Case-insensitive truthy env values keep checking enabled.
+            for truthy in ("TRUE", "True", "true", "YES", "on", "1"):
+                with patch.dict(os.environ,
+                                {"CORALFLOW_LSU_MEM_CHECK": truthy}):
+                    fixture = UvmTestFixture(sim_binary_path="/bin/simv")
+                    fixture.elf_path = elf1
+                    self.assertTrue(await fixture.run_to_halt())
+                    self.assertIn("+COSIM_LSU_MEM_CHECK=1", captured_cmds[-1])
+
+            # 3. Disabled via CORALFLOW_LSU_MEM_CHECK=0: +COSIM_LSU_MEM_CHECK=0 is passed.
+            with patch.dict(os.environ, {"CORALFLOW_LSU_MEM_CHECK": "0"}):
+                fixture = UvmTestFixture(sim_binary_path="/bin/simv")
+                fixture.elf_path = elf1
+                self.assertTrue(await fixture.run_to_halt())
+                self.assertIn("+COSIM_LSU_MEM_CHECK=0", captured_cmds[-1])
+
+                self.assertTrue(await fixture.run_batch([elf1, elf2]))
+                self.assertIn("+COSIM_LSU_MEM_CHECK=0", captured_cmds[-1])
+
+            # 4. Disabled via constructor kwarg lsu_mem_check=False.
+            with patch.dict(os.environ, {"CORALFLOW_LSU_MEM_CHECK": "1"}):
+                fixture = UvmTestFixture(
+                    sim_binary_path="/bin/simv", lsu_mem_check=False
+                )
+                fixture.elf_path = elf1
+                self.assertTrue(await fixture.run_to_halt())
+                self.assertIn("+COSIM_LSU_MEM_CHECK=0", captured_cmds[-1])
+
+    async def test_persistent_worker_passes_lsu_mem_check_plusarg(self):
+        args_log = os.path.join(self._temp_dir.name, "worker_args.txt")
+        fake_sim = os.path.join(self._temp_dir.name, "fake_simv_lsu.py")
+        with open(fake_sim, "w", encoding="utf-8") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                f"with open({args_log!r}, 'a', encoding='utf-8') as af:\n"
+                "    af.write(' '.join(sys.argv[1:]) + '\\n')\n"
+                "fifo_path = [a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('+REGRESSION_LIST=')][0]\n"
+                "with open(fifo_path, 'r', encoding='utf-8') as fifo:\n"
+                "    for line in fifo:\n"
+                "        parts = line.strip().split()\n"
+                "        if not parts or parts[0] == 'QUIT':\n"
+                "            break\n"
+                "        tid = parts[5]\n"
+                "        print(f'--- STARTING TEST: {tid} ---', flush=True)\n"
+                "        print('** UVM TEST PASSED **', flush=True)\n"
+                "        print('--- FINISHED TEST: ' + tid + ' ---', flush=True)\n"
+            )
+        os.chmod(fake_sim, 0o755)
+
+        elf_path = os.path.join(self._temp_dir.name, "test.elf")
+        with open(elf_path, "wb") as f:
+            f.write(b"\x7fELF")
+
+        try:
+            with patch(
+                    "coralnpu_test_utils.sim_backends.uvm_test_fixture.resolve_runfile_path",
+                    side_effect=lambda p: str(p),
+            ):
+                with patch.dict(os.environ, {}, clear=False):
+                    os.environ.pop("CORALFLOW_LSU_MEM_CHECK", None)
+                    default_fixture = UvmTestFixture(sim_binary_path=fake_sim)
+                    default_fixture.elf_path = elf_path
+                    self.assertTrue(await default_fixture.run_to_halt())
+
+                with patch.dict(os.environ, {"CORALFLOW_LSU_MEM_CHECK": "0"}):
+                    off_fixture = UvmTestFixture(sim_binary_path=fake_sim)
+                    off_fixture.elf_path = elf_path
+                    self.assertTrue(await off_fixture.run_to_halt())
+
+            with open(args_log, "r", encoding="utf-8") as af:
+                lines = [ln.strip() for ln in af.readlines() if ln.strip()]
+            self.assertEqual(len(lines), 2)
+            self.assertIn("+COSIM_LSU_MEM_CHECK=1", lines[0])
+            self.assertIn("+COSIM_LSU_MEM_CHECK=0", lines[1])
+        finally:
+            _shutdown_all_workers()
+
 
 class TestFpgaTestFixture(unittest.TestCase):
     """Tests for FpgaTestFixture."""

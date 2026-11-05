@@ -23,6 +23,10 @@ package coralnpu_spike_cosim_dpi_if;
   // Returns 0 on success.
   import "DPI-C" function int spike_init();
 
+  // Function to enable or disable load/store memory transaction tracing in Spike.
+  // Disabled (0) by default. Returns 0 on success.
+  import "DPI-C" function int spike_set_mem_tracing(input bit enabled);
+
   // Function to load an ELF program into Spike simulation memory.
   // Returns 0 on success.
   import "DPI-C" function int spike_load_program(

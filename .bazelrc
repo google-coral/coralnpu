@@ -135,6 +135,14 @@ test:spyglass --test_tag_filters="spyglass"
 run:spyglass --build_tag_filters="spyglass"
 run:spyglass --test_tag_filters="spyglass"
 
+# Configure 3-way LSU memory transaction checking in UVM co-sim (on by default).
+build:lsu_mem_check --//tests/uvm:lsu_mem_check=true
+test:lsu_mem_check --//tests/uvm:lsu_mem_check=true
+run:lsu_mem_check --//tests/uvm:lsu_mem_check=true
+build:no_lsu_mem_check --//tests/uvm:lsu_mem_check=false
+test:no_lsu_mem_check --//tests/uvm:lsu_mem_check=false
+run:no_lsu_mem_check --//tests/uvm:lsu_mem_check=false
+
 # Set preprocessor defines for tflite-micro.
 build --copt=-DTF_LITE_USE_GLOBAL_CMATH_FUNCTIONS
 build --copt=-DTF_LITE_USE_GLOBAL_MIN

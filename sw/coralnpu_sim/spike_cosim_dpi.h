@@ -27,6 +27,10 @@ extern "C" {
 // Returns 0 on success.
 int spike_init();
 
+// Enables or disables load/store memory transaction tracing in Spike.
+// Disabled (0) by default. Returns 0 on success.
+int spike_set_mem_tracing(svBit enabled);
+
 // Loads an ELF program into Spike simulation memory and sets entry point.
 // If has_entry_point is true, entry_point is used; otherwise entry point from ELF is used.
 // Returns 0 on success.

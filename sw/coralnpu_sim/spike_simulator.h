@@ -39,8 +39,9 @@ struct SpikeSimulatorOptions {
   std::string isa =
       "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zicclsm_zfbfmin_zvfbfmin_zvfbfwma_zvfbfa_"
       "zvt16t_zvti8i32mm_zvtbf16fmm_zvtfmm_xdummy";
-  std::string priv = "m";
-  bool misaligned  = true;
+  std::string priv        = "m";
+  bool misaligned         = true;
+  bool enable_mem_tracing = false;
   std::vector<SpikeMemoryRegion> memory_regions;
 };
 
@@ -71,6 +72,7 @@ class SpikeSimulator {
   // Status
   uint64_t GetPC() const;
   uint64_t GetCycleCount() const;
+  bool IsMemTracingEnabled() const;
   const std::vector<SpikeMemTransaction> &GetLastStepMemWrites() const;
   const std::vector<SpikeMemTransaction> &GetLastStepMemReads() const;
 

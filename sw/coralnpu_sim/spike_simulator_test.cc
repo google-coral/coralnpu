@@ -52,6 +52,7 @@ TEST(SpikeSimulatorTest, InitializesWithDefaultOptions) {
   SpikeSimulator sim;
   EXPECT_EQ(sim.GetCycleCount(), 0);
   EXPECT_FALSE(sim.IsHalted());
+  EXPECT_FALSE(sim.IsMemTracingEnabled());
 }
 
 TEST(SpikeSimulatorTest, GprReadWriteAndX0Invariant) {
@@ -300,6 +301,93 @@ TEST(SpikeDpiTest, RobustnessAndNullSafety) {
   EXPECT_EQ(spike_get_vector_register("v99", vec_val), -1);
   EXPECT_EQ(spike_get_vector_register("v1extra", vec_val), -1);
 
+  EXPECT_EQ(spike_fini(), 0);
+}
+
+TEST(SpikeSimulatorTest, MemTracingDisabledByDefaultAndOptIn) {
+  std::string elf_path = GetTestElfPath();
+
+  // 1. Default options: memory tracing is disabled and records no transactions.
+  {
+    SpikeSimulator sim;
+    EXPECT_FALSE(sim.IsMemTracingEnabled());
+    ASSERT_TRUE(sim.LoadProgram(elf_path));
+    int steps = 0;
+    while (!sim.IsHalted() && steps < 5000) {
+      ASSERT_EQ(sim.Step(1), 1);
+      EXPECT_TRUE(sim.GetLastStepMemWrites().empty());
+      EXPECT_TRUE(sim.GetLastStepMemReads().empty());
+      steps++;
+    }
+    EXPECT_TRUE(sim.IsHalted());
+  }
+
+  // 2. Explicit opt-in: load and store transactions are recorded.
+  {
+    SpikeSimulatorOptions opts;
+    opts.enable_mem_tracing = true;
+    SpikeSimulator sim(opts);
+    EXPECT_TRUE(sim.IsMemTracingEnabled());
+    ASSERT_TRUE(sim.LoadProgram(elf_path));
+    int steps       = 0;
+    size_t n_reads  = 0;
+    size_t n_writes = 0;
+    while (!sim.IsHalted() && steps < 5000) {
+      ASSERT_EQ(sim.Step(1), 1);
+      for (const auto &r : sim.GetLastStepMemReads()) {
+        EXPECT_NE(r.mask, 0);
+        n_reads++;
+      }
+      for (const auto &w : sim.GetLastStepMemWrites()) {
+        EXPECT_NE(w.mask, 0);
+        n_writes++;
+      }
+      steps++;
+    }
+    EXPECT_TRUE(sim.IsHalted());
+    EXPECT_GT(n_reads, 0u);
+    EXPECT_GT(n_writes, 0u);
+  }
+}
+
+TEST(SpikeDpiTest, MemTracingSwitchViaDpi) {
+  std::string elf_path = GetTestElfPath();
+
+  // Default DPI init leaves memory tracing off.
+  ASSERT_EQ(spike_init(), 0);
+  ASSERT_EQ(spike_load_program(elf_path.c_str(), 0, 0), 0);
+  int steps = 0;
+  while (!spike_is_halted() && steps < 5000) {
+    ASSERT_EQ(spike_step(1), 0);
+    uint32_t nw = 0;
+    uint32_t nr = 0;
+    ASSERT_EQ(spike_get_num_mem_writes(&nw), 0);
+    ASSERT_EQ(spike_get_num_mem_reads(&nr), 0);
+    EXPECT_EQ(nw, 0u);
+    EXPECT_EQ(nr, 0u);
+    steps++;
+  }
+  EXPECT_EQ(spike_fini(), 0);
+
+  // Enabling via spike_set_mem_tracing(1) records reads and writes.
+  ASSERT_EQ(spike_set_mem_tracing(1), 0);
+  ASSERT_EQ(spike_init(), 0);
+  ASSERT_EQ(spike_load_program(elf_path.c_str(), 0, 0), 0);
+  steps                 = 0;
+  uint32_t total_writes = 0;
+  uint32_t total_reads  = 0;
+  while (!spike_is_halted() && steps < 5000) {
+    ASSERT_EQ(spike_step(1), 0);
+    uint32_t nw = 0;
+    uint32_t nr = 0;
+    ASSERT_EQ(spike_get_num_mem_writes(&nw), 0);
+    ASSERT_EQ(spike_get_num_mem_reads(&nr), 0);
+    total_writes += nw;
+    total_reads += nr;
+    steps++;
+  }
+  EXPECT_GT(total_writes, 0u);
+  EXPECT_GT(total_reads, 0u);
   EXPECT_EQ(spike_fini(), 0);
 }
 

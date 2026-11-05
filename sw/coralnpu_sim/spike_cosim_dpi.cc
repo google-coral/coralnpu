@@ -24,6 +24,7 @@
 namespace {
 
 std::unique_ptr<coralnpu::sim::SpikeSimulator> g_spike_sim = nullptr;
+bool g_enable_mem_tracing                                  = false;
 
 }  // namespace
 
@@ -34,7 +35,9 @@ int spike_init() {
     g_spike_sim.reset();
   }
   try {
-    g_spike_sim = std::make_unique<coralnpu::sim::SpikeSimulator>();
+    coralnpu::sim::SpikeSimulatorOptions options;
+    options.enable_mem_tracing = g_enable_mem_tracing;
+    g_spike_sim                = std::make_unique<coralnpu::sim::SpikeSimulator>(options);
     return 0;
   } catch (const std::exception &e) {
     std::cerr << "[Spike DPI] Initialization error: " << e.what() << std::endl;
@@ -43,6 +46,15 @@ int spike_init() {
     std::cerr << "[Spike DPI] Unknown exception in spike_init." << std::endl;
     return -1;
   }
+}
+
+int spike_set_mem_tracing(svBit enabled) {
+  const bool want_enabled = (enabled != 0);
+  g_enable_mem_tracing    = want_enabled;
+  if (g_spike_sim != nullptr && g_spike_sim->IsMemTracingEnabled() != want_enabled) {
+    return spike_init();
+  }
+  return 0;
 }
 
 int spike_load_program(const char *elf_file, uint32_t entry_point, svBit has_entry_point) {
@@ -347,6 +359,7 @@ int spike_get_mem_read(uint32_t index, uint32_t *addr, svLogicVecVal *rdata, uin
 int spike_fini() {
   try {
     g_spike_sim.reset();
+    g_enable_mem_tracing = false;
     return 0;
   } catch (const std::exception &e) {
     std::cerr << "[Spike DPI] Exception in spike_fini: " << e.what() << std::endl;

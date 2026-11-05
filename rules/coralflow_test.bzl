@@ -171,12 +171,22 @@ def _emit_py_test_target(
         py_env["CORALFLOW_EXCLUDE_TESTCASE"] = ",".join(excluded_testcases)
     for k, v in extra_env.items():
         py_env[k] = v
+    env_attr = py_env
+    if backend == "uvm":
+        py_env_on = dict(py_env)
+        py_env_on["CORALFLOW_LSU_MEM_CHECK"] = "1"
+        py_env_off = dict(py_env)
+        py_env_off["CORALFLOW_LSU_MEM_CHECK"] = "0"
+        env_attr = select({
+            "//tests/uvm:enable_lsu_mem_check": py_env_on,
+            "//conditions:default": py_env_off,
+        })
     native.py_test(
         name = "{}_{}".format(name, backend),
         srcs = srcs,
         main = main_src,
         data = data,
-        env = py_env,
+        env = env_attr,
         size = size,
         deps = _unique(deps + [fixture_dep]),
         tags = _unique(base_tags + tags),

@@ -1,7 +1,18 @@
 diff -uNr a/sim/cosim/coralnpu_cosim_dpi.h b/sim/cosim/coralnpu_cosim_dpi.h
 --- a/sim/cosim/coralnpu_cosim_dpi.h
 +++ b/sim/cosim/coralnpu_cosim_dpi.h
-@@ -112,6 +112,24 @@
+@@ -45,6 +45,10 @@
+ // Return 0 on success, non-zero on failure.
+ int mpact_init();
+ 
++// Enable or disable load/store memory transaction tracing in MPACT.
++// Disabled (0) by default. Returns 0 on success.
++int mpact_set_mem_tracing(svBit enabled);
++
+ // Configure the MPACT simulator. This function should be called after
+ // mpact_init. If not called, the default configuration is used.
+ // Return 0 on success, non-zero on failure.
+@@ -112,6 +116,24 @@
  // the MPACT simulator's memory space. Returns 0 on success.
  int mpact_apply_memory_patch(const char* patch_file);
  
@@ -47,7 +58,7 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
  #include "svdpi.h"
  
  using ::coralnpu::sim::Architecture;
-@@ -38,6 +42,126 @@
+@@ -38,9 +42,136 @@
  
  namespace {
  
@@ -173,62 +184,120 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
 +
  class MpactHandle {
   public:
-   MpactHandle() = default;
-@@ -66,6 +190,8 @@
+-  MpactHandle() = default;
++  explicit MpactHandle(bool enable_mem_tracing = false)
++      : enable_mem_tracing_(enable_mem_tracing) {}
++
++  ~MpactHandle() {
++    if (simulator_ != nullptr && base_memory_ != nullptr) {
++      simulator_->state()->set_memory(base_memory_);
++    }
++  }
+ 
+   bool Init(const sim_config_t* cosim_config) {
+     if (is_initialized_) {
+@@ -66,6 +197,11 @@
        options_.initial_misa_value = cosim_config->initial_misa_value;
      }
      simulator_ = std::make_unique<CoralNPUSimulator>(options_);
-+    tracing_memory_ = std::make_unique<TracingMemory>(simulator_->state()->memory());
-+    simulator_->state()->set_memory(tracing_memory_.get());
++    if (enable_mem_tracing_) {
++      base_memory_ = simulator_->state()->memory();
++      tracing_memory_ = std::make_unique<TracingMemory>(base_memory_);
++      simulator_->state()->set_memory(tracing_memory_.get());
++    }
      simulator_->state()->mie()->set_read_mask(0x888);
      simulator_->state()->mie()->set_write_mask(0x888);
      auto status = simulator_->WriteRegister("pc", options_.itcm_start_address);
-@@ -88,6 +214,7 @@
+@@ -88,6 +224,8 @@
  
    CoralNPUV2State* state() const { return simulator_->state(); }
    CoralNPUSimulator* simulator() const { return simulator_.get(); }
 +  TracingMemory* tracing_memory() const { return tracing_memory_.get(); }
++  bool mem_tracing_enabled() const { return enable_mem_tracing_; }
  
    bool is_initialized() const { return is_initialized_; }
  
-@@ -116,6 +243,7 @@
+@@ -116,10 +254,14 @@
   private:
    CoralNPUSimulatorOptions options_;
    std::unique_ptr<CoralNPUSimulator> simulator_;
++  ::mpact::sim::util::MemoryInterface* base_memory_ = nullptr;
 +  std::unique_ptr<TracingMemory> tracing_memory_;
++  bool enable_mem_tracing_ = false;
    bool is_initialized_ = false;
  };
  
-@@ -207,16 +335,20 @@
-     }
-   }
+ MpactHandle* g_mpact_handle = nullptr;
++bool g_mpact_enable_mem_tracing = false;
+ }  // namespace
  
-   uint32_t inst_word = instruction->aval;
-   if (!g_mpact_handle->simulator()
-            ->WriteMemory(g_mpact_handle->get_pc(), &inst_word,
-                          sizeof(inst_word))
-            .ok()) {
-     LOG(ERROR) << "[DPI] mpact_step: Failed to write instruction to memory.";
+ extern "C" {
+@@ -130,7 +272,23 @@
+                << "mpact_fini() must be called first.";
+     return -1;
+   }
+-  g_mpact_handle = new MpactHandle();
++  g_mpact_handle = new MpactHandle(g_mpact_enable_mem_tracing);
++  return 0;
++}
++
++int mpact_set_mem_tracing(svBit enabled) {
++  const bool want_enabled = (enabled != 0);
++  g_mpact_enable_mem_tracing = want_enabled;
++  if (g_mpact_handle != nullptr &&
++      g_mpact_handle->mem_tracing_enabled() != want_enabled) {
++    if (g_mpact_handle->is_initialized()) {
++      LOG(ERROR) << "[DPI] mpact_set_mem_tracing: must be called before "
++                 << "mpact_config().";
++      return -1;
++    }
++    delete g_mpact_handle;
++    g_mpact_handle = new MpactHandle(g_mpact_enable_mem_tracing);
++  }
+   return 0;
+ }
+ 
+@@ -188,9 +346,11 @@
+ }
+ 
+ int mpact_reset() {
++  const bool saved_mem_tracing = g_mpact_enable_mem_tracing;
+   if (g_mpact_handle != nullptr) {
+     mpact_fini();
+   }
++  g_mpact_enable_mem_tracing = saved_mem_tracing;
+   return mpact_init();
+ }
+ 
+@@ -216,7 +376,16 @@
      return 1;
    }
  
-+  g_mpact_handle->tracing_memory()->Clear();
-+  g_mpact_handle->tracing_memory()->set_enabled(true);
++  TracingMemory* tracer = g_mpact_handle->tracing_memory();
++  if (tracer != nullptr) {
++    tracer->Clear();
++    tracer->set_enabled(true);
++  }
    absl::StatusOr<int> step_res = g_mpact_handle->simulator()->Step(1);
-+  g_mpact_handle->tracing_memory()->set_enabled(false);
-+  g_mpact_handle->tracing_memory()->Finalize();
++  if (tracer != nullptr) {
++    tracer->set_enabled(false);
++    tracer->Finalize();
++  }
    if (!step_res.ok()) {
      LOG(ERROR) << "[DPI] mpact_step: Failed to step the simulator.";
      return 2;
-@@ -538,6 +670,70 @@
+@@ -538,6 +707,76 @@
    return 0;
  }
  
 +int mpact_get_num_mem_writes(uint32_t* num_writes) {
 +  if (num_writes == nullptr || g_mpact_handle == nullptr ||
-+      !g_mpact_handle->is_initialized() ||
-+      g_mpact_handle->tracing_memory() == nullptr) {
++      !g_mpact_handle->is_initialized()) {
 +    return -1;
++  }
++  if (g_mpact_handle->tracing_memory() == nullptr) {
++    *num_writes = 0;
++    return 0;
 +  }
 +  *num_writes = static_cast<uint32_t>(
 +      g_mpact_handle->tracing_memory()->writes().size());
@@ -258,9 +327,12 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
 +
 +int mpact_get_num_mem_reads(uint32_t* num_reads) {
 +  if (num_reads == nullptr || g_mpact_handle == nullptr ||
-+      !g_mpact_handle->is_initialized() ||
-+      g_mpact_handle->tracing_memory() == nullptr) {
++      !g_mpact_handle->is_initialized()) {
 +    return -1;
++  }
++  if (g_mpact_handle->tracing_memory() == nullptr) {
++    *num_reads = 0;
++    return 0;
 +  }
 +  *num_reads = static_cast<uint32_t>(
 +      g_mpact_handle->tracing_memory()->reads().size());
@@ -291,3 +363,11 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
  int mpact_fini() {
    if (g_mpact_handle == nullptr) {
      LOG(ERROR) << "[DPI] mpact_fini: g_mpact_handle is null.";
+@@ -545,6 +784,7 @@
+   }
+   delete g_mpact_handle;
+   g_mpact_handle = nullptr;
++  g_mpact_enable_mem_tracing = false;
+   return 0;
+ }
+ 

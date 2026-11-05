@@ -45,12 +45,25 @@ from coralnpu_test_utils.sim_backends.common_utils import (
 logger = logging.getLogger(__name__)
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    val = os.environ.get(name, "").strip()
+    if not val:
+        return default
+    return val.lower() in ("1", "true", "yes", "on")
+
+
 class _PersistentUvmWorker:
     """Manages a persistent UVM simulator subprocess fed via a POSIX FIFO."""
 
-    def __init__(self, sim_binary: str, verbose: bool = False):
+    def __init__(
+        self,
+        sim_binary: str,
+        verbose: bool = False,
+        lsu_mem_check: bool = True,
+    ):
         self.sim_binary = sim_binary
         self.verbose = verbose
+        self.lsu_mem_check = lsu_mem_check
         self.temp_dir: str | None = None
         self.fifo_path: str | None = None
         self.fifo_r_fd: int | None = None
@@ -71,6 +84,7 @@ class _PersistentUvmWorker:
             f"+TEST_ELF={os.path.abspath(initial_elf)}",
             "+UVM_TESTNAME=coralnpu_regression_test",
             f"+REGRESSION_LIST={self.fifo_path}",
+            f"+COSIM_LSU_MEM_CHECK={1 if self.lsu_mem_check else 0}",
         ]
         if self.verbose:
             cmd.append("+COSIM_TRACE_LOG")
@@ -214,7 +228,7 @@ class _PersistentUvmWorker:
             self.fifo_path = None
 
 
-_ACTIVE_WORKERS: dict[tuple[str, bool], _PersistentUvmWorker] = {}
+_ACTIVE_WORKERS: dict[tuple[str, bool, bool], _PersistentUvmWorker] = {}
 
 
 def _shutdown_all_workers() -> None:
@@ -233,10 +247,12 @@ class UvmTestFixture(BaseCoralNPUFixture):
         self,
         simulator: str = "verilator",
         sim_binary_path: str | None = None,
+        lsu_mem_check: bool | None = None,
     ):
         super().__init__()
         self.simulator = simulator
         self.sim_binary_path = sim_binary_path
+        self.lsu_mem_check = lsu_mem_check
 
         self.elf_path: str | None = None
         self.entry_point: int = 0
@@ -251,10 +267,16 @@ class UvmTestFixture(BaseCoralNPUFixture):
         cls,
         simulator: str = "verilator",
         sim_binary_path: str | None = None,
+        lsu_mem_check: bool | None = None,
         **_kwargs,
     ) -> UvmTestFixture:
         """Factory method to instantiate the fixture."""
-        return cls(simulator, sim_binary_path)
+        return cls(simulator, sim_binary_path, lsu_mem_check=lsu_mem_check)
+
+    def _is_lsu_mem_check_enabled(self) -> bool:
+        if self.lsu_mem_check is not None:
+            return bool(self.lsu_mem_check)
+        return _env_flag("CORALFLOW_LSU_MEM_CHECK", default=True)
 
     async def load_elf_and_lookup_symbols(
         self,
@@ -478,11 +500,8 @@ class UvmTestFixture(BaseCoralNPUFixture):
                                              delete=False) as dump_tmp:
                 dump_file = dump_tmp.name
 
-            verbose = os.environ.get("CORALFLOW_VERBOSE", "").strip() in (
-                "1",
-                "true",
-                "True",
-            )
+            verbose = _env_flag("CORALFLOW_VERBOSE", default=False)
+            lsu_mem_check = self._is_lsu_mem_check_enabled()
             sim_binary = self._get_simulator_binary()
             if timeout_cycles is not None:
                 timeout_sec = max(timeout_sec, 300.0)
@@ -492,10 +511,14 @@ class UvmTestFixture(BaseCoralNPUFixture):
                 or os.environ.get("CORALFLOW_UVM_ONESHOT", "").strip() == "1"
             )
             if not use_oneshot:
-                key = (sim_binary, verbose)
+                key = (sim_binary, verbose, lsu_mem_check)
                 worker = _ACTIVE_WORKERS.get(key)
                 if worker is None:
-                    worker = _PersistentUvmWorker(sim_binary, verbose=verbose)
+                    worker = _PersistentUvmWorker(
+                        sim_binary,
+                        verbose=verbose,
+                        lsu_mem_check=lsu_mem_check,
+                    )
                     _ACTIVE_WORKERS[key] = worker
                 try:
                     stdout_str, returncode = worker.run_test(
@@ -558,6 +581,7 @@ class UvmTestFixture(BaseCoralNPUFixture):
                         patch_summary,
                         patch_file,
                     )
+            cmd.append(f"+COSIM_LSU_MEM_CHECK={1 if lsu_mem_check else 0}")
             if verbose:
                 cmd.append("+COSIM_TRACE_LOG")
 
@@ -813,17 +837,15 @@ class UvmTestFixture(BaseCoralNPUFixture):
                     )
                 reg_list_file = reg_tmp.name
 
-            verbose = os.environ.get("CORALFLOW_VERBOSE", "").strip() in (
-                "1",
-                "true",
-                "True",
-            )
+            verbose = _env_flag("CORALFLOW_VERBOSE", default=False)
+            lsu_mem_check = self._is_lsu_mem_check_enabled()
             cmd = [
                 self._get_simulator_binary(),
                 f"+TEST_ELF={resolved_entries[0][0]}",
                 "+UVM_TESTNAME=coralnpu_regression_test",
                 f"+REGRESSION_LIST={reg_list_file}",
             ]
+            cmd.append(f"+COSIM_LSU_MEM_CHECK={1 if lsu_mem_check else 0}")
             if verbose:
                 cmd.append("+COSIM_TRACE_LOG")
 

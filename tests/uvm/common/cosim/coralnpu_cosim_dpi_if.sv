@@ -30,6 +30,10 @@ package coralnpu_cosim_dpi_if;
   // Returns 0 on success.
   import "DPI-C" context function int mpact_init();
 
+  // Function to enable or disable load/store memory transaction tracing in MPACT.
+  // Disabled (0) by default. Returns 0 on success.
+  import "DPI-C" context function int mpact_set_mem_tracing(input bit enabled);
+
   // Function to load an ELF program.
   // Returns 0 on success.
   import "DPI-C" context function int mpact_load_program(input string elf_file);

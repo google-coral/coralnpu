@@ -30,11 +30,15 @@ class spike_cosim_checker extends uvm_object;
   endfunction
 
   // Function: initialize
-  // Resets Spike, loads the test ELF program, and applies memory patch if provided.
+  // Resets Spike, configures memory tracing, loads the test ELF program, and
+  // applies memory patch if provided.
   function void initialize(string elf_path, int unsigned entry_point = 0, bit has_entry_point = 0,
-                           string patch_file = "");
+                           string patch_file = "", bit enable_mem_tracing = 1);
     current_elf = elf_path;
     void'(spike_fini());
+    if (spike_set_mem_tracing(enable_mem_tracing) != 0) begin
+      `uvm_fatal("SPIKE_INIT_FAIL", "Failed to configure Spike memory tracing via DPI-C.")
+    end
     if (spike_init() != 0) begin
       `uvm_fatal("SPIKE_INIT_FAIL", "Failed to initialize in-process Spike simulator via DPI-C.")
     end

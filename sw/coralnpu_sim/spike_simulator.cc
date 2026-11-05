@@ -253,7 +253,7 @@ struct SpikeSimulator::Impl {
   sim_t *sim_raw      = nullptr;
   processor_t *proc   = nullptr;
   uint64_t step_count = 0;
-  CoralNpuMemTracer mem_tracer{&sim_raw};
+  std::unique_ptr<CoralNpuMemTracer> mem_tracer;
 
   explicit Impl(const SpikeSimulatorOptions &options) {
     isa_str              = options.isa;
@@ -302,7 +302,10 @@ struct SpikeSimulator::Impl {
 
     sim_raw = sim.get();
     proc    = sim->get_core(0);
-    proc->get_mmu()->register_memtracer(&mem_tracer);
+    if (options.enable_mem_tracing) {
+      mem_tracer = std::make_unique<CoralNpuMemTracer>(&sim_raw);
+      proc->get_mmu()->register_memtracer(mem_tracer.get());
+    }
 
     // Override mpause to avoid process exit(0)
     insn_desc_t mpause_desc = {
@@ -329,6 +332,7 @@ struct SpikeSimulator::Impl {
   ~Impl() {
     sim_raw = nullptr;
     sim.reset();
+    mem_tracer.reset();
     mem_storage.clear();
     mems.clear();
   }
@@ -350,14 +354,17 @@ void SpikeSimulator::Reset() {
     impl_->proc->VU.vstart_alu               = true;
     ConfigureCoralNpuCsrs(impl_->proc);
   }
-  impl_->mem_tracer.Clear();
+  if (impl_->mem_tracer) {
+    impl_->mem_tracer->Clear();
+  }
   impl_->step_count = 0;
 }
 
 bool SpikeSimulator::IsHalted() const {
-  if (!impl_->proc)
+  processor_t *const proc = impl_.get()->proc;
+  if (!proc)
     return true;
-  return impl_->proc->get_state()->debug_mode;
+  return proc->get_state()->debug_mode;
 }
 
 bool SpikeSimulator::LoadProgram(const std::string &elf_path, std::optional<uint32_t> entry_point) {
@@ -380,22 +387,42 @@ bool SpikeSimulator::LoadProgram(const std::string &elf_path, std::optional<uint
 }
 
 int SpikeSimulator::Step(int num_steps) {
-  impl_->mem_tracer.Clear();
-  if (num_steps <= 0 || !impl_->proc)
+  Impl *const impl        = impl_.get();
+  processor_t *const proc = impl->proc;
+  if (CoralNpuMemTracer *const tracer = impl->mem_tracer.get()) {
+    tracer->Clear();
+    if (num_steps <= 0 || !proc)
+      return 0;
+    state_t *const state = proc->get_state();
+    if (state->debug_mode)
+      return 0;
+    int executed = 0;
+    tracer->set_enabled(true);
+    for (int i = 0; i < num_steps; ++i) {
+      proc->step(1);
+      impl->step_count++;
+      executed++;
+      if (state->debug_mode)
+        break;
+    }
+    tracer->set_enabled(false);
+    tracer->Finalize();
+    return executed;
+  }
+
+  if (num_steps <= 0 || !proc)
     return 0;
-  if (impl_->proc->get_state()->debug_mode)
+  state_t *const state = proc->get_state();
+  if (state->debug_mode)
     return 0;
   int executed = 0;
-  impl_->mem_tracer.set_enabled(true);
   for (int i = 0; i < num_steps; ++i) {
-    impl_->proc->step(1);
-    impl_->step_count++;
+    proc->step(1);
+    impl->step_count++;
     executed++;
-    if (impl_->proc->get_state()->debug_mode)
+    if (state->debug_mode)
       break;
   }
-  impl_->mem_tracer.set_enabled(false);
-  impl_->mem_tracer.Finalize();
   return executed;
 }
 
@@ -407,12 +434,16 @@ uint64_t SpikeSimulator::GetPC() const {
 
 uint64_t SpikeSimulator::GetCycleCount() const { return impl_->step_count; }
 
+bool SpikeSimulator::IsMemTracingEnabled() const { return impl_->mem_tracer != nullptr; }
+
 const std::vector<SpikeMemTransaction> &SpikeSimulator::GetLastStepMemWrites() const {
-  return impl_->mem_tracer.writes();
+  static const std::vector<SpikeMemTransaction> kEmpty;
+  return impl_->mem_tracer ? impl_->mem_tracer->writes() : kEmpty;
 }
 
 const std::vector<SpikeMemTransaction> &SpikeSimulator::GetLastStepMemReads() const {
-  return impl_->mem_tracer.reads();
+  static const std::vector<SpikeMemTransaction> kEmpty;
+  return impl_->mem_tracer ? impl_->mem_tracer->reads() : kEmpty;
 }
 
 uint64_t SpikeSimulator::ReadRegister(const std::string &name) {

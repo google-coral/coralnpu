@@ -119,6 +119,25 @@ The UVM testbench models and regressions are built and run directly using Bazel.
   bazel test --config=vcs --build_tests_only --build_tag_filters=uvm --test_tag_filters=uvm --define=uvm_simulator=vcs //...
   ```
 
+* **Configuring 3-Way LSU Memory Transaction Checking (On by Default):**
+
+  In UVM 3-way co-simulation, LSU memory read/write transaction checking (RTL vs
+  MPACT vs Spike) is enabled by default (while standalone `SpikeSimulator`
+  leaves load/store tracing disabled by default). To disable LSU memory
+  transaction checking on Bazel `*_uvm` targets, pass `--config=no_lsu_mem_check`
+  (or `--//tests/uvm:lsu_mem_check=false`). When invoking `UvmTestFixture`
+  directly outside `coralflow_test`, set `CORALFLOW_LSU_MEM_CHECK=0` (or pass
+  `lsu_mem_check=False`); when running a compiled simulator binary directly,
+  pass `+COSIM_LSU_MEM_CHECK=0` (or `+NO_COSIM_LSU_MEM_CHECK`):
+
+  ```bash
+  # Verilator without LSU memory transaction checking
+  bazel test --config=no_lsu_mem_check //tests/cocotb:rvv_load_store_test_uvm
+
+  # VCS without LSU memory transaction checking
+  bazel test --config=vcs --config=no_lsu_mem_check --build_tag_filters="" --test_tag_filters=uvm --define=uvm_simulator=vcs //tests/cocotb:rvv_load_store_test_uvm
+  ```
+
 **3. Building the VME (Zvt) Toplevel:**
 
 The bench can instantiate `VmeCoreMiniVerificationAxi` (RVV plus the Zvt

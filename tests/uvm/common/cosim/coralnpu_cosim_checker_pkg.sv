@@ -141,6 +141,7 @@ package coralnpu_cosim_checker_pkg;
 
     spike_cosim_checker spike_checker;
     bit trace_logging_enabled = 0;
+    bit lsu_mem_check_enabled = 1;
     bit mismatch_detected = 0;
     bit [31:0] dirty_gprs = 0;
     bit dirty_stack[int];
@@ -435,8 +436,22 @@ package coralnpu_cosim_checker_pkg;
         `uvm_fatal(get_type_name(), "'initial_misa_value' not found in config_db")
       end
 
+      begin
+        int lsu_mem_check_arg = 1;
+        if ($value$plusargs("COSIM_LSU_MEM_CHECK=%d", lsu_mem_check_arg)) begin
+          lsu_mem_check_enabled = (lsu_mem_check_arg != 0);
+        end else if ($test$plusargs("NO_COSIM_LSU_MEM_CHECK")) begin
+          lsu_mem_check_enabled = 0;
+        end else if ($test$plusargs("COSIM_LSU_MEM_CHECK")) begin
+          lsu_mem_check_enabled = 1;
+        end
+        void'(uvm_config_db#(bit)::get(this, "", "lsu_mem_check_enabled", lsu_mem_check_enabled));
+      end
+
       if (!uvm_config_db#(virtual coralnpu_lsu_if)::get(this, "", "lsu_vif", lsu_vif)) begin
-        `uvm_warning(get_type_name(), "LSU virtual interface 'lsu_vif' not found in config_db")
+        if (lsu_mem_check_enabled) begin
+          `uvm_warning(get_type_name(), "LSU virtual interface 'lsu_vif' not found in config_db")
+        end
       end
 
       if ($test$plusargs("COSIM_TRACE_LOG")) begin
@@ -449,14 +464,25 @@ package coralnpu_cosim_checker_pkg;
     endfunction
 
     // Task: collect_retired_instructions
-    // Samples the LSU interface every clock cycle and collects all instructions
-    // retiring on the RVVI trace interface in the current cycle.
+    // Waits until at least one instruction retires on the RVVI trace interface
+    // and collects all instructions retiring in that cycle. When LSU memory
+    // transaction checking is enabled, steps every clock edge to sample
+    // intermediate LSU activity; otherwise sleeps on instruction_retired_event
+    // until the next retirement cycle.
     virtual task collect_retired_instructions(ref retired_instr_info_s retired_instr_q[$]);
       retired_instr_q.delete();
 
       forever begin
-        @(posedge rvvi_vif.clk);
-        sample_lsu_cycle();
+        if (lsu_mem_check_enabled) begin
+          // Sample the LSU interface on every clock edge so transactions
+          // completing between instruction retirements are captured.
+          @(posedge rvvi_vif.clk);
+          sample_lsu_cycle();
+        end else begin
+          // Skip idle cycles by sleeping until the RVVI monitor triggers a
+          // retirement event.
+          instruction_retired_event.wait_trigger();
+        end
 
         for (int i = 0; i < rvvi_vif.RETIRE; i++) begin
           if (rvvi_vif.valid[0][i]) begin
@@ -662,14 +688,18 @@ package coralnpu_cosim_checker_pkg;
           entry_point = 0;
         end
         `uvm_info(get_type_name(), $sformatf(
-                  "Initializing Multi-ISS Co-Sim for %s (entry: 0x%h, custom: %0d)",
+                  "Initializing Multi-ISS Co-Sim for %s (entry: 0x%h, custom: %0d, lsu_mem_check: %0d)",
                   test_elf,
                   entry_point,
-                  has_entry_point
+                  has_entry_point,
+                  lsu_mem_check_enabled
                   ), UVM_LOW)
 
         // Initialize MPACT
         void'(mpact_fini());
+        if (mpact_set_mem_tracing(lsu_mem_check_enabled) != 0) begin
+          `uvm_fatal(get_type_name(), "MPACT DPI set_mem_tracing failed.")
+        end
         itcm_start_address = memory_map_pkg::ITCM_START_ADDR;
         itcm_length = memory_map_pkg::ITCM_LENGTH;
 `ifdef ZVT_ON
@@ -696,7 +726,8 @@ package coralnpu_cosim_checker_pkg;
         end
 
         // Initialize Spike
-        spike_checker.initialize(test_elf, entry_point, has_entry_point, mem_patch_file);
+        spike_checker.initialize(test_elf, entry_point, has_entry_point, mem_patch_file,
+                                 lsu_mem_check_enabled);
 
         fork
           begin : cosim_process_loop
@@ -712,7 +743,8 @@ package coralnpu_cosim_checker_pkg;
                 end
               end
               if (mismatch_detected) break;
-              if (pending_expected_lsu_q.size() > 0 && mpact_is_halted()) begin
+              if (lsu_mem_check_enabled && pending_expected_lsu_q.size() > 0 &&
+                  mpact_is_halted()) begin
                 int drain_cycles = 0;
                 phase.raise_objection(this, "Draining in-flight LSU transactions");
                 while (pending_expected_lsu_q.size() > 0 && !mismatch_detected &&
@@ -1252,7 +1284,7 @@ package coralnpu_cosim_checker_pkg;
       end
 
       // 6. LSU Memory Write and Read Transaction Verification (3-Way: RTL vs MPACT vs Spike)
-      if (!rtl_info.trap && lsu_vif != null) begin
+      if (lsu_mem_check_enabled && !rtl_info.trap && lsu_vif != null) begin
         int unsigned mpact_num_writes = 0;
         int unsigned spike_num_writes = 0;
         int unsigned mpact_num_reads = 0;
@@ -1352,7 +1384,7 @@ package coralnpu_cosim_checker_pkg;
           // queue expected MPACT & Spike transactions to be verified as soon as lsu.slot completes.
           pending_expected_lsu_q.push_back(exp_entry);
         end
-      end else if (rtl_info.trap) begin
+      end else if (lsu_mem_check_enabled && rtl_info.trap) begin
         if (completed_lsu_q.size() > 0 && completed_lsu_q[0].pc == rtl_info.pc) begin
           void'(completed_lsu_q.pop_front());
         end
