@@ -1013,5 +1013,36 @@ async def core_mini_axi_csr_behavior_test(fixture):
         assert ebreak_mtval == 0, f"EBREAK mtval incorrect! Expecting 0x0, got {hex(ebreak_mtval)}"
 
 
+@coralflow_test
+async def core_mini_axi_mem_sweep_test(fixture):
+    """Toggle-coverage sweep of DTCM, external memory (AXI master) and ITCM."""
+    r = runfiles.Create()
+    itcm_base, itcm_size = 0x00000, 8 * 1024
+
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/mem_sweep.elf")
+    await fixture.load_elf_and_lookup_symbols(elf_path, [])
+
+    from elftools.elf.elffile import ELFFile
+    with open(elf_path, "rb") as f:
+        elf = ELFFile(f)
+        prog_end = max(
+            (
+                seg["p_paddr"] + seg["p_memsz"]
+                for seg in elf.iter_segments()
+                if seg["p_type"] == "PT_LOAD" and seg["p_paddr"] < itcm_size
+            ),
+            default=0,
+        )
+    fill_start = (prog_end + 15) & ~15
+    n_words = (itcm_base + itcm_size - fill_start) // 4
+    if n_words > 0:
+        fill = np.where(np.arange(n_words) % 2 == 0, 0x00000000,
+                        0xFFFFFFFF).astype(np.uint32)
+        await fixture.write(fill_start, fill)
+
+    await fixture.run_to_halt(timeout_cycles=100_000_000)
+    assert not fixture.fault(), "core faulted during sweep"
+
+
 if __name__ == "__main__":
     coralflow_main()

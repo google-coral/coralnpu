@@ -61,6 +61,7 @@ COCOTB_TEST_BINARY_TARGETS = glob(["**/*.elf"]) + glob(["**/*.o"]) + [
     "//third_party/riscv-tests:all_files",
     "//third_party/riscv-tests:all_isa_binaries",
     ":csr_behavior.elf",
+    ":mem_sweep.elf",
 ]
 
 VCS_COMMON_DATA = [
@@ -246,6 +247,7 @@ CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_misa_test",
     "core_mini_axi_wrap_burst_test",
     "core_mini_axi_csr_behavior_test",
+    "core_mini_axi_mem_sweep_test",
 ]
 # END_TESTCASES_FOR_core_mini_axi_sim_cocotb
 
@@ -280,6 +282,7 @@ RVV_CORE_MINI_AXI_SIM_TESTCASES = [
     "rvv_misa_test",
     "core_mini_axi_wrap_burst_test",
     "core_mini_axi_csr_behavior_test",
+    "core_mini_axi_mem_sweep_test",
 ]
 # END_TESTCASES_FOR_rvv_core_mini_axi_sim_cocotb
 
@@ -294,6 +297,14 @@ coralflow_test(
     size = "large",
     srcs = ["core_mini_axi_sim.py"],
     data = COCOTB_TEST_BINARY_TARGETS,
+    exclude_testcases = {
+        "vcs": [
+            "core_mini_axi_mem_sweep_test",
+        ],
+        "verilator": [
+            "core_mini_axi_mem_sweep_test",
+        ],
+    },
     hdl_toplevel = "CoreMiniAxi",
     targets = [
         "verilator",
@@ -313,6 +324,7 @@ coralflow_test(
             "csr_behavior",
             "csr_illegal_write_test",
             "fencei_test",
+            "mem_sweep",
             "retire_buffer_full_illegal_inst",
             "spi_exec_test",
             "store_fault_0",
@@ -322,6 +334,12 @@ coralflow_test(
             "vfwsub_trap",
             "zfbfmin_test",
             "zvfbf_test",
+        ],
+        "vcs": [
+            "core_mini_axi_mem_sweep_test",
+        ],
+        "verilator": [
+            "core_mini_axi_mem_sweep_test",
         ],
     },
     hdl_toplevel = "RvvCoreMiniAxi",
@@ -738,6 +756,12 @@ coralnpu_v2_binary(
     srcs = ["csr_behavior.S"],
 )
 
+coralnpu_v2_binary(
+    name = "mem_sweep",
+    srcs = ["mem_sweep.cc"],
+    stack_size_bytes = 512,
+)
+
 coralflow_test(
     name = "rvv_load_store_test",
     size = "enormous",
@@ -1071,6 +1095,14 @@ coralflow_test(
     size = "large",
     srcs = ["core_mini_axi_sim.py"],
     data = COCOTB_TEST_BINARY_TARGETS,
+    exclude_testcases = {
+        "vcs": [
+            "core_mini_axi_mem_sweep_test",
+        ],
+        "verilator": [
+            "core_mini_axi_mem_sweep_test",
+        ],
+    },
     hdl_toplevel = "CoreMiniAxi",
     targets = [
         "verilator",
@@ -1086,6 +1118,14 @@ coralflow_test(
     size = "enormous",
     srcs = ["core_mini_axi_sim.py"],
     data = COCOTB_TEST_BINARY_TARGETS,
+    exclude_testcases = {
+        "vcs": [
+            "core_mini_axi_mem_sweep_test",
+        ],
+        "verilator": [
+            "core_mini_axi_mem_sweep_test",
+        ],
+    },
     hdl_toplevel = "RvvCoreMiniAxi",
     targets = [
         "verilator",

@@ -229,7 +229,7 @@ def isg_batch(
     # isg_batch_test and bypass ISG_ELF_FILTER and ISG_VERBOSE.
     coralflow_test(
         name = name,
-        size = "medium",
+        size = "large",
         srcs = ["isg_coralflow_test.py"],
         data = elf_targets,
         hdl_toplevel = "CoreMiniAxi",
