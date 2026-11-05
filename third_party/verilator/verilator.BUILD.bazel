@@ -396,6 +396,7 @@ cc_library(
     ],
     linkopts = [
         "-lpthread",
+        "-latomic",
         "-ldl",
         "-llz4",
     ],

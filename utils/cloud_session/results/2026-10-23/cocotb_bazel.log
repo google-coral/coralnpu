@@ -1,0 +1,685 @@
+WARNING: Repository '@@rules_cc++cc_configure_extension+local_config_cc' will be fetched again since the file 'module.modulemap' has been modified externally. External modifications can lead to incorrect builds.
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: 493 targets (15 packages loaded, 6 targets configured)
+Analyzing: 493 targets (15 packages loaded, 6 targets configured)
+
+WARNING: Download from https://github.com/FreeRTOS/FreeRTOS-Kernel/archive/refs/tags/V11.1.0.tar.gz failed: class java.io.IOException GET returned 403 Forbidden
+INFO: Repo +coralnpu_deps_ext+freertos defined by rule http_archive in @@bazel_tools//tools/build_defs/repo:http.bzl
+ERROR: /root/.cache/bazel/_bazel_root/ccf61429c48c55d35a0cb63529bd426e/external/bazel_tools/tools/build_defs/repo/http.bzl:200:45: An error occurred during the fetch of repository '+coralnpu_deps_ext+freertos':
+   Traceback (most recent call last):
+	File "/root/.cache/bazel/_bazel_root/ccf61429c48c55d35a0cb63529bd426e/external/bazel_tools/tools/build_defs/repo/http.bzl", line 200, column 45, in _http_archive_impl
+		download_info = ctx.download_and_extract(
+Error in download_and_extract: java.io.IOException: Error downloading [https://github.com/FreeRTOS/FreeRTOS-Kernel/archive/refs/tags/V11.1.0.tar.gz] to /root/.cache/bazel/_bazel_root/ccf61429c48c55d35a0cb63529bd426e/external/+coralnpu_deps_ext+freertos/temp17935596291632397182/V11.1.0.tar.gz: GET returned 403 Forbidden
+ERROR: no such package '@@+coralnpu_deps_ext+freertos//': java.io.IOException: Error downloading [https://github.com/FreeRTOS/FreeRTOS-Kernel/archive/refs/tags/V11.1.0.tar.gz] to /root/.cache/bazel/_bazel_root/ccf61429c48c55d35a0cb63529bd426e/external/+coralnpu_deps_ext+freertos/temp17935596291632397182/V11.1.0.tar.gz: GET returned 403 Forbidden
+ERROR: /home/user/coralnpu/tests/cocotb/freertos_app/BUILD:20:19: //tests/cocotb/freertos_app:freertos_app depends on @@+coralnpu_deps_ext+freertos//:freertos in repository @@+coralnpu_deps_ext+freertos which failed to fetch. no such package '@@+coralnpu_deps_ext+freertos//': java.io.IOException: Error downloading [https://github.com/FreeRTOS/FreeRTOS-Kernel/archive/refs/tags/V11.1.0.tar.gz] to /root/.cache/bazel/_bazel_root/ccf61429c48c55d35a0cb63529bd426e/external/+coralnpu_deps_ext+freertos/temp17935596291632397182/V11.1.0.tar.gz: GET returned 403 Forbidden
+INFO: Analyzed 493 targets (375 packages loaded, 28859 targets configured, 157 aspect applications).
+[6,819 / 8,507] Compiling tensorflow/lite/micro/kernels/batch_matmul.cc; 3s linux-sandbox ... (4 actions, 3 running)
+[7,440 / 8,507] Compiling src/V3AssertNfa.cpp; 3s linux-sandbox ... (4 actions, 3 running)
+[7,750 / 8,507] Executing genrule //hdl/chisel/src/coralnpu:rvv_core_mini_itcm512kb_dtcm512kb_axi_cc_library_emit_verilog [for tool]; 38s linux-sandbox ... (4 actions, 3 running)
+INFO: From Executing genrule //hdl/chisel/src/dma:dma_core_cc_library_emit_verilog [for tool]:
+[warn] home/user/coralnpu/hdl/chisel/src/dma/TransposeBuffer.scala 117:31: [W002] Dynamic index with width 5 is too large for extractee of width 16
+[warn] home/user/coralnpu/hdl/chisel/src/dma/TransposeBuffer.scala 177:13: [W004] Dynamic index with width 5 is too wide for Vec of size 16 (expected index width 4).
+[warn] home/user/coralnpu/hdl/chisel/src/dma/TransposeBuffer.scala 177:77: [W004] Dynamic index with width 5 is too wide for Vec of size 16 (expected index width 4).
+[warn] There were 3 warning(s) during hardware elaboration.
+INFO: From Executing genrule //hdl/chisel/src/dma:transpose_buffer_cc_library_emit_verilog [for tool]:
+[warn] home/user/coralnpu/hdl/chisel/src/dma/TransposeBuffer.scala 117:31: [W002] Dynamic index with width 5 is too large for extractee of width 16
+[warn] home/user/coralnpu/hdl/chisel/src/dma/TransposeBuffer.scala 177:13: [W004] Dynamic index with width 5 is too wide for Vec of size 16 (expected index width 4).
+[warn] home/user/coralnpu/hdl/chisel/src/dma/TransposeBuffer.scala 177:77: [W004] Dynamic index with width 5 is too wide for Vec of size 16 (expected index width 4).
+[warn] There were 3 warning(s) during hardware elaboration.
+INFO: From Verilate hdl/chisel/src/bus/TLUL2Axi_build/TLUL2Axi [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.094 MB sources in 11 modules, into 0.294 MB in 13 C++ files needing 0.000 MB
+- Verilator: Walltime 0.060 s (elab=0.007, cvt=0.031, bld=0.000); cpu 0.046 s on 1 threads; allocated 19.988 MB
+INFO: From Verilate hdl/chisel/src/bus/TlulIntegrityTestbench_build/TlulIntegrityTestbench [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.083 MB sources in 8 modules, into 0.241 MB in 12 C++ files needing 0.000 MB
+- Verilator: Walltime 0.029 s (elab=0.002, cvt=0.017, bld=0.000); cpu 0.027 s on 1 threads; allocated 19.285 MB
+INFO: From Verilate hdl/chisel/src/bus/SecdedEncoderTestbench57_build/SecdedEncoderTestbench57 [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.069 MB sources in 3 modules, into 0.045 MB in 12 C++ files needing 0.000 MB
+- Verilator: Walltime 0.008 s (elab=0.000, cvt=0.003, bld=0.000); cpu 0.008 s on 1 threads; allocated 18.129 MB
+INFO: From Verilate hdl/chisel/src/bus/TlulSocketM1_2_128_build/TlulSocketM1_2_128 [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.077 MB sources in 3 modules, into 0.159 MB in 12 C++ files needing 0.000 MB
+- Verilator: Walltime 0.017 s (elab=0.001, cvt=0.008, bld=0.000); cpu 0.017 s on 1 threads; allocated 18.664 MB
+INFO: From Verilate hdl/chisel/src/bus/TlulToSram_build/TlulToSram [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.076 MB sources in 5 modules, into 0.123 MB in 13 C++ files needing 0.000 MB
+- Verilator: Walltime 0.017 s (elab=0.001, cvt=0.008, bld=0.000); cpu 0.017 s on 1 threads; allocated 18.668 MB
+[8,084 / 8,593] Verilate hdl/chisel/src/dma/TransposeBuffer_build/TransposeBuffer [for tool]; 9s linux-sandbox ... (4 actions, 2 running)
+INFO: From Verilate hdl/chisel/src/dma/TransposeBuffer_build/TransposeBuffer [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.214 MB sources in 4 modules, into 1.928 MB in 14 C++ files needing 0.001 MB
+- Verilator: Walltime 0.399 s (elab=0.045, cvt=0.294, bld=0.000); cpu 0.385 s on 1 threads; allocated 33.324 MB
+INFO: From Verilate hdl/chisel/src/bus/AxiAddressGenerator_build/AxiAddressGenerator [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.079 MB sources in 4 modules, into 0.118 MB in 12 C++ files needing 0.000 MB
+- Verilator: Walltime 0.028 s (elab=0.002, cvt=0.016, bld=0.000); cpu 0.021 s on 1 threads; allocated 18.832 MB
+INFO: From Verilate hdl/chisel/src/bus/TlulSocket1N_128_build/TlulSocket1N_128 [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.088 MB sources in 4 modules, into 0.274 MB in 12 C++ files needing 0.000 MB
+- Verilator: Walltime 0.030 s (elab=0.003, cvt=0.016, bld=0.000); cpu 0.030 s on 1 threads; allocated 19.586 MB
+INFO: From Verilate hdl/chisel/src/bus/Axi2TLUL_build/Axi2TLUL [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.189 MB sources in 7 modules, into 0.997 MB in 13 C++ files needing 0.001 MB
+- Verilator: Walltime 0.194 s (elab=0.020, cvt=0.134, bld=0.000); cpu 0.192 s on 1 threads; allocated 27.156 MB
+INFO: From Verilate hdl/chisel/src/dma/DmaCore_build/DmaCore [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.276 MB sources in 15 modules, into 3.197 MB in 15 C++ files needing 0.001 MB
+- Verilator: Walltime 0.574 s (elab=0.068, cvt=0.414, bld=0.000); cpu 0.560 s on 1 threads; allocated 38.945 MB
+INFO: From Verilate hdl/chisel/src/bus/SecdedEncoderTestbench32_build/SecdedEncoderTestbench32 [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.069 MB sources in 3 modules, into 0.045 MB in 12 C++ files needing 0.000 MB
+- Verilator: Walltime 0.011 s (elab=0.001, cvt=0.004, bld=0.000); cpu 0.011 s on 1 threads; allocated 18.055 MB
+INFO: From Verilate tests/cocotb/tlul/BankedDtcm_build/BankedDtcm [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.286 MB sources in 33 modules, into 1.405 MB in 13 C++ files needing 0.003 MB
+- Verilator: Walltime 0.396 s (elab=0.040, cvt=0.305, bld=0.000); cpu 0.394 s on 1 threads; allocated 39.578 MB
+INFO: From Verilate hdl/chisel/src/bus/SecdedEncoderTestbench128_build/SecdedEncoderTestbench128 [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.070 MB sources in 3 modules, into 0.054 MB in 12 C++ files needing 0.000 MB
+- Verilator: Walltime 0.010 s (elab=0.001, cvt=0.004, bld=0.000); cpu 0.010 s on 1 threads; allocated 18.148 MB
+INFO: From Verilate tests/cocotb/RvvCoreMini_ITCM512KB_DTCM512KBAxi_build/RvvCoreMini_ITCM512KB_DTCM512KBAxi [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 11.116 MB sources in 217 modules, into 122.568 MB in 91 C++ files needing 0.039 MB
+- Verilator: Walltime 95.207 s (elab=6.909, cvt=83.264, bld=0.000); cpu 93.480 s on 1 threads; allocated 1023.598 MB
+[8,127 / 8,627] Verilate tests/cocotb/VmeCoreMiniAxi_build/VmeCoreMiniAxi [for tool]; 101s linux-sandbox ... (4 actions, 1 running)
+INFO: From Verilate tests/cocotb/VmeCoreMiniAxi_build/VmeCoreMiniAxi [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 11.389 MB sources in 238 modules, into 189.981 MB in 145 C++ files needing 0.088 MB
+- Verilator: Walltime 169.015 s (elab=11.188, cvt=147.669, bld=0.000); cpu 166.162 s on 1 threads; allocated 1839.430 MB
+[8,211 / 8,710] Verilate tests/cocotb/RvvCoreMiniAxi_build/RvvCoreMiniAxi [for tool]; 163s linux-sandbox ... (4 actions, 1 running)
+INFO: From Verilate tests/cocotb/RvvCoreMiniAxi_build/RvvCoreMiniAxi [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 10.996 MB sources in 219 modules, into 115.284 MB in 93 C++ files needing 0.038 MB
+- Verilator: Walltime 103.045 s (elab=8.938, cvt=88.849, bld=0.000); cpu 101.087 s on 1 threads; allocated 1035.477 MB
+INFO: From Verilate hdl/chisel/src/bus/TlulFifoAsync128_build/TlulFifoAsync128 [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.109 MB sources in 14 modules, into 0.365 MB in 12 C++ files needing 0.000 MB
+- Verilator: Walltime 0.087 s (elab=0.007, cvt=0.057, bld=0.000); cpu 0.086 s on 1 threads; allocated 21.352 MB
+INFO: From Verilate hdl/chisel/src/bus/TlulFifoSync_build/TlulFifoSync [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.084 MB sources in 6 modules, into 0.262 MB in 13 C++ files needing 0.000 MB
+- Verilator: Walltime 0.031 s (elab=0.003, cvt=0.015, bld=0.000); cpu 0.031 s on 1 threads; allocated 19.969 MB
+INFO: From Verilate hdl/chisel/src/bus/TlulLocalXbar_build/TlulLocalXbar [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 0.214 MB sources in 12 modules, into 1.141 MB in 16 C++ files needing 0.000 MB
+- Verilator: Walltime 0.249 s (elab=0.027, cvt=0.181, bld=0.000); cpu 0.246 s on 1 threads; allocated 32.414 MB
+INFO: From Verilate tests/cocotb/RvvCoreMiniHighmemAxi_build/RvvCoreMiniHighmemAxi [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 11.041 MB sources in 217 modules, into 122.505 MB in 91 C++ files needing 0.042 MB
+- Verilator: Walltime 102.328 s (elab=9.028, cvt=87.500, bld=0.000); cpu 100.551 s on 1 threads; allocated 1027.316 MB
+[8,475 / 8,969] Verilate hdl/chisel/src/soc/CoralNPUXbarTestHarness_build/CoralNPUXbarTestHarness [for tool]; 101s linux-sandbox ... (4 actions, 1 running)
+INFO: From Verilate hdl/chisel/src/soc/CoralNPUXbarTestHarness_build/CoralNPUXbarTestHarness [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 3.262 MB sources in 111 modules, into 93.520 MB in 86 C++ files needing 0.455 MB
+- Verilator: Walltime 87.632 s (elab=2.305, cvt=81.679, bld=0.000); cpu 86.173 s on 1 threads; allocated 7676.891 MB
+[8,486 / 8,979] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemTestHarness_build/CoralNPUChiselSubsystemTestHarness [for tool]; 221s linux-sandbox ... (4 actions, 1 running)
+INFO: From Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemTestHarness_build/CoralNPUChiselSubsystemTestHarness [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 14.179 MB sources in 407 modules, into 310.773 MB in 203 C++ files needing 0.406 MB
+- Verilator: Walltime 234.635 s (elab=12.959, cvt=209.176, bld=0.000); cpu 231.179 s on 1 threads; allocated 7793.316 MB
+[8,516 / 8,999] 9 / 492 tests; Testing //tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x16; 128s linux-sandbox ... (4 actions, 3 running)
+[8,549 / 8,999] 42 / 492 tests; Testing //tests/cocotb:vme_rvv_load_store_test_load8_index32_seg; 71s linux-sandbox ... (4 actions, 3 running)
+[8,576 / 8,999] 69 / 492 tests; Testing //tests/cocotb/tutorial/tfmicro:cocotb_logistic_test_logistic_256; 45s linux-sandbox ... (4 actions, 3 running)
+[8,585 / 8,999] 78 / 492 tests; Testing //tests/cocotb:vme_rvv_load_store_test_load_store_stride_masked_param_test; 157s linux-sandbox ... (4 actions running)
+[8,588 / 8,999] 81 / 492 tests; Testing //tests/cocotb:vme_rvv_load_store_test_load_store_stride_masked_param_test; 463s linux-sandbox ... (4 actions, 3 running)
+[8,612 / 8,999] 105 / 492 tests; Testing //tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv64to64stride1; 61s linux-sandbox ... (4 actions, 3 running)
+[8,639 / 8,999] 132 / 492 tests; Testing //tests/cocotb:vme_rvv_load_store_test_store8_index16; 31s linux-sandbox ... (4 actions, 3 running)
+[8,666 / 8,999] 159 / 492 tests; Testing //tests/cocotb:rvv_highmem_tests_slow_core_mini_axi_basic_write_read_memory; 65s linux-sandbox ... (4 actions running)
+[8,705 / 8,999] 198 / 492 tests; Testing //tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv64to64stride2; 64s linux-sandbox ... (4 actions, 2 running)
+[8,738 / 8,999] 231 / 492 tests; Testing //tests/cocotb:rvv_assembly_cocotb_test_vslide_boundary_test; 28s linux-sandbox ... (4 actions running)
+[8,804 / 8,999] 297 / 492 tests; Testing //tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_burst_types_test; 36s linux-sandbox ... (4 actions running)
+[8,891 / 8,999] 384 / 492 tests; Testing //tests/cocotb:rvv_load_store_test_store16_index16; 26s linux-sandbox ... (4 actions, 2 running)
+[8,933 / 8,999] 426 / 492 tests; Testing //tests/cocotb:rvv_load_store_test_load16_index32_seg; 114s linux-sandbox ... (4 actions running)
+[8,967 / 8,999] 460 / 492 tests; Testing //tests/cocotb:rvv_load_store_test_load_unit_all_vtypes_test; 33s linux-sandbox ... (4 actions running)
+[8,994 / 8,999] 487 / 492 tests; Testing //tests/cocotb:rvv_load_store_test_store32_index16; 37s linux-sandbox ... (4 actions running)
+WARNING: errors encountered while analyzing target '//tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos', it will not be built.
+Analysis failed
+INFO: Build succeeded for only 492 of 493 top-level targets
+INFO: Found 492 test targets...
+ERROR: command succeeded, but there were loading phase errors
+INFO: Elapsed time: 7078.436s, Critical Path: 1133.60s
+INFO: 6880 processes: 2119 action cache hit, 3730 internal, 3639 linux-sandbox, 3 worker.
+ERROR: Build did NOT complete successfully
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_abstract_access_nonexistent_register PASSED in 5.7s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_abstract_access_registers PASSED in 6.0s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_breakpoint PASSED in 6.9s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_dmactive   PASSED in 5.7s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_gdbserver  PASSED in 32.1s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_halt_resume PASSED in 6.1s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_hartsel    PASSED in 6.0s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_ndmreset   PASSED in 5.8s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_probe_impl PASSED in 5.9s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_scalar_registers PASSED in 7.0s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_single_step PASSED in 5.5s
+//tests/cocotb:core_mini_axi_debug_cocotb_core_mini_axi_debug_trigger_match PASSED in 5.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_backdoor_load_test PASSED in 3.6s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_basic_write_read_memory PASSED in 74.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_burst_types_test   PASSED in 45.2s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_cf_fault_retire_test PASSED in 3.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_coralnpu_isa_test  PASSED in 3.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_csr_behavior_test  PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_csr_illegal_write_test PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_csr_test           PASSED in 31.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_exceptions_test    PASSED in 3.0s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_fcsr_frm_hazard_test PASSED in 4.6s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_finish_txn_before_halt_test PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_float_csr_test     PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_float_hazard_test  PASSED in 2.6s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_frm_test           PASSED in 3.2s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_master_write_alignment PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_minstret_test      PASSED in 2.6s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_misa_test          PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_rand_instr_test    PASSED in 6.4s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_retire_buffer_full_illegal_inst_test PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_riscv_dv           PASSED in 4.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_riscv_tests        PASSED in 6.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_run_wfi_in_all_slots PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_slow_bready        PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_wrap_burst_test    PASSED in 3.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_core_mini_axi_write_read_memory_stress_test PASSED in 20.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_fencei_test                      PASSED in 2.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_backdoor_load_test PASSED in 3.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_basic_write_read_memory PASSED in 76.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_burst_types_test PASSED in 47.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_cf_fault_retire_test PASSED in 2.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_coralnpu_isa_test PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_behavior_test PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_illegal_write_test PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_test      PASSED in 32.2s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_exceptions_test PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_fcsr_frm_hazard_test PASSED in 2.6s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_finish_txn_before_halt_test PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_float_csr_test PASSED in 2.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_float_hazard_test PASSED in 2.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_frm_test      PASSED in 2.5s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_master_write_alignment PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_minstret_test PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_misa_test     PASSED in 2.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_rand_instr_test PASSED in 6.8s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_retire_buffer_full_illegal_inst_test PASSED in 3.2s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_riscv_dv      PASSED in 3.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_riscv_tests   PASSED in 6.3s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_run_wfi_in_all_slots PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_slow_bready   PASSED in 2.7s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_wrap_burst_test PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_core_mini_axi_write_read_memory_stress_test PASSED in 20.2s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_fencei_test                 PASSED in 2.9s
+//tests/cocotb:core_mini_axi_sim_cocotb_slow_unreachable_prefetch_fault  PASSED in 3.1s
+//tests/cocotb:core_mini_axi_sim_cocotb_unreachable_prefetch_fault       PASSED in 2.9s
+//tests/cocotb:isa_cycle_bench_test_isa_cycle_bench_test                 PASSED in 7.4s
+//tests/cocotb:nop_stress_test_nop_stress_test                           PASSED in 16.4s
+//tests/cocotb:rvv_arithmetic_cocotb_test_arithmetic_m1_vanilla_ops      PASSED in 16.4s
+//tests/cocotb:rvv_arithmetic_cocotb_test_binary_op_vx                   PASSED in 184.1s
+//tests/cocotb:rvv_arithmetic_cocotb_test_carry_op_vx                    PASSED in 13.9s
+//tests/cocotb:rvv_arithmetic_cocotb_test_comparison_op_vv               PASSED in 21.8s
+//tests/cocotb:rvv_arithmetic_cocotb_test_comparison_op_vx               PASSED in 31.0s
+//tests/cocotb:rvv_arithmetic_cocotb_test_extension_op_test              PASSED in 3.1s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float32_arithmetic_m1_vanilla_ops PASSED in 10.1s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float32_reduction_m1_failure_ops PASSED in 2.8s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float32_reduction_m1_vanilla_ops PASSED in 3.0s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float_comparison_op            PASSED in 9.3s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float_convert_op               PASSED in 8.6s
+//tests/cocotb:rvv_arithmetic_cocotb_test_float_misc_op                  PASSED in 12.6s
+//tests/cocotb:rvv_arithmetic_cocotb_test_immediate_op_test              PASSED in 23.0s
+//tests/cocotb:rvv_arithmetic_cocotb_test_merge_op_vv                    PASSED in 7.6s
+//tests/cocotb:rvv_arithmetic_cocotb_test_reduction_m1_failure_ops       PASSED in 4.3s
+//tests/cocotb:rvv_arithmetic_cocotb_test_reduction_m1_vanilla_ops       PASSED in 6.2s
+//tests/cocotb:rvv_arithmetic_cocotb_test_ternary_op_vx                  PASSED in 48.3s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnclip_test                    PASSED in 5.8s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnclip_vxsat_test              PASSED in 2.6s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnclipu_test                   PASSED in 5.5s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnsra_test                     PASSED in 6.3s
+//tests/cocotb:rvv_arithmetic_cocotb_test_vnsrl_test                     PASSED in 6.2s
+//tests/cocotb:rvv_arithmetic_cocotb_test_widen_math_ops_test_impl       PASSED in 4.3s
+//tests/cocotb:rvv_arithmetic_cocotb_test_widen_wide_math_ops_test       PASSED in 3.1s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_add                PASSED in 3.0s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_flush_race_test    PASSED in 3.0s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_load               PASSED in 3.0s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_lsu_indexed_short_vl_test PASSED in 2.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_small_loop_test    PASSED in 2.8s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vfrdiv_test        PASSED in 3.2s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vill_loop_trap_test PASSED in 2.8s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vill_trap_squashed_load_test PASSED in 2.8s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vl0_v0_corruption_test PASSED in 2.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vleff_test         PASSED in 2.9s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_dual_dispatch_lsu_test PASSED in 3.2s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_forwarding_debug_async_halt_test PASSED in 14.4s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_forwarding_debug_breakpoint_test PASSED in 4.8s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_forwarding_squash_test PASSED in 4.0s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_forwarding_whole_reg_control_test PASSED in 3.3s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_pipeline_test PASSED in 2.9s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_rob_test    PASSED in 2.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_trap_flush_test PASSED in 3.0s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_vmv_scalar_test PASSED in 2.8s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_rvv_vstart_vset_test   PASSED in 2.9s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vcompress_test         PASSED in 9.5s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vcpop_exception_test   PASSED in 9.5s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vcpop_test             PASSED in 4.4s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vcsr_test              PASSED in 9.1s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vfirst_test            PASSED in 10.9s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vill_test              PASSED in 3.2s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vill_whole_reg_test    PASSED in 4.1s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_viota_test             PASSED in 9.7s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vl_test                PASSED in 6.0s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vmsbf_test             PASSED in 9.0s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vmsif_test             PASSED in 9.3s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vmsof_test             PASSED in 9.0s
+//tests/cocotb:rvv_assembly_cocotb_test_core_mini_vstart_store           PASSED in 3.0s
+//tests/cocotb:rvv_assembly_cocotb_test_vgather_test                     PASSED in 5.5s
+//tests/cocotb:rvv_assembly_cocotb_test_vsetvl_test                      PASSED in 6.0s
+//tests/cocotb:rvv_assembly_cocotb_test_vslide1down_test                 PASSED in 8.6s
+//tests/cocotb:rvv_assembly_cocotb_test_vslide1up_test                   PASSED in 9.3s
+//tests/cocotb:rvv_assembly_cocotb_test_vslide_boundary_test             PASSED in 104.9s
+//tests/cocotb:rvv_assembly_cocotb_test_vslidedown_test                  PASSED in 37.9s
+//tests/cocotb:rvv_assembly_cocotb_test_vslideup_test                    PASSED in 35.9s
+//tests/cocotb:rvv_assembly_cocotb_test_vstart_test                      PASSED in 6.5s
+//tests/cocotb:rvv_bf16_ops_cocotb_test_rvv_bf16_ops_test                PASSED in 7.6s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_abstract_access_nonexistent_register PASSED in 5.5s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_abstract_access_registers PASSED in 6.4s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_breakpoint PASSED in 6.3s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_dmactive PASSED in 6.2s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_gdbserver PASSED in 92.2s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_halt_resume PASSED in 6.4s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_hartsel PASSED in 5.7s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_ndmreset PASSED in 6.2s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_probe_impl PASSED in 5.0s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_scalar_registers PASSED in 9.1s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_single_step PASSED in 7.0s
+//tests/cocotb:rvv_core_mini_axi_debug_cocotb_core_mini_axi_debug_trigger_match PASSED in 6.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_backdoor_load_test PASSED in 4.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_basic_write_read_memory PASSED in 108.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_burst_types_test PASSED in 59.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_cf_fault_retire_test PASSED in 3.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_coralnpu_isa_test PASSED in 2.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_csr_illegal_write_test PASSED in 3.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_csr_test       PASSED in 58.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_exceptions_test PASSED in 3.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_fcsr_frm_hazard_test PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_finish_txn_before_halt_test PASSED in 2.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_float_csr_test PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_float_hazard_test PASSED in 2.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_frm_test       PASSED in 3.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_master_write_alignment PASSED in 3.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_misa_test      PASSED in 2.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_rand_instr_test PASSED in 12.5s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_retire_buffer_full_illegal_inst_test PASSED in 2.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_riscv_dv       PASSED in 8.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_riscv_tests    PASSED in 15.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_run_wfi_in_all_slots PASSED in 2.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_slow_bready    PASSED in 2.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_wrap_burst_test PASSED in 2.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_core_mini_axi_write_read_memory_stress_test PASSED in 71.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_fencei_test                  PASSED in 2.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_rvv_exceptions_test          PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_rvv_frm_hazard_test          PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_rvv_misa_test                PASSED in 2.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_backdoor_load_test PASSED in 4.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_basic_write_read_memory PASSED in 109.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_burst_types_test PASSED in 61.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_cf_fault_retire_test PASSED in 2.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_coralnpu_isa_test PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_illegal_write_test PASSED in 2.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_csr_test  PASSED in 58.1s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_exceptions_test PASSED in 3.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_fcsr_frm_hazard_test PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_finish_txn_before_halt_test PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_float_csr_test PASSED in 2.5s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_float_hazard_test PASSED in 2.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_frm_test  PASSED in 3.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_master_write_alignment PASSED in 2.7s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_misa_test PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_rand_instr_test PASSED in 12.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_retire_buffer_full_illegal_inst_test PASSED in 2.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_riscv_dv  PASSED in 9.3s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_riscv_tests PASSED in 16.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_run_wfi_in_all_slots PASSED in 2.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_slow_bready PASSED in 3.0s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_wrap_burst_test PASSED in 2.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_core_mini_axi_write_read_memory_stress_test PASSED in 63.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_fencei_test             PASSED in 2.6s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_rvv_exceptions_test     PASSED in 2.8s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_rvv_frm_hazard_test     PASSED in 2.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_rvv_misa_test           PASSED in 2.9s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_slow_unreachable_prefetch_fault PASSED in 3.4s
+//tests/cocotb:rvv_core_mini_axi_sim_cocotb_unreachable_prefetch_fault   PASSED in 3.8s
+//tests/cocotb:rvv_fflags_cocotb_test_rvv_fflags_test                    PASSED in 3.1s
+//tests/cocotb:rvv_highmem_tests_core_mini_axi_basic_write_read_memory   PASSED in 12.6s
+//tests/cocotb:rvv_highmem_tests_core_mini_axi_run_wfi_in_all_slots_highmem PASSED in 2.7s
+//tests/cocotb:rvv_highmem_tests_core_mini_axi_wrap_burst_highmem_test   PASSED in 2.4s
+//tests/cocotb:rvv_highmem_tests_core_mini_rvv_matmul_test               PASSED in 3.2s
+//tests/cocotb:rvv_highmem_tests_slow_core_mini_axi_basic_write_read_memory PASSED in 12.2s
+//tests/cocotb:rvv_highmem_tests_slow_core_mini_axi_run_wfi_in_all_slots_highmem PASSED in 2.8s
+//tests/cocotb:rvv_highmem_tests_slow_core_mini_axi_wrap_burst_highmem_test PASSED in 2.3s
+//tests/cocotb:rvv_highmem_tests_slow_core_mini_rvv_matmul_test          PASSED in 3.5s
+//tests/cocotb:rvv_itcm512kb_dtcm512kb_tests_core_mini_axi_basic_write_read_memory PASSED in 12.7s
+//tests/cocotb:rvv_itcm512kb_dtcm512kb_tests_core_mini_axi_run_wfi_in_all_slots_itcm512kb_dtcm512kb PASSED in 3.3s
+//tests/cocotb:rvv_itcm512kb_dtcm512kb_tests_core_mini_rvv_matmul_test   PASSED in 3.2s
+//tests/cocotb:rvv_load_store_test_load16_index16_seg                    PASSED in 64.2s
+//tests/cocotb:rvv_load_store_test_load16_index32_seg                    PASSED in 60.3s
+//tests/cocotb:rvv_load_store_test_load16_index8                         PASSED in 4.6s
+//tests/cocotb:rvv_load_store_test_load16_index8_seg                     PASSED in 10.9s
+//tests/cocotb:rvv_load_store_test_load16_seg_unit                       PASSED in 7.5s
+//tests/cocotb:rvv_load_store_test_load16_segment2_stride6_m1            PASSED in 3.1s
+//tests/cocotb:rvv_load_store_test_load16_stride4_m1                     PASSED in 3.0s
+//tests/cocotb:rvv_load_store_test_load16_stride4_m1_partial             PASSED in 2.9s
+//tests/cocotb:rvv_load_store_test_load16_stride4_mf2                    PASSED in 3.7s
+//tests/cocotb:rvv_load_store_test_load32_index16_seg                    PASSED in 35.6s
+//tests/cocotb:rvv_load_store_test_load32_index32_seg                    PASSED in 35.7s
+//tests/cocotb:rvv_load_store_test_load32_index8                         PASSED in 4.4s
+//tests/cocotb:rvv_load_store_test_load32_index8_seg                     PASSED in 7.4s
+//tests/cocotb:rvv_load_store_test_load32_seg_unit                       PASSED in 5.4s
+//tests/cocotb:rvv_load_store_test_load32_stride8_m1                     PASSED in 2.8s
+//tests/cocotb:rvv_load_store_test_load32_stride8_m1_partial             PASSED in 2.7s
+//tests/cocotb:rvv_load_store_test_load8_index16                         PASSED in 20.9s
+//tests/cocotb:rvv_load_store_test_load8_index16_seg                     PASSED in 83.5s
+//tests/cocotb:rvv_load_store_test_load8_index32                         PASSED in 15.9s
+//tests/cocotb:rvv_load_store_test_load8_index32_seg                     PASSED in 86.0s
+//tests/cocotb:rvv_load_store_test_load8_index8                          PASSED in 5.5s
+//tests/cocotb:rvv_load_store_test_load8_index8_seg                      PASSED in 13.6s
+//tests/cocotb:rvv_load_store_test_load8_seg_unit                        PASSED in 9.2s
+//tests/cocotb:rvv_load_store_test_load8_segment2_stride6_m1             PASSED in 2.8s
+//tests/cocotb:rvv_load_store_test_load8_stride0_m1                      PASSED in 2.7s
+//tests/cocotb:rvv_load_store_test_load8_stride0strict_m1                PASSED in 3.0s
+//tests/cocotb:rvv_load_store_test_load8_stride2_m1                      PASSED in 2.7s
+//tests/cocotb:rvv_load_store_test_load8_stride2_m1_partial              PASSED in 2.8s
+//tests/cocotb:rvv_load_store_test_load8_stride2_mf4                     PASSED in 2.8s
+//tests/cocotb:rvv_load_store_test_load_store16_unit_m2                  PASSED in 2.9s
+//tests/cocotb:rvv_load_store_test_load_store32_unit_m2                  PASSED in 2.7s
+//tests/cocotb:rvv_load_store_test_load_store8_test                      PASSED in 2.8s
+//tests/cocotb:rvv_load_store_test_load_store8_unit_m2                   PASSED in 3.0s
+//tests/cocotb:rvv_load_store_test_load_store_bits                       PASSED in 4.1s
+//tests/cocotb:rvv_load_store_test_load_store_stride_masked_param_test   PASSED in 250.0s
+//tests/cocotb:rvv_load_store_test_load_store_stride_masked_test         PASSED in 2.9s
+//tests/cocotb:rvv_load_store_test_load_store_whole_register_test        PASSED in 13.1s
+//tests/cocotb:rvv_load_store_test_load_strided_all_vtypes_test          PASSED in 58.9s
+//tests/cocotb:rvv_load_store_test_load_unit_all_vtypes_test             PASSED in 23.7s
+//tests/cocotb:rvv_load_store_test_load_unit_ff                          PASSED in 20.0s
+//tests/cocotb:rvv_load_store_test_load_unit_masked                      PASSED in 8.1s
+//tests/cocotb:rvv_load_store_test_lsu_fault_indexed_mid_vstart          PASSED in 2.9s
+//tests/cocotb:rvv_load_store_test_lsu_fault_negative_stride_mid_vstart  PASSED in 2.9s
+//tests/cocotb:rvv_load_store_test_lsu_fault_scalar_mixed_rs_flush       PASSED in 3.0s
+//tests/cocotb:rvv_load_store_test_lsu_fault_scalar_preserves_vstart     PASSED in 2.9s
+//tests/cocotb:rvv_load_store_test_lsu_fault_scalar_to_scalar_rs_flush   PASSED in 2.7s
+//tests/cocotb:rvv_load_store_test_lsu_fault_seg3_negative_stride_mid_vstart PASSED in 2.6s
+//tests/cocotb:rvv_load_store_test_lsu_fault_seg5_negative_stride_mid_vstart PASSED in 2.8s
+//tests/cocotb:rvv_load_store_test_lsu_fault_unit_stride_rs_flush        PASSED in 2.8s
+//tests/cocotb:rvv_load_store_test_lsu_fault_vector_load_rs_flush        PASSED in 2.7s
+//tests/cocotb:rvv_load_store_test_lsu_fault_vleff_rs_flush              PASSED in 3.1s
+//tests/cocotb:rvv_load_store_test_store16_index16                       PASSED in 34.5s
+//tests/cocotb:rvv_load_store_test_store16_index32                       PASSED in 28.2s
+//tests/cocotb:rvv_load_store_test_store16_index8                        PASSED in 4.4s
+//tests/cocotb:rvv_load_store_test_store16_seg_unit                      PASSED in 7.5s
+//tests/cocotb:rvv_load_store_test_store32_index16                       PASSED in 27.6s
+//tests/cocotb:rvv_load_store_test_store32_index32                       PASSED in 30.3s
+//tests/cocotb:rvv_load_store_test_store32_index8                        PASSED in 6.1s
+//tests/cocotb:rvv_load_store_test_store32_seg_unit                      PASSED in 5.9s
+//tests/cocotb:rvv_load_store_test_store8_index16                        PASSED in 36.9s
+//tests/cocotb:rvv_load_store_test_store8_index32                        PASSED in 28.1s
+//tests/cocotb:rvv_load_store_test_store8_index8                         PASSED in 5.8s
+//tests/cocotb:rvv_load_store_test_store8_index8_seg                     PASSED in 13.6s
+//tests/cocotb:rvv_load_store_test_store8_seg_unit                       PASSED in 9.9s
+//tests/cocotb:rvv_load_store_test_store_strided_all_vtypes_test         PASSED in 102.6s
+//tests/cocotb:rvv_load_store_test_store_unit_all_vtypes_test            PASSED in 20.6s
+//tests/cocotb:rvv_load_store_test_store_unit_masked                     PASSED in 7.4s
+//tests/cocotb:rvv_load_store_test_whole_reg_repro                       PASSED in 3.3s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_bf16_matmul_c_test   PASSED in 17.2s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_float_matmul_asm_test PASSED in 11.1s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_float_matmul_c_test  PASSED in 10.9s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_float_matmul_optimized_c_test PASSED in 6.3s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_matmul_asm_test      PASSED in 6.0s
+//tests/cocotb:rvv_ml_ops_cocotb_test_core_mini_rvv_matmul_c_test        PASSED in 5.8s
+//tests/cocotb:vme_rvv_load_store_test_load16_index16_seg                PASSED in 119.2s
+//tests/cocotb:vme_rvv_load_store_test_load16_index32_seg                PASSED in 117.3s
+//tests/cocotb:vme_rvv_load_store_test_load16_index8                     PASSED in 6.8s
+//tests/cocotb:vme_rvv_load_store_test_load16_index8_seg                 PASSED in 18.8s
+//tests/cocotb:vme_rvv_load_store_test_load16_seg_unit                   PASSED in 13.1s
+//tests/cocotb:vme_rvv_load_store_test_load16_segment2_stride6_m1        PASSED in 3.1s
+//tests/cocotb:vme_rvv_load_store_test_load16_stride4_m1                 PASSED in 3.2s
+//tests/cocotb:vme_rvv_load_store_test_load16_stride4_m1_partial         PASSED in 2.8s
+//tests/cocotb:vme_rvv_load_store_test_load16_stride4_mf2                PASSED in 2.8s
+//tests/cocotb:vme_rvv_load_store_test_load32_index16_seg                PASSED in 60.8s
+//tests/cocotb:vme_rvv_load_store_test_load32_index32_seg                PASSED in 68.3s
+//tests/cocotb:vme_rvv_load_store_test_load32_index8                     PASSED in 5.8s
+//tests/cocotb:vme_rvv_load_store_test_load32_index8_seg                 PASSED in 13.5s
+//tests/cocotb:vme_rvv_load_store_test_load32_seg_unit                   PASSED in 9.2s
+//tests/cocotb:vme_rvv_load_store_test_load32_stride8_m1                 PASSED in 2.9s
+//tests/cocotb:vme_rvv_load_store_test_load32_stride8_m1_partial         PASSED in 2.8s
+//tests/cocotb:vme_rvv_load_store_test_load8_index16                     PASSED in 34.8s
+//tests/cocotb:vme_rvv_load_store_test_load8_index16_seg                 PASSED in 155.5s
+//tests/cocotb:vme_rvv_load_store_test_load8_index32                     PASSED in 27.4s
+//tests/cocotb:vme_rvv_load_store_test_load8_index32_seg                 PASSED in 151.1s
+//tests/cocotb:vme_rvv_load_store_test_load8_index8                      PASSED in 7.9s
+//tests/cocotb:vme_rvv_load_store_test_load8_index8_seg                  PASSED in 25.3s
+//tests/cocotb:vme_rvv_load_store_test_load8_seg_unit                    PASSED in 16.0s
+//tests/cocotb:vme_rvv_load_store_test_load8_segment2_stride6_m1         PASSED in 2.7s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride0_m1                  PASSED in 3.1s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride0strict_m1            PASSED in 3.2s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride2_m1                  PASSED in 2.9s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride2_m1_partial          PASSED in 3.0s
+//tests/cocotb:vme_rvv_load_store_test_load8_stride2_mf4                 PASSED in 2.9s
+//tests/cocotb:vme_rvv_load_store_test_load_store16_unit_m2              PASSED in 3.3s
+//tests/cocotb:vme_rvv_load_store_test_load_store32_unit_m2              PASSED in 2.7s
+//tests/cocotb:vme_rvv_load_store_test_load_store8_test                  PASSED in 2.9s
+//tests/cocotb:vme_rvv_load_store_test_load_store8_unit_m2               PASSED in 2.7s
+//tests/cocotb:vme_rvv_load_store_test_load_store_bits                   PASSED in 5.0s
+//tests/cocotb:vme_rvv_load_store_test_load_store_stride_masked_param_test PASSED in 512.4s
+//tests/cocotb:vme_rvv_load_store_test_load_store_stride_masked_test     PASSED in 3.1s
+//tests/cocotb:vme_rvv_load_store_test_load_store_whole_register_test    PASSED in 24.5s
+//tests/cocotb:vme_rvv_load_store_test_load_strided_all_vtypes_test      PASSED in 113.8s
+//tests/cocotb:vme_rvv_load_store_test_load_unit_all_vtypes_test         PASSED in 42.0s
+//tests/cocotb:vme_rvv_load_store_test_load_unit_ff                      PASSED in 40.8s
+//tests/cocotb:vme_rvv_load_store_test_load_unit_masked                  PASSED in 12.2s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_indexed_mid_vstart      PASSED in 2.8s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_negative_stride_mid_vstart PASSED in 3.0s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_scalar_mixed_rs_flush   PASSED in 3.2s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_scalar_preserves_vstart PASSED in 2.9s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_scalar_to_scalar_rs_flush PASSED in 3.3s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_seg3_negative_stride_mid_vstart PASSED in 3.0s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_seg5_negative_stride_mid_vstart PASSED in 3.0s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_unit_stride_rs_flush    PASSED in 2.9s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_vector_load_rs_flush    PASSED in 2.8s
+//tests/cocotb:vme_rvv_load_store_test_lsu_fault_vleff_rs_flush          PASSED in 3.2s
+//tests/cocotb:vme_rvv_load_store_test_store16_index16                   PASSED in 61.1s
+//tests/cocotb:vme_rvv_load_store_test_store16_index32                   PASSED in 51.6s
+//tests/cocotb:vme_rvv_load_store_test_store16_index8                    PASSED in 7.6s
+//tests/cocotb:vme_rvv_load_store_test_store16_seg_unit                  PASSED in 12.6s
+//tests/cocotb:vme_rvv_load_store_test_store32_index16                   PASSED in 46.1s
+//tests/cocotb:vme_rvv_load_store_test_store32_index32                   PASSED in 45.5s
+//tests/cocotb:vme_rvv_load_store_test_store32_index8                    PASSED in 8.2s
+//tests/cocotb:vme_rvv_load_store_test_store32_seg_unit                  PASSED in 8.8s
+//tests/cocotb:vme_rvv_load_store_test_store8_index16                    PASSED in 60.3s
+//tests/cocotb:vme_rvv_load_store_test_store8_index32                    PASSED in 50.9s
+//tests/cocotb:vme_rvv_load_store_test_store8_index8                     PASSED in 8.0s
+//tests/cocotb:vme_rvv_load_store_test_store8_index8_seg                 PASSED in 25.5s
+//tests/cocotb:vme_rvv_load_store_test_store8_seg_unit                   PASSED in 15.2s
+//tests/cocotb:vme_rvv_load_store_test_store_strided_all_vtypes_test     PASSED in 201.4s
+//tests/cocotb:vme_rvv_load_store_test_store_unit_all_vtypes_test        PASSED in 40.8s
+//tests/cocotb:vme_rvv_load_store_test_store_unit_masked                 PASSED in 13.5s
+//tests/cocotb:vme_rvv_load_store_test_whole_reg_repro                   PASSED in 3.9s
+//tests/cocotb:zfbfmin_cocotb_test_zfbfmin_test                          PASSED in 3.4s
+//tests/cocotb:zvfbf_cocotb_test_zvfbf_test                              PASSED in 2.5s
+//tests/cocotb/csr_test:csr_test_csr_read_write_test                     PASSED in 2.6s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_align_error             PASSED in 2.4s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_back_to_back            PASSED in 2.5s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_cfg_error               PASSED in 2.2s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_cfg_error_area_size_zero PASSED in 2.7s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_error_gate              PASSED in 2.4s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_multi_chunk             PASSED in 2.2s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_multi_chunk_partial     PASSED in 2.5s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_partial_tail            PASSED in 2.2s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_randomized              PASSED in 3.0s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_single_chunk            PASSED in 2.3s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_smoke                   PASSED in 2.8s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_source_integrity        PASSED in 2.5s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_strided_randomized      PASSED in 5.9s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_strided_smoke           PASSED in 2.1s
+//tests/cocotb/dma:dma_core_cocotb_test_test_dma_strided_tail            PASSED in 2.2s
+//tests/cocotb/dma:transpose_buffer_cocotb_test_test_transpose_buffer_memcopy PASSED in 2.5s
+//tests/cocotb/dma:transpose_buffer_cocotb_test_test_transpose_buffer_out_of_order PASSED in 2.3s
+//tests/cocotb/dma:transpose_buffer_cocotb_test_test_transpose_buffer_randomized PASSED in 2.3s
+//tests/cocotb/rvv/ml_ops/static_reference_tests:float_matmul_16x48x16_test_suite_float_matmul_16x48x16_test PASSED in 12.0s
+//tests/cocotb/rvv/ml_ops/static_reference_tests:int_matmul_16x48x16_test_suite_int_matmul_16x48x16_test PASSED in 5.9s
+//tests/cocotb/rvv/rvv_opt:cocotb_rvv_opt_test_rvv_memcpy_test           PASSED in 4.1s
+//tests/cocotb/rvv/rvv_opt:cocotb_rvv_opt_test_rvv_memset_test           PASSED in 8.9s
+//tests/cocotb/tlul:axi2tlul_cocotb_test_test_read_error                 PASSED in 1.9s
+//tests/cocotb/tlul:axi2tlul_cocotb_test_test_read_request               PASSED in 1.6s
+//tests/cocotb/tlul:axi2tlul_cocotb_test_test_write_request              PASSED in 1.8s
+//tests/cocotb/tlul:axi_addr_gen_cocotb_test_test_randomized_address_generator PASSED in 2.7s
+//tests/cocotb/tlul:banked_dtcm_cocotb_test_test_address_aliasing        PASSED in 1.7s
+//tests/cocotb/tlul:banked_dtcm_cocotb_test_test_basic_read_write        PASSED in 1.7s
+//tests/cocotb/tlul:banked_dtcm_cocotb_test_test_concurrency             PASSED in 1.7s
+//tests/cocotb/tlul:banked_dtcm_cocotb_test_test_isolation               PASSED in 1.9s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_boot_addr_override PASSED in 3.0s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_boot_addr_sram PASSED in 3.0s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_ddr_access     PASSED in 2.9s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_ddr_access_via_spi PASSED in 12.9s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_ddr_burst_pattern_repro PASSED in 4.2s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_ibus_fetch_from_sram PASSED in 3.0s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_plic           PASSED in 8.1s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_program_execution_via_host PASSED in 3.2s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_program_execution_via_spi PASSED in 18.4s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_software_interrupt PASSED in 4.6s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_timer_interrupt PASSED in 3.5s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_tlul_passthrough PASSED in 2.6s
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_cocotb_test_tlul_width_bridge_bug_reproduction PASSED in 2.8s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_16bit_writes_to_sram       PASSED in 2.2s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_coralnpu_core_to_coralnpu_device PASSED in 1.8s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_coralnpu_core_to_invalid_addr PASSED in 1.7s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_coralnpu_core_to_sram      PASSED in 1.8s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_coralnpu_core_to_uart1     PASSED in 1.8s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_interleaved_hosts_to_sram  PASSED in 1.9s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_test_host_32_to_coralnpu_device PASSED in 1.8s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_test_host_32_to_coralnpu_device_csr_read PASSED in 2.2s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_test_host_32_to_coralnpu_device_specific_addr PASSED in 2.1s
+//tests/cocotb/tlul:coralnpu_xbar_cocotb_test_wide_to_narrow_integrity   PASSED in 1.9s
+//tests/cocotb/tlul:dma_integration_cocotb_test_dma_csr_access           PASSED in 1.9s
+//tests/cocotb/tlul:dma_integration_cocotb_test_dma_descriptor_chain     PASSED in 2.4s
+//tests/cocotb/tlul:dma_integration_cocotb_test_dma_mem_to_mem           PASSED in 2.3s
+//tests/cocotb/tlul:gpio_integration_cocotb_test_gpio_integration        PASSED in 1.8s
+//tests/cocotb/tlul:secded_encoder_32_cocotb_test_test_secded_encoder    PASSED in 2.0s
+//tests/cocotb/tlul:secded_encoder_57_cocotb_test_test_secded_encoder    PASSED in 1.8s
+//tests/cocotb/tlul:secded_encoder_cocotb_test_test_secded_encoder       PASSED in 1.6s
+//tests/cocotb/tlul:spi_master_cocotb_test_spi_master_basic_tx           PASSED in 2.8s
+//tests/cocotb/tlul:spi_master_cocotb_test_spi_master_half_duplex_rx     PASSED in 3.3s
+//tests/cocotb/tlul:spi_master_cocotb_test_spi_master_half_duplex_tx     PASSED in 4.2s
+//tests/cocotb/tlul:tlul2axi_cocotb_test_test_backpressure               PASSED in 1.7s
+//tests/cocotb/tlul:tlul2axi_cocotb_test_test_get_request                PASSED in 1.7s
+//tests/cocotb/tlul:tlul2axi_cocotb_test_test_put_request                PASSED in 1.7s
+//tests/cocotb/tlul:tlul2axi_cocotb_test_test_put_then_get               PASSED in 1.7s
+//tests/cocotb/tlul:tlul_fifo_async_128_cocotb_test_test_async_crossing  PASSED in 1.7s
+//tests/cocotb/tlul:tlul_fifo_sync_cocotb_test_test_passthrough_with_spare PASSED in 1.7s
+//tests/cocotb/tlul:tlul_integrity_cocotb_test_test_request_integrity_check PASSED in 1.7s
+//tests/cocotb/tlul:tlul_integrity_cocotb_test_test_request_integrity_gen PASSED in 1.7s
+//tests/cocotb/tlul:tlul_integrity_cocotb_test_test_response_integrity_check PASSED in 1.8s
+//tests/cocotb/tlul:tlul_integrity_cocotb_test_test_response_integrity_gen PASSED in 1.6s
+//tests/cocotb/tlul:tlul_local_xbar_cocotb_test_test_concurrent_access   PASSED in 1.7s
+//tests/cocotb/tlul:tlul_local_xbar_cocotb_test_test_mixed_arbitration   PASSED in 1.7s
+//tests/cocotb/tlul:tlul_local_xbar_cocotb_test_test_random_backpressure PASSED in 1.8s
+//tests/cocotb/tlul:tlul_socket_1n_128_cocotb_test_test_error_response   PASSED in 1.7s
+//tests/cocotb/tlul:tlul_socket_1n_128_cocotb_test_test_random_backpressure PASSED in 1.8s
+//tests/cocotb/tlul:tlul_socket_1n_128_cocotb_test_test_steering_and_locking PASSED in 1.7s
+//tests/cocotb/tlul:tlul_socket_m1_2_128_cocotb_test_test_arbitration_and_ordering PASSED in 1.8s
+//tests/cocotb/tlul:tlul_socket_m1_2_128_cocotb_test_test_directed_backpressure PASSED in 1.7s
+//tests/cocotb/tlul:tlul_socket_m1_2_128_cocotb_test_test_random_backpressure PASSED in 1.6s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_sram_masking           PASSED in 2.5s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_sram_pipelining        PASSED in 2.1s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_sram_read_write        PASSED in 2.3s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_tlul_to_sram_crv_balanced PASSED in 2.1s
+//tests/cocotb/tlul:tlul_to_sram_cocotb_test_test_tlul_to_sram_crv_random_backpressure PASSED in 2.1s
+//tests/cocotb/tutorial:hello_world_float_core_mini_axi_core_mini_axi_tutorial PASSED in 2.8s
+//tests/cocotb/tutorial:tutorial_core_mini_axi_tutorial                  PASSED in 2.4s
+//tests/cocotb/tutorial/counters:cocotb_counter_test_inst_cycle_counter_test PASSED in 3.0s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x1           PASSED in 21.4s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x16          PASSED in 267.6s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x16_h2w8     PASSED in 219.4s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_16x3_s2        PASSED in 71.2s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_18x1           PASSED in 24.0s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_21x48_h8w8     PASSED in 157.1s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_37x1_h2w2      PASSED in 8.5s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_48x48_h2w2     PASSED in 77.4s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_4x1_h2w2       PASSED in 4.9s
+//tests/cocotb/tutorial/tfmicro:cocotb_conv2d_test_conv2d_9x2            PASSED in 29.5s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv16to32stride2 PASSED in 76.6s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv32to32stride1 PASSED in 72.4s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv32to32stride2 PASSED in 84.4s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv64to64stride1 PASSED in 147.8s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv64to64stride2 PASSED in 150.3s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv8to8stride1 PASSED in 22.8s
+//tests/cocotb/tutorial/tfmicro:cocotb_depthwise_conv_test_dwconv8to8stride2 PASSED in 24.0s
+//tests/cocotb/tutorial/tfmicro:cocotb_fully_connected_test_fc_16_16     PASSED in 5.0s
+//tests/cocotb/tutorial/tfmicro:cocotb_fully_connected_test_fc_256_256   PASSED in 255.6s
+//tests/cocotb/tutorial/tfmicro:cocotb_fully_connected_test_fc_64_64     PASSED in 21.1s
+//tests/cocotb/tutorial/tfmicro:cocotb_logistic_test_logistic_1024       PASSED in 190.6s
+//tests/cocotb/tutorial/tfmicro:cocotb_logistic_test_logistic_256        PASSED in 178.3s
+//tests/cocotb/tutorial/tfmicro:cocotb_pooling_test_maxpool16stride2     PASSED in 13.6s
+//tests/cocotb/tutorial/tfmicro:cocotb_pooling_test_maxpool32stride2     PASSED in 20.7s
+//tests/cocotb/tutorial/tfmicro:cocotb_pooling_test_maxpool64stride2     PASSED in 45.7s
+//tests/cocotb/vme_test:vme_test_vme_altfmt_test                         PASSED in 2.6s
+//tests/cocotb/vme_test:vme_test_vme_decode_test                         PASSED in 6.2s
+//tests/cocotb/vme_test:vme_test_vme_load_store_test                     PASSED in 11.4s
+//tests/cocotb/vme_test:vme_test_vme_matmul_bf16_test                    PASSED in 4.2s
+//tests/cocotb/vme_test:vme_test_vme_matmul_fp32_test                    PASSED in 3.8s
+//tests/cocotb/vme_test:vme_test_vme_matmul_int8_test                    PASSED in 5.6s
+//tests/cocotb/vme_test:vme_test_vme_mset_csr_test                       PASSED in 3.2s
+//tests/cocotb/vme_test:vme_test_vme_mset_retire_test                    PASSED in 2.6s
+//tests/cocotb/vme_test:vme_test_vme_mset_vtmmu_sequence_test            PASSED in 2.9s
+//tests/cocotb/vme_test:vme_test_vme_msettk_clamp_test                   PASSED in 2.6s
+//tests/cocotb/vme_test:vme_test_vme_msettm_clamp_test                   PASSED in 2.6s
+//tests/cocotb/vme_test:vme_test_vme_msettm_matmul_test                  PASSED in 3.3s
+//tests/cocotb/vme_test:vme_test_vme_mstatus_ms_test                     PASSED in 5.9s
+//tests/cocotb/vme_test:vme_test_vme_transpose_test                      PASSED in 4.4s
+//tests/cocotb/vme_test:vme_test_vme_vset_mtype_reset_test               PASSED in 3.1s
+//tests/coralflow:test_matmul_verilator                                  PASSED in 5.6s
+//tests/coralflow:test_rvv_add_verilator                                 PASSED in 2.6s
+//tests/coralflow:test_rvv_ml_ops_verilator                              PASSED in 43.0s
+
+Executed 492 out of 492 tests: 492 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.
+All tests passed but there were other errors during the build.
+
+BAZEL_EXIT=1
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: target //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos (0 packages loaded, 0 targets configured)
+Analyzing: target //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos (1 packages loaded, 38 targets configured).
+[2,681 / 2,886] Compiling tests/cocotb/freertos_app/freertos_app.cc; 0s linux-sandbox ... (4 actions, 3 running)
+[2,881 / 2,886] Executing genrule //hdl/chisel/src/soc:coralnpu_chisel_subsystem_highmem_testharness_cc_library_emit_verilog [for tool]; 0s linux-sandbox ... (2 actions, 1 running)
+[2,883 / 2,886] Executing genrule //hdl/chisel/src/soc:coralnpu_chisel_subsystem_highmem_testharness_cc_library_emit_verilog [for tool]; 1s linux-sandbox
+[2,883 / 2,886] Executing genrule //hdl/chisel/src/soc:coralnpu_chisel_subsystem_highmem_testharness_cc_library_emit_verilog [for tool]; 12s linux-sandbox
+[2,883 / 2,886] Executing genrule //hdl/chisel/src/soc:coralnpu_chisel_subsystem_highmem_testharness_cc_library_emit_verilog [for tool]; 42s linux-sandbox
+[2,884 / 2,886] [Prepa] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]
+[2,884 / 2,886] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 1s linux-sandbox
+[2,884 / 2,886] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 11s linux-sandbox
+[2,884 / 2,886] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 41s linux-sandbox
+[2,884 / 2,886] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 101s linux-sandbox
+[2,884 / 2,886] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 161s linux-sandbox
+[2,884 / 2,886] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 221s linux-sandbox
+[2,884 / 2,886] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 281s linux-sandbox
+[2,884 / 2,886] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 341s linux-sandbox
+[2,884 / 2,886] Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]; 401s linux-sandbox
+INFO: From Verilate hdl/chisel/src/soc/CoralNPUChiselSubsystemHighmemTestHarness_build/CoralNPUChiselSubsystemHighmemTestHarness [for tool]:
+- V e r i l a t i o n   R e p o r t: Verilator v5.052 rev v5.052
+- Verilator: Built from 14.227 MB sources in 405 modules, into 315.144 MB in 204 C++ files needing 0.412 MB
+- Verilator: Walltime 223.656 s (elab=13.076, cvt=197.771, bld=0.000); cpu 220.507 s on 1 threads; allocated 7846.734 MB
+[2,885 / 2,886] [Prepa] runfiles for //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos
+[2,886 / 2,887] Testing //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos; 1s linux-sandbox
+[2,886 / 2,887] Testing //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos; 11s linux-sandbox
+[2,886 / 2,887] Testing //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos; 41s linux-sandbox
+[2,886 / 2,887] Testing //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos; 58s linux-sandbox
+INFO: Found 1 test target...
+Target //tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos up-to-date:
+  bazel-bin/tests/cocotb/tlul/coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos_cocotb_runner.sh
+INFO: Elapsed time: 541.108s, Critical Path: 536.90s
+INFO: 31 processes: 1 action cache hit, 14 internal, 18 linux-sandbox.
+INFO: Build completed successfully, 31 total actions
+//tests/cocotb/tlul:coralnpu_chisel_subsystem_highmem_cocotb_test_freertos_test_freertos PASSED in 58.0s
+
+Executed 1 out of 1 test: 1 test passes.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.

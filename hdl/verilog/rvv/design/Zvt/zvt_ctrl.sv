@@ -433,15 +433,15 @@ module zvt_ctrl (
   endgenerate
 
   // Zero
-  logic [$clog2(`PROCESS_DELAY)-1:0]  cnt, cntMax;
+  logic [`ZVT_CNT_WIDTH-1:0]  cnt, cntMax;
   logic                               cntEn, cntCr;
   
   assign cntMax = `PROCESS_DELAY - 1;
   assign cntCr  = cnt==cntMax;
   assign cntEn  = isZero;
 
-  cdffr #(.T(logic [$clog2(`PROCESS_DELAY)-1:0]))
-  counter (.q(cnt), .clk(clk), .rst_n(rst_n), .e(cntEn), .c(cntCr), .d(cnt+($clog2(`PROCESS_DELAY))'('d1)));
+  cdffr #(.T(logic [`ZVT_CNT_WIDTH-1:0]))
+  counter (.q(cnt), .clk(clk), .rst_n(rst_n), .e(cntEn), .c(cntCr), .d(cnt+(`ZVT_CNT_WIDTH)'('d1)));
 
   logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][`SUBTILE_SIZE-1:0]        zeroWriteEn;  
   logic [`NUM_BLK-1:0][`NUM_BLKPORT-1:0][$clog2(`NUM_MT)-1:0]      zeroWriteMtIdx;
