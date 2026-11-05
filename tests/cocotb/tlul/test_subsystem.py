@@ -622,6 +622,7 @@ async def test_ddr_access(dut):
     await host_if.host_put(read_txn)
     resp = await with_timeout(host_if.host_get_response(), 10000, "ns")
     assert resp["error"] == 0, "ddr_ctrl read response had error"
+    assert int(resp["data"]) == TEST_DATA, "ddr_ctrl read data mismatch"
     dut._log.info("Read from ddr_ctrl successful.")
 
     dut._log.info("Sending read to ddr_mem...")
@@ -631,6 +632,7 @@ async def test_ddr_access(dut):
     await host_if.host_put(read_txn)
     resp = await with_timeout(host_if.host_get_response(), 10000, "ns")
     assert resp["error"] == 0, "ddr_mem read response had error"
+    assert int(resp["data"]) == TEST_DATA, "ddr_mem read data mismatch"
     dut._log.info("Read from ddr_mem successful.")
 
     await ClockCycles(dut.io_clk_i, 20)
@@ -1541,6 +1543,7 @@ async def test_ddr_burst_pattern_repro(dut):
             )
         else:
             dut._log.info(f"DDR Match at Offset {i*4:02x}: {actual:08x}")
+        assert actual == expected, f"DDR data mismatch at offset {i * 4:#x}"
 
     assert dut.io_external_ports_fault.value == 0, "Program halted with fault!"
     dut._log.info("DDR Burst Pattern Reproduction Test Finished.")
