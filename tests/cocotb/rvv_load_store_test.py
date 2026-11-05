@@ -3293,6 +3293,7 @@ async def _setup_lsu_fault_fixture(fixture):
         ),
         [
             '__data_start__',
+            'boundary_scratch',
             'buffer',
             'in_ptr',
             'out_ptr',
@@ -3324,6 +3325,14 @@ async def _setup_lsu_fault_fixture(fixture):
             'run_scalar_mixed_fault_rs_flush',
             'run_scalar_to_scalar_fault_rs_flush',
         ],
+    )
+    assert (
+        fixture.symbols['boundary_scratch'] ==
+        fixture.symbols['__data_start__']
+    ), (
+        'Expected boundary_scratch at __data_start__ '
+        f"({hex(fixture.symbols['__data_start__'])}), "
+        f"got {hex(fixture.symbols['boundary_scratch'])}"
     )
     return fixture
 

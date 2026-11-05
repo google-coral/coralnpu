@@ -33,6 +33,10 @@ uint32_t fault_mepc   = 0;
 uint32_t fault_mtval  = 0;
 uint32_t fault_vstart = 0;
 
+// Reserve scratch padding at __data_start__ (.sdata precedes .data in coralnpu_tcm.ld.tpl) so
+// vector store fault subtests straddling the lower DTCM boundary do not clobber .data globals.
+uint8_t boundary_scratch[64] __attribute__((used, retain, section(".sdata")));
+
 RvvSeededInput<uint8_t, 4096> buffer __attribute__((section(".data")));
 uint8_t *in_ptr __attribute__((section(".data")))  = buffer.data;
 uint8_t *out_ptr __attribute__((section(".data"))) = buffer.data;
@@ -243,6 +247,10 @@ rvv_test_func_t test_fn __attribute__((section(".data"))) = nullptr;
 }
 
 int main() {
+  if (reinterpret_cast<uintptr_t>(boundary_scratch) !=
+      reinterpret_cast<uintptr_t>(__data_start__)) {
+    return -1;
+  }
   rvv_run_subtests(test_fn);
   return 0;
 }
