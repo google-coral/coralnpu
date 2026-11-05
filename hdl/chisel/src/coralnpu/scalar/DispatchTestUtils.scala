@@ -15,6 +15,7 @@ object DispatchTestUtils {
     dut.io.retirement_buffer_trap_pending.poke(false.B)
     dut.io.single_step.poke(false.B)
     dut.io.inst.foreach(_.valid.poke(false.B))
+    dut.io.lsu.foreach(_.ready.poke(true.B))
     dut.io.rvv.foreach(_.foreach(_.ready.poke(true.B)))
     dut.io.rvvIdle.foreach(_.poke(true.B))
     dut.io.rvvQueueCapacity.foreach(_.poke(p.instructionLanes.U))
