@@ -25,6 +25,7 @@ object MemoryRegionType extends ChiselEnum {
   val DMEM       = Value
   val Peripheral = Value
   val External   = Value
+  val Dma        = Value
 }
 
 class MemoryRegion(
@@ -53,6 +54,10 @@ object MemoryRegions {
     new MemoryRegion(0x00100000, dtcmSizeKBytes * 1024, MemoryRegionType.DMEM), // DTCM
     new MemoryRegion(0x00200000, 0x00001000, MemoryRegionType.Peripheral)       // CSR
   )
+  def withDma(regions: Seq[MemoryRegion]): Seq[MemoryRegion] = {
+    val csrRegion = regions.find(_.memType == MemoryRegionType.Peripheral).get
+    regions :+ new MemoryRegion(csrRegion.memStart + 0x2000, 0x00001000, MemoryRegionType.Dma)
+  }
 }
 
 object Parameters {
@@ -122,6 +127,8 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
   var enableFloat      = false
   var enableZfbfmin    = false
   var enableVectorBf16 = false
+
+  var enableDma = false
   // Pipeline stages for FPU (default 4 stages; set to 5 for ultra-high-frequency/1GHz targets)
   var fpuPipeRegs: Int = 4
   // Use the Div/Sqrt module from PULP instead of E906.
@@ -214,6 +221,7 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, var xlen
     newP.enableFloat = this.enableFloat
     newP.enableZfbfmin = this.enableZfbfmin
     newP.enableVectorBf16 = this.enableVectorBf16
+    newP.enableDma = this.enableDma
     newP.enableAxiInstructionFetch = this.enableAxiInstructionFetch
     newP.fetchDataBits = this.fetchDataBits
     newP.lsuDataBits = this.lsuDataBits

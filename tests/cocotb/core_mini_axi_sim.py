@@ -724,6 +724,174 @@ async def core_mini_axi_misa_test(fixture):
 
 
 @coralflow_test
+async def core_mini_axi_dma_memcpy_test(fixture):
+    r = runfiles.Create()
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/dma_memcpy_test.elf")
+
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        ['results'],
+    )
+
+    await fixture.run_to_halt(timeout_cycles=500000)
+
+    results_bytes = await fixture.read('results', 11 * 4)
+    results = results_bytes.view(np.uint32)
+
+    status = int(results[0])
+    mismatches = int(results[1])
+    first_bad_index = int(results[2])
+    dst_addr = int(results[3])
+    src_addr = int(results[4])
+    timed_out = int(results[5])
+    src_corrupted = int(results[6])
+    canary_bad = int(results[7])
+    faulted = int(results[8])
+    mcause = int(results[9])
+    mtval = int(results[10])
+
+    dump = (await fixture.read(dst_addr, 80)).view(np.uint8)
+    dst_hex = ' '.join(f"{int(b):02x}" for b in dump[:64])
+    canary_hex = ' '.join(f"{int(b):02x}" for b in dump[64:80])
+    error_bits = [
+        name for bit, name in ((3, "align_error"), (4, "cfg_error"),
+                               (5, "xfer_error")) if status & (1 << bit)
+    ]
+
+    def check(cond, msg):
+        if not cond:
+            logging.error(f"STATUS: 0x{status:08x}, error bits: {error_bits}")
+            logging.error(f"first_bad_index: 0x{first_bad_index:08x}")
+            logging.error(
+                f"src_addr: 0x{src_addr:08x}, dst_addr: 0x{dst_addr:08x}"
+            )
+            logging.error(f"dst[0:64]: {dst_hex}")
+            logging.error(f"canary[0:16]: {canary_hex}")
+        assert cond, msg
+
+    check(not fixture.fault(), "DUT reported hardware fault")
+    check(
+        faulted == 0,
+        f"Firmware faulted: mcause=0x{mcause:08x}, mtval=0x{mtval:08x}"
+    )
+    check(timed_out == 0, "DMA STATUS poll timed out (no done or error)")
+    check(status & 0x2, f"DMA not done: STATUS=0x{status:08x}")
+    check(
+        not status & 0x4,
+        f"DMA error: STATUS=0x{status:08x}, error bits: {error_bits}"
+    )
+    check(
+        mismatches == 0,
+        f"dst mismatches: {mismatches}, first_bad_index={first_bad_index}"
+    )
+    check(src_corrupted == 0, f"src corrupted: {src_corrupted} bytes changed")
+    check(canary_bad == 0, f"Canary overwritten: {canary_bad} bytes changed")
+
+    logging.info("CoreMiniAxi DMA memcpy test passed!")
+
+
+def golden_planes(src_bytes, n_areas, elem_size):
+    """Return a list of n_areas plane byte-strings."""
+    if n_areas == 1:
+        return [bytes(src_bytes)]
+    dtype = {1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}[elem_size]
+    elems = np.frombuffer(src_bytes, dtype=dtype)
+    planes = elems.reshape(-1, n_areas).T
+    return [planes[j].tobytes() for j in range(n_areas)]
+
+
+async def run_strided_case(fixture, length, n_areas, elem_size):
+    r = runfiles.Create()
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/dma_strided_test.elf")
+
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        ['src', 'dst', 'cfg', 'results'],
+    )
+
+    src_size = 256
+    dst_size = 256 + 16
+    area_size = length // n_areas
+    row_pitch = -(-area_size // 16) * 16
+    xfer_width = elem_size.bit_length() - 1
+
+    logging.info(
+        f"strided case: len={length}, n_areas={n_areas}, elem_size={elem_size}, "
+        f"area_size={area_size}, row_pitch={row_pitch}"
+    )
+    src = ((np.arange(src_size, dtype=np.uint32) * 37 + 11)
+           & 0xFF).astype(np.uint8)
+
+    await fixture.write('dst', np.full(dst_size, 0xA5, dtype=np.uint8))
+    await fixture.write(
+        'cfg',
+        np.array([length, n_areas, xfer_width, area_size], dtype=np.uint32)
+    )
+
+    await fixture.run_to_halt(timeout_cycles=500000)
+
+    results = (await fixture.read('results', 8 * 4)).view(np.uint32)
+    status = int(results[0])
+    timed_out = int(results[1])
+    dst_addr = int(results[2])
+    src_addr = int(results[3])
+    src_corrupted = int(results[4])
+    faulted = int(results[5])
+    mcause = int(results[6])
+    mtval = int(results[7])
+    error_bits = [
+        name for bit, name in ((3, "align_error"), (4, "cfg_error"),
+                               (5, "xfer_error")) if status & (1 << bit)
+    ]
+    logging.info(
+        f"STATUS: 0x{status:08x}, src_addr: 0x{src_addr:08x}, "
+        f"dst_addr: 0x{dst_addr:08x}"
+    )
+
+    assert not fixture.fault(), "DUT reported hardware fault"
+    assert faulted == 0, (
+        f"Firmware faulted: mcause=0x{mcause:08x}, mtval=0x{mtval:08x}"
+    )
+    assert timed_out == 0, "DMA STATUS poll timed out (no done or error)"
+    assert status & 0x2, f"DMA not done: STATUS=0x{status:08x}"
+    assert not status & 0x4, (
+        f"DMA error: STATUS=0x{status:08x}, error bits: {error_bits}"
+    )
+
+    dst = (await fixture.read('dst', dst_size)).view(np.uint8)
+    golden = golden_planes(src[:length].tobytes(), n_areas, elem_size)
+
+    for j in range(n_areas):
+        base = j * row_pitch
+        expected = np.frombuffer(golden[j], dtype=np.uint8)
+        actual = dst[base:base + area_size]
+        if not np.array_equal(actual, expected):
+            bad = int(np.flatnonzero(actual != expected)[0])
+            logging.error(f"plane {j}: first bad offset {bad}")
+            logging.error(f"plane {j} expected: {expected.tobytes().hex(' ')}")
+            logging.error(f"plane {j} actual:   {actual.tobytes().hex(' ')}")
+            assert False, f"plane {j} mismatch at offset {bad}"
+        padding = dst[base + area_size:base + row_pitch]
+        assert np.all(
+            padding == 0xA5
+        ), (f"plane {j} padding overwritten: {padding.tobytes().hex(' ')}")
+
+    canary = dst[n_areas * row_pitch:n_areas * row_pitch + 16]
+    assert np.all(canary == 0xA5
+                  ), (f"Canary overwritten: {canary.tobytes().hex(' ')}")
+
+    assert src_corrupted == 0, (
+        f"src changed during the transfer: {src_corrupted} bytes"
+    )
+
+
+@coralflow_test
+async def core_mini_axi_dma_strided_test(fixture):
+    await run_strided_case(fixture, length=120, n_areas=3, elem_size=1)
+    logging.info("CoreMiniAxi DMA strided test passed!")
+
+
+@coralflow_test
 async def rvv_misa_test(fixture):
     """Validates MISA CSR contents and WARL read/write behavior on RvvCoreMiniAxi."""
     if not _is_rvv_core(fixture):

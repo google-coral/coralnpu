@@ -43,6 +43,7 @@ class TlulLocalXbar(
   }
 
   // 2. Instantiate Arbiters for each bank and connect
+  // TODO(manyad): change fp arb to RR arb at dtcm banks
   val arbiters = Seq.fill(numBanks)(Module(new TlulArbiter(p, numHosts)))
 
   for (j <- 0 until numBanks) {

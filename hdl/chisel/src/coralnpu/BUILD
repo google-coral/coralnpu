@@ -509,6 +509,7 @@ chisel_library(
         "//hdl/chisel/src/common",
         "//hdl/chisel/src/common:instruction_buffer",
         "//hdl/chisel/src/common:sv_generation_utils",
+        "//hdl/chisel/src/dma",
         "//hdl/chisel/src/soc:crossbar_config_lib",
     ],
 )
@@ -550,6 +551,24 @@ template_rule(
             ],
             "module_name": "CoreMiniAxi",
             "verilog_file_path": "CoreMiniAxi.sv",
+        },
+        "core_mini_dma_axi_cc_library": {
+            "extra_outs": [
+                "VCoreMiniDmaAxi_parameters.h",
+                "CoreMiniDmaAxi.zip",
+            ],
+            "gen_flags": [
+                "--fetchDataBits=128",
+                "--lsuDataBits=128",
+                "--enableFloat=True",
+                "--enableZfbfmin=True",
+                "--moduleName=CoreMiniDma",
+                "--useAxi",
+                "--exposeDebugPorts=True",
+                "--enableDma=True",
+            ],
+            "module_name": "CoreMiniDmaAxi",
+            "verilog_file_path": "CoreMiniDmaAxi.sv",
         },
         "core_mini_verification_axi_cc_library": {
             "extra_outs": [

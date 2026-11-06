@@ -61,11 +61,9 @@ for j in range(n_areas):
 
 ### 2.3 Register map
 
-All registers are 32 bits and are accessed at `DMA_BASE + offset`.
+All registers are 32 bits and are accessed at `CORALNPU_DMA_BASE + offset`.
 
-> `DMA_BASE` is assigned at SoC integration time.
->
-> TO DO: fill it in before using this document as a programming reference.
+> `CORALNPU_DMA_BASE` is `0x0003_2000`.
 
 | register | offset | access | purpose |
 |---|---|---|---|
@@ -104,10 +102,10 @@ All registers are 32 bits and are accessed at `DMA_BASE + offset`.
 #define STATUS_ERROR      (1u << 2)
 
 static inline void dma_wr(uint32_t off, uint32_t v) {
-  *(volatile uint32_t *)(DMA_BASE + off) = v;
+  *(volatile uint32_t *)(CORALNPU_DMA_BASE + off) = v;
 }
 static inline uint32_t dma_rd(uint32_t off) {
-  return *(volatile uint32_t *)(DMA_BASE + off);
+  return *(volatile uint32_t *)(CORALNPU_DMA_BASE + off);
 }
 
 // Returns STATUS at completion.

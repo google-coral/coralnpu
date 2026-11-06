@@ -41,6 +41,8 @@ COCOTB_TEST_BINARY_TARGETS = glob(["**/*.elf"]) + glob(["**/*.o"]) + [
     ":math.elf",
     ":minstret_test.elf",
     ":misa_test.elf",
+    ":dma_memcpy_test.elf",
+    ":dma_strided_test.elf",
     ":stress_test.elf",
     ":retire_buffer_full_illegal_inst.elf",
     ":cf_fault_retire_test.elf",
@@ -75,6 +77,17 @@ verilator_cocotb_model(
     hdl_toplevel = "CoreMiniAxi",
     trace = False,
     verilog_source = "//hdl/chisel/src/coralnpu:CoreMiniAxi.sv",
+    deps = [
+        "//hdl/verilog:sram_backdoor",
+    ],
+)
+
+verilator_cocotb_model(
+    name = "core_mini_dma_axi_model",
+    cflags = VERILATOR_BUILD_ARGS,
+    hdl_toplevel = "CoreMiniDmaAxi",
+    trace = False,
+    verilog_source = "//hdl/chisel/src/coralnpu:CoreMiniDmaAxi.sv",
     deps = [
         "//hdl/verilog:sram_backdoor",
     ],
@@ -253,6 +266,13 @@ CORE_MINI_AXI_SIM_TESTCASES = [
 ]
 # END_TESTCASES_FOR_core_mini_axi_sim_cocotb
 
+# BEGIN_TESTCASES_FOR_core_mini_dma_axi_sim_cocotb
+CORE_MINI_DMA_AXI_SIM_TESTCASES = [
+    "core_mini_axi_dma_memcpy_test",
+    "core_mini_axi_dma_strided_test",
+]
+# END_TESTCASES_FOR_core_mini_dma_axi_sim_cocotb
+
 # BEGIN_TESTCASES_FOR_rvv_core_mini_axi_sim_cocotb
 RVV_CORE_MINI_AXI_SIM_TESTCASES = [
     "core_mini_axi_basic_write_read_memory",
@@ -317,6 +337,20 @@ coralflow_test(
 )
 
 coralflow_test(
+    name = "core_mini_dma_axi_sim_cocotb",
+    size = "large",
+    srcs = ["core_mini_axi_sim.py"],
+    data = COCOTB_TEST_BINARY_TARGETS,
+    hdl_toplevel = "CoreMiniDmaAxi",
+    targets = [
+        "verilator",
+    ],
+    testcases = CORE_MINI_DMA_AXI_SIM_TESTCASES,
+    verilator_model = ":core_mini_dma_axi_model",
+    deps = CORE_MINI_AXI_SIM_DEPS,
+)
+
+coralflow_test(
     name = "rvv_core_mini_axi_sim_cocotb",
     size = "enormous",
     srcs = ["core_mini_axi_sim.py"],
@@ -325,6 +359,8 @@ coralflow_test(
         "uvm": [
             "csr_behavior",
             "csr_illegal_write_test",
+            "dma_memcpy_test",
+            "dma_strided_test",
             "fencei_test",
             "mem_sweep",
             "retire_buffer_full_illegal_inst",
@@ -683,6 +719,20 @@ coralnpu_v2_binary(
     name = "misa_test",
     srcs = [
         "misa_test.cc",
+    ],
+)
+
+coralnpu_v2_binary(
+    name = "dma_memcpy_test",
+    srcs = [
+        "dma_memcpy_test.cc",
+    ],
+)
+
+coralnpu_v2_binary(
+    name = "dma_strided_test",
+    srcs = [
+        "dma_strided_test.cc",
     ],
 )
 

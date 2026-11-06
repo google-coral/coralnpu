@@ -92,6 +92,8 @@ object EmitCore extends App {
       p.fetchDataBits = arg.split("=")(1).toInt
     } else if (arg.startsWith("--enableRvv")) {
       p.enableRvv = arg.split("=")(1).toBoolean
+    } else if (arg.startsWith("--enableDma")) {
+      p.enableDma = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--enableVme")) {
       p.enableVme = arg.split("=")(1).toBoolean
     } else if (arg.startsWith("--enableFloat")) {
@@ -139,14 +141,17 @@ object EmitCore extends App {
       s"${moduleName}_ITCM${p.itcmSizeKBytes}KB_DTCM${p.dtcmSizeKBytes}KB"
     }
 
-  val memoryRegions =
-    if (
-      p.itcmSizeKBytes == Parameters.itcmSizeKBytesDefault && p.dtcmSizeKBytes == Parameters.dtcmSizeKBytesDefault
-    ) {
-      MemoryRegions.default
-    } else {
-      MemoryRegions.highmem(p.itcmSizeKBytes, p.dtcmSizeKBytes)
-    }
+  val memoryRegions = {
+    val baseRegions =
+      if (
+        p.itcmSizeKBytes == Parameters.itcmSizeKBytesDefault && p.dtcmSizeKBytes == Parameters.dtcmSizeKBytesDefault
+      ) {
+        MemoryRegions.default
+      } else {
+        MemoryRegions.highmem(p.itcmSizeKBytes, p.dtcmSizeKBytes)
+      }
+    if (p.enableDma) MemoryRegions.withDma(baseRegions) else baseRegions
+  }
 
   // The core module must be created in the ChiselStage context. Use lazy here
   // so it's created in ChiselStage, but referencable afterwards.

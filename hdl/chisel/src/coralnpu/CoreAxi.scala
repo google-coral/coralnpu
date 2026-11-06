@@ -19,6 +19,7 @@ import chisel3.util._
 
 import bus._
 import common._
+import dma.DmaCore
 
 class CoreTlulInstrUser extends Bundle with TLUL_A_User_InstrType {
   val instr_type = UInt(4.W)
@@ -127,9 +128,11 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
   val global_reset = (!Mux(io.te, io.aresetn, rst_sync.io.rstn_o).asBool).asAsyncReset
   withClockAndReset(rst_sync.io.clk_o, global_reset) {
     // Look up memory regions
-    val itcmRegion  = memoryRegions.find(_.memType == MemoryRegionType.IMEM).get
-    val dtcmRegion  = memoryRegions.find(_.memType == MemoryRegionType.DMEM).get
-    val csrRegion   = memoryRegions.find(_.memType == MemoryRegionType.Peripheral).get
+    val itcmRegion = memoryRegions.find(_.memType == MemoryRegionType.IMEM).get
+    val dtcmRegion = memoryRegions.find(_.memType == MemoryRegionType.DMEM).get
+    val csrRegion  = memoryRegions.find(_.memType == MemoryRegionType.Peripheral).get
+    val dmaRegion  =
+      Option.when(p.enableDma)(memoryRegions.find(_.memType == MemoryRegionType.Dma).get)
     val csrAddrBits = log2Ceil(csrRegion.memSize)
 
     // Build CSR
@@ -262,16 +265,20 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
     val dtcmRouteFn           =
       (a: TileLink_A_Channel) => bankRouteFn(a, dtcmRegion, dtcmNumBanks, dtcmBankSizeBytes)
 
+    // TODO(manyad): fix dma host priority at dtcm banks.
     val bankedDtcm = Module(
       new BankedDtcm(
         p = p.toTLUL(),
         numBanks = dtcmNumBanks,
-        numHosts = 4, // AXI RD, AXI WR, Core LSU, DM
+        numHosts = if (p.enableDma) 5 else 4, // AXI RD, AXI WR, Core LSU, DM, DMA
         bankSizeBytes = dtcmBankSizeBytes,
         bankBaseAddresses = dtcmBankBaseAddresses,
         routeFn = dtcmRouteFn
       )
     )
+
+    val dmaCore =
+      Option.when(p.enableDma)(Module(new DmaCore(deviceP = p.toTLUL(), hostP = p.toTLUL())))
 
     // -------------------------------------------------------------------------
     // Banked ITCM Setup
@@ -355,10 +362,12 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
     fetchBridge.io.tl_h <> core.io.tlul_fetch
 
     val fetchRouteFn = (a: TileLink_A_Channel) => {
-      val inItcm     = itcmRegion.contains(a.address)
-      val inDtcm     = dtcmRegion.contains(a.address)
-      val inCsr      = csrRegion.contains(a.address)
-      val inError    = inDtcm || inCsr
+      val inItcm  = itcmRegion.contains(a.address)
+      val inDtcm  = dtcmRegion.contains(a.address)
+      val inCsr   = csrRegion.contains(a.address)
+      val inError =
+        if (p.enableDma) inDtcm || inCsr || dmaRegion.get.contains(a.address)
+        else inDtcm || inCsr
       val isExternal = !inItcm && !inError
       if (p.enableAxiInstructionFetch) {
         Seq(inItcm, isExternal, inError)
@@ -378,32 +387,80 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
     lsuBridge.io.tl_h <> core.io.tlul_lsu
 
     val masterRouteFn = (a: TileLink_A_Channel) => {
-      val inItcm     = itcmRegion.contains(a.address)
-      val validItcm  = inItcm && (a.opcode === TLULOpcodesA.Get.asUInt)
-      val inDtcm     = dtcmRegion.contains(a.address)
-      val inCsr      = csrRegion.contains(a.address)
-      val inError    = inCsr || (inItcm && (a.opcode =/= TLULOpcodesA.Get.asUInt))
-      val isExternal = !inDtcm && !inItcm && !inCsr
-      Seq(inDtcm, validItcm, isExternal, inError)
+      val inItcm    = itcmRegion.contains(a.address)
+      val validItcm = inItcm && (a.opcode === TLULOpcodesA.Get.asUInt)
+      val inDtcm    = dtcmRegion.contains(a.address)
+      val inCsr     = csrRegion.contains(a.address)
+      val inError   = inCsr || (inItcm && (a.opcode =/= TLULOpcodesA.Get.asUInt))
+      if (p.enableDma) {
+        val inDma      = dmaRegion.get.contains(a.address)
+        val isExternal = !inDtcm && !inItcm && !inCsr && !inDma
+        Seq(inDtcm, validItcm, isExternal, inDma, inError)
+      } else {
+        val isExternal = !inDtcm && !inItcm && !inCsr
+        Seq(inDtcm, validItcm, isExternal, inError)
+      }
     }
 
-    val tlulRouter = Module(new TlulRouter(p.toTLUL(), n = 3, route = masterRouteFn))
+    val tlulRouter =
+      Module(new TlulRouter(p.toTLUL(), n = if (p.enableDma) 4 else 3, route = masterRouteFn))
     tlulRouter.io.tl_h <> lsuBridge.io.tl_d
     bankedDtcm.io.tl_h(2) <> tlulRouter.io.tl_d(0)
     bankedItcm.io.tl_h(3) <> tlulRouter.io.tl_d(1)
+    dmaCore.foreach(_.io.tl_device <> tlulRouter.io.tl_d(3))
 
     val dmRouteFn = (a: TileLink_A_Channel) => {
-      val inItcm     = itcmRegion.contains(a.address)
-      val inDtcm     = dtcmRegion.contains(a.address)
-      val inCsr      = csrRegion.contains(a.address)
-      val isExternal = !inItcm && !inDtcm && !inCsr
-      Seq(inItcm, inDtcm, isExternal, inCsr)
+      val inItcm = itcmRegion.contains(a.address)
+      val inDtcm = dtcmRegion.contains(a.address)
+      val inCsr  = csrRegion.contains(a.address)
+      if (p.enableDma) {
+        val inDma      = dmaRegion.get.contains(a.address)
+        val isExternal = !inItcm && !inDtcm && !inCsr && !inDma
+        Seq(inItcm, inDtcm, isExternal, inCsr || inDma)
+      } else {
+        val isExternal = !inItcm && !inDtcm && !inCsr
+        Seq(inItcm, inDtcm, isExternal, inCsr)
+      }
     }
 
     val dmRouter = Module(new TlulRouter(p.toTLUL(), n = 3, route = dmRouteFn))
     dmRouter.io.tl_h <> dm.io.tlul
     bankedItcm.io.tl_h(4) <> dmRouter.io.tl_d(0)
     bankedDtcm.io.tl_h(3) <> dmRouter.io.tl_d(1)
+
+    val dmaExtHost = Option.when(p.enableDma) {
+      val dmaRouteFn = (a: TileLink_A_Channel) => {
+        val inItcm     = itcmRegion.contains(a.address)
+        val inDtcm     = dtcmRegion.contains(a.address)
+        val inCsr      = csrRegion.contains(a.address)
+        val inDma      = dmaRegion.get.contains(a.address)
+        val isExternal = !inItcm && !inDtcm && !inCsr && !inDma
+        val inError    = inItcm || inCsr || inDma
+        Seq(inDtcm, isExternal, inError)
+      }
+
+      val dmaRouter = Module(new TlulRouter(p.toTLUL(), n = 2, route = dmaRouteFn))
+      dmaRouter.io.tl_h <> dmaCore.get.io.tl_host
+      bankedDtcm.io.tl_h(4) <> dmaRouter.io.tl_d(0)
+
+      // Lanes are source[3:0]. Fill and drain can share a lane when fill starts the next
+      // pass while drain's last Puts are still unacked; the remapper stalls that request,
+      // which costs throughput only.
+      val dmaExtP       = p.toTLUL().shrinkId(2)
+      val dmaIdRemapper = Module(
+        new TlulIdRemapper(p.toTLUL(), dmaExtP, () => new NoUser, () => new NoUser)
+      )
+      dmaIdRemapper.io.tl_a_in <> dmaRouter.io.tl_d(1).a
+      dmaRouter.io.tl_d(1).d <> dmaIdRemapper.io.tl_d_out
+
+      val dmaExtHostWire = Wire(new TLULHost2Device[NoUser, NoUser](p.toTLUL()))
+      dmaExtHostWire.a <> dmaIdRemapper.io.tl_a_out
+      dmaIdRemapper.io.tl_d_in.valid       := dmaExtHostWire.d.valid
+      dmaExtHostWire.d.ready               := dmaIdRemapper.io.tl_d_in.ready
+      dmaIdRemapper.io.tl_d_in.bits        := dmaExtHostWire.d.bits
+      dmaIdRemapper.io.tl_d_in.bits.source := dmaExtHostWire.d.bits.source(dmaExtP.o - 1, 0)
+      dmaExtHostWire
+    }
 
     val tlul2Axi = Module(
       new TLUL2Axi(
@@ -420,11 +477,16 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
 
     if (p.enableAxiInstructionFetch) {
       val extArbiter = Module(
-        new ExtArbiter(p.toTLUL(), numHosts = 3, hostIsInstr = Seq(false, false, true))
+        new ExtArbiter(
+          p.toTLUL(),
+          numHosts = if (p.enableDma) 4 else 3,
+          hostIsInstr = Seq(false, false, true) ++ Option.when(p.enableDma)(false)
+        )
       )
       extArbiter.io.hosts(0) <> tlulRouter.io.tl_d(2)
       extArbiter.io.hosts(1) <> dmRouter.io.tl_d(2)
       extArbiter.io.hosts(2) <> fetchRouter.io.tl_d(1)
+      dmaExtHost.foreach(extArbiter.io.hosts(3) <> _)
 
       tlul2Axi.io.tl_a <> extArbiter.io.out.a
       extArbiter.io.out.d <> tlul2Axi.io.tl_d
@@ -434,10 +496,15 @@ class CoreAxi(p: Parameters, coreModuleName: String) extends RawModule {
       fetchRouter.io.tl_d(1).d.bits  := DontCare
 
       val extArbiter = Module(
-        new ExtArbiter(p.toTLUL(), numHosts = 2, hostIsInstr = Seq(false, false))
+        new ExtArbiter(
+          p.toTLUL(),
+          numHosts = if (p.enableDma) 3 else 2,
+          hostIsInstr = Seq(false, false) ++ Option.when(p.enableDma)(false)
+        )
       )
       extArbiter.io.hosts(0) <> tlulRouter.io.tl_d(2)
       extArbiter.io.hosts(1) <> dmRouter.io.tl_d(2)
+      dmaExtHost.foreach(extArbiter.io.hosts(2) <> _)
 
       tlul2Axi.io.tl_a <> extArbiter.io.out.a
       extArbiter.io.out.d <> tlul2Axi.io.tl_d
