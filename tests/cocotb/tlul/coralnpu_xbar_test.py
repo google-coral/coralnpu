@@ -14,7 +14,7 @@
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, ClockCycles, with_timeout
+from cocotb.triggers import FallingEdge, RisingEdge, ClockCycles, with_timeout
 
 from coralnpu_test_utils.TileLinkULInterface import TileLinkULInterface, create_a_channel_req
 from coralnpu_test_utils.secded_golden import get_cmd_intg, get_data_intg, get_rsp_intg
@@ -188,6 +188,62 @@ async def test_coralnpu_core_to_invalid_addr(dut):
         # Allow the simulation to run for a few more cycles to get a clean waveform
         await ClockCycles(dut.clock, 20)
         raise e
+
+
+@cocotb.test(timeout_time=10, timeout_unit="us")
+async def test_coralnpu_core_get_invalid_addr_opcode(dut):
+    """A read of an unmapped address must be answered with AccessAckData."""
+    interfaces, clock = await setup_dut(dut)
+    host_if = interfaces["hosts"][HOST_MAP["coralnpu_core"]]
+    timeout_ns = TIMEOUT_CYCLES * clock.period
+
+    read_txn = create_a_channel_req(
+        address=INVALID_ADDR, width=host_if.width, is_read=True
+    )
+    await with_timeout(host_if.host_put(read_txn), timeout_ns, "ns")
+    resp = await with_timeout(host_if.host_get_response(), timeout_ns, "ns")
+
+    assert resp["error"] == 1, "control: expected the error bit to be set"
+    assert resp["source"] == read_txn["source"]
+    assert int(resp["opcode"]) == 1, (
+        f"Get answered with D opcode {int(resp['opcode'])}, "
+        "expected AccessAckData (1)"
+    )
+
+
+@cocotb.test(timeout_time=10, timeout_unit="us")
+async def test_coralnpu_core_invalid_addr_held_under_backpressure(dut):
+    """An error response must survive the host holding d_ready low."""
+    interfaces, clock = await setup_dut(dut)
+    host_if = interfaces["hosts"][HOST_MAP["coralnpu_core"]]
+    timeout_ns = TIMEOUT_CYCLES * clock.period
+
+    dut.io_hosts_coralnpu_core_d_ready.value = 0
+    await FallingEdge(dut.clock)
+
+    write_txn = create_a_channel_req(
+        address=INVALID_ADDR, data=0, mask=0xF, width=host_if.width
+    )
+    await with_timeout(host_if.host_put(write_txn), timeout_ns, "ns")
+
+    trace = []
+    for _ in range(16):
+        await FallingEdge(dut.clock)
+        trace.append(int(dut.io_hosts_coralnpu_core_d_valid.value))
+    assert 1 in trace, f"control: no error response observed: {trace}"
+
+    dut.io_hosts_coralnpu_core_d_ready.value = 1
+    try:
+        resp = await with_timeout(
+            host_if.host_get_response(), 50 * clock.period, "ns"
+        )
+    except cocotb.triggers.SimTimeoutError:
+        assert False, (
+            "error response lost while d_ready=0, per-cycle d_valid="
+            f"{trace}"
+        )
+    assert resp["error"] == 1
+    assert resp["source"] == write_txn["source"]
 
 
 @cocotb.test(timeout_time=10, timeout_unit="us")
