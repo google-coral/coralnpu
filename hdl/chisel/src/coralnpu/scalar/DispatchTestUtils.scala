@@ -14,5 +14,7 @@ object DispatchTestUtils {
     dut.io.retirement_buffer_nSpace.poke(p.retirementBufferSize.U)
     dut.io.retirement_buffer_trap_pending.poke(false.B)
     dut.io.single_step.poke(false.B)
+    dut.io.inst.foreach(_.valid.poke(false.B))
+    dut.io.lsu.foreach(_.ready.poke(true.B))
   }
 }
