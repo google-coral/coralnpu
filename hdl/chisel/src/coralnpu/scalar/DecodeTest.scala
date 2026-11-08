@@ -36,7 +36,7 @@ class DecodeInstructionSpec extends AnyFreeSpec with Matchers with ChiselSim {
     "should decode all table instructions as valid (undef == false)" in {
       simulate(new DecodeTester(p)) { dut =>
         val tbl = DecodeInstruction.table(p)
-        for ((name, pat) <- tbl) {
+        for (DecodeInstruction.DecodeEntry(name, _, pat) <- tbl) {
           dut.io.inst.poke(pat.value.U(32.W))
           dut.clock.step()
           assert(

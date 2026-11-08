@@ -14,8 +14,10 @@ class DispatchScoreboardSpec extends AnyFreeSpec with ChiselSim {
         inst.bits.inst.poke(0x13.U) // addi x0, x0, 0
       }
       dut.io.inst.foreach(_.ready.expect(true.B))
+      dut.io.rdMark.foreach(_.valid.expect(false.B))
       dut.io.inst.last.bits.inst.poke(0x93.U) // addi x1, x0, 0
       dut.io.inst.last.ready.expect(true.B)
+      dut.io.rdMark.last.valid.expect(true.B)
     }
   }
 }
