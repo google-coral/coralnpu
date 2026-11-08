@@ -415,9 +415,13 @@ object GenerateCoreShimSource {
           |""".stripMargin
     }
 
+    // RvvCore's SystemVerilog defaults are 128-bit/16-bit. Pass the widths
+    // derived from Parameters so the shim remains consistent when VLEN changes.
     coreInstantiation += """  RvvCore#(
         |      .N (GENN),
-        |      .RegDataT(logic [XLEN_MINUS_1:0])
+        |      .RegDataT(logic [XLEN_MINUS_1:0]),
+        |      .VRegDataT(logic [VLEN_MINUS_1:0]),
+        |      .MaskT(logic [VLENB_MINUS_1:0])
         |  ) core(
         |      .clk(clk),
         |      .rstn(rstn),
@@ -481,6 +485,8 @@ object GenerateCoreShimSource {
         |""".stripMargin
       .replaceAll("GENN", instructionLanes.toString)
       .replaceAll("XLEN_MINUS_1", xlenMinus1.toString)
+      .replaceAll("VLEN_MINUS_1", vlenMinus1.toString)
+      .replaceAll("VLENB_MINUS_1", vlenbMinus1.toString)
     if (p.enableVme) {
       coreInstantiation +=
         """`ifdef ZVT_ON
