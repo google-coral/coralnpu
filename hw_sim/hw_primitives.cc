@@ -24,6 +24,9 @@ Clock::Observer::~Observer() {
 }
 
 void Clock::Step() {
+  for (auto &observer : observers_) {
+    observer->BeforeRisingEdge();
+  }
   context_->timeInc(1);
   (*clock_) = 1;
   Eval();

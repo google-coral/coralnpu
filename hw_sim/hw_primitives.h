@@ -36,6 +36,10 @@ class Clock {
     explicit Observer(Clock* clock);
     virtual ~Observer();
 
+    // Called before each rising edge, once the inputs set at the previous
+    // falling edge have settled: valid && ready here is the handshake the edge
+    // completes, even when ready depends on same-cycle inputs.
+    virtual void BeforeRisingEdge() {}
     virtual void OnFallingEdge() {}
 
    private:
@@ -51,7 +55,8 @@ class Clock {
 
   // Advance the clock on cycle (one positive edge, one negative edge).
   // Observers see the rising edge's outputs (which must be registered); their
-  // new inputs are evaluated once, after all OnFallingEdge() calls.
+  // new inputs are evaluated once, after all OnFallingEdge() calls. A ready
+  // sampled in BeforeRisingEdge() may be combinational.
   void Step();
 
   // Update the simulation.
@@ -178,7 +183,16 @@ class AxiSlaveWriteDriver final : Clock::Observer {
 
   void EnqueueData(const AxiWData& data) { data_queue_.push(data); }
 
+  void BeforeRisingEdge() final {
+    addr_fire_ = *write_addr_valid_ && *write_addr_ready_;
+    data_fire_ = *write_data_valid_ && *write_data_ready_;
+  }
+
   void OnFallingEdge() final {
+    if (addr_fire_)
+      addr_queue_.pop();
+    if (data_fire_)
+      data_queue_.pop();
     // Send Addr
     *write_addr_valid_ = !addr_queue_.empty();
     if (!addr_queue_.empty()) {
@@ -192,9 +206,6 @@ class AxiSlaveWriteDriver final : Clock::Observer {
       *write_addr_bits_cache_ = addr_queue_.front().addr_bits_cache;
       *write_addr_bits_qos_ = addr_queue_.front().addr_bits_qos;
       *write_addr_bits_region_ = addr_queue_.front().addr_bits_region;
-      if (*write_addr_ready_) {
-        addr_queue_.pop();
-      }
     }
 
     // Send Data
@@ -203,9 +214,6 @@ class AxiSlaveWriteDriver final : Clock::Observer {
       *write_data_bits_data_ = data_queue_.front().write_data_bits_data;
       *write_data_bits_strb_ = data_queue_.front().write_data_bits_strb;
       *write_data_bits_last_ = data_queue_.front().write_data_bits_last;
-      if (*write_data_ready_) {
-        data_queue_.pop();
-      }
     }
 
     // Receive Response
@@ -248,6 +256,8 @@ class AxiSlaveWriteDriver final : Clock::Observer {
   std::queue<AxiAddr> addr_queue_;
   std::queue<AxiWData> data_queue_;
   std::map<uint8_t /*id*/, std::shared_ptr<bool>> outstanding_transactions_;
+  bool addr_fire_ = false;
+  bool data_fire_ = false;
 };
 
 // A driver to control interactions of the read channels in an AXI4 slave.
@@ -310,7 +320,11 @@ class AxiSlaveReadDriver : Clock::Observer {
   }
 
  private:
+  void BeforeRisingEdge() final { addr_fire_ = *read_addr_valid_ && *read_addr_ready_; }
+
   void OnFallingEdge() final {
+    if (addr_fire_)
+      addr_queue_.pop();
     // Send Addr
     *read_addr_valid_ = !addr_queue_.empty();
     if (!addr_queue_.empty()) {
@@ -324,9 +338,6 @@ class AxiSlaveReadDriver : Clock::Observer {
       *read_addr_bits_cache_ = addr_queue_.front().addr_bits_cache;
       *read_addr_bits_qos_ = addr_queue_.front().addr_bits_qos;
       *read_addr_bits_region_ = addr_queue_.front().addr_bits_region;
-      if (*read_addr_ready_) {
-        addr_queue_.pop();
-      }
     }
 
     // Received data
@@ -381,6 +392,7 @@ class AxiSlaveReadDriver : Clock::Observer {
   std::queue<AxiAddr> addr_queue_;
   std::map<uint8_t /*id*/, std::shared_ptr<Transaction>>
       outstanding_transactions_;
+  bool addr_fire_ = false;
 };
 
 // Struct representing the data transferred in an AXI4 read data channel.
@@ -433,7 +445,11 @@ class AxiMasterReadDriver : Clock::Observer {
   }
 
  private:
+  void BeforeRisingEdge() final { data_fire_ = *read_data_valid_ && *read_data_ready_; }
+
   void OnFallingEdge() final {
+    if (data_fire_)
+      data_queue_.pop();
     // Send Data
     *read_data_valid_ = !data_queue_.empty();
     if (!data_queue_.empty()) {
@@ -441,9 +457,6 @@ class AxiMasterReadDriver : Clock::Observer {
       *read_data_bits_id_ = data_queue_.front().read_data_bits_id;
       *read_data_bits_resp_ = data_queue_.front().read_data_bits_resp;
       *read_data_bits_last_ = data_queue_.front().read_data_bits_last;
-      if (*read_data_ready_) {
-        data_queue_.pop();
-      }
     }
 
     // Receive Address
@@ -498,6 +511,7 @@ class AxiMasterReadDriver : Clock::Observer {
   std::queue<AxiRData> data_queue_;
   AxiAddr axi_addr_;
   std::function<AxiRData(const AxiAddr&)> read_cb_;
+  bool data_fire_ = false;
 };
 
 // Struct representing the data transferred in an AXI4 read data channel.
@@ -556,15 +570,16 @@ class AxiMasterWriteDriver final : Clock::Observer {
   }
 
  private:
+  void BeforeRisingEdge() final { resp_fire_ = *write_resp_valid_ && *write_resp_ready_; }
+
   void OnFallingEdge() final {
+    if (resp_fire_)
+      resp_queue_.pop();
     // Send Response
     *write_resp_valid_ = !resp_queue_.empty();
     if (!resp_queue_.empty()) {
       *write_resp_bits_id_ = resp_queue_.front().write_resp_bits_id;
       *write_resp_bits_resp_ = resp_queue_.front().write_resp_bits_resp;
-      if (*write_resp_ready_) {
-        resp_queue_.pop();
-      }
     }
 
     // Receive Addr
@@ -635,6 +650,7 @@ class AxiMasterWriteDriver final : Clock::Observer {
   AxiAddr axi_addr_;
   AxiWData axi_data_;
   std::function<AxiWResp(const AxiAddr&, const AxiWData&)> write_cb_;
+  bool resp_fire_ = false;
 };
 
 #endif  // HW_SIM_HW_PRIMITIVES_H_
