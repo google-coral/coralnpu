@@ -14,7 +14,7 @@
 
 """Convenience wrapper for Verilator driven cocotb."""
 
-load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
+load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS", "NUM_CPUS")
 load("@coralnpu_hw//rules:verilog.bzl", "VerilogInfo", "collect_verilog_files")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
@@ -803,8 +803,9 @@ def verilator_cocotb_test(
         data: Data dependencies for the test.
         **kwargs: Additional arguments to pass to the cocotb_test rule.
     """
-    tags = kwargs.pop("tags", [])
-    tags.append("cpu:2")
+    tags = list(kwargs.pop("tags", []))
+    if not any([t.startswith("cpu:") for t in tags]):
+        tags.append("cpu:{}".format(min(NUM_CPUS, 2)))
     kwargs.update(
         hdl_toplevel_lang = "verilog",
         sim_name = "verilator",
@@ -1129,8 +1130,8 @@ def vcs_simulation_split_test(
     tags = list(kwargs.pop("tags", []))
     if "vcs" not in tags:
         tags.append("vcs")
-    if "cpu:2" not in tags:
-        tags.append("cpu:2")
+    if not any([t.startswith("cpu:") for t in tags]):
+        tags.append("cpu:{}".format(min(NUM_CPUS, 2)))
 
     run_tags = list(tags)
     if "manual" not in run_tags:
@@ -1269,7 +1270,8 @@ def vcs_cocotb_test(
 
     tags = list(kwargs.pop("tags", []))
     tags.append("vcs")
-    tags.append("cpu:2")
+    if not any([t.startswith("cpu:") for t in tags]):
+        tags.append("cpu:{}".format(min(NUM_CPUS, 2)))
     kwargs.update(
         hdl_toplevel_lang = "verilog",
         sim_name = "vcs",

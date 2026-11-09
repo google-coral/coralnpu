@@ -697,6 +697,63 @@ class TestUvmTestFixture(unittest.IsolatedAsyncioTestCase):
             ok = await fixture.run_batch([elf1, elf2])
         self.assertTrue(ok)
 
+    async def test_run_batch_timeout_preserves_partial_stdout_and_clamps_test_timeout(
+        self
+    ):
+        from coralnpu_test_utils.sim_backends.uvm_test_fixture import (
+            _effective_timeout_sec,
+        )
+
+        with patch.dict(os.environ, {"TEST_TIMEOUT": "300"}):
+            self.assertEqual(_effective_timeout_sec(600.0), 290.0)
+            self.assertEqual(_effective_timeout_sec(20.0), 20.0)
+
+        fake_sim = os.path.join(self._temp_dir.name, "fake_hanging_simv.py")
+        with open(fake_sim, "w", encoding="utf-8") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import time\n"
+                "print('--- STARTING TEST: prog_000.elf ---', flush=True)\n"
+                "print('** UVM TEST PASSED **', flush=True)\n"
+                "print('--- FINISHED TEST: prog_000.elf ---', flush=True)\n"
+                "print('--- STARTING TEST: prog_001.elf ---', flush=True)\n"
+                "print('LAST_GOOD_LINE_BEFORE_HANG', flush=True)\n"
+                "time.sleep(30)\n"
+            )
+        os.chmod(fake_sim, 0o755)
+
+        elf1 = os.path.join(self._temp_dir.name, "prog_000.elf")
+        elf2 = os.path.join(self._temp_dir.name, "prog_001.elf")
+        for p in (elf1, elf2):
+            with open(p, "wb") as f:
+                f.write(b"\x7fELF")
+
+        fixture = UvmTestFixture(sim_binary_path=fake_sim)
+        with (
+                patch(
+                    "coralnpu_test_utils.sim_backends.uvm_test_fixture.resolve_runfile_path",
+                    side_effect=lambda p: str(p),
+                ),
+                patch(
+                    "coralnpu_test_utils.sim_backends.uvm_test_fixture.parse_elf_symbols",
+                    return_value=(0x0, {}, {}),
+                ),
+                patch.dict(
+                    os.environ,
+                    {"TEST_UNDECLARED_OUTPUTS_DIR": self._temp_dir.name},
+                ),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                await fixture.run_batch([elf1, elf2], timeout_sec=0.2)
+
+        msg = str(ctx.exception)
+        self.assertIn("completed=1/2, current_elf=prog_001.elf", msg)
+        self.assertIn("Full simulation log dumped to:", msg)
+        dump_path = msg.split("Full simulation log dumped to:", 1)[1].strip()
+        with open(dump_path, "r", encoding="utf-8") as df:
+            dumped = df.read()
+        self.assertIn("LAST_GOOD_LINE_BEFORE_HANG", dumped)
+
     async def test_persistent_worker_reused_across_runs(self):
         fake_sim = os.path.join(self._temp_dir.name, "fake_simv.py")
         with open(fake_sim, "w", encoding="utf-8") as f:

@@ -14,6 +14,7 @@
 
 """Bazel rules and macros for CoralNPU Constrained-Random ISG."""
 
+load("@coralnpu_host_cpus//:defs.bzl", "VERILATOR_THREADS")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//rules:coralflow_test.bzl", "coralflow_test")
@@ -215,6 +216,10 @@ def isg_batch(
         tags = batch_tags,
     )
 
+    sim_tags = list(batch_tags)
+    if not any([t.startswith("cpu:") for t in sim_tags]):
+        sim_tags.append("cpu:{}".format(VERILATOR_THREADS))
+
     # Keep uvm_batch = False: batching still happens across all backends
     # because isg_coralflow_test.py registers a single @coralflow_test
     # (isg_batch_test) that calls fixture.run_batch(elf_paths) directly,
@@ -238,5 +243,5 @@ def isg_batch(
             Label("//tests/isg:isg_verbose_config"),
             "@bazel_tools//tools/python/runfiles",
         ],
-        tags = batch_tags,
+        tags = sim_tags,
     )

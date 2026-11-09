@@ -14,6 +14,7 @@
 
 """CoralFlow: Unified multi-backend Bazel test macro for CoralNPU."""
 
+load("@coralnpu_host_cpus//:defs.bzl", "NUM_CPUS")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load(
     "//rules:coco_tb.bzl",
@@ -158,6 +159,7 @@ def _emit_py_test_target(
         return
     py_kwargs = dict(kwargs)
     py_kwargs.pop("timeout", None)
+    precompile = py_kwargs.pop("precompile", "disabled")
     py_env = {
         "CORALFLOW_TARGET": backend,
         "CORALFLOW_HIGHMEM": highmem_env,
@@ -187,6 +189,7 @@ def _emit_py_test_target(
         main = main_src,
         data = data,
         env = env_attr,
+        precompile = precompile,
         size = size,
         deps = _unique(deps + [fixture_dep]),
         tags = _unique(base_tags + tags),
@@ -209,6 +212,7 @@ def _emit_fpga_target(
     fpga_kwargs = dict(kwargs)
     fpga_kwargs.pop("timeout", None)
     fpga_kwargs.pop("shard_count", None)
+    precompile = fpga_kwargs.pop("precompile", "disabled")
     fpga_tags = _unique(["nexus_fpga", "manual"] + tags)
     fpga_env = {
         "CORALFLOW_TARGET": "nexus_fpga",
@@ -228,6 +232,7 @@ def _emit_fpga_target(
         main = main_src,
         data = data,
         env = fpga_env,
+        precompile = precompile,
         deps = _unique(deps + [
             "//coralnpu_test_utils/sim_backends:fpga_test_fixture",
         ]),
@@ -362,7 +367,7 @@ def coralflow_test(
             size = "small",
             highmem_env = highmem_env,
             base_tags = ["npusim", "fast"],
-            tags = tags,
+            tags = [t for t in tags if not t.startswith("cpu:")],
             kwargs = kwargs,
         )
 
@@ -449,6 +454,9 @@ def coralflow_test(
                 "//conditions:default": ["//tests/uvm:uvm_sim_verilator_dut"],
             })
         uvm_size = _effective_size(size, uvm_testcases)
+        uvm_base_tags = ["uvm", "rtl"]
+        if not any([t.startswith("cpu:") for t in tags]):
+            uvm_base_tags.append("cpu:{}".format(min(NUM_CPUS, 2)))
         _emit_py_test_target(
             name = name,
             backend = "uvm",
@@ -461,7 +469,7 @@ def coralflow_test(
             excluded_testcases = exclude_testcases.get("uvm", []),
             size = uvm_size,
             highmem_env = highmem_env,
-            base_tags = ["uvm", "rtl"],
+            base_tags = uvm_base_tags,
             tags = tags,
             kwargs = kwargs,
             extra_env = uvm_extra_env,

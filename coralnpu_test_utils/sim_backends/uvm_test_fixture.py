@@ -52,6 +52,61 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return val.lower() in ("1", "true", "yes", "on")
 
 
+def _effective_timeout_sec(timeout_sec: float) -> float:
+    """Clamps timeout_sec below Bazel TEST_TIMEOUT so logs dump before SIGTERM."""
+    raw = os.environ.get("TEST_TIMEOUT", "").strip()
+    if raw:
+        try:
+            bazel_timeout = float(raw)
+            if bazel_timeout > 0:
+                return min(timeout_sec, max(5.0, bazel_timeout - 10.0))
+        except ValueError:
+            pass
+    return timeout_sec
+
+
+async def _communicate_preserving_partial_stdout(
+    process: asyncio.subprocess.Process,
+    timeout_sec: float,
+) -> bytes:
+    """Drains process.stdout into a caller-owned buffer that survives TimeoutError."""
+    stdout_stream = getattr(process, "stdout", None)
+    if not isinstance(stdout_stream, asyncio.StreamReader):
+        stdout, _ = await asyncio.wait_for(
+            process.communicate(), timeout=timeout_sec
+        )
+        return stdout
+
+    chunks: list[bytes] = []
+
+    async def _drain() -> None:
+        while True:
+            chunk = await stdout_stream.read(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        await process.wait()
+
+    try:
+        await asyncio.wait_for(_drain(), timeout=timeout_sec)
+    except asyncio.TimeoutError:
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            await process.wait()
+        try:
+            tail = await stdout_stream.read()
+            if tail:
+                chunks.append(tail)
+        except Exception:  # noqa: BLE001
+            pass
+        setattr(process, "_partial_stdout_bytes", b"".join(chunks))
+        raise
+    return b"".join(chunks)
+
+
 class _PersistentUvmWorker:
     """Manages a persistent UVM simulator subprocess fed via a POSIX FIFO."""
 
@@ -505,6 +560,7 @@ class UvmTestFixture(BaseCoralNPUFixture):
             sim_binary = self._get_simulator_binary()
             if timeout_cycles is not None:
                 timeout_sec = max(timeout_sec, 300.0)
+            timeout_sec = _effective_timeout_sec(timeout_sec)
 
             use_oneshot = (
                 hasattr(asyncio.create_subprocess_exec, "_mock_name")
@@ -594,27 +650,30 @@ class UvmTestFixture(BaseCoralNPUFixture):
             )
 
             try:
-                stdout, _ = await asyncio.wait_for(
-                    process.communicate(), timeout=timeout_sec
+                stdout = await _communicate_preserving_partial_stdout(
+                    process, timeout_sec=timeout_sec
                 )
             except asyncio.TimeoutError as err:
                 partial_log = ""
                 if process is not None:
+                    raw_partial = getattr(
+                        process, "_partial_stdout_bytes", None
+                    )
                     if process.returncode is None:
                         try:
                             process.kill()
                         except ProcessLookupError:
                             pass
                         await process.wait()
-                    if process.stdout is not None:
+                    if raw_partial is None and process.stdout is not None:
                         try:
                             raw_partial = await process.stdout.read()
-                            if isinstance(raw_partial, (bytes, bytearray)):
-                                partial_log = raw_partial.decode(
-                                    "utf-8", errors="replace"
-                                )
                         except Exception:  # noqa: BLE001
-                            pass
+                            raw_partial = None
+                    if isinstance(raw_partial, (bytes, bytearray)):
+                        partial_log = raw_partial.decode(
+                            "utf-8", errors="replace"
+                        )
                 reason = (
                     f"UVM Simulation timed out after {timeout_sec}s "
                     f"(elf={self.elf_path}, sim={cmd[0]})"
@@ -811,6 +870,7 @@ class UvmTestFixture(BaseCoralNPUFixture):
         reg_list_file: str | None = None
         process = None
         timeout_ns = int(timeout_cycles) * 10
+        timeout_sec = _effective_timeout_sec(timeout_sec)
 
         try:
             spike_opt = (
@@ -862,30 +922,43 @@ class UvmTestFixture(BaseCoralNPUFixture):
             )
 
             try:
-                stdout, _ = await asyncio.wait_for(
-                    process.communicate(), timeout=timeout_sec
+                stdout = await _communicate_preserving_partial_stdout(
+                    process, timeout_sec=timeout_sec
                 )
             except asyncio.TimeoutError as err:
                 partial_log = ""
                 if process is not None:
+                    raw_partial = getattr(
+                        process, "_partial_stdout_bytes", None
+                    )
                     if process.returncode is None:
                         try:
                             process.kill()
                         except ProcessLookupError:
                             pass
                         await process.wait()
-                    if process.stdout is not None:
+                    if raw_partial is None and process.stdout is not None:
                         try:
                             raw_partial = await process.stdout.read()
-                            if isinstance(raw_partial, (bytes, bytearray)):
-                                partial_log = raw_partial.decode(
-                                    "utf-8", errors="replace"
-                                )
                         except Exception:  # noqa: BLE001
-                            pass
+                            raw_partial = None
+                    if isinstance(raw_partial, (bytes, bytearray)):
+                        partial_log = raw_partial.decode(
+                            "utf-8", errors="replace"
+                        )
+                started = re.findall(
+                    r"--- STARTING TEST: (.+?) ---", partial_log
+                )
+                finished = re.findall(
+                    r"--- FINISHED TEST: (.+?) ---", partial_log
+                )
+                in_flight = (
+                    started[-1] if len(started) > len(finished) else "none"
+                )
                 reason = (
                     f"UVM Batch Simulation timed out after {timeout_sec}s "
-                    f"({len(resolved_entries)} ELFs, sim={cmd[0]})"
+                    f"(completed={len(finished)}/{len(resolved_entries)}, "
+                    f"current_elf={in_flight}, sim={cmd[0]})"
                 )
                 raise RuntimeError(
                     self._dump_sim_log(

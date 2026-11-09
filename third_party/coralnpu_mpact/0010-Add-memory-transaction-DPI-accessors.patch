@@ -286,7 +286,29 @@ diff -uNr a/sim/cosim/coralnpu_cosim_dpi_wrapper.cc b/sim/cosim/coralnpu_cosim_d
    if (!step_res.ok()) {
      LOG(ERROR) << "[DPI] mpact_step: Failed to step the simulator.";
      return 2;
-@@ -538,6 +707,76 @@
+@@ -230,18 +399,13 @@
+ }
+ 
+ bool mpact_is_halted() {
+-  if (g_mpact_handle == nullptr) {
+-    LOG(ERROR) << "[DPI] mpact_is_halted: g_mpact_handle is null.";
++  if (g_mpact_handle == nullptr || !g_mpact_handle->is_initialized()) {
+     return false;
+   }
+-  if (!g_mpact_handle->is_initialized()) {
+-    LOG(INFO) << "[DPI] mpact_is_halted: Lazy initialization of "
+-                 "g_mpact_handle.";
+-    g_mpact_handle->Init(nullptr);
+-  }
+-  LOG(ERROR) << "[DPI] mpact_is_halted: Unimplemented.";
+-  return false;
++  auto halt_reason = g_mpact_handle->simulator()->top()->GetLastHaltReason();
++  return halt_reason.ok() &&
++         (*halt_reason != *CoralNPUSimulator::HaltReason::kNone);
+ }
+ 
+ int mpact_get_vector_register(const char* name, svLogicVecVal* value) {
+@@ -538,6 +702,76 @@
    return 0;
  }
  
