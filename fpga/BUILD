@@ -108,6 +108,7 @@ string_list_flag(
     build_setting_default = [
         "-DZVT_ON",
         "-DZVTBF16FMM_ON",
+        "-DZVTI16I32MM_ON",
     ] + VERILATOR_OPTIONS_COMMON,
 )
 
@@ -117,6 +118,7 @@ string_list_flag(
         "-CFLAGS \"-DCHISEL_SUBSYSTEM_HIGHMEM\"",
         "-DZVT_ON",
         "-DZVTBF16FMM_ON",
+        "-DZVTI16I32MM_ON",
     ] + VERILATOR_OPTIONS_COMMON,
 )
 
@@ -531,6 +533,7 @@ _NEXUS_CONFIGS = [
         "zvt_flags": [
             "--ZVT_ON=true",
             "--ZVTBF16FMM_ON=true",
+            "--ZVTI16I32MM_ON=true",
         ],
     },
 ]

@@ -723,7 +723,7 @@ object RvvCompressedInstruction {
       val funct3    = inst(14, 12)
       val vm        = inst(25)
       val isFp      = (funct3 === "b001".U) && !inst(15) && !inst(20)
-      val isInt     = (funct3 === "b000".U) && (inst(17, 16) === 0.U) && (inst(22, 21) === 0.U)
+      val isInt     = (funct3 === "b000".U) && !inst(17) && !inst(22)
       val fpValid   = p.enableFloat.B
       val mtdAlign4 = inst(9, 8) === 0.U
       (opcode === "b1110111".U) && (funct6 === "b111100".U) && vm && mtdAlign4 &&

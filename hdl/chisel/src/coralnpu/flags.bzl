@@ -64,6 +64,7 @@ RVV_CORE_MINI_AXI_VOPTS = [
 VME_CORE_MINI_AXI_VOPTS = RVV_CORE_MINI_AXI_VOPTS + [
     "-DZVT_ON",
     "-DZVTBF16FMM_ON",
+    "-DZVTI16I32MM_ON",
 ]
 
 # Ultra-high-frequency (1.0 GHz) generator flags with 5-stage FPU pipeline

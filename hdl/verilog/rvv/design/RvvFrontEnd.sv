@@ -756,6 +756,13 @@ module RvvFrontEnd#(parameter N = 4,
       OPIVV: begin
         if (is_vtxmm_op) begin
 `ifdef ZVT_ON
+`ifdef ZVTI16I32MM_ON
+          // INT16 operand bases: LMUL2-aligned (bit 2 is checked in isOpVeValid).
+          if ((arch_state.sew == SEW16) && (arch_state.lmul_orig == LMUL2) &&
+              (arch_state.mtwiden == 2'd2) && !vs1[0] && !vs2[0]) return 1'b1;
+`endif
+          // INT8 operand bases: in the first 2 registers of their group.
+          if (vs1[1] || vs2[1]) return 1'b0;
           return (arch_state.sew == SEW8) && (arch_state.lmul_orig == LMUL1) &&
                  (arch_state.mtwiden == 2'd3);
 `else
