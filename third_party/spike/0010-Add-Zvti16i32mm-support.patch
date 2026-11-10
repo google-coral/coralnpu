@@ -1,0 +1,133 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Michael Hoang <hoangm@google.com>
+Date: Tue, 10 Nov 2026 18:38:00 +0000
+Subject: [PATCH 10/10] Add Zvti16i32mm integer matrix multiply support
+
+- Add EXT_ZVTI16I32MM extension (depending on Zvt16e) and allow
+  vtype.altfmt=1 when SEW=16.
+- Implement SEW=16, TWIDEN=2 vtmmu.tvv and vtmms.tvv accumulation into
+  TEW=32 tiles with two's-complement 32-bit wrap-around.
+- Use ZVT_MTD(8) in vtmmu_tvv.h and vtmms_tvv.h so misaligned 3-bit tile
+  specifiers (mt2, mt6, mt10, mt14) trap per Zvt v0.4 section 12.1.1.8.
+---
+diff --git a/disasm/isa_parser.cc b/disasm/isa_parser.cc
+--- a/disasm/isa_parser.cc
++++ b/disasm/isa_parser.cc
+@@ -215,6 +215,7 @@
+   {"zvt16e", {EXT_ZVT16E}, {"zvtbase"}},
+   {"zvt64e", {EXT_ZVT64E}, {"zvtbase", "zve64x"}},
+   {"zvti8i32mm", {EXT_ZVTI8I32MM}, {"zvt8e"}},
++  {"zvti16i32mm", {EXT_ZVTI16I32MM}, {"zvt16e"}},
+   {"zvtofp8fmm", {EXT_ZVTOFP8FMM}, {"zvt8e", "zve32f"}},
+   {"zvtfp16fmm", {EXT_ZVTFP16FMM}, {"zvt16e", "zve32f"}},
+   {"zvtbf16fmm", {EXT_ZVTBF16FMM}, {"zvt16e", "zve32f"}},
+diff --git a/riscv/insns/vtmms_tvv.h b/riscv/insns/vtmms_tvv.h
+--- a/riscv/insns/vtmms_tvv.h
++++ b/riscv/insns/vtmms_tvv.h
+@@ -1,4 +1,4 @@
+-ZVT_MTD(4);
++ZVT_MTD(8);
+ ZVT_CHECK_ALIGN_RS1;
+ ZVT_CHECK_ALIGN_RS2;
+ ZVT_CHECK_RS1_EMUL;
+@@ -24,6 +24,34 @@
+   
+     P.VU.mt_elt<int32_t>(td, m, n) += dot_product<int32_t>(a.data(), b.data(), P.VU.tk);
+   })
++} else if (P.VU.vsew == 16 && P.VU.widen == 2 && !P.VU.altfmt) {
++  require_extension(EXT_ZVTI16I32MM);
++
++  ZVT_MN_LOOP
++  ({
++    auto a = P.VU.mt_vector<int16_t>(insn.rs2(), m);
++    auto b = P.VU.mt_vector<uint16_t>(insn.rs1(), n);
++    uint32_t sum = 0;
++    for (size_t ki = 0; ki < P.VU.tk; ki++) {
++      sum += static_cast<uint32_t>(static_cast<int32_t>(a[ki])) *
++             static_cast<uint32_t>(b[ki]);
++    }
++    P.VU.mt_elt<uint32_t>(td, m, n) += sum;
++  })
++} else if (P.VU.vsew == 16 && P.VU.widen == 2 && P.VU.altfmt) {
++  require_extension(EXT_ZVTI16I32MM);
++
++  ZVT_MN_LOOP
++  ({
++    auto a = P.VU.mt_vector<int16_t>(insn.rs2(), m);
++    auto b = P.VU.mt_vector<int16_t>(insn.rs1(), n);
++    uint32_t sum = 0;
++    for (size_t ki = 0; ki < P.VU.tk; ki++) {
++      sum += static_cast<uint32_t>(static_cast<int32_t>(a[ki])) *
++             static_cast<uint32_t>(static_cast<int32_t>(b[ki]));
++    }
++    P.VU.mt_elt<uint32_t>(td, m, n) += sum;
++  })
+ } else {
+   require(false);
+ }
+diff --git a/riscv/insns/vtmmu_tvv.h b/riscv/insns/vtmmu_tvv.h
+--- a/riscv/insns/vtmmu_tvv.h
++++ b/riscv/insns/vtmmu_tvv.h
+@@ -1,4 +1,4 @@
+-ZVT_MTD(4);
++ZVT_MTD(8);
+ ZVT_CHECK_ALIGN_RS1;
+ ZVT_CHECK_ALIGN_RS2;
+ ZVT_CHECK_RS1_EMUL;
+@@ -24,6 +24,33 @@
+   
+     P.VU.mt_elt<int32_t>(td, m, n) += dot_product<int32_t>(a.data(), b.data(), P.VU.tk);
+   })
++} else if (P.VU.vsew == 16 && P.VU.widen == 2 && !P.VU.altfmt) {
++  require_extension(EXT_ZVTI16I32MM);
++
++  ZVT_MN_LOOP
++  ({
++    auto a = P.VU.mt_vector<uint16_t>(insn.rs2(), m);
++    auto b = P.VU.mt_vector<uint16_t>(insn.rs1(), n);
++    uint32_t sum = 0;
++    for (size_t ki = 0; ki < P.VU.tk; ki++) {
++      sum += static_cast<uint32_t>(a[ki]) * static_cast<uint32_t>(b[ki]);
++    }
++    P.VU.mt_elt<uint32_t>(td, m, n) += sum;
++  })
++} else if (P.VU.vsew == 16 && P.VU.widen == 2 && P.VU.altfmt) {
++  require_extension(EXT_ZVTI16I32MM);
++
++  ZVT_MN_LOOP
++  ({
++    auto a = P.VU.mt_vector<uint16_t>(insn.rs2(), m);
++    auto b = P.VU.mt_vector<int16_t>(insn.rs1(), n);
++    uint32_t sum = 0;
++    for (size_t ki = 0; ki < P.VU.tk; ki++) {
++      sum += static_cast<uint32_t>(a[ki]) *
++             static_cast<uint32_t>(static_cast<int32_t>(b[ki]));
++    }
++    P.VU.mt_elt<uint32_t>(td, m, n) += sum;
++  })
+ } else {
+   require(false);
+ }
+diff --git a/riscv/isa_parser.h b/riscv/isa_parser.h
+--- a/riscv/isa_parser.h
++++ b/riscv/isa_parser.h
+@@ -102,6 +102,7 @@
+   EXT_ZVT16E,
+   EXT_ZVT64E,
+   EXT_ZVTI8I32MM,
++  EXT_ZVTI16I32MM,
+   EXT_ZVTOFP8FMM,
+   EXT_ZVTFP16FMM,
+   EXT_ZVTBF16FMM,
+diff --git a/riscv/vector_unit.cc b/riscv/vector_unit.cc
+--- a/riscv/vector_unit.cc
++++ b/riscv/vector_unit.cc
+@@ -130,6 +130,8 @@
+         ill_altfmt = false;
+       else if (p->extension_enabled(EXT_ZVTI8I32MM) && vsew == 8)
+         ill_altfmt = false;
++      else if (p->extension_enabled(EXT_ZVTI16I32MM) && vsew == 16)
++        ill_altfmt = false;
+       else if (p->extension_enabled(EXT_ZVTOFP8FMM) && vsew == 8)
+         ill_altfmt = false;
+       else if (p->extension_enabled(EXT_ZVTBF16FMM) && vsew == 16)

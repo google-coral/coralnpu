@@ -38,7 +38,7 @@ struct SpikeMemTransaction {
 struct SpikeSimulatorOptions {
   std::string isa =
       "rv32imf_zve32f_zvl128b_zicsr_zifencei_zbb_zicclsm_zfbfmin_zvfbfmin_zvfbfwma_zvfbfa_"
-      "zvt16t_zvti8i32mm_zvtbf16fmm_zvtfmm_xdummy";
+      "zvt16t_zvti8i32mm_zvti16i32mm_zvtbf16fmm_zvtfmm_xdummy";
   std::string priv        = "m";
   bool misaligned         = true;
   bool enable_mem_tracing = false;

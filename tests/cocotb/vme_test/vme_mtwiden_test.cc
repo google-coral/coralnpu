@@ -226,6 +226,59 @@ VME_SUBTEST(vtmv_t_v_unconfigured) {
       : "x10", "vl", "vtype");
 }
 
+// Configure mtype/vtype and vl, then align an illegal OP-VE matmul at Slot 0
+// followed by a scalar ALU op in Slot 1 of the same 16-byte fetch packet to
+// verify Decode faults precisely without allowing Slot 1 to execute ahead of
+// the trap. Marked volatile because unmarked CSRs (mtvec, mtype, mcause, mtval,
+// mepc, mstatus) govern and are updated by the synchronous trap into
+// isr_handler.
+extern "C++" {
+template <uint32_t kMtype, uint32_t kVtype, uint32_t kInsn>
+static inline __attribute__((always_inline)) uint32_t RunOpVePacketTrapProbe() {
+  uint32_t younger_probe   = 0;
+  const uint32_t mtype_val = kMtype;
+  const uint32_t vtype_val = kVtype;
+  const uint32_t avl_val   = 4u;
+  asm volatile(
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[mtype], %[vtype]\n"  // msetmtype x0, mtype, vtype
+      ".insn r 0b1010111, 0b111, 0b1000100, x0, %[avl], x0\n"          // msettn x0, avl
+      ".balign 16\n"
+      ".word %[insn]\n"
+      "addi %[younger_probe], %[younger_probe], 1\n"
+      : [younger_probe] "+r"(younger_probe), "+m"(trap_count), "=m"(last_mcause), "=m"(last_mtval)
+      : [mtype] "r"(mtype_val), [vtype] "r"(vtype_val), [avl] "r"(avl_val), [insn] "i"(kInsn)
+      : "vl", "vtype");
+  return younger_probe;
+}
+}  // extern "C++"
+
+// SEW=8 (mtwiden=3, KMAX=4) vtmmu.tvv with vs2=v2 in Slot 0 + scalar ALU in Slot 1.
+VME_SUBTEST(vtmmu_sew8_vs2_v2_packet_trap) {
+  unconfigured_younger_count =
+      RunOpVePacketTrapProbe</*kMtype=*/0x4083u, /*kVtype=*/0x000u,
+                             ZvtWord(0x3C, /*vs2=*/2, /*rs1=*/16, 0, 0, kZvtOpcodeOpVe)>();
+}
+
+// SEW=16 (mtwiden=2, LMUL=2) vtmmu.tvv with odd vs2=v3 in Slot 0 + scalar ALU in Slot 1.
+VME_SUBTEST(vtmmu_sew16_odd_vs2_packet_trap) {
+  unconfigured_younger_count =
+      RunOpVePacketTrapProbe</*kMtype=*/0x4042u, /*kVtype=*/0x008u,
+                             ZvtWord(0x3C, /*vs2=*/3, /*rs1=*/16, 0, 0, kZvtOpcodeOpVe)>();
+}
+
+// SEW=16 with mtwiden=1 (valid mtype for vtzero) vtmmu.tvv in Slot 0 + scalar ALU in Slot 1.
+VME_SUBTEST(vtmmu_sew16_mtwiden1_packet_trap) {
+  unconfigured_younger_count =
+      RunOpVePacketTrapProbe</*kMtype=*/0x4041u, /*kVtype=*/0x008u,
+                             ZvtWord(0x3C, /*vs2=*/2, /*rs1=*/18, 0, 0, kZvtOpcodeOpVe)>();
+}
+
+// SEW=16, mtwiden=2 with altfmt=0 (invalid for BF16 vtfmm.alt) in Slot 0 + scalar ALU in Slot 1.
+VME_SUBTEST(vtfmm_bf16_altfmt0_packet_trap) {
+  unconfigured_younger_count = RunOpVePacketTrapProbe</*kMtype=*/0x4042u, /*kVtype=*/0x008u,
+                                                      ZvtMatmulFpWord(/*tile=*/0, /*alt=*/true)>();
+}
+
 volatile test_func_t test_fn __attribute__((section(".data"))) = nullptr;
 
 int main(int argc, char **argv) {

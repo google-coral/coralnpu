@@ -202,12 +202,13 @@ verilator_model(
 # ZVT_ON enables the Zvt datapath in the RVV backend RTL, instantiates
 # VmeCoreMiniVerificationAxi in coralnpu_tb_top, and selects the M4 (Zvt)
 # architecture in the MPACT co-simulator.
-# ZVTBF16FMM_ON enables bfloat16 matrix multiplication support.
+# ZVTBF16FMM_ON and ZVTI16I32MM_ON enable BF16 and INT16 matrix multiplication.
 verilator_model(
     name = "uvm_sim_verilator_vme",
     cflags = UVM_VERILATOR_CFLAGS + [
         "+define+ZVT_ON",
         "+define+ZVTBF16FMM_ON",
+        "+define+ZVTI16I32MM_ON",
         "+define+DUT_MODULE=VmeCoreMiniVerificationAxi",
     ],
     hdl_toplevel = "coralnpu_tb_top",
@@ -254,6 +255,7 @@ vcs_model(
     cflags = UVM_VCS_CFLAGS + [
         "+define+ZVT_ON",
         "+define+ZVTBF16FMM_ON",
+        "+define+ZVTI16I32MM_ON",
         "+define+DUT_MODULE=VmeCoreMiniVerificationAxi",
     ],
     coralnpu_mpact_lib = ":coralnpu_cosim_lib_static_archive",

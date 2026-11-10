@@ -458,6 +458,34 @@ class RvvCompressedInstruction(p: Parameters) extends Bundle {
     )
   }
 
+  /** Checks dynamic OP-VE matrix-multiply (`vtmmu`, `vtmms`, `vtfmm`) mode and operand-base
+    * legality against architectural configuration state (`sew`, `lmulOrig`, `mtwiden`, `altfmt`,
+    * `frm`). Assumes static OP-VE legality has already been verified by `isOpVeValid`.
+    */
+  def isLegalVtxmmDynamic(
+    sew: UInt,
+    lmulOrig: UInt,
+    mtwiden: UInt,
+    altfmt: Bool,
+    frm: UInt = 0.U(3.W)
+  ): Bool = {
+    if (!p.enableVme) { true.B }
+    else {
+      val (vs1Idx, vs2Idx, vdIdx) = (vs1(), vs2(), vd())
+      val mtdAlign4               = vdIdx(2, 1) === 0.U
+      val int8Ok                  = (sew === 0.U) && (lmulOrig === 0.U) && (mtwiden === 3.U) &&
+        (vs1Idx(2, 1) === 0.U) && (vs2Idx(2, 1) === 0.U)
+      val int16Ok = (sew === 1.U) && (lmulOrig === 1.U) && (mtwiden === 2.U) &&
+        !vs1Idx(2) && !vs1Idx(0) && !vs2Idx(2) && !vs2Idx(0)
+      val fp32Ok = (sew === 2.U) && (lmulOrig === 2.U) && (mtwiden === 1.U) && !altfmt &&
+        (vs1Idx(1, 0) === 0.U) && (vs2Idx(1, 0) === 0.U)
+      val bf16Ok = (sew === 1.U) && (lmulOrig === 1.U) && (mtwiden === 2.U) && altfmt &&
+        !vs1Idx(2) && !vs1Idx(0) && !vs2Idx(2) && !vs2Idx(0)
+      val fpAllowed = if (p.enableFloat) (frm < 5.U) && (fp32Ok || bf16Ok) else false.B
+      !isVtxmm() || (mtdAlign4 && Mux(funct3() === "b000".U, int8Ok || int16Ok, fpAllowed))
+    }
+  }
+
   override def toPrintable: Printable = {
     cf"[opcode=$opcode, bits=$bits%b]"
   }

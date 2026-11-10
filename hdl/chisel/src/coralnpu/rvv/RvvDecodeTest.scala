@@ -1264,6 +1264,56 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
           accessesTile = true,
           writesVecReg = false
         ),
+        // vtmmu.tvv mt0, v2, v10 (INT16 Half-Hi bases with bit 1 set)
+        VtxmmCase(
+          inst = 0xf2250077L,
+          compValid = true,
+          isVtxmm = true,
+          isVtfmm = false,
+          requiresValidMtwiden = true,
+          accessesTile = true,
+          writesVecReg = false
+        ),
+        // vtmms.tvv mt12, v26, v18 (INT16 Half-Hi bases across upper register groups)
+        VtxmmCase(
+          inst = 0xf3a90cf7L,
+          compValid = true,
+          isVtxmm = true,
+          isVtfmm = false,
+          requiresValidMtwiden = true,
+          accessesTile = true,
+          writesVecReg = false
+        ),
+        // vtmmu.tvv mt0, v4, v16 (vs2[2]=1 out of KMAX>=2 half-group, must be rejected)
+        VtxmmCase(
+          inst = 0xf2480077L,
+          compValid = false,
+          isVtxmm = false,
+          isVtfmm = false,
+          requiresValidMtwiden = false,
+          accessesTile = false,
+          writesVecReg = false
+        ),
+        // vtmmu.tvv mt0, v8, v12 (vs1[2]=1 out of KMAX>=2 half-group, must be rejected)
+        VtxmmCase(
+          inst = 0xf2860077L,
+          compValid = false,
+          isVtxmm = false,
+          isVtfmm = false,
+          requiresValidMtwiden = false,
+          accessesTile = false,
+          writesVecReg = false
+        ),
+        // vtmmu.tvv mt2, v8, v16 (misaligned TEW=32 tile specifier, must be rejected)
+        VtxmmCase(
+          inst = 0xf2880277L,
+          compValid = false,
+          isVtxmm = false,
+          isVtfmm = false,
+          requiresValidMtwiden = false,
+          accessesTile = false,
+          writesVecReg = false
+        ),
         // vtfmm.tvv mt0, v8, v16 (OP-VE 0x77, funct6=111100, vm=1, funct3=001)
         VtxmmCase(
           inst = 0xf2881077L,
@@ -1307,6 +1357,151 @@ class RvvS1DecodeInstructionSpec extends AnyFreeSpec with ChiselSim with Paralle
         if (c.compValid) {
           dut.io.origEncoding.expect(c.inst.U)
         }
+      }
+    }
+  }
+
+  "Check Dynamic OP-VE Matrix Multiply Legality" in {
+    class TesterVtxmmDynamic(p: Parameters) extends Module {
+      val io = IO(new Bundle {
+        val inst           = Input(UInt(32.W))
+        val sew            = Input(UInt(3.W))
+        val lmul_orig      = Input(UInt(3.W))
+        val mtwiden        = Input(UInt(2.W))
+        val altfmt         = Input(Bool())
+        val frm            = Input(UInt(3.W))
+        val compValid      = Output(Bool())
+        val isDynamicLegal = Output(Bool())
+      })
+
+      val comp = RvvCompressedInstruction.from_uncompressed(p, io.inst, 0.U)
+      io.compValid      := comp.valid
+      io.isDynamicLegal := comp.valid && comp.bits.isLegalVtxmmDynamic(
+        io.sew,
+        io.lmul_orig,
+        io.mtwiden,
+        io.altfmt,
+        io.frm
+      )
+    }
+
+    val vmeParams = {
+      val params = new Parameters
+      params.enableRvv = true
+      params.enableVme = true
+      params.enableFloat = true
+      params.enableVectorBf16 = true
+      params
+    }
+
+    def opVeWord(vs2: Int, vs1: Int, funct3: Int, rd: Int): Long =
+      ((0x3cL << 26) | (1L << 25) | (vs2.toLong << 20) | (vs1.toLong << 15) |
+        (funct3.toLong << 12) | (rd.toLong << 7) | 0x77L) & 0xffffffffL
+
+    simulate(new TesterVtxmmDynamic(vmeParams)) { dut =>
+      case class DynVtxmmCase(
+        inst: Long,
+        sew: Int,
+        lmul: Int,
+        mtwiden: Int,
+        altfmt: Boolean = false,
+        frm: Int = 0,
+        expectedLegal: Boolean
+      )
+
+      val cases = Seq(
+        // INT8 (sew=0, lmul=0, mtwiden=3): v0/v1/v8/v9/v16/v17 allowed, v2/v10 rejected
+        DynVtxmmCase(opVeWord(8, 16, 0, 0), sew = 0, lmul = 0, mtwiden = 3, expectedLegal = true),
+        DynVtxmmCase(
+          opVeWord(9, 17, 0, 1),
+          sew = 0,
+          lmul = 0,
+          mtwiden = 3,
+          altfmt = true,
+          expectedLegal = true
+        ),
+        DynVtxmmCase(opVeWord(2, 16, 0, 0), sew = 0, lmul = 0, mtwiden = 3, expectedLegal = false),
+        DynVtxmmCase(opVeWord(8, 10, 0, 0), sew = 0, lmul = 0, mtwiden = 3, expectedLegal = false),
+        DynVtxmmCase(opVeWord(8, 16, 0, 0), sew = 0, lmul = 0, mtwiden = 2, expectedLegal = false),
+        // INT16 (sew=1, lmul=1, mtwiden=2): even Half-Low/Half-Hi allowed, odd or wrong mtwiden rejected
+        DynVtxmmCase(opVeWord(2, 18, 0, 8), sew = 1, lmul = 1, mtwiden = 2, expectedLegal = true),
+        DynVtxmmCase(
+          opVeWord(10, 26, 0, 25),
+          sew = 1,
+          lmul = 1,
+          mtwiden = 2,
+          altfmt = true,
+          expectedLegal = true
+        ),
+        DynVtxmmCase(opVeWord(3, 16, 0, 0), sew = 1, lmul = 1, mtwiden = 2, expectedLegal = false),
+        DynVtxmmCase(opVeWord(2, 17, 0, 1), sew = 1, lmul = 1, mtwiden = 2, expectedLegal = false),
+        DynVtxmmCase(opVeWord(2, 18, 0, 0), sew = 1, lmul = 1, mtwiden = 1, expectedLegal = false),
+        // FP32 vtfmm (sew=2, lmul=2, mtwiden=1, altfmt=0): 4-aligned bases allowed (including v4)
+        DynVtxmmCase(opVeWord(4, 20, 1, 0), sew = 2, lmul = 2, mtwiden = 1, expectedLegal = true),
+        DynVtxmmCase(
+          opVeWord(8, 16, 1, 0),
+          sew = 2,
+          lmul = 2,
+          mtwiden = 1,
+          altfmt = true,
+          expectedLegal = false
+        ),
+        DynVtxmmCase(opVeWord(2, 16, 1, 0), sew = 2, lmul = 2, mtwiden = 1, expectedLegal = false),
+        DynVtxmmCase(
+          opVeWord(8, 16, 1, 0),
+          sew = 2,
+          lmul = 2,
+          mtwiden = 1,
+          frm = 7,
+          expectedLegal = false
+        ),
+        // BF16 vtfmm.alt (sew=1, lmul=1, mtwiden=2, altfmt=1): even !vs[2] allowed, v4 or altfmt=0 rejected
+        DynVtxmmCase(
+          opVeWord(2, 18, 1, 1),
+          sew = 1,
+          lmul = 1,
+          mtwiden = 2,
+          altfmt = true,
+          expectedLegal = true
+        ),
+        DynVtxmmCase(
+          opVeWord(8, 16, 1, 1),
+          sew = 1,
+          lmul = 1,
+          mtwiden = 2,
+          altfmt = false,
+          expectedLegal = false
+        ),
+        DynVtxmmCase(
+          opVeWord(4, 16, 1, 1),
+          sew = 1,
+          lmul = 1,
+          mtwiden = 2,
+          altfmt = true,
+          expectedLegal = false
+        ),
+        DynVtxmmCase(
+          opVeWord(2, 18, 1, 1),
+          sew = 1,
+          lmul = 1,
+          mtwiden = 2,
+          altfmt = true,
+          frm = 5,
+          expectedLegal = false
+        ),
+        // Non-vtxmm RVV instruction (vwmaccu.vv) passes through unaffected
+        DynVtxmmCase(0xf2812257L, sew = 0, lmul = 0, mtwiden = 0, expectedLegal = true)
+      )
+
+      for (c <- cases) {
+        dut.io.inst.poke(c.inst.U)
+        dut.io.sew.poke(c.sew.U)
+        dut.io.lmul_orig.poke(c.lmul.U)
+        dut.io.mtwiden.poke(c.mtwiden.U)
+        dut.io.altfmt.poke(c.altfmt.B)
+        dut.io.frm.poke(c.frm.U)
+        dut.io.compValid.expect(true.B)
+        dut.io.isDynamicLegal.expect(c.expectedLegal.B)
       }
     }
   }

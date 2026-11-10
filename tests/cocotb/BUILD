@@ -135,6 +135,7 @@ verilator_cocotb_model(
     cflags = VERILATOR_BUILD_ARGS + [
         "-DZVT_ON",
         "-DZVTBF16FMM_ON",
+        "-DZVTI16I32MM_ON",
     ],
     hdl_toplevel = "VmeCoreMiniAxi",
     trace = False,
@@ -207,6 +208,7 @@ vcs_cocotb_model(
     defines = dict(
         VCS_DEFINES,
         ZVTBF16FMM_ON = "",
+        ZVTI16I32MM_ON = "",
         ZVT_ON = "",
     ),
     hdl_toplevel = "VmeCoreMiniAxi",

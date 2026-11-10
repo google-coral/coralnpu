@@ -590,12 +590,18 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     Seq.fill(p.instructionLanes)(false.B)
   }
 
+  // CSR writes update frm in Csr one cycle after io.csr.valid; hold vtfmm for
+  // that cycle so isLegalVtxmmDynamic does not evaluate against a stale csrFrm.
+  val csrInFlight = RegNext(io.csr.valid, false.B)
+
   // ---------------------------------------------------------------------------
   // Rvv Dynamic Legality (vill, EMUL bounds, NF*EMUL <= 8, register group
-  // alignment, indexed load/store overlap, and VME mtwiden != 0)
-  // Check vill and mtwiden=0 at scalar dispatch so trapping RVV/Zvt instructions
-  // fault at Slot 0 in Decode and never allow younger scalar instructions in
-  // the same decode packet to execute ahead of the trap.
+  // alignment, indexed load/store overlap, VME mtwiden != 0, and OP-VE mode /
+  // operand-base legality)
+  // Check vill, mtwiden=0, and OP-VE dynamic legality at scalar dispatch so
+  // trapping RVV/Zvt instructions fault at Slot 0 in Decode and never allow
+  // younger scalar instructions in the same decode packet to execute ahead of
+  // the trap.
   // Whole-register loads/stores (vl<nf>r.v / vs<nf>r.v) and whole-register moves
   // (vmv<nr>r.v) ignore vtype and vill (RVV 1.0 §7.9, §16.8).
   val rvvDynamicInterlock = if (p.enableRvv) {
@@ -603,10 +609,24 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       val dRvv         = decodedInsts(i).rvv.get
       val reqVillClear = dRvv.valid && dRvv.bits.requiresVillClear()
       val invalidVill  = reqVillClear && (vtypeMtwidenInvalid(i) || io.rvvState.get.bits.vill)
-      val invalidVme   = if (p.enableVme) {
-        dRvv.valid &&
-        dRvv.bits.requiresValidMtwiden() &&
-        (vtypeMtwidenInvalid(i) || !io.rvvState.get.bits.mtwiden.get.orR)
+      val isVtxmmLegal = if (p.enableVme) {
+        dRvv.bits.isLegalVtxmmDynamic(
+          io.rvvState.get.bits.sew,
+          io.rvvState.get.bits.lmul_orig,
+          io.rvvState.get.bits.mtwiden.get,
+          io.rvvState.get.bits.altfmt.get,
+          io.csrFrm.getOrElse(0.U)
+        )
+      } else {
+        true.B
+      }
+      val invalidVme = if (p.enableVme) {
+        dRvv.valid && (
+          (dRvv.bits.requiresValidMtwiden() &&
+            (vtypeMtwidenInvalid(i) || !io.rvvState.get.bits.mtwiden.get.orR)) ||
+            (dRvv.bits.isVtfmm() && csrInFlight) ||
+            !isVtxmmLegal
+        )
       } else {
         false.B
       }
@@ -1109,7 +1129,9 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
                                  false.B
                                }
 
-                               val invalidRvvDynamic = !rvvDynamicInterlock(0)
+                               val invalidRvvDynamic =
+                                 !rvvDynamicInterlock(0) && !vtypeMtwidenInvalid(0) &&
+                                   !csrInFlight && io.rvvState.get.valid
 
                                !io.halted &&
                                !io.interlock &&

@@ -174,6 +174,8 @@ object EmitCore extends App {
   }
   if (p.enableVme) {
     defines += "+define+ZVT_ON"
+    defines += "+define+ZVTBF16FMM_ON"
+    defines += "+define+ZVTI16I32MM_ON"
   }
   if (p.fpuPipeRegs != 4) {
     defines += s"+define+FPU_PIPEREGS=${p.fpuPipeRegs}"

@@ -299,8 +299,17 @@ MM_DIM = 16  # TE at VLEN=128
 MM_ROWS = 4  # A/B row slots in the program's operand buffers
 
 _MM_IMPLS = [
-    "vtmmu_mt0", "vtmmu_mt4", "vtmms_mt0", "vtfmm_bf16_mt0", "vtfmm_bf16_mt8",
-    "vtfmm_mt0", "vtfmm_mt8"
+    "vtmmu_mt0",
+    "vtmmu_mt4",
+    "vtmms_mt0",
+    "vtmmu_i16_u16u16_mt0",
+    "vtmmu_i16_u16s16_mt4",
+    "vtmms_i16_s16u16_mt8",
+    "vtmms_i16_s16s16_mt12",
+    "vtfmm_bf16_mt0",
+    "vtfmm_bf16_mt8",
+    "vtfmm_mt0",
+    "vtfmm_mt8",
 ]
 _MM_SYMBOLS = [
     "mm_a",
@@ -371,6 +380,17 @@ def _int_matmul_ref(a, b, c_init, tm, tn, tk, signed_a):
     return (ref & 0xFFFFFFFF).astype(np.uint32)
 
 
+def _int16_matmul_ref(a, b, c_init, tm, tn, tk, signed_a, signed_b):
+    """C[:tm,:tn] += castA(A[:tk,:tm]).T @ castB(B[:tk,:tn]), int32 wraparound."""
+    a_rows = a.view(np.uint16).reshape(2, MM_DIM)
+    b_rows = b.view(np.uint16).reshape(2, MM_DIM)
+    a_cast = (a_rows.view(np.int16) if signed_a else a_rows).astype(np.int64)
+    b_cast = (b_rows.view(np.int16) if signed_b else b_rows).astype(np.int64)
+    ref = c_init.astype(np.int64).reshape(MM_DIM, MM_DIM).copy()
+    ref[:tm, :tn] += a_cast[:tk, :tm].T @ b_cast[:tk, :tn]
+    return (ref & 0xFFFFFFFF).astype(np.uint32)
+
+
 def _fp_matmul_ref(a, b, c_init, tm, tn, tk=1):
     """C[:tm,:tn] += A[:tk,:tm].T @ B[:tk,:tn] in fp32 (tk=1 for SEW32)."""
     a_rows = a.view(np.float32).reshape(-1, MM_DIM)
@@ -416,6 +436,91 @@ async def vme_matmul_int8_test(fixture):
         )
         actual = await _run_matmul_case(fixture, case, a, b, c_init)
         _check_matmul_result("int8", case, actual, expected)
+
+
+@coralflow_test
+async def vme_matmul_int16_test(fixture):
+    """vtmmu/vtmms int16 outer-product accumulate into an int32 tile."""
+    await _load_matmul_fixture(fixture)
+    rng = np.random.default_rng(1616)
+
+    cases = [
+        # uint16 x uint16 -> int32 (vtzero init, full tile, KMAX=2).
+        dict(
+            impl="vtmmu_i16_u16u16_mt0",
+            signed_a=False,
+            signed_b=False,
+            init=0,
+            tm=16,
+            tn=16,
+            tk=2,
+        ),
+        # uint16 x uint16 -> int32 with tk=1 (row 1 must be masked off).
+        dict(
+            impl="vtmmu_i16_u16u16_mt0",
+            signed_a=False,
+            signed_b=False,
+            init=1,
+            tm=16,
+            tn=16,
+            tk=1,
+        ),
+        # uint16 x int16 -> int32 (altfmt=1, Half-Hi bases v2 / v18, tile mt4).
+        dict(
+            impl="vtmmu_i16_u16s16_mt4",
+            signed_a=False,
+            signed_b=True,
+            init=1,
+            tm=16,
+            tn=16,
+            tk=2,
+        ),
+        # int16 x uint16 -> int32 (altfmt=0, Half-Hi bases v10 / v26, tail case).
+        dict(
+            impl="vtmms_i16_s16u16_mt8",
+            signed_a=True,
+            signed_b=False,
+            init=1,
+            tm=11,
+            tn=13,
+            tk=2,
+        ),
+        # int16 x int16 -> int32 (altfmt=1, tk=1 + tail case on tile mt12).
+        dict(
+            impl="vtmms_i16_s16s16_mt12",
+            signed_a=True,
+            signed_b=True,
+            init=1,
+            tm=7,
+            tn=9,
+            tk=1,
+        ),
+    ]
+
+    for idx, case in enumerate(cases):
+        a = rng.integers(0, 1 << 16, 2 * MM_DIM, dtype=np.uint16)
+        b = rng.integers(0, 1 << 16, 2 * MM_DIM, dtype=np.uint16)
+        if idx == 0:
+            # Inject 16-bit signed/unsigned boundary extrema (0xFFFF, 0x8000, 0x7FFF).
+            a[0], a[1], a[MM_DIM], a[MM_DIM +
+                                     1] = 0xFFFF, 0x8000, 0xFFFF, 0x7FFF
+            b[0], b[1], b[MM_DIM], b[MM_DIM +
+                                     1] = 0xFFFF, 0x8000, 0xFFFF, 0x7FFF
+        c_init = rng.integers(0, 1 << 32, MM_DIM * MM_DIM, dtype=np.uint32)
+        expected = _int16_matmul_ref(
+            a,
+            b,
+            c_init if case["init"] else np.zeros_like(c_init),
+            case["tm"],
+            case["tn"],
+            case["tk"],
+            case["signed_a"],
+            case["signed_b"],
+        )
+        actual = await _run_matmul_case(
+            fixture, case, a.view(np.uint8), b.view(np.uint8), c_init
+        )
+        _check_matmul_result("int16", case, actual, expected)
 
 
 @coralflow_test
@@ -515,7 +620,25 @@ async def vme_decode_test(fixture):
         "opv_reserved_funct6_111100",
         "vwmaccu_vv_vill",
         "vfwmacc_vv_vill",
+        "vtmmu_sew8_vs2_v2",
+        "vtmmu_sew8_vs1_v10",
+        "vtmmu_sew16_odd_vs2",
+        "vtmms_sew16_odd_vs1",
+        "vtmmu_sew16_mtwiden1",
+        "vtmmu_static_vs2_v4",
+        "vtmmu_misaligned_mtd",
     ]
+
+    opve_trap_tests = {
+        "opve_invalid_funct3",
+        "vtmmu_sew8_vs2_v2",
+        "vtmmu_sew8_vs1_v10",
+        "vtmmu_sew16_odd_vs2",
+        "vtmms_sew16_odd_vs1",
+        "vtmmu_sew16_mtwiden1",
+        "vtmmu_static_vs2_v4",
+        "vtmmu_misaligned_mtd",
+    }
 
     r = runfiles.Create()
     elf_path = r.Rlocation(
@@ -551,7 +674,7 @@ async def vme_decode_test(fixture):
                 f"[{name}] Expected mtval opcode 0x57 (OP-V), but got 0x{opcode:02x} "
                 f"(mtval=0x{last_mtval_val:08x}). Round-trip reconstruction corrupted opcode!"
             )
-        elif name == "opve_invalid_funct3":
+        elif name in opve_trap_tests:
             opcode = last_mtval_val & 0x7F
             assert opcode == 0x77, (
                 f"[{name}] Expected mtval opcode 0x77 (OP-VE), but got 0x{opcode:02x} "
@@ -573,6 +696,10 @@ async def vme_mtwiden_test(fixture):
         "vtse_unconfigured",
         "vtmv_v_t_unconfigured",
         "vtmv_t_v_unconfigured",
+        "vtmmu_sew8_vs2_v2_packet_trap",
+        "vtmmu_sew16_odd_vs2_packet_trap",
+        "vtmmu_sew16_mtwiden1_packet_trap",
+        "vtfmm_bf16_altfmt0_packet_trap",
     ]
 
     expected_rd_sentinels = {
@@ -588,6 +715,17 @@ async def vme_mtwiden_test(fixture):
         "vill1_msettk_unconfigured",
         "vtzero_unconfigured",
         "vtmmu_unconfigured",
+        "vtmmu_sew8_vs2_v2_packet_trap",
+        "vtmmu_sew16_odd_vs2_packet_trap",
+        "vtmmu_sew16_mtwiden1_packet_trap",
+        "vtfmm_bf16_altfmt0_packet_trap",
+    }
+    opve_mtval_tests = {
+        "vtmmu_unconfigured",
+        "vtmmu_sew8_vs2_v2_packet_trap",
+        "vtmmu_sew16_odd_vs2_packet_trap",
+        "vtmmu_sew16_mtwiden1_packet_trap",
+        "vtfmm_bf16_altfmt0_packet_trap",
     }
 
     r = runfiles.Create()
@@ -616,7 +754,7 @@ async def vme_mtwiden_test(fixture):
         assert not fixture.fault(), f"[{name}] Core faulted unexpectedly"
         assert trap_count_val == 1, f"[{name}] Expected 1 trap, got {trap_count_val}"
         assert last_mcause_val == 2, f"[{name}] Expected mcause=2 (illegal), got {last_mcause_val}"
-        if name == "vtmmu_unconfigured":
+        if name in opve_mtval_tests:
             opcode = last_mtval_val & 0x7F
             assert opcode == 0x77, (
                 f"[{name}] Expected mtval opcode 0x77 (OP-VE), but got 0x{opcode:02x} "

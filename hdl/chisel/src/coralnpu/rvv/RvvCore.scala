@@ -674,9 +674,11 @@ object GenerateBackendConfig {
     if (p.enableVme) {
       config += "`ifndef ZVT_ON\n`define ZVT_ON\n`endif\n"
       config += "`ifndef ZVTBF16FMM_ON\n`define ZVTBF16FMM_ON\n`endif\n"
+      config += "`ifndef ZVTI16I32MM_ON\n`define ZVTI16I32MM_ON\n`endif\n"
     } else {
       config += "//`define ZVT_ON\n"
       config += "//`define ZVTBF16FMM_ON\n"
+      config += "//`define ZVTI16I32MM_ON\n"
     }
     config += """
         |// LSU interaction

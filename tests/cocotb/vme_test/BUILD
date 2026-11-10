@@ -19,6 +19,7 @@ load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 VME_TEST_TESTCASES = [
     "vme_mset_csr_test",
     "vme_matmul_int8_test",
+    "vme_matmul_int16_test",
     "vme_matmul_bf16_test",
     "vme_matmul_fp32_test",
     "vme_decode_test",

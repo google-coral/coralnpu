@@ -1299,7 +1299,7 @@ index 9a7965b..1c70e2e 100644
  }
  
  // ----------------------------------------------------------------------------
-@@ -382,90 +1071,208 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+@@ -382,90 +1071,217 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
  void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    auto* matrix_state = *m_result;
@@ -1341,12 +1341,13 @@ index 9a7965b..1c70e2e 100644
 +  const bool kAltfmt = ((vector_state->vtype() & 0x100u) != 0);
 +  const int kTileElementWidth = matrix_state->tile_element_width_bits();
 +
-+  // Check mode legality per Zvt v0.4 §12.1.1.8.
++  // Check mode legality per Zvt v0.4 §12.1.1.8 (plus custom Zvti16i32mm).
 +  bool mode_valid = false;
 +  switch (kind) {
 +    case RiscVZvtMatmulKind::kInt8Unsigned:
 +    case RiscVZvtMatmulKind::kInt8Signed:
-+      mode_valid = (kSewBits == 8 && kTwiden == 4);
++      mode_valid =
++          (kSewBits == 8 && kTwiden == 4) || (kSewBits == 16 && kTwiden == 2);
 +      break;
 +    case RiscVZvtMatmulKind::kFp32:
 +      mode_valid = (kSewBits == 32 && kTwiden == 1 && !kAltfmt);
@@ -1477,6 +1478,11 @@ index 9a7965b..1c70e2e 100644
    auto read_int = [&](RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
 -                      int kk, int col) -> int32_t {
 +                      int kk, int col, bool is_signed) -> int32_t {
++    if (kSewBits == 16) {
++      const uint16_t u = read_u16(op, spans, kk, col);
++      return is_signed ? static_cast<int32_t>(static_cast<int16_t>(u))
++                       : static_cast<int32_t>(u);
++    }
      const int kReg = kk * kStride + col / kElementsPerVector;
      const int kE = col % kElementsPerVector;
 -    if (spans[kReg].empty()) {
@@ -1531,8 +1537,11 @@ index 9a7965b..1c70e2e 100644
                                                       kTileElementWidth);
          for (int kk = 0; kk < kTileK; kk++) {
 -          acc += read_int(a, a_spans, kk, mm) * read_int(b, b_spans, kk, nn);
-+          acc += read_int(a, a_spans, kk, mm, kVs2Signed) *
-+                 read_int(b, b_spans, kk, nn, kVs1Signed);
++          const uint32_t lhs =
++              static_cast<uint32_t>(read_int(a, a_spans, kk, mm, kVs2Signed));
++          const uint32_t rhs =
++              static_cast<uint32_t>(read_int(b, b_spans, kk, nn, kVs1Signed));
++          acc = static_cast<int32_t>(static_cast<uint32_t>(acc) + lhs * rhs);
          }
          matrix_state->SetElem<int32_t>(kDestTile, mm, nn, kTileElementWidth,
                                         acc);

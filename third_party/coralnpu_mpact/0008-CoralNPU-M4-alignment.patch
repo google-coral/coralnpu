@@ -543,7 +543,7 @@ index 3a22b12..5ff4789 100755
              /*tn=*/2);
    ASSERT_EQ(matrix_->tile_k(), 2);
  
-@@ -444,4 +445,59 @@ TEST_F(CoralNPUM4OpsTest, VtseVtle64RoundTrip) {
+@@ -444,4 +445,101 @@ TEST_F(CoralNPUM4OpsTest, VtseVtle64RoundTrip) {
              static_cast<int64_t>(0x3333333344444444ll));
  }
  
@@ -599,6 +599,48 @@ index 3a22b12..5ff4789 100755
 +  // Executing vtfmm.tvv when configured for int8 (SEW=8, TWIDEN=4) traps.
 +  was_trap_handler_called_ = false;
 +  Execute(MakeVMatrix(0b111'100, /*vs2=*/8, /*vs1=*/16, 0b001, /*mtd=*/0));
++  EXPECT_TRUE(was_trap_handler_called_);
++}
++
++TEST_F(CoralNPUM4OpsTest, Vtmmu_Vtmms_Int16Matmul) {
++  // 1. vtmmu.tvv (uint16 x uint16 -> int32) on mt0, including 0xFFFF*0xFFFF wrap.
++  Configure(/*mtype=*/0x2 | (2u << 5) | (2u << 10), /*vtype=*/(0b001u << 3),
++            /*tn=*/2);
++  SetVreg<uint16_t>(8, {0xFFFFu, 2u});
++  SetVreg<uint16_t>(12, {0xFFFFu, 4u});
++  SetVreg<uint16_t>(16, {0xFFFFu, 6u});
++  SetVreg<uint16_t>(20, {0xFFFFu, 8u});
++  Execute(MakeVMatrix(0b111'100, /*vs2=*/8, /*vs1=*/16, 0b000, /*mtd=*/0));
++  EXPECT_EQ((matrix_->GetElem<uint32_t>(0, 0, 0, 32)), 0xFFFC0002u);
++  EXPECT_EQ((matrix_->GetElem<int32_t>(0, 1, 1, 32)), 2 * 6 + 4 * 8);
++
++  // 2. vtmms.tvv (int16 x int16 -> int32, altfmt=1) with TE=16 (LMUL=2) and
++  // Half-Hi bases v2, v18.
++  state_->csr_set()
++      ->RemoveCsr(::mpact::sim::riscv::kRiscVMtypeCsrIndex)
++      .IgnoreError();
++  matrix_.reset();
++  auto m16 = RiscVZvtMatrixState::Create(state_.get(), /*tile_elements=*/16);
++  CHECK_OK(m16);
++  matrix_ = std::move(*m16);
++  Configure(/*mtype=*/0x2 | (2u << 5) | (2u << 10),
++            /*vtype=*/(1u << 8) | (0b001u << 3), /*tn=*/2);
++  SetVreg<int16_t>(2, {-3, 5});
++  SetVreg<int16_t>(6, {7, -11});
++  SetVreg<int16_t>(18, {13, -17});
++  SetVreg<int16_t>(22, {-19, 23});
++  Execute(MakeVMatrix(0b111'100, /*vs2=*/2, /*vs1=*/18, 0b000, /*mtd=*/9));
++  EXPECT_EQ((matrix_->GetElem<int32_t>(4, 0, 0, 32)), (-3) * 13 + 7 * (-19));
++  EXPECT_EQ((matrix_->GetElem<int32_t>(4, 0, 1, 32)), (-3) * (-17) + 7 * 23);
++  EXPECT_EQ((matrix_->GetElem<int32_t>(4, 1, 0, 32)), 5 * 13 + (-11) * (-19));
++  EXPECT_EQ((matrix_->GetElem<int32_t>(4, 1, 1, 32)), 5 * (-17) + (-11) * 23);
++
++  // Odd LMUL=2 base (vs2=3) and out-of-half-group base (vs2=4) trap at SEW=16.
++  was_trap_handler_called_ = false;
++  Execute(MakeVMatrix(0b111'100, /*vs2=*/3, /*vs1=*/18, 0b000, /*mtd=*/0));
++  EXPECT_TRUE(was_trap_handler_called_);
++  was_trap_handler_called_ = false;
++  Execute(MakeVMatrix(0b111'100, /*vs2=*/4, /*vs1=*/18, 0b000, /*mtd=*/0));
 +  EXPECT_TRUE(was_trap_handler_called_);
 +}
 +

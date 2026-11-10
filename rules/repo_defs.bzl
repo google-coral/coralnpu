@@ -571,6 +571,7 @@ filegroup(
             "@coralnpu_hw//third_party/spike:0007-Rename-yield-macro-avoid-boost-std-conflict.patch",
             "@coralnpu_hw//third_party/spike:0008-Link-libstdc-explicitly-in-LIBS.patch",
             "@coralnpu_hw//third_party/spike:0009-Fix-Zvt-and-CoralNPU-mstatus-alignment.patch",
+            "@coralnpu_hw//third_party/spike:0010-Add-Zvti16i32mm-support.patch",
         ],
         patch_args = ["-p1"],
         urls = [

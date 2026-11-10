@@ -295,6 +295,72 @@ VME_SUBTEST(vfwmacc_vv_vill) {
       : "x10", "vl", "vtype");
 }
 
+// Execute an OP-VE encoding expected to raise a synchronous illegal-instruction
+// trap (mcause=2) after configuring mtype/vtype via msetmtype and vl via
+// msettn. Marked volatile because unmarked CSRs (mtvec, mtype, mcause, mtval,
+// mepc, mstatus) govern and are updated by the synchronous trap into
+// isr_handler, while the handler's memory accesses (trap_count, last_mcause,
+// last_mtval, test_fn) are bound explicitly.
+extern "C++" {
+template <uint32_t kMtype, uint32_t kVtype, uint32_t kInsn>
+static inline __attribute__((always_inline)) void RunOpVeTrapSubtest() {
+  const uint32_t mtype_val = kMtype;
+  const uint32_t vtype_val = kVtype;
+  const uint32_t avl_val   = 4u;
+  asm volatile(
+      ".insn r 0b1010111, 0b111, 0b1000010, x0, %[mtype], %[vtype]\n"  // msetmtype x0, mtype, vtype
+      ".insn r 0b1010111, 0b111, 0b1000100, x0, %[avl], x0\n"          // msettn x0, avl
+      ".word %[insn]\n"
+      : "+m"(trap_count), "=m"(last_mcause), "=m"(last_mtval)
+      : [mtype] "r"(mtype_val), [vtype] "r"(vtype_val), [avl] "r"(avl_val), [insn] "i"(kInsn),
+        "m"(test_fn)
+      : "vl", "vtype");
+}
+}  // extern "C++"
+
+// SEW=8 (mtwiden=3, KMAX=4) vtmmu.tvv with vs2=v2: (vs2 % 8) >= 8/KMAX (2 >= 2)
+// passes static Decode but must trap dynamically in RvvFrontEnd with OP-VE (0x77).
+VME_SUBTEST(vtmmu_sew8_vs2_v2) {
+  RunOpVeTrapSubtest</*kMtype=*/0x4083u, /*kVtype=*/0x000u,
+                     ZvtWord(0x3C, /*vs2=*/2, /*rs1=*/16, 0, 0, kZvtOpcodeOpVe)>();
+}
+
+// SEW=8 (mtwiden=3, KMAX=4) vtmmu.tvv with vs1=v10: (vs1 % 8) >= 2 must trap.
+VME_SUBTEST(vtmmu_sew8_vs1_v10) {
+  RunOpVeTrapSubtest</*kMtype=*/0x4083u, /*kVtype=*/0x000u,
+                     ZvtWord(0x3C, /*vs2=*/8, /*rs1=*/10, 0, 0, kZvtOpcodeOpVe)>();
+}
+
+// SEW=16 (mtwiden=2, LMUL=2) vtmmu.tvv with odd vs2=v3 must trap dynamically.
+VME_SUBTEST(vtmmu_sew16_odd_vs2) {
+  RunOpVeTrapSubtest</*kMtype=*/0x4042u, /*kVtype=*/0x008u,
+                     ZvtWord(0x3C, /*vs2=*/3, /*rs1=*/16, 0, 0, kZvtOpcodeOpVe)>();
+}
+
+// SEW=16 (mtwiden=2, LMUL=2) vtmms.tvv with odd vs1=v17 must trap dynamically.
+VME_SUBTEST(vtmms_sew16_odd_vs1) {
+  RunOpVeTrapSubtest</*kMtype=*/0x4042u, /*kVtype=*/0x108u,
+                     ZvtWord(0x3C, /*vs2=*/2, /*rs1=*/17, 0, 1, kZvtOpcodeOpVe)>();
+}
+
+// SEW=16 with mtwiden=1 (TEW=16, valid mtype for vtzero) must trap on vtmmu.tvv.
+VME_SUBTEST(vtmmu_sew16_mtwiden1) {
+  RunOpVeTrapSubtest</*kMtype=*/0x4041u, /*kVtype=*/0x008u,
+                     ZvtWord(0x3C, /*vs2=*/2, /*rs1=*/18, 0, 0, kZvtOpcodeOpVe)>();
+}
+
+// SEW=16 vtmmu.tvv with vs2=v4 (vs2[2]=1, outside KMAX=2 half-group) traps in Decode.
+VME_SUBTEST(vtmmu_static_vs2_v4) {
+  RunOpVeTrapSubtest</*kMtype=*/0x4042u, /*kVtype=*/0x008u,
+                     ZvtWord(0x3C, /*vs2=*/4, /*rs1=*/16, 0, 0, kZvtOpcodeOpVe)>();
+}
+
+// SEW=16 vtmmu.tvv targeting misaligned tile mt2 (TEW=32 requires mt0/mt4/mt8/mt12).
+VME_SUBTEST(vtmmu_misaligned_mtd) {
+  RunOpVeTrapSubtest</*kMtype=*/0x4042u, /*kVtype=*/0x008u,
+                     ZvtWord(0x3C, /*vs2=*/2, /*rs1=*/16, 0, /*rd=*/4, kZvtOpcodeOpVe)>();
+}
+
 volatile test_func_t test_fn __attribute__((section(".data"))) = nullptr;
 
 int main(int argc, char **argv) {
