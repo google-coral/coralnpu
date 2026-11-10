@@ -113,3 +113,6 @@ fi
 
 # enable camera
 nexus_mcu_write "camera_powerup"
+
+# Give the system a chance to finish DRAM calibration, etc
+sleep 2
