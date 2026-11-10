@@ -1,5 +1,6 @@
 """Bazel functions for Verilator."""
 
+load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
 load("@coralnpu_hw//rules:coco_tb.bzl", "verilator_make_parallelism", "verilator_resource_estimator")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
@@ -208,7 +209,7 @@ def _uvm_verilator_cc_library_impl(ctx):
         "--output-split-cfuncs",
         "2000",
         "--output-groups",
-        str(min(verilator_make_parallelism, 32)),
+        str(min(MAKE_JOBS, 32)),
     ])
     verilator_flags.append(vlt_file.path)
     verilator_flags.extend(verilog_paths)
@@ -403,7 +404,7 @@ def _verilator_cc_library_impl(ctx):
         str(verilator_make_parallelism),
         "--no-std",
         "--output-groups",
-        str(min(verilator_make_parallelism, 32)),
+        str(min(MAKE_JOBS, 32)),
     ]
     if ctx.attr.systemc:
         verilator_flags.append("--sc")

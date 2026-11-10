@@ -21,6 +21,18 @@ py_binary(
     srcs = ["scm_info.py"],
 )
 
+py_binary(
+    name = "measure_bazel_jobs",
+    srcs = ["measure_bazel_jobs.py"],
+)
+
+py_test(
+    name = "measure_bazel_jobs_test",
+    size = "small",
+    srcs = ["measure_bazel_jobs_test.py"],
+    deps = [":measure_bazel_jobs"],
+)
+
 py_test(
     name = "check_macro_signatures_test",
     srcs = ["check_macro_signatures.py"],

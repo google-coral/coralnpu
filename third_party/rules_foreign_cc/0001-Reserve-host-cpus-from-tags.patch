@@ -1,0 +1,60 @@
+--- a/foreign_cc/private/framework.bzl
++++ b/foreign_cc/private/framework.bzl
+@@ -386,6 +386,29 @@ def get_env_prelude(ctx, installdir, data_dependencies, tools_env):
+ 
+     return env_snippet
+ 
++def _foreign_cc_resources_1(_os, _inputs):
++    return {"cpu": 1, "memory": 512}
++
++def _foreign_cc_resources_2(_os, _inputs):
++    return {"cpu": 2, "memory": 2048}
++
++def _foreign_cc_resources_3(_os, _inputs):
++    return {"cpu": 3, "memory": 2048}
++
++def _foreign_cc_resources_4(_os, _inputs):
++    return {"cpu": 4, "memory": 2048}
++
++def _foreign_cc_resources_8(_os, _inputs):
++    return {"cpu": 8, "memory": 2048}
++
++_FOREIGN_CC_RESOURCE_SETS = {
++    1: _foreign_cc_resources_1,
++    2: _foreign_cc_resources_2,
++    3: _foreign_cc_resources_3,
++    4: _foreign_cc_resources_4,
++    8: _foreign_cc_resources_8,
++}
++
+ def cc_external_rule_impl(ctx, attrs):
+     """Framework function for performing external C/C++ building.
+ 
+@@ -524,10 +547,19 @@ def cc_external_rule_impl(ctx, attrs):
+     rule_outputs = outputs.declared_outputs + [installdir_copy.file]
+     cc_toolchain = find_cpp_toolchain(ctx)
+ 
++    reserved_cpus = 1
+     execution_requirements = {tag: "" for tag in ctx.attr.tags}
++    for tag in ctx.attr.tags:
++        if tag.startswith("cpu:") and tag[4:].isdigit():
++            reserved_cpus = max(1, int(tag[4:]))
+     if "requires-network" not in execution_requirements:
+         execution_requirements["block-network"] = ""
+ 
++    resource_fn = _FOREIGN_CC_RESOURCE_SETS.get(
++        reserved_cpus,
++        _foreign_cc_resources_8 if reserved_cpus > 4 else _foreign_cc_resources_4,
++    )
++
+     # TODO: `additional_tools` is deprecated, remove.
+     legacy_tools = ctx.files.additional_tools + ctx.files.tools_deps
+ 
+@@ -556,6 +588,7 @@ def cc_external_rule_impl(ctx, attrs):
+             [data[DefaultInfo].files_to_run for data in data_dependencies],
+         command = wrapped_outputs.wrapper_script_file.path,
+         execution_requirements = execution_requirements,
++        resource_set = resource_fn,
+         use_default_shell_env = True,
+         progress_message = "Foreign Cc - {configure_name}: Building {lib_name}".format(
+             configure_name = attrs.configure_name,

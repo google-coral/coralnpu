@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_list_flag")
-load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS", "VERILATOR_THREADS")
+load("@coralnpu_host_cpus//:defs.bzl", "ACTION_JOBS", "VERILATOR_THREADS")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@internal_check//:status.bzl", internal_exists = "FOLDER_EXISTS")
 load("@lowrisc_opentitan_gh//rules:fusesoc.bzl", "fusesoc_build")
@@ -136,12 +136,13 @@ string_list_flag(
     ] + VERILATOR_OPTIONS_COMMON,
 )
 
-# `make -j` for Verilator's C++ compile. Detected from `nproc` at
-# workspace-fetch time; override with `--//fpga:make_options=-jN`.
+# `make -j` for Verilator's C++ compile. Uses `ACTION_JOBS` so each FuseSoC
+# build action matches its Bazel scheduler CPU reservation; override with
+# `--//fpga:make_options=-jN`.
 string_list_flag(
     name = "make_options",
     build_setting_default = [
-        "-j{}".format(MAKE_JOBS),
+        "-j{}".format(ACTION_JOBS),
     ],
 )
 

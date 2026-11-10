@@ -14,18 +14,17 @@
 
 """Convenience wrapper for Verilator driven cocotb."""
 
-load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS", "NUM_CPUS")
+load("@coralnpu_host_cpus//:defs.bzl", "ACTION_JOBS", "NUM_CPUS")
 load("@coralnpu_hw//rules:verilog.bzl", "VerilogInfo", "collect_verilog_files")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_python//python:defs.bzl", "PyInfo", "py_binary", "py_library")
 
-# Number of CPUs reserved per Verilate action in Bazel's local scheduler.
-# Sourced from `nproc` at workspace-fetch time so we don't oversubscribe
-# small hosts (a hardcoded 8 was blocking 6-core boxes from scheduling
-# more than one action at a time).
-verilator_make_parallelism = MAKE_JOBS
+# Per-action CPU budget and `make -j` thread count for Verilator builds.
+# Matches `verilator_resource_estimator` 1:1 so Bazel's local scheduler
+# bounds total concurrent compiler processes to `--jobs` / `--local_resources`.
+verilator_make_parallelism = ACTION_JOBS
 
 VcsSimulationInfo = provider(
     doc = "Contains outputs of a VCS simulation run",
@@ -37,10 +36,7 @@ VcsSimulationInfo = provider(
 )
 
 def verilator_resource_estimator(os, input_size):
-    # Cap the scheduler reservation at 4 so multiple actions can still run
-    # in parallel on larger hosts; the `make -j` inside the action is free
-    # to use more threads if the scheduler hands them over.
-    return {"cpu": min(verilator_make_parallelism, 4), "memory": 4096}
+    return {"cpu": verilator_make_parallelism, "memory": 4096}
 
 def vcs_resource_estimator(os, input_size):
     # VCS elaboration with -kdb and +acc+3 on full CoralNPU SoC/RVV/VME

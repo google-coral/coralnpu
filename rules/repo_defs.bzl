@@ -382,6 +382,7 @@ def define_fpga_repos():
             "@coralnpu_hw//fpga:0001-Export-hw-ip_templates.patch",
             "@coralnpu_hw//fpga:0002-Use-hermetic-verilator-in-fusesoc-build.patch",
             "@coralnpu_hw//fpga:0003-Support-vivado-elab-in-fusesoc-build.patch",
+            "@coralnpu_hw//fpga:0004-Reserve-host-resources-in-fusesoc-build.patch",
         ],
         patch_args = ["-p1"],
     )

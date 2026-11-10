@@ -1,0 +1,90 @@
+From 4a2c8e1b9d0f3e5a7c6b8d0e2f4a6c8e0b2d4f6a Mon Sep 17 00:00:00 2001
+From: Alex Van Damme <atv@google.com>
+Date: Tue, 10 Nov 2026 15:10:00 -0800
+Subject: [PATCH] Reserve host CPU and memory resources in fusesoc_build
+
+Parse `-jN` from `make_options` (defaulting to 4 CPUs) and set `resource_set`
+with 6144 MB RAM on FuseSoC and VivadoElab actions so Bazel's local scheduler
+accounts for parallel Verilator C++ compilations and synthesis memory usage.
+---
+ rules/fusesoc.bzl | 39 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+--- a/rules/fusesoc.bzl
++++ b/rules/fusesoc.bzl
+@@ -25,6 +25,29 @@
+ def _corefiles2rootarg(core):
+     return core.dirname
+ 
++def _fusesoc_resources_1(_os, _inputs):
++    return {"cpu": 1, "memory": 6144}
++
++def _fusesoc_resources_2(_os, _inputs):
++    return {"cpu": 2, "memory": 6144}
++
++def _fusesoc_resources_3(_os, _inputs):
++    return {"cpu": 3, "memory": 6144}
++
++def _fusesoc_resources_4(_os, _inputs):
++    return {"cpu": 4, "memory": 6144}
++
++def _fusesoc_resources_8(_os, _inputs):
++    return {"cpu": 8, "memory": 6144}
++
++_FUSESOC_RESOURCE_SETS = {
++    1: _fusesoc_resources_1,
++    2: _fusesoc_resources_2,
++    3: _fusesoc_resources_3,
++    4: _fusesoc_resources_4,
++    8: _fusesoc_resources_8,
++}
++
+ def _fusesoc_build_impl(ctx):
+     build_dir = "build.{}".format(ctx.label.name)
+     out_dir = "{}/{}/{}".format(ctx.bin_dir.path, ctx.label.package, build_dir)
+@@ -60,10 +83,23 @@
+         verilator_options = ctx.attr.verilator_options[BuildSettingInfo].value
+         flags.append("--verilator_options={}".format(" ".join(verilator_options)))
+ 
++    make_jobs = 4
+     if ctx.attr.make_options:
+         make_options = ctx.attr.make_options[BuildSettingInfo].value
+         flags.append("--make_options={}".format(" ".join(make_options)))
++        for idx, opt in enumerate(make_options):
++            if opt.startswith("-j") and opt[2:].isdigit() and int(opt[2:]) > 0:
++                make_jobs = int(opt[2:])
++            elif opt == "-j" and idx + 1 < len(make_options) and make_options[idx + 1].isdigit():
++                make_jobs = max(1, int(make_options[idx + 1]))
++
++    fusesoc_resource_fn = _FUSESOC_RESOURCE_SETS.get(
++        make_jobs,
++        _fusesoc_resources_8 if make_jobs > 4 else _fusesoc_resources_4,
++    )
+ 
+     args.add_all(
+         ctx.files.cores,
+         uniquify = True,
+@@ -188,6 +224,7 @@
+             arguments = [args],
+             use_default_shell_env = False,
+             env = env,
++            resource_set = fusesoc_resource_fn,
+             tools = [ctx.executable._fusesoc],
+         )
+     elif ctx.attr.target == "elab":
+@@ -227,6 +264,7 @@
+             arguments = [args],
+             use_default_shell_env = False,
+             env = env,
++            resource_set = fusesoc_resource_fn,
+             tools = [ctx.executable._fusesoc],
+         )
+     else:
+@@ -241,6 +279,7 @@
+             executable = ctx.executable._fusesoc,
+             use_default_shell_env = False,
+             env = env,
++            resource_set = fusesoc_resource_fn,
+         )
+     return [
+         DefaultInfo(

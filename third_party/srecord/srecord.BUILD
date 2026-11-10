@@ -1,6 +1,6 @@
 # Copyright 2025 Google LLC
 
-load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
+load("@coralnpu_host_cpus//:defs.bzl", "ACTION_JOBS")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
 
 filegroup(
@@ -11,7 +11,7 @@ filegroup(
 cmake(
     name = "srecord",
     build_args = [
-        "-j{}".format(MAKE_JOBS),
+        "-j{}".format(ACTION_JOBS),
     ],
     cache_entries = {
         "CMAKE_CXX_STANDARD": "17",
@@ -23,6 +23,7 @@ cmake(
     install = True,
     lib_source = ":all_srcs",
     out_binaries = ["srec_cat"],
+    tags = ["cpu:{}".format(ACTION_JOBS)],
     targets = ["srec_cat"],
     visibility = ["//visibility:public"],
 )

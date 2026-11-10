@@ -14,7 +14,7 @@
 
 """CoralFlow: Unified multi-backend Bazel test macro for CoralNPU."""
 
-load("@coralnpu_host_cpus//:defs.bzl", "NUM_CPUS")
+load("@coralnpu_host_cpus//:defs.bzl", "ACTION_JOBS", "NUM_CPUS")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load(
     "//rules:coco_tb.bzl",
@@ -456,7 +456,8 @@ def coralflow_test(
         uvm_size = _effective_size(size, uvm_testcases)
         uvm_base_tags = ["uvm", "rtl"]
         if not any([t.startswith("cpu:") for t in tags]):
-            uvm_base_tags.append("cpu:{}".format(min(NUM_CPUS, 2)))
+            uvm_cpus = ACTION_JOBS if uvm_batch else min(NUM_CPUS, 2)
+            uvm_base_tags.append("cpu:{}".format(uvm_cpus))
         _emit_py_test_target(
             name = name,
             backend = "uvm",

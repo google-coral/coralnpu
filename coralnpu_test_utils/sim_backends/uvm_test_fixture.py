@@ -52,17 +52,23 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return val.lower() in ("1", "true", "yes", "on")
 
 
-def _effective_timeout_sec(timeout_sec: float) -> float:
-    """Clamps timeout_sec below Bazel TEST_TIMEOUT so logs dump before SIGTERM."""
+def _effective_timeout_sec(
+    timeout_sec: float | None,
+    default_sec: float = 600.0,
+) -> float:
+    """Clamps or derives timeout_sec below Bazel TEST_TIMEOUT so logs dump before SIGTERM."""
     raw = os.environ.get("TEST_TIMEOUT", "").strip()
     if raw:
         try:
             bazel_timeout = float(raw)
             if bazel_timeout > 0:
-                return min(timeout_sec, max(5.0, bazel_timeout - 10.0))
+                budget = max(5.0, bazel_timeout - 10.0)
+                if timeout_sec is None:
+                    return budget
+                return min(timeout_sec, budget)
         except ValueError:
             pass
-    return timeout_sec
+    return default_sec if timeout_sec is None else timeout_sec
 
 
 async def _communicate_preserving_partial_stdout(
@@ -832,7 +838,7 @@ class UvmTestFixture(BaseCoralNPUFixture):
         self,
         elf_paths: list[str | os.PathLike],
         timeout_cycles: int = 100000,
-        timeout_sec: float = 600.0,
+        timeout_sec: float | None = None,
     ) -> bool:
         """Executes a batch of self-contained ELFs in a single UVM simulator invocation."""
         if not elf_paths:

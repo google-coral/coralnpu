@@ -14,6 +14,7 @@
 
 """chisel build rules"""
 
+load("@coralnpu_host_cpus//:defs.bzl", "NUM_CPUS")
 load("@rules_scala//scala:scala.bzl", "scala_binary", "scala_library", "scala_test")
 load("//rules:verilator.bzl", "verilator_cc_library")
 load("//rules:verilog.bzl", "verilog_library")
@@ -29,6 +30,59 @@ SCALA_COPTS = [
     "-Xlint:infer-any",
     "-Xlint:unused",
 ]
+
+_CHISEL_RUN_CPUS = min(NUM_CPUS, 2)
+
+_CHISEL_RUN_JVM_FLAGS = [
+    "-XX:ActiveProcessorCount={}".format(_CHISEL_RUN_CPUS),
+]
+
+def _chisel_emit_resource_estimator(_os, _input_size):
+    return {"cpu": _CHISEL_RUN_CPUS, "memory": 2048}
+
+def _chisel_emit_verilog_impl(ctx):
+    rule_dir = ctx.bin_dir.path
+    if ctx.label.package:
+        rule_dir = rule_dir + "/" + ctx.label.package
+    args = ["--target-dir=" + rule_dir]
+    for flag in ctx.attr.gen_flags:
+        for tok in flag.split(" "):
+            if tok:
+                args.append(tok)
+    ctx.actions.run(
+        outputs = ctx.outputs.outs,
+        executable = ctx.executable.gen_binary,
+        arguments = args,
+        tools = [
+            ctx.attr._firtool[DefaultInfo].files_to_run,
+        ],
+        env = {
+            "CHISEL_FIRTOOL_PATH": ctx.executable._firtool.dirname,
+        },
+        mnemonic = "ChiselEmitVerilog",
+        progress_message = "[Chisel] Emitting SystemVerilog for %s" % ctx.label,
+        resource_set = _chisel_emit_resource_estimator,
+        use_default_shell_env = True,
+    )
+    return [DefaultInfo(files = depset(ctx.outputs.outs))]
+
+_chisel_emit_verilog = rule(
+    implementation = _chisel_emit_verilog_impl,
+    attrs = {
+        "gen_binary": attr.label(
+            executable = True,
+            cfg = "exec",
+            mandatory = True,
+        ),
+        "gen_flags": attr.string_list(default = []),
+        "outs": attr.output_list(mandatory = True),
+        "_firtool": attr.label(
+            default = Label("@coralnpu_hw//third_party/llvm-firtool:firtool"),
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
 
 def chisel_library(
         name,
@@ -82,6 +136,7 @@ def chisel_binary(
         plugins = [
             "@coralnpu_maven//:org_chipsalliance_chisel_plugin_2_13_6",
         ],
+        jvm_flags = _CHISEL_RUN_JVM_FLAGS,
         scalacopts = SCALA_COPTS,
         tags = tags,
         visibility = visibility,
@@ -123,6 +178,7 @@ def chisel_test(
             "CHISEL_FIRTOOL_PATH": "third_party/llvm-firtool",
         },
         args = args,
+        jvm_flags = _CHISEL_RUN_JVM_FLAGS,
         tags = tags + ["manual"],
         size = size,
         scalacopts = SCALA_COPTS,
@@ -130,6 +186,9 @@ def chisel_test(
         **kwargs
     )
 
+    sh_tags = list(tags)
+    if not any([t.startswith("cpu:") for t in sh_tags]):
+        sh_tags.append("cpu:{}".format(_CHISEL_RUN_CPUS))
     native.sh_test(
         name = name,
         srcs = ["@coralnpu_hw//rules:chisel_test_runner.sh"],
@@ -145,6 +204,8 @@ def chisel_test(
             "CHISEL_FIRTOOL_PATH": "third_party/llvm-firtool",
         },
         size = size,
+        tags = sh_tags,
+        visibility = visibility,
         **kwargs
     )
 
@@ -169,17 +230,12 @@ def chisel_cc_library(
     if verilog_file_path == "":
         verilog_file_path = module_name + ".sv"
 
-    gen_flags = " ".join(gen_flags)
-    native.genrule(
+    _chisel_emit_verilog(
         name = name + "_emit_verilog",
-        srcs = [],
+        gen_binary = ":{}".format(gen_binary_name),
+        gen_flags = gen_flags,
         outs = [verilog_file_path] + extra_outs,
-        cmd = "CHISEL_FIRTOOL_PATH=$$(dirname $(execpath @coralnpu_hw//third_party/llvm-firtool:firtool)) ./$(location " + gen_binary_name + ") --target-dir=$(RULEDIR) " + gen_flags,
         tags = tags,
-        tools = [
-            ":{}".format(gen_binary_name),
-            "@coralnpu_hw//third_party/llvm-firtool:firtool",
-        ],
     )
 
     verilog_library(

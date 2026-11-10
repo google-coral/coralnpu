@@ -705,8 +705,14 @@ class TestUvmTestFixture(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch.dict(os.environ, {"TEST_TIMEOUT": "300"}):
+            self.assertEqual(_effective_timeout_sec(None), 290.0)
             self.assertEqual(_effective_timeout_sec(600.0), 290.0)
             self.assertEqual(_effective_timeout_sec(20.0), 20.0)
+        with patch.dict(os.environ, {"TEST_TIMEOUT": "3600"}):
+            self.assertEqual(_effective_timeout_sec(None), 3590.0)
+            self.assertEqual(_effective_timeout_sec(600.0), 600.0)
+        with patch.dict(os.environ, {"TEST_TIMEOUT": ""}):
+            self.assertEqual(_effective_timeout_sec(None), 600.0)
 
         fake_sim = os.path.join(self._temp_dir.name, "fake_hanging_simv.py")
         with open(fake_sim, "w", encoding="utf-8") as f:

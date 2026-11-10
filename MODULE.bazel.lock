@@ -234,7 +234,7 @@
   "moduleExtensions": {
     "//rules:extensions.bzl%coralnpu_deps_ext": {
       "general": {
-        "bzlTransitiveDigest": "Ml3t3oiNFn+Ym/hfSUS2HciM+ELIs4GPyaCy1EJjlcs=",
+        "bzlTransitiveDigest": "0IsfCaWEanDwPH3/Xy52ORMHhq5UNa6RGBvlYl9HtXY=",
         "usagesDigest": "1CqV4EO7uDyVS9gQSAvjLugLlCTYAZrVJ16YUY5hgpI=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -633,7 +633,8 @@
               "patches": [
                 "@@//fpga:0001-Export-hw-ip_templates.patch",
                 "@@//fpga:0002-Use-hermetic-verilator-in-fusesoc-build.patch",
-                "@@//fpga:0003-Support-vivado-elab-in-fusesoc-build.patch"
+                "@@//fpga:0003-Support-vivado-elab-in-fusesoc-build.patch",
+                "@@//fpga:0004-Reserve-host-resources-in-fusesoc-build.patch"
               ],
               "patch_args": [
                 "-p1"
