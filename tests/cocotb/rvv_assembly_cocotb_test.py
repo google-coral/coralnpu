@@ -2831,5 +2831,69 @@ async def core_mini_rvv_reserved_inst_test(fixture):
     assert num_passed == num_cases and num_cases > 0
 
 
+@coralflow_test
+async def core_mini_rvv_mask_tail_test(fixture):
+    """Test that mask-register logical ops preserve tail elements (>= vl)."""
+    r = runfiles.Create()
+    elf_path = r.Rlocation(
+        "coralnpu_hw/tests/cocotb/rvv/rvv_mask_tail_test.elf"
+    )
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path,
+        [
+            "v1_init",
+            "v2_init",
+            "v1_result",
+            "v2_result",
+            "v3_result",
+            "v5_result",
+            "v6_result",
+        ],
+    )
+    await fixture.run_to_halt()
+
+    v1_result = (await fixture.read("v1_result", 16)).view(np.uint32)
+    expected_v1 = np.array([0x00000001, 0x00000000, 0x00000000, 0x00000000],
+                           dtype=np.uint32)
+    np.testing.assert_array_equal(
+        v1_result,
+        expected_v1,
+        err_msg="Tail bits (>= vl) corrupted by vmnot.m",
+    )
+
+    expected_ones_tail = np.array([
+        0xFFFFFFFE, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+    ],
+                                  dtype=np.uint32)
+    v2_result = (await fixture.read("v2_result", 16)).view(np.uint32)
+    np.testing.assert_array_equal(
+        v2_result,
+        expected_ones_tail,
+        err_msg="Non-zero tail bits (>= vl) zeroed by vmxor.mm with vstart=0",
+    )
+
+    v3_result = (await fixture.read("v3_result", 16)).view(np.uint32)
+    np.testing.assert_array_equal(
+        v3_result,
+        expected_ones_tail,
+        err_msg="Non-zero tail bits (>= vl) zeroed by unmasked vmsbf.m",
+    )
+
+    expected_all_zeros = np.zeros(4, dtype=np.uint32)
+    v5_result = (await fixture.read("v5_result", 16)).view(np.uint32)
+    np.testing.assert_array_equal(
+        v5_result,
+        expected_all_zeros,
+        err_msg="Full-length (vl == VLEN) vmxor.mm did not clear all bits",
+    )
+
+    v6_result = (await fixture.read("v6_result", 16)).view(np.uint32)
+    np.testing.assert_array_equal(
+        v6_result,
+        expected_all_zeros,
+        err_msg="Full-length (vl == VLEN) vmsbf.m did not clear all bits",
+    )
+
+
 if __name__ == "__main__":
     coralflow_main()

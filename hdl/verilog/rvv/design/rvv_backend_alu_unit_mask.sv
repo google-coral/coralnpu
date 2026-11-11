@@ -414,7 +414,7 @@ module rvv_backend_alu_unit_mask
           VMNAND,
           VMNOR,
           VMXNOR: begin
-            result.w_data = result_data&(~vstart_elements) | vd_data&vstart_elements;
+            result.w_data = (result_data & (~vstart_elements) & tail_mask) | (vd_data & (vstart_elements | (~tail_mask)));
           end
           VWRXUNARY0: begin
             case(vs1_opcode)

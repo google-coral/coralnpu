@@ -44,6 +44,7 @@ module rvv_backend_decode_unit_ari_de2
   logic   [`REGIDX_WIDTH-1:0]                 vs2_opcode;
   RVVConfigState                              vector_csr_ari;
   logic   [`VSTART_WIDTH-1:0]                 csr_vstart;
+  logic                                       has_mask_tail;
   logic   [`UOP_INDEX_WIDTH-1:0]              uop_index_max;         
   EMUL_e                                      emul_vd;          
   EMUL_e                                      emul_vs2;          
@@ -105,6 +106,7 @@ module rvv_backend_decode_unit_ari_de2
   assign inst_rd        = lcmd_valid ? lcmd.cmd.bits[4:0] : 'b0;
   assign vector_csr_ari = lcmd_valid ? lcmd.cmd.arch_state : 'b0;
   assign csr_vstart     = lcmd_valid ? lcmd.cmd.arch_state.vstart : 'b0;
+  assign has_mask_tail  = lcmd_valid ? !vector_csr_ari.vl[`VL_WIDTH-1] : 1'b0;
   assign rs1            = lcmd_valid ? lcmd.cmd.rs1 : 'b0;
   assign uop_vstart     = lcmd_valid ? lcmd.uop_vstart : 'b0;
   assign uop_index_max  = lcmd_valid ? lcmd.uop_index_max : 'b0;
@@ -693,7 +695,7 @@ module rvv_backend_decode_unit_ari_de2
             VMNOR,
             VMORN,
             VMXNOR: begin
-              uop_class[i] = (csr_vstart=='b0) ? XVV : VVV;
+              uop_class[i] = ((csr_vstart=='b0) && !has_mask_tail) ? XVV : VVV;
             end
 
             VWRXUNARY0: begin
@@ -708,7 +710,7 @@ module rvv_backend_decode_unit_ari_de2
                 VMSBF,
                 VMSIF,
                 VMSOF: begin
-                  uop_class[i] = inst_vm ? XVX: VVX;
+                  uop_class[i] = (inst_vm && !has_mask_tail) ? XVX : VVX;
                 end
                 VIOTA: begin
                   uop_class[i] = first_uop_valid[i] ? XVX : XXX;
@@ -1438,7 +1440,7 @@ module rvv_backend_decode_unit_ari_de2
             VMNOR,
             VMORN,
             VMXNOR : begin
-              vs3_valid[i] = (csr_vstart!='b0);
+              vs3_valid[i] = (csr_vstart!='b0) || has_mask_tail;
             end
             VMACC,
             VNMSAC,
@@ -1457,7 +1459,7 @@ module rvv_backend_decode_unit_ari_de2
                     VMSBF,
                     VMSIF,
                     VMSOF: begin
-                      vs3_valid[i] = (inst_vm==1'b0);
+                      vs3_valid[i] = (inst_vm==1'b0) || has_mask_tail;
                     end
                   endcase
                 end
