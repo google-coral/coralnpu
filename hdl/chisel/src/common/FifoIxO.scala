@@ -30,7 +30,7 @@ class FifoIxO[T <: Data](t: T, i: Int, o: Int, n: Int /* depth */ ) extends Modu
   val io = IO(new Bundle {
     val in     = Flipped(Decoupled(Vec(i, Valid(t))))
     val out    = Vec(o, Decoupled(t))
-    val count  = Output(UInt(log2Ceil(n + 1).W))
+    val count  = Output(UInt(BitWidthForInt(n)))
     val nempty = Output(Bool())
   })
 

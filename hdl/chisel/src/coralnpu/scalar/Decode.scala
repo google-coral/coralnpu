@@ -384,7 +384,7 @@ class Dispatch(p: Parameters) extends Module {
 
     val fbusPortAddr = Option.when(p.enableFloat)(Output(UInt(5.W)))
 
-    val retirement_buffer_nSpace       = Input(UInt(log2Ceil(p.retirementBufferSize + 1).W))
+    val retirement_buffer_nSpace       = Input(UInt(BitWidthForInt(p.retirementBufferSize)))
     val retirement_buffer_empty        = Input(Bool())
     val retirement_buffer_trap_pending = Input(Bool())
     val single_step                    = Input(Bool())
