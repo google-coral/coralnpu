@@ -68,9 +68,47 @@ class CoreTlulCSR(p: Parameters, addrBits: Int = 12, extraIdBits: Int = 0) exten
     tl_a.bits.opcode === TLULOpcodesA.PutFullData.asUInt || tl_a.bits.opcode === TLULOpcodesA.PutPartialData.asUInt
   val isGet = tl_a.bits.opcode === TLULOpcodesA.Get.asUInt
 
-  val writeEn   = a_fire && isPut && !io.internal
-  val writeAddr = tl_a.bits.address
-  val writeData = tl_a.bits.data
+  val kRegWidthBits  = 32
+  val kRegWidthBytes = kRegWidthBits / 8
+  val kCsrBaseAddr   = 0x100
+
+  val writeEn          = a_fire && isPut && !io.internal
+  val writeAddr        = tl_a.bits.address
+  val alignedWriteAddr = writeAddr & ~((p.axi2DataBytes - 1).U(writeAddr.getWidth.W))
+  val writeData        = tl_a.bits.data
+  val writeMask        = tl_a.bits.mask
+  val isMultiReg       = tl_a.bits.size > log2Ceil(kRegWidthBytes).U
+
+  // AXI4 allows bus-sized partial writes with word-aligned sub-line addresses when lower lanes are masked.
+  val subLineValid = if (p.axi2DataBytes > kRegWidthBytes) {
+    val subLineOffset = writeAddr(log2Ceil(p.axi2DataBytes) - 1, 0)
+    val lowerMask     = ((1.U(1.W) << subLineOffset) - 1.U)(p.axi2DataBytes - 1, 0)
+    writeAddr(1, 0) === 0.U && (writeMask & lowerMask) === 0.U
+  } else {
+    writeAddr(1, 0) === 0.U
+  }
+
+  def regLaneData(regOffset: Int): UInt = {
+    val bitOff = (regOffset % p.axi2DataBytes) * 8
+    writeData(bitOff + kRegWidthBits - 1, bitOff)
+  }
+
+  def hasOtherActiveLanes(regOffset: Int): Bool = {
+    val byteOff  = regOffset % p.axi2DataBytes
+    val selfMask = (BigInt(0xf) << byteOff).U(p.axi2DataBytes.W)
+    (writeMask & ~selfMask).orR
+  }
+
+  def regWriteHit(regOffset: Int): Bool = {
+    val lineBase = regOffset & ~(p.axi2DataBytes - 1)
+    val byteOff  = regOffset % p.axi2DataBytes
+    val laneMask = writeMask(byteOff + 3, byteOff)
+    writeEn && Mux(
+      isMultiReg,
+      alignedWriteAddr === lineBase.U && subLineValid && laneMask.orR,
+      writeAddr === regOffset.U
+    )
+  }
 
   // Debug module handling logic.
   // Queue for debug responses.
@@ -78,8 +116,12 @@ class CoreTlulCSR(p: Parameters, addrBits: Int = 12, extraIdBits: Int = 0) exten
   rsp_queue.io.enq <> io.debug.rsp
 
   // Pulse valid signal for a single cycle on a write to the op register.
+  // Ignore NOP lanes during multi-lane writes so setup beats do not trigger an operation.
+  val opRegOff        = CoreTlulCsrAddrs.DbgReqOp.litValue.toInt
+  val opLaneData      = regLaneData(opRegOff)
   val req_valid_pulse = RegInit(false.B)
-  val write_to_op_reg = writeEn && writeAddr === CoreTlulCsrAddrs.DbgReqOp
+  val write_to_op_reg = regWriteHit(opRegOff) &&
+    (!(isMultiReg && hasOtherActiveLanes(opRegOff)) || opLaneData =/= DmReqOp.NOP.asUInt)
   req_valid_pulse    := Mux(write_to_op_reg && io.debug.req.ready, true.B, false.B)
   io.debug.req.valid := req_valid_pulse
 
@@ -90,16 +132,16 @@ class CoreTlulCSR(p: Parameters, addrBits: Int = 12, extraIdBits: Int = 0) exten
   io.debug.req.bits.op := Mux(req_op_valid, req_op, DmReqOp.NOP)
 
   // Dequeue from the response queue when the status register is written to.
-  val write_to_status_reg = writeEn && writeAddr === CoreTlulCsrAddrs.DbgStatus
+  // Only dequeue during multi-lane writes when the status lane writes zero.
+  val statusRegOff        = CoreTlulCsrAddrs.DbgStatus.litValue.toInt
+  val statusLaneData      = regLaneData(statusRegOff)
+  val write_to_status_reg = regWriteHit(statusRegOff) &&
+    (!(isMultiReg && hasOtherActiveLanes(statusRegOff)) || statusLaneData === 0.U)
   rsp_queue.io.deq.ready := write_to_status_reg
 
   val readAddr = tl_a.bits.address
   // Align the read address to the AXI data bus width.
   val alignedAddr = readAddr & ~((p.axi2DataBytes - 1).U(readAddr.getWidth.W))
-
-  val kRegWidthBits  = 32
-  val kRegWidthBytes = kRegWidthBits / 8
-  val kCsrBaseAddr   = 0x100
 
   val regsPerBus = p.axi2DataBits / kRegWidthBits
   val readData   = Wire(Vec(regsPerBus, UInt(kRegWidthBits.W)))
@@ -160,27 +202,29 @@ class CoreTlulCSR(p: Parameters, addrBits: Int = 12, extraIdBits: Int = 0) exten
   statusReg  := Cat(io.fault, io.halted)
 
   // Register write logic.
-  resetReg   := Mux(writeEn && writeAddr === 0x0.U, writeData(31, 0), resetReg)
+  resetReg   := Mux(regWriteHit(0x0), regLaneData(0x0), resetReg)
   pcStartReg := Mux(
     bootAddrCapture,
     io.bootAddr,
-    Mux(writeEn && writeAddr === 0x4.U, writeData(63, 32), pcStartReg)
+    Mux(regWriteHit(0x4), regLaneData(0x4), pcStartReg)
   )
   bootAddrCapture := false.B
+  val dbgAddrOff = CoreTlulCsrAddrs.DbgReqAddr.litValue.toInt
+  val dbgDataOff = CoreTlulCsrAddrs.DbgReqData.litValue.toInt
   debugReqAddrReg := Mux(
-    writeEn && writeAddr === CoreTlulCsrAddrs.DbgReqAddr,
-    writeData(31, 0),
+    regWriteHit(dbgAddrOff),
+    regLaneData(dbgAddrOff),
     debugReqAddrReg
   )
   debugReqDataReg := Mux(
-    writeEn && writeAddr === CoreTlulCsrAddrs.DbgReqData,
-    writeData(63, 32),
+    regWriteHit(dbgDataOff),
+    regLaneData(dbgDataOff),
     debugReqDataReg
   )
   debugReqOpReg := Mux(
-    writeEn && writeAddr === CoreTlulCsrAddrs.DbgReqOp,
-    writeData(95, 64),
-    debugReqOpReg
+    write_to_op_reg && io.debug.req.ready,
+    opLaneData,
+    DmReqOp.NOP.asUInt
   )
 
   // Map of valid write addresses for the debug module.
@@ -196,6 +240,8 @@ class CoreTlulCSR(p: Parameters, addrBits: Int = 12, extraIdBits: Int = 0) exten
     0x4 -> true.B
   ) ++ debugWriteValidMap
 
+  val groupedWriteRegs = allWriteRegs.keys.toSeq.groupBy(_ & ~(p.axi2DataBytes - 1))
+
   // TL-UL D-channel response generation
   val d_valid_reg  = RegInit(false.B)
   val d_opcode_reg = RegInit(0.U(3.W))
@@ -207,9 +253,21 @@ class CoreTlulCSR(p: Parameters, addrBits: Int = 12, extraIdBits: Int = 0) exten
   val hold = d_valid_reg && !tl_d.ready
   d_valid_reg := Mux(hold, true.B, a_fire)
 
-  val writeDataValid = MuxLookup(writeAddr, false.B)(
+  val writeLineValid = subLineValid && MuxLookup(alignedWriteAddr, false.B)(
+    groupedWriteRegs.map { case (base, offsets) =>
+      val anyLaneMasked = offsets
+        .map { off =>
+          val byteOff = off % p.axi2DataBytes
+          writeMask(byteOff + 3, byteOff).orR
+        }
+        .reduce(_ || _)
+      base.U -> anyLaneMasked
+    }.toSeq
+  )
+  val writeWordValid = MuxLookup(writeAddr, false.B)(
     allWriteRegs.map { case (k, v) => k.U -> v }.toSeq
   )
+  val writeDataValid = Mux(isMultiReg, writeLineValid, writeWordValid)
 
   when(!hold) {
     d_opcode_reg := Mux(isGet, TLULOpcodesD.AccessAckData.asUInt, TLULOpcodesD.AccessAck.asUInt)
