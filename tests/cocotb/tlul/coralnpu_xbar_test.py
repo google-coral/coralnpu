@@ -59,7 +59,9 @@ async def setup_dut(dut):
     cocotb.start_soon(test_clock.start())
 
     # Initialize unused hosts to prevent X-propagation
-    unused_hosts = ["dma", "ispyocto_m1", "ispyocto_m2", "autoboot"]
+    unused_hosts = [
+        "wide_spi2tlul", "dma", "ispyocto_m1", "ispyocto_m2", "autoboot"
+    ]
     for name in unused_hosts:
         prefix = f"io_hosts_{name}"
         for signal in dir(dut):

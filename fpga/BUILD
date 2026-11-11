@@ -895,6 +895,17 @@ py_test(
     ],
 )
 
+py_library(
+    name = "check_pins_lib",
+    srcs = ["check_pins.py"],
+)
+
+py_test(
+    name = "check_pins_unit_test",
+    srcs = ["check_pins_unit_test.py"],
+    deps = [":check_pins_lib"],
+)
+
 # Ensure bazel clean is run if internal dir is added or removed from tree
 py_test(
     name = "check_pins_test",

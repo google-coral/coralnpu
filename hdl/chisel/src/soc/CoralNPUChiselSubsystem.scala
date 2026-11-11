@@ -162,21 +162,23 @@ class CoralNPUChiselSubsystem(
   }
 
   withClockAndReset(io.clk_i, (!io.rst_ni.asBool).asAsyncReset) {
-    // --- 1. Instantiate spi2tlul first (with hardware reset) ---
-    val spi2tlul_config =
-      socConfig.modules.find(_.name == "spi2tlul").get
-    val spi2tlul = {
-      val p          = spi2tlul_config.params.asInstanceOf[Spi2TlulParameters]
+    // --- 1. Instantiate SPI host bridges first (with hardware reset) ---
+    val hwResetModuleNames                         = Set("spi2tlul", "wide_spi2tlul")
+    def instantiateSpiHost(name: String): Spi2TLUL = {
+      val config     = socConfig.modules.find(_.name == name).get
+      val p          = config.params.asInstanceOf[Spi2TlulParameters]
       val spi2tlul_p = new Parameters(xlen = xlen)
       spi2tlul_p.lsuDataBits = p.lsuDataBits
-      spi2tlul_p.axi2IdBits =
-        hostParams(cfg.hosts(enableTestHarness).indexWhere(_.name == "spi2tlul")).o
-      val m = Module(new Spi2TLUL(spi2tlul_p.toTLUL()))
-      m.suggestName("spi2tlul")
+      spi2tlul_p.axi2IdBits = hostParams(cfg.hosts(enableTestHarness).indexWhere(_.name == name)).o
+      val m = Module(new Spi2TLUL(spi2tlul_p.toTLUL(), dataWidth = p.dataWidth))
+      m.suggestName(name)
       m
     }
+    val spi2tlul      = instantiateSpiHost("spi2tlul")
+    val wide_spi2tlul = instantiateSpiHost("wide_spi2tlul")
 
     // --- 2. Define combined reset (active-low for modules expecting rst_ni) ---
+    // Leave wide_spi2tlul.io.sys_rst_o disconnected so only spi2tlul issues soft resets.
     val soft_reset     = spi2tlul.io.sys_rst_o
     val raw_combined_n = io.rst_ni.asBool && !soft_reset
     val combined_rst_n = withClockAndReset(io.clk_i, (!raw_combined_n).asAsyncReset) {
@@ -261,7 +263,7 @@ class CoralNPUChiselSubsystem(
 
     // --- 5. Instantiate other modules ---
     val otherModules = socConfig.modules
-      .filter(_.name != "spi2tlul")
+      .filterNot(c => hwResetModuleNames.contains(c.name))
       .flatMap { config =>
         val m = instantiateModule(config)
         if (m != null) {
@@ -273,7 +275,8 @@ class CoralNPUChiselSubsystem(
       }
       .toMap
 
-    val instantiatedModules = otherModules + ("spi2tlul" -> spi2tlul)
+    val instantiatedModules =
+      otherModules + ("spi2tlul" -> spi2tlul) + ("wide_spi2tlul" -> wide_spi2tlul)
 
     // --- Dynamic Wiring ---
     // Note: SpeciallyHandledHosts modified to matches the XBAR port names to accomodate multiple hosts in one IP
@@ -293,9 +296,10 @@ class CoralNPUChiselSubsystem(
       modulePorts.get(s"$name.io.clk_i").foreach(_ := io.clk_i)
       modulePorts.get(s"$name.io.clock").foreach(_ := io.clk_i)
 
-      val m_rst_ni = if (name == "spi2tlul") io.rst_ni else combined_rst_n.asAsyncReset
-      val m_reset  =
-        if (name == "spi2tlul") (!io.rst_ni.asBool).asAsyncReset else (!combined_rst_n).asAsyncReset
+      val useHwReset = hwResetModuleNames.contains(name)
+      val m_rst_ni   = if (useHwReset) io.rst_ni else combined_rst_n.asAsyncReset
+      val m_reset    =
+        if (useHwReset) (!io.rst_ni.asBool).asAsyncReset else (!combined_rst_n).asAsyncReset
 
       modulePorts.get(s"$name.io.rst_ni").foreach(_ := m_rst_ni)
       modulePorts.get(s"$name.io.reset").foreach(_ := m_reset)

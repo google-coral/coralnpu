@@ -30,6 +30,10 @@ module coralnpu_soc #(
     input spi_csb_i,
     input spi_mosi_i,
     output logic spi_miso_o,
+    input wide_spi_clk_i,
+    input wide_spi_csb_i,
+    input [15:0] wide_spi_mosi_i,
+    output logic [15:0] wide_spi_miso_o,
     output logic spim_sclk_o,
     output logic spim_csb_o,
     output logic spim_mosi_o,
@@ -676,6 +680,10 @@ module coralnpu_soc #(
       .io_external_ports_spi_csb            (spi_csb_i),               // spi_csb
       .io_external_ports_spi_mosi           (spi_mosi_i),              // spi_mosi
       .io_external_ports_spi_miso           (spi_miso_o),              // spi_miso
+      .io_external_ports_wide_spi_clk       (wide_spi_clk_i),          // wide_spi_clk
+      .io_external_ports_wide_spi_csb       (wide_spi_csb_i),          // wide_spi_csb
+      .io_external_ports_wide_spi_mosi      (wide_spi_mosi_i),         // wide_spi_mosi
+      .io_external_ports_wide_spi_miso      (wide_spi_miso_o),         // wide_spi_miso
       .io_external_ports_spim_sclk          (spim_sclk_o),
       .io_external_ports_spim_csb           (spim_csb_o),
       .io_external_ports_spim_mosi          (spim_mosi_o),

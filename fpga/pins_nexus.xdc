@@ -60,8 +60,9 @@ set_property -dict { PACKAGE_PIN BB19 IOSTANDARD LVCMOS18 PULLTYPE PULLDOWN } [g
 set_property -dict { PACKAGE_PIN AW18 IOSTANDARD LVCMOS18 PULLTYPE PULLDOWN } [get_ports {tck_i}]
 set_property -dict { PACKAGE_PIN BC19 IOSTANDARD LVCMOS18 } [get_ports {trst_ni}]
 
-# SPI (FTDI)
+# SPI (FTDI & 16x Wide SPI)
 create_clock -period 83.333 -name spi_clk_i -waveform {0 41.667} [get_ports spi_clk_i]
+create_clock -period 40.00 -name wide_spi_clk_i -waveform {0 20.0} [get_ports wide_spi_clk_i]
 set_property -dict { PACKAGE_PIN AV19 IOSTANDARD LVCMOS18 } [get_ports { spi_clk_i }];
 set_property -dict { PACKAGE_PIN AW20 IOSTANDARD LVCMOS18 } [get_ports { spi_csb_i }];
 set_property -dict { PACKAGE_PIN AV20 IOSTANDARD LVCMOS18 } [get_ports { spi_mosi_i }];
@@ -124,6 +125,7 @@ set_clock_groups -asynchronous \
   -group [get_clocks -quiet sys_clk_pin] \
   -group [get_clocks -quiet -include_generated_clocks c0_sys_clk_p] \
   -group [get_clocks -quiet spi_clk_i] \
+  -group [get_clocks -quiet wide_spi_clk_i] \
   -group [get_clocks -quiet jtag_tck_i] \
   -group [get_clocks -quiet ISP_DVP_PCLK]
 
@@ -149,4 +151,56 @@ set_property MAX_FANOUT 16 [get_nets -quiet -hierarchical -filter {NAME =~ *USE_
 
 # Enforce all on-chip memories in URAM (192 URAM288 blocks = 15% device URAM, 0 BRAMs)
 set_property RAM_STYLE ultra [get_cells -quiet -hierarchical -filter {NAME =~ *sram*mem_reg*}]
+
+# --- 16x Wide SPI Control Inputs (UltraScale Bank 75 <- Zynq Bank 35 SOM J1) ---
+set_property -dict {PACKAGE_PIN G18 IOSTANDARD LVCMOS18 PULLTYPE PULLUP} [get_ports {wide_spi_csb_i}]
+set_property -dict {PACKAGE_PIN H19 IOSTANDARD LVCMOS18 PULLTYPE PULLDOWN} [get_ports {wide_spi_clk_i}]
+
+# --- 16x Wide SPI Data Bus Inputs [15:0] (SOM_B35_L1_P/N .. L8_P/N) ---
+set_property -dict {PACKAGE_PIN G20 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[0]}]
+set_property -dict {PACKAGE_PIN F20 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[1]}]
+set_property -dict {PACKAGE_PIN K17 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[2]}]
+set_property -dict {PACKAGE_PIN J16 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[3]}]
+set_property -dict {PACKAGE_PIN E17 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[4]}]
+set_property -dict {PACKAGE_PIN D16 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[5]}]
+set_property -dict {PACKAGE_PIN E19 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[6]}]
+set_property -dict {PACKAGE_PIN E18 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[7]}]
+set_property -dict {PACKAGE_PIN D17 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[8]}]
+set_property -dict {PACKAGE_PIN C17 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[9]}]
+set_property -dict {PACKAGE_PIN F19 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[10]}]
+set_property -dict {PACKAGE_PIN F18 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[11]}]
+set_property -dict {PACKAGE_PIN R19 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[12]}]
+set_property -dict {PACKAGE_PIN P19 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[13]}]
+set_property -dict {PACKAGE_PIN D20 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[14]}]
+set_property -dict {PACKAGE_PIN D19 IOSTANDARD LVCMOS18} [get_ports {wide_spi_mosi_i[15]}]
+
+# --- 16x Wide SPI MISO Outputs [15:0] (SOM_B35_L9..L12_P/N, L14..L17_P/N) ---
+set_property -dict {PACKAGE_PIN L18 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[0]}]
+set_property -dict {PACKAGE_PIN K18 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[1]}]
+set_property -dict {PACKAGE_PIN C19 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[2]}]
+set_property -dict {PACKAGE_PIN C18 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[3]}]
+set_property -dict {PACKAGE_PIN L16 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[4]}]
+set_property -dict {PACKAGE_PIN K16 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[5]}]
+set_property -dict {PACKAGE_PIN A19 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[6]}]
+set_property -dict {PACKAGE_PIN A18 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[7]}]
+set_property -dict {PACKAGE_PIN F16 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[8]}]
+set_property -dict {PACKAGE_PIN E16 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[9]}]
+set_property -dict {PACKAGE_PIN C20 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[10]}]
+set_property -dict {PACKAGE_PIN B20 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[11]}]
+set_property -dict {PACKAGE_PIN B18 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[12]}]
+set_property -dict {PACKAGE_PIN B17 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[13]}]
+set_property -dict {PACKAGE_PIN K19 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[14]}]
+set_property -dict {PACKAGE_PIN J19 DRIVE 8 SLEW FAST IOB TRUE IOSTANDARD LVCMOS18} [get_ports {wide_spi_miso_o[15]}]
+
+# Source-synchronous I/O constraints for 25 MHz wide_spi_clk_i:
+# Zynq launches MOSI on the falling edge; UltraScale+ launches MISO on the rising edge,
+# and Zynq WideSpiRx samples MISO 40 ns later (full-cycle round-trip window).
+set_false_path -from [get_ports {wide_spi_csb_i}]
+set_input_delay -clock [get_clocks wide_spi_clk_i] -clock_fall -max 5.0 [get_ports {wide_spi_mosi_i[*]}]
+set_input_delay -clock [get_clocks wide_spi_clk_i] -clock_fall -min -2.0 [get_ports {wide_spi_mosi_i[*]}]
+set_output_delay -clock [get_clocks wide_spi_clk_i] -max 6.0 [get_ports {wide_spi_miso_o[*]}]
+set_output_delay -clock [get_clocks wide_spi_clk_i] -min -1.0 [get_ports {wide_spi_miso_o[*]}]
+
+# Co-locate single-bit CDC synchronizer flip-flops inside Spi2TLULV2 instances.
+set_property ASYNC_REG TRUE [get_cells -quiet -hierarchical -filter {NAME =~ *spi_csb_sync_s* || NAME =~ *wr_done_sync_s* || NAME =~ *sys_rst_sync_s*}]
 

@@ -24,12 +24,12 @@ import org.scalatest.freespec.AnyFreeSpec
 // Test wrapper module — replicates spi_v2_tb_top.sv in Chisel
 // ---------------------------------------------------------------------------
 
-class Spi2TLULV2TestWrapper extends Module {
+class Spi2TLULV2TestWrapper(val dataWidth: Int = 1) extends Module {
   val io = IO(new Bundle {
     val spi_clk_in = Input(Bool())
     val spi_csb    = Input(Bool())
-    val spi_mosi   = Input(Bool())
-    val spi_miso   = Output(Bool())
+    val spi_mosi   = Input(UInt(dataWidth.W))
+    val spi_miso   = Output(UInt(dataWidth.W))
 
     // TL-A capture outputs (last beat)
     val tl_a_captured    = Output(Bool())
@@ -42,12 +42,16 @@ class Spi2TLULV2TestWrapper extends Module {
     val tl_a_first_address = Output(UInt(32.W))
     val tl_a_first_data    = Output(UInt(128.W))
     val tl_a_first_reset   = Input(Bool())
+
+    // Optional TL-D stall control and soft-reset observation
+    val tl_d_stall = Input(Bool())
+    val sys_rst_o  = Output(Bool())
   })
 
   var p = new Parameters()
   p.lsuDataBits = 128
   val tlul_p = p.toTLUL()
-  val v2     = Module(new Spi2TLULV2(tlul_p))
+  val v2     = Module(new Spi2TLULV2(tlul_p, dataWidth))
 
   // Clock and reset wiring
   v2.io.spi_clk   := io.spi_clk_in.asClock
@@ -59,7 +63,7 @@ class Spi2TLULV2TestWrapper extends Module {
 
   // MISO: always ready, output gated by valid
   v2.io.q_miso_pin.ready := true.B
-  io.spi_miso            := Mux(v2.io.q_miso_pin.valid, v2.io.q_miso_pin.bits, false.B)
+  io.spi_miso            := Mux(v2.io.q_miso_pin.valid, v2.io.q_miso_pin.bits, 0.U(dataWidth.W))
 
   // -------------------------------------------------------------------------
   // TileLink auto-responder (mirrors spi_v2_tb_top.sv)
@@ -84,7 +88,7 @@ class Spi2TLULV2TestWrapper extends Module {
 
   // Single-driver style: accept A → latch + deassert ready; D handshake → clear + reassert
   val acceptA   = aValid && tlAReady && !respPending
-  val completeD = respPending && v2.io.q_tl_d.ready
+  val completeD = respPending && !io.tl_d_stall && v2.io.q_tl_d.ready
 
   respPending := Mux(acceptA, true.B, Mux(completeD, false.B, respPending))
   respReq     := Mux(acceptA, aData, respReq)
@@ -101,7 +105,7 @@ class Spi2TLULV2TestWrapper extends Module {
     Mux(reqOpcode === TLULOpcodesA.Get.asUInt, TLULOpcodesD.AccessAckData, TLULOpcodesD.AccessAck)
   val respData = Cat(0.U(96.W), reqAddr)
 
-  v2.io.q_tl_d.valid       := respPending
+  v2.io.q_tl_d.valid       := respPending && !io.tl_d_stall
   v2.io.q_tl_d.bits.opcode := respOpcode.asUInt
   v2.io.q_tl_d.bits.param  := 0.U(3.W)
   v2.io.q_tl_d.bits.size   := reqSize
@@ -150,6 +154,7 @@ class Spi2TLULV2TestWrapper extends Module {
   io.tl_a_cap_count     := capCount
   io.tl_a_first_address := firstCapAddress
   io.tl_a_first_data    := firstCapData
+  io.sys_rst_o          := v2.io.sys_rst_o
 }
 
 // ---------------------------------------------------------------------------
@@ -167,15 +172,16 @@ class Spi2TLULV2Spec extends AnyFreeSpec with ChiselSim {
   /** Run the simulation with dual-clock stepping. The main clock.step() drives the sys domain. SPI
     * clock is toggled as a Bool input at a 10:13 ratio to approximate truly async clocks.
     */
-  def withDualClock(body: Spi2TLULV2TestWrapper => Unit): Unit = {
-    simulate(new Spi2TLULV2TestWrapper) { dut =>
+  def withDualClock(dataWidth: Int = 1)(body: Spi2TLULV2TestWrapper => Unit): Unit = {
+    simulate(new Spi2TLULV2TestWrapper(dataWidth)) { dut =>
       // Reset — toggle SPI clock during reset so system-reset-only
       // CDC FIFOs (clocked by spi_clk) see the reset posedge.
       dut.reset.poke(true.B)
       dut.io.spi_csb.poke(true.B)
-      dut.io.spi_mosi.poke(false.B)
+      dut.io.spi_mosi.poke(0.U(dataWidth.W))
       dut.io.spi_clk_in.poke(false.B)
       dut.io.tl_a_first_reset.poke(false.B)
+      dut.io.tl_d_stall.poke(false.B)
       for (_ <- 0 until 5) {
         dut.io.spi_clk_in.poke(true.B)
         dut.clock.step(1)
@@ -188,6 +194,8 @@ class Spi2TLULV2Spec extends AnyFreeSpec with ChiselSim {
       body(dut)
     }
   }
+
+  def withDualClock(body: Spi2TLULV2TestWrapper => Unit): Unit = withDualClock(1)(body)
 
   /** Dual-clock tick state — tracks when to toggle SPI clock relative to sys clock. */
   class DualClockState(dut: Spi2TLULV2TestWrapper) {
@@ -244,30 +252,64 @@ class Spi2TLULV2Spec extends AnyFreeSpec with ChiselSim {
 
     // SPI protocol helpers
 
+    /** Transfer one 8-bit byte MSB-first across (8 / dataWidth) SPI cycles (requires dataWidth <=
+      * 8).
+      */
     def spiXferByte(tx: Int): Unit = {
-      for (bit <- 7 to 0 by -1) {
-        dut.io.spi_mosi.poke((((tx >> bit) & 1) != 0).B)
-        spiCycles(1)
+      val w = dut.dataWidth
+      require(
+        w <= 8,
+        s"spiXferByte requires dataWidth <= 8 (got $w); use spiXferWord16 for 16-bit transfers."
+      )
+      if (w == 1) {
+        for (bit <- 7 to 0 by -1) {
+          dut.io.spi_mosi.poke(((tx >> bit) & 1).U(1.W))
+          spiCycles(1)
+        }
+      } else {
+        val mask = (1 << w) - 1
+        for (bit <- (8 - w) to 0 by -w) {
+          dut.io.spi_mosi.poke(((tx >> bit) & mask).U(w.W))
+          spiCycles(1)
+        }
       }
     }
 
+    /** Receive one 8-bit byte MSB-first across (8 / dataWidth) SPI cycles (requires dataWidth <=
+      * 8).
+      */
     def spiRecvByte(): Int = {
       var rx = 0
-      for (_ <- 7 to 0 by -1) {
-        dut.io.spi_mosi.poke(false.B)
-        spiCycles(1)
-        rx = (rx << 1) | (if (dut.io.spi_miso.peek().litValue != 0) 1 else 0)
+      val w  = dut.dataWidth
+      require(
+        w <= 8,
+        s"spiRecvByte requires dataWidth <= 8 (got $w); use spiRecvWord16 for 16-bit transfers."
+      )
+      if (w == 1) {
+        for (_ <- 7 to 0 by -1) {
+          dut.io.spi_mosi.poke(0.U(1.W))
+          spiCycles(1)
+          rx = (rx << 1) | (if (dut.io.spi_miso.peek().litValue != 0) 1 else 0)
+        }
+      } else {
+        val mask = (1 << w) - 1
+        for (_ <- (8 - w) to 0 by -w) {
+          dut.io.spi_mosi.poke(0.U(w.W))
+          val valRead = dut.io.spi_miso.peek().litValue.toInt & mask
+          rx = (rx << w) | valRead
+          spiCycles(1)
+        }
       }
       rx
     }
 
     def csbAssert(): Unit = {
       dut.io.spi_csb.poke(false.B)
-      dut.io.spi_mosi.poke(false.B)
+      dut.io.spi_mosi.poke(0.U(dut.dataWidth.W))
     }
 
     def csbDeassert(): Unit = {
-      dut.io.spi_mosi.poke(false.B)
+      dut.io.spi_mosi.poke(0.U(dut.dataWidth.W))
       // Let DmaEngine finish draining CDC FIFOs before CSB deasserts
       // (AsyncQueue safe mode coordinates reset on CSB deassert)
       bothCycles(500)
@@ -275,14 +317,55 @@ class Spi2TLULV2Spec extends AnyFreeSpec with ChiselSim {
       bothCycles(50)
     }
 
+    /** Deassert CSB immediately without draining CDC FIFOs to test mid-frame aborts. */
+    def csbAbortNow(): Unit = {
+      dut.io.spi_mosi.poke(0.U(dut.dataWidth.W))
+      dut.io.spi_csb.poke(true.B)
+      // Clock idle SPI cycles while CSB=1 so AsyncQueue reset sync settles
+      spiCycles(10)
+      bothCycles(20)
+    }
+
+    /** Transfer one 16-bit halfword in a single SPI cycle (requires dataWidth == 16). */
+    def spiXferWord16(tx: Int): Unit = {
+      require(dut.dataWidth == 16, s"spiXferWord16 requires dataWidth == 16, got ${dut.dataWidth}")
+      dut.io.spi_mosi.poke((tx & 0xffff).U(dut.dataWidth.W))
+      spiCycles(1)
+    }
+
+    /** Sample one 16-bit halfword from MISO in a single SPI cycle (requires dataWidth == 16). */
+    def spiRecvWord16(): Int = {
+      require(dut.dataWidth == 16, s"spiRecvWord16 requires dataWidth == 16, got ${dut.dataWidth}")
+      dut.io.spi_mosi.poke(0.U(dut.dataWidth.W))
+      spiCycles(1)
+      dut.io.spi_miso.peek().litValue.toInt & 0xffff
+    }
+
+    /** Poll 16-bit MISO until the 0x00AA write-completion acknowledgement arrives. */
+    def spiWaitWriteAck16(maxCycles: Int = 500): Boolean = {
+      var cycles = 0
+      while (cycles < maxCycles) {
+        if (spiRecvWord16() == 0x00aa) return true
+        cycles += 1
+      }
+      false
+    }
+
     def spiSendHeader(op: Int, addr: Long, len: Int): Unit = {
-      spiXferByte(op & 0xff)
-      spiXferByte(((addr >> 24) & 0xff).toInt)
-      spiXferByte(((addr >> 16) & 0xff).toInt)
-      spiXferByte(((addr >> 8) & 0xff).toInt)
-      spiXferByte((addr & 0xff).toInt)
-      spiXferByte((len >> 8) & 0xff)
-      spiXferByte(len & 0xff)
+      if (dut.dataWidth == 16) {
+        spiXferWord16(op & 0xff)
+        spiXferWord16(len & 0xffff)
+        spiXferWord16((addr & 0xffff).toInt)
+        spiXferWord16(((addr >> 16) & 0xffff).toInt)
+      } else {
+        spiXferByte(op & 0xff)
+        spiXferByte(((addr >> 24) & 0xff).toInt)
+        spiXferByte(((addr >> 16) & 0xff).toInt)
+        spiXferByte(((addr >> 8) & 0xff).toInt)
+        spiXferByte((addr & 0xff).toInt)
+        spiXferByte((len >> 8) & 0xff)
+        spiXferByte(len & 0xff)
+      }
     }
 
     /** Collect n raw MISO bits. Returns array of bytes packed MSB-first per byte. */
@@ -662,7 +745,7 @@ class Spi2TLULV2Spec extends AnyFreeSpec with ChiselSim {
       var rxBuf   = 0
       var timeout = 0
       while (rxBuf != 0xfe && timeout < 2000) {
-        dut.io.spi_mosi.poke(false.B)
+        dut.io.spi_mosi.poke(0.U(dut.dataWidth.W))
         dc.spiCycles(1)
         val bit = if (dut.io.spi_miso.peek().litValue != 0) 1 else 0
         rxBuf = ((rxBuf << 1) & 0xff) | bit
@@ -685,6 +768,361 @@ class Spi2TLULV2Spec extends AnyFreeSpec with ChiselSim {
       assert(beat1(0) == 0x10, s"beat1[0] should be 0x10, got 0x${beat1(0).toHexString}")
       assert(beat1(1) == 0xcc, s"beat1[1] should be 0xcc, got 0x${beat1(1).toHexString}")
 
+      dc.csbDeassert()
+    }
+  }
+
+  "16-bit ultra-wide bus - write transaction and back-to-back 0x00AA ack" in {
+    withDualClock(16) { dut =>
+      val dc       = new DualClockState(dut)
+      val baseAddr = 0x80000000L
+
+      dc.csbAssert()
+      // Clock leading NOP dummy words (0x0000) to verify NOP tolerance in sOp
+      dc.spiXferWord16(0x0000)
+      dc.spiXferWord16(0x0000)
+      // Op 0x02 (Write), Addr 0x80000000, Len 0 (1 beat = 8 x 16-bit halfwords)
+      dc.spiSendHeader(0x02, baseAddr, 0x0000)
+
+      // Send 8 x 16-bit halfwords (bytes 0x01..0x10, 2 bytes per clock)
+      for (i <- 0 until 8) {
+        val lo = (2 * i + 1) & 0xff
+        val hi = (2 * i + 2) & 0xff
+        dc.spiXferWord16((hi << 8) | lo)
+      }
+
+      assert(dc.spiWaitWriteAck16(), "First 16-bit write should return 0x00AA ack on MISO")
+      dc.csbDeassert()
+
+      // Verify TileLink write request and full 128-bit payload across all 16 MOSI wires
+      assert(dut.io.tl_a_captured.peek().litToBoolean, "TL-A should have captured write request")
+      assert(
+        dut.io.tl_a_cap_address.peek().litValue == baseAddr,
+        s"TL-A address mismatch: 0x${dut.io.tl_a_cap_address.peek().litValue.toString(16)}"
+      )
+      val expected128 = BigInt("100f0e0d0c0b0a090807060504030201", 16)
+      assert(
+        dut.io.tl_a_cap_data.peek().litValue == expected128,
+        s"TL-A 128-bit data mismatch: 0x${dut.io.tl_a_cap_data.peek().litValue.toString(16)}"
+      )
+
+      // Back-to-back second write with stalled TL-D: verify wr_done_latch cleared and does not
+      // emit a stale 0x00AA before the second write actually finishes on TileLink-D.
+      val secondAddr = 0x80000010L
+      dut.io.tl_d_stall.poke(true.B)
+      dc.csbAssert()
+      dc.spiSendHeader(0x02, secondAddr, 0x0000)
+      for (i <- 0 until 8) {
+        dc.spiXferWord16(0xa500 | i)
+      }
+      for (_ <- 0 until 20) {
+        val preAck = dc.spiRecvWord16()
+        assert(
+          preAck != 0x00aa,
+          "MISO must not report 0x00AA while second write TL-D response is stalled"
+        )
+      }
+      dut.io.tl_d_stall.poke(false.B)
+      assert(
+        dc.spiWaitWriteAck16(),
+        "Second 16-bit write should return 0x00AA ack once TL-D completes"
+      )
+      dc.csbDeassert()
+      assert(dut.io.tl_a_cap_address.peek().litValue == secondAddr)
+    }
+  }
+
+  "16-bit ultra-wide bus - single-beat read transaction" in {
+    withDualClock(16) { dut =>
+      val dc       = new DualClockState(dut)
+      val baseAddr = 0x80001000L
+
+      dc.csbAssert()
+      // Op 0x01 (Read), Addr 0x80001000, Len 0 (1 beat = 8 x 16-bit halfwords)
+      dc.spiSendHeader(0x01, baseAddr, 0x0000)
+
+      // Wait for 0x00FE sync halfword on 16-bit MISO
+      var sync    = 0
+      var timeout = 0
+      while (sync != 0x00fe && timeout < 500) {
+        sync = dc.spiRecvWord16()
+        timeout += 1
+      }
+      assert(sync == 0x00fe, s"Should receive 0x00FE sync word, got 0x${sync.toHexString}")
+
+      // Receive 8 x 16-bit halfwords (2 bytes per clock across all 16 MISO wires)
+      val halfwords = (0 until 8).map(_ => dc.spiRecvWord16())
+      assert(
+        halfwords(0) == 0x1000,
+        s"halfwords[0] should match addr[15:0] (0x1000), got 0x${halfwords(0).toHexString}"
+      )
+      assert(
+        halfwords(1) == 0x8000,
+        s"halfwords[1] should match addr[31:16] (0x8000), got 0x${halfwords(1).toHexString}"
+      )
+
+      dc.csbDeassert()
+    }
+  }
+
+  "16-bit ultra-wide bus - multi-beat burst write transaction (4 beats)" in {
+    withDualClock(16) { dut =>
+      val dc       = new DualClockState(dut)
+      val baseAddr = 0x80002000L
+
+      dc.csbAssert()
+      // Op 0x02 (Write), Addr 0x80002000, Len 3 (4 beats = 32 x 16-bit halfwords)
+      dc.spiSendHeader(0x02, baseAddr, 0x0003)
+
+      for (b <- 0 until 4) {
+        for (i <- 0 until 8) {
+          val lo = ((b * 16) + 2 * i + 1) & 0xff
+          val hi = ((b * 16) + 2 * i + 2) & 0xff
+          dc.spiXferWord16((hi << 8) | lo)
+        }
+      }
+
+      assert(dc.spiWaitWriteAck16(), "4-beat burst write should return 0x00AA ack on MISO")
+      dc.csbDeassert()
+
+      assert(dut.io.tl_a_captured.peek().litToBoolean, "TL-A should have captured burst write")
+      assert(
+        dut.io.tl_a_first_address.peek().litValue == baseAddr,
+        s"First beat address mismatch: 0x${dut.io.tl_a_first_address.peek().litValue.toString(16)}"
+      )
+      assert(
+        dut.io.tl_a_cap_address.peek().litValue == (baseAddr + 0x30L),
+        s"Last beat address mismatch: 0x${dut.io.tl_a_cap_address.peek().litValue.toString(16)}"
+      )
+      assert(
+        dut.io.tl_a_cap_count.peek().litValue == 4,
+        s"Beat count mismatch: ${dut.io.tl_a_cap_count.peek().litValue}"
+      )
+      val lastLow32 = dut.io.tl_a_cap_data.peek().litValue & BigInt("FFFFFFFF", 16)
+      assert(
+        lastLow32 == BigInt("34333231", 16),
+        s"Last beat low 32b should be 0x34333231, got 0x${lastLow32.toString(16)}"
+      )
+    }
+  }
+
+  "16-bit ultra-wide bus - multi-beat burst read transaction (4 beats)" in {
+    withDualClock(16) { dut =>
+      val dc       = new DualClockState(dut)
+      val baseAddr = 0x80003000L
+
+      dc.csbAssert()
+      // Op 0x01 (Read), Addr 0x80003000, Len 3 (4 beats = 64 bytes)
+      dc.spiSendHeader(0x01, baseAddr, 0x0003)
+
+      for (b <- 0 until 4) {
+        var sync    = 0
+        var timeout = 0
+        while (sync != 0x00fe && timeout < 500) {
+          sync = dc.spiRecvWord16()
+          timeout += 1
+        }
+        assert(
+          sync == 0x00fe,
+          s"Beat $b should receive 0x00FE sync word, got 0x${sync.toHexString}"
+        )
+        val payload = (0 until 8).map(_ => dc.spiRecvWord16())
+        assert(
+          payload(0) == (0x3000 + b * 0x10),
+          s"Beat $b halfword[0] mismatch: got 0x${payload(0).toHexString}"
+        )
+        assert(
+          payload(1) == 0x8000,
+          s"Beat $b halfword[1] mismatch: got 0x${payload(1).toHexString}"
+        )
+      }
+
+      dc.csbDeassert()
+    }
+  }
+
+  "quad-spi (W=4) write and read transaction" in {
+    withDualClock(4) { dut =>
+      val dc       = new DualClockState(dut)
+      val baseAddr = 0x80004000L
+
+      // Quad-SPI Write Test
+      dc.csbAssert()
+      dc.spiSendHeader(0x02, baseAddr, 0x0000)
+      for (i <- 0 until 16) {
+        dc.spiXferByte(i + 0xa0)
+      }
+      dc.csbDeassert()
+
+      assert(dut.io.tl_a_captured.peek().litToBoolean, "Quad-SPI write should be captured")
+      assert(dut.io.tl_a_cap_address.peek().litValue == baseAddr, s"Quad-SPI address mismatch")
+      val expectedQuadWrite =
+        (0 until 16).foldLeft(BigInt(0))((acc, i) => acc | (BigInt(i + 0xa0) << (i * 8)))
+      assert(
+        dut.io.tl_a_cap_data.peek().litValue == expectedQuadWrite,
+        s"Quad-SPI write data mismatch: 0x${dut.io.tl_a_cap_data.peek().litValue.toString(16)}"
+      )
+
+      // Quad-SPI Read Test (with nibble-sliding sync search resilient to odd-nibble CDC arrival)
+      dc.csbAssert()
+      dc.spiSendHeader(0x01, baseAddr, 0x0000)
+      var rxBuf   = 0
+      var timeout = 0
+      while (rxBuf != 0xfe && timeout < 1000) {
+        dut.io.spi_mosi.poke(0.U(4.W))
+        val nibble = dut.io.spi_miso.peek().litValue.toInt & 0xf
+        rxBuf = ((rxBuf << 4) & 0xff) | nibble
+        dc.spiCycles(1)
+        timeout += 1
+      }
+      assert(
+        rxBuf == 0xfe,
+        s"Quad-SPI read should receive 0xFE sync byte, got 0x${rxBuf.toHexString}"
+      )
+      val data = (0 until 16).map(_ => dc.spiRecvByte())
+      assert(
+        data.take(4) == Seq(0x00, 0x40, 0x00, 0x80),
+        s"Quad-SPI read bytes [0..3] mismatch: ${data.take(4).map(_.toHexString)}"
+      )
+      assert(data.drop(4).forall(_ == 0), "Quad-SPI read upper 12 bytes should be zero")
+      dc.csbDeassert()
+    }
+  }
+
+  "helper width guards reject mismatched transfer widths" in {
+    withDualClock(16) { dut =>
+      val dc = new DualClockState(dut)
+      assertThrows[IllegalArgumentException] {
+        dc.spiXferByte(0x12)
+      }
+      assertThrows[IllegalArgumentException] {
+        dc.spiRecvByte()
+      }
+    }
+    withDualClock(1) { dut =>
+      val dc = new DualClockState(dut)
+      assertThrows[IllegalArgumentException] {
+        dc.spiXferWord16(0x1234)
+      }
+      assertThrows[IllegalArgumentException] {
+        dc.spiRecvWord16()
+      }
+    }
+  }
+
+  "full-width opcode validation rejects upper-byte noise and supports 0x0003 soft reset" in {
+    withDualClock(16) { dut =>
+      val dc = new DualClockState(dut)
+
+      // Upper-byte noise / invalid opcodes (0x0100, 0xAA02, 0xFF03, 0xFFFF) must park in sWaitEnd
+      for (badOp <- Seq(0x0100, 0xaa02, 0xff03, 0xffff)) {
+        dc.csbAssert()
+        dc.spiXferWord16(badOp)
+        dc.spiXferWord16(0x0000)
+        dc.spiXferWord16(0x0000)
+        dc.spiXferWord16(0x8000)
+        for (_ <- 0 until 8) dc.spiXferWord16(0xdead)
+        dc.bothCycles(40)
+        assert(
+          !dut.io.tl_a_captured.peek().litToBoolean,
+          s"Invalid 16-bit opcode 0x${badOp.toHexString} must not issue TL-A request"
+        )
+        assert(
+          !dut.io.sys_rst_o.peek().litToBoolean,
+          s"Invalid 16-bit opcode 0x${badOp.toHexString} must not assert sys_rst_o"
+        )
+        dc.csbAbortNow()
+      }
+
+      // Exact 0x0003 opcode must assert synchronized sys_rst_o until CSB deasserts
+      dc.csbAssert()
+      dc.spiXferWord16(0x0003)
+      dc.bothCycles(20)
+      assert(dut.io.sys_rst_o.peek().litToBoolean, "Exact 0x0003 opcode should assert sys_rst_o")
+      dc.csbAbortNow()
+      dc.bothCycles(20)
+      assert(!dut.io.sys_rst_o.peek().litToBoolean, "CSB deassert should clear sys_rst_o")
+    }
+  }
+
+  "16-bit ultra-wide bus - CSB toggle and stalled multi-beat abort recovery" in {
+    withDualClock(16) { dut =>
+      val dc = new DualClockState(dut)
+
+      // 1. Aborted partial header
+      dc.csbAssert()
+      dc.spiXferWord16(0x0002) // Op
+      dc.spiXferWord16(0x0000) // Partial len
+      dc.csbAbortNow()
+      assert(!dut.io.tl_a_captured.peek().litToBoolean, "Partial header must not issue TL-A")
+
+      // 2. Multi-beat write aborted while beat 0 is stalled in sWriteAck, followed immediately
+      // by a new CSB frame BEFORE beat 0's TL-D response returns.
+      val abortedWriteAddr = 0x80005000L
+      dut.io.tl_d_stall.poke(true.B)
+      dc.csbAssert()
+      dc.spiSendHeader(0x02, abortedWriteAddr, 0x0003) // 4-beat write
+      for (i <- 0 until 8) dc.spiXferWord16(0x1100 | i) // Beat 0
+      assert(dc.waitTlACapture(1, 400), "Beat 0 of multi-beat write should issue TL-A")
+      val countAfterBeat0 = dut.io.tl_a_cap_count.peek().litValue.toLong
+
+      // Abort mid-burst while beat 0 is stuck in sWriteAck, then start a new 1-beat write
+      dc.csbAbortNow()
+      val cleanWriteAddr = 0x80006000L
+      dc.csbAssert()
+      dc.spiSendHeader(0x02, cleanWriteAddr, 0x0000)
+      for (i <- 0 until 8) {
+        dc.spiXferWord16(((2 * i + 2) << 8) | (2 * i + 1))
+      }
+      // Release TL-D stall so beat 0 of aborted burst drains and new write executes cleanly
+      dut.io.tl_d_stall.poke(false.B)
+      assert(dc.spiWaitWriteAck16(), "Follow-up write after multi-beat write abort should ack")
+      dc.csbDeassert()
+
+      assert(
+        dut.io.tl_a_cap_count.peek().litValue == countAfterBeat0 + 1,
+        s"Expected exactly 1 new TL-A beat (no phantom beat 1 on aborted burst), got ${dut.io.tl_a_cap_count.peek().litValue}"
+      )
+      assert(
+        dut.io.tl_a_cap_address.peek().litValue == cleanWriteAddr,
+        s"Follow-up write address mismatch: 0x${dut.io.tl_a_cap_address.peek().litValue.toString(16)}"
+      )
+      assert(
+        dut.io.tl_a_cap_data.peek().litValue == BigInt("100f0e0d0c0b0a090807060504030201", 16),
+        "Follow-up write payload corrupted by stale aborted write state"
+      )
+
+      // 3. Multi-beat read aborted while stalled in sReadData, followed by a new read:
+      // stale beat 0 data (0x80007000) must be discarded and never leak into the new read.
+      val abortedReadAddr = 0x80007000L
+      val countBeforeRead = dut.io.tl_a_cap_count.peek().litValue.toLong
+      dut.io.tl_d_stall.poke(true.B)
+      dc.csbAssert()
+      dc.spiSendHeader(0x01, abortedReadAddr, 0x0007) // 8-beat read
+      assert(
+        dc.waitTlACapture(countBeforeRead + 1, 400),
+        "Beat 0 of multi-beat read should issue TL-A"
+      )
+
+      // Abort while beat 0 is stalled in sReadData, then start a clean 1-beat read at 0x80008000
+      dc.csbAbortNow()
+      val cleanReadAddr = 0x80008000L
+      dc.csbAssert()
+      dc.spiSendHeader(0x01, cleanReadAddr, 0x0000)
+      dut.io.tl_d_stall.poke(false.B)
+
+      var sync    = 0
+      var timeout = 0
+      while (sync != 0x00fe && timeout < 500) {
+        sync = dc.spiRecvWord16()
+        timeout += 1
+      }
+      assert(sync == 0x00fe, "Clean read after aborted multi-beat read should sync on 0x00FE")
+      val readHalfwords = (0 until 8).map(_ => dc.spiRecvWord16())
+      assert(
+        readHalfwords(0) == 0x8000 && readHalfwords(1) == 0x8000,
+        s"Expected 0x80008000 from clean read (not stale 0x80007000), got 0x${readHalfwords(1).toHexString}_${readHalfwords(0).toHexString}"
+      )
       dc.csbDeassert()
     }
   }

@@ -55,7 +55,8 @@ case class CoreTlulParameters(
 
 /** Parameters for the Spi2TLUL module. */
 case class Spi2TlulParameters(
-  lsuDataBits: Int
+  lsuDataBits: Int,
+  dataWidth: Int = 1
 ) extends ModuleParameters
 
 /** Parameters for the SpiMaster module. */
@@ -204,6 +205,18 @@ class SoCChiselConfig(
         ExternalPort("spi_csb", Bool, In, "io.spi.csb"),
         ExternalPort("spi_mosi", Bool, In, "io.spi.mosi"),
         ExternalPort("spi_miso", Bool, Out, "io.spi.miso")
+      )
+    ),
+    ChiselModuleConfig(
+      name = "wide_spi2tlul",
+      moduleClass = "bus.Spi2TLUL",
+      params = Spi2TlulParameters(lsuDataBits = 128, dataWidth = 16),
+      hostConnections = Map("io.tl" -> "wide_spi2tlul"),
+      externalPorts = Seq(
+        ExternalPort("wide_spi_clk", Clk, In, "io.spi.clk"),
+        ExternalPort("wide_spi_csb", Bool, In, "io.spi.csb"),
+        ExternalPort("wide_spi_mosi", Logic(16), In, "io.spi.mosi"),
+        ExternalPort("wide_spi_miso", Logic(16), Out, "io.spi.miso")
       )
     ),
     ChiselModuleConfig(

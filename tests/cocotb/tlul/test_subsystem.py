@@ -67,6 +67,8 @@ async def setup_dut(dut, boot_addr=0):
         "io_external_ports_dm_rsp_ready",
         "io_external_ports_spi_clk",
         "io_external_ports_spi_mosi",
+        "io_external_ports_wide_spi_clk",
+        "io_external_ports_wide_spi_mosi",
         "io_external_ports_spim_miso",
         "io_external_ports_spim_clk_i",
         "io_external_ports_gpio_i",
@@ -83,6 +85,8 @@ async def setup_dut(dut, boot_addr=0):
     # Initialize active-low chip select to 1
     if hasattr(dut, "io_external_ports_spi_csb"):
         dut.io_external_ports_spi_csb.value = 1
+    if hasattr(dut, "io_external_ports_wide_spi_csb"):
+        dut.io_external_ports_wide_spi_csb.value = 1
 
     dut.io_external_ports_boot_addr.value = boot_addr
 
@@ -536,6 +540,78 @@ async def test_program_execution_via_spi(dut):
 
 
 @cocotb.test()
+async def test_program_execution_via_wide_spi(dut):
+    """Loads and executes a program via the 16-bit wide SPI to TL-UL bridge."""
+    await setup_dut(dut)
+
+    wide_spi_master = SPIMaster(
+        clk=dut.io_external_ports_wide_spi_clk,
+        csb=dut.io_external_ports_wide_spi_csb,
+        mosi=dut.io_external_ports_wide_spi_mosi,
+        miso=dut.io_external_ports_wide_spi_miso,
+        main_clk=dut.io_clk_i,
+        log=dut._log,
+        width=16
+    )
+    await wide_spi_master.idle_clocking(20)
+
+    # Find and load the ELF file
+    r = runfiles.Create()
+    elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/spi_exec_test.elf")
+    assert elf_path, "Could not find ELF file"
+
+    with open(elf_path, "rb") as f:
+        entry_point = await load_elf_via_spi(dut, f, wide_spi_master)
+
+    dut._log.info(
+        f"Program loaded via wide SPI. Entry point: 0x{entry_point:08x}"
+    )
+
+    # --- Execute Program ---
+    coralnpu_pc_csr_addr = 0x30004
+    coralnpu_reset_csr_addr = 0x30000
+
+    # Program the start PC
+    dut._log.info(f"Programming start PC to 0x{entry_point:08x}")
+    await write_word_via_spi(
+        wide_spi_master, coralnpu_pc_csr_addr, entry_point
+    )
+
+    # Release clock gate
+    dut._log.info("Releasing clock gate...")
+    await write_word_via_spi(wide_spi_master, coralnpu_reset_csr_addr, 1)
+
+    await ClockCycles(dut.io_clk_i, 1)
+
+    # Release reset
+    dut._log.info("Releasing reset...")
+    await write_word_via_spi(wide_spi_master, coralnpu_reset_csr_addr, 0)
+
+    # --- Wait for Completion ---
+    dut._log.info("Waiting for program to halt...")
+    timeout_cycles = 100000
+    for i in range(timeout_cycles):
+        if dut.io_external_ports_halted.value == 1:
+            break
+        await ClockCycles(dut.io_clk_i, 1)
+    else:
+        assert False, f"Timeout: Program did not halt within {timeout_cycles} cycles."
+
+    dut._log.info("Program halted.")
+    assert dut.io_external_ports_fault.value == 0, "Program halted with fault!"
+
+    # Verify the program computed and stored the expected value to DTCM (0x00010004)
+    output_val_addr = 0x00010004
+    dut._log.info(
+        f"Verifying result via wide SPI at 0x{output_val_addr:08x}..."
+    )
+    result = await read_word_via_spi(wide_spi_master, output_val_addr)
+    expected_result = 0x12345679
+    dut._log.info(f"Read 0x{result:08x} (expected 0x{expected_result:08x})")
+    assert result == expected_result, f"Expected 0x{expected_result:08x}, got 0x{result:08x}"
+
+
+@cocotb.test()
 async def test_ddr_access(dut):
     """Tests TileLink transactions to the DDR domain."""
     await setup_dut(dut)
@@ -691,6 +767,107 @@ async def test_ddr_access_via_spi(dut):
 
     assert (data0 == rdata0)
     assert (data1 == rdata1)
+
+
+@cocotb.test()
+async def test_ddr_access_via_wide_spi(dut):
+    await setup_dut(dut)
+
+    wide_spi_master = SPIMaster(
+        clk=dut.io_external_ports_wide_spi_clk,
+        csb=dut.io_external_ports_wide_spi_csb,
+        mosi=dut.io_external_ports_wide_spi_mosi,
+        miso=dut.io_external_ports_wide_spi_miso,
+        main_clk=dut.io_clk_i,
+        log=dut._log,
+        width=16
+    )
+    await wide_spi_master.idle_clocking(20)
+
+    # --- DDR Clock and Reset Setup ---
+    ddr_clk_signal = dut.io_async_ports_devices_ddr_clock
+    ddr_rst_signal = dut.io_async_ports_devices_ddr_reset
+    ddr_rst_signal.value = 1
+
+    ddr_clock = Clock(ddr_clk_signal, 2, "ns")
+    cocotb.start_soon(ddr_clock.start())
+
+    ddr_rst_signal.value = 0
+    await ClockCycles(dut.io_clk_i, 5)
+    ddr_rst_signal.value = 1
+    await ClockCycles(dut.io_clk_i, 5)
+    ddr_rst_signal.value = 0
+    await ClockCycles(dut.io_clk_i, 5)
+
+    # --- AXI Responder Models ---
+    DDR_MEM_BASE = 0x80000000
+    ddr_mem_slave = AxiSlave(
+        dut,
+        "ddr_mem_axi",
+        ddr_clk_signal,
+        ddr_rst_signal,
+        dut._log,
+        has_memory=True,
+        mem_base_addr=DDR_MEM_BASE
+    )
+    ddr_mem_slave.start()
+
+    await RisingEdge(ddr_clk_signal)
+
+    data0 = 0x00112233445566778899AABBCCDDEEFF
+    data1 = 0xFFEEDDCCBBAA99887766554433221100
+    await write_line_via_spi(wide_spi_master, DDR_MEM_BASE, data0)
+    await write_line_via_spi(wide_spi_master, DDR_MEM_BASE + 0x20, data1)
+
+    rdata0 = await read_line_via_spi(wide_spi_master, DDR_MEM_BASE)
+    rdata1 = await read_line_via_spi(wide_spi_master, DDR_MEM_BASE + 0x20)
+
+    assert (data0 == rdata0)
+    assert (data1 == rdata1)
+
+    # Verify multi-beat Wide-SPI burst writes and reads to DDR
+    burst_beats = [0x11112222333344445555666677778888 + i for i in range(4)]
+    await wide_spi_master.write_multi(DDR_MEM_BASE + 0x100, burst_beats)
+    read_beats = await wide_spi_master.read_multi(
+        DDR_MEM_BASE + 0x100, len(burst_beats)
+    )
+    assert read_beats == burst_beats, (
+        f"Wide-SPI multi-beat mismatch: {read_beats} != {burst_beats}"
+    )
+
+    # Verify Wide-SPI routing to clk_table (0x40001000)
+    clk_table_if = TileLinkULInterface(
+        dut,
+        device_if_name="io_external_devices_clk_table",
+        clock_name="io_clk_i",
+        reset_name="io_rst_ni",
+        reset_active_low=True,
+        width=32,
+    )
+    await clk_table_if.init()
+
+    async def clk_table_responder():
+        while True:
+            req = await clk_table_if.device_get_request()
+            addr = int(req["address"]) & 0xFFF
+            val = 0x434C4B54 if addr == 0x0 else (50 if addr == 0x4 else 0)
+            await clk_table_if.device_respond(
+                opcode=1,
+                param=0,
+                size=req["size"],
+                source=req["source"],
+                data=val,
+                width=32,
+            )
+
+    responder_task = cocotb.start_soon(clk_table_responder())
+    try:
+        magic = await read_word_via_spi(wide_spi_master, 0x40001000)
+        freq_mhz = await read_word_via_spi(wide_spi_master, 0x40001004)
+        assert magic == 0x434C4B54, f"Expected CLKT magic, got 0x{magic:08x}"
+        assert freq_mhz == 50, f"Expected 50 MHz, got {freq_mhz}"
+    finally:
+        responder_task.cancel()
 
 
 @cocotb.test()
@@ -1433,6 +1610,60 @@ async def test_boot_addr_override(dut):
         f"DTCM verification failed: got 0x{read_data:08x}, expected 0x{expected:08x}"
 
     dut._log.info("Test passed: pcStartReg CSR override works correctly.")
+
+
+@cocotb.test()
+async def test_boot_addr_override_via_wide_spi(dut):
+    """Verifies pcStartReg CSR override via 16-bit Wide-SPI 128-bit line RMW."""
+    SRAM_BASE = 0x20000000
+    DTCM_BASE = 0x00010000
+    DUMMY_ADDR = 0x12340000
+
+    await setup_dut(dut, boot_addr=DUMMY_ADDR)
+
+    wide_spi_master = SPIMaster(
+        clk=dut.io_external_ports_wide_spi_clk,
+        csb=dut.io_external_ports_wide_spi_csb,
+        mosi=dut.io_external_ports_wide_spi_mosi,
+        miso=dut.io_external_ports_wide_spi_miso,
+        main_clk=dut.io_clk_i,
+        log=dut._log,
+        width=16,
+    )
+    await wide_spi_master.idle_clocking(20)
+
+    # Load 4-instruction program (16 bytes = 1 beat) into SRAM_BASE
+    program_line = (
+        0x123450B7
+        | (0x00010137 << 32)
+        | (0x00112023 << 64)
+        | (0x08000073 << 96)
+    )
+    await write_line_via_spi(wide_spi_master, SRAM_BASE, program_line)
+
+    coralnpu_pc_csr_addr = 0x30004
+    coralnpu_reset_csr_addr = 0x30000
+
+    # Override pcStartReg via 128-bit line RMW (addr=0x30000, size=4, mask=0xFFFF)
+    await write_word_via_spi(wide_spi_master, coralnpu_pc_csr_addr, SRAM_BASE)
+    await write_word_via_spi(wide_spi_master, coralnpu_reset_csr_addr, 1)
+    await ClockCycles(dut.io_clk_i, 1)
+    await write_word_via_spi(wide_spi_master, coralnpu_reset_csr_addr, 0)
+
+    timeout_cycles = 10000
+    for _ in range(timeout_cycles):
+        if dut.io_external_ports_halted.value == 1:
+            break
+        await ClockCycles(dut.io_clk_i, 1)
+    else:
+        assert False, f"Timeout: Core did not halt within {timeout_cycles} cycles."
+
+    assert dut.io_external_ports_fault.value == 0, "Core halted with fault!"
+    read_data = await read_word_via_spi(wide_spi_master, DTCM_BASE)
+    expected = 0x12345000
+    assert read_data == expected, (
+        f"DTCM verification failed: got 0x{read_data:08x}, expected 0x{expected:08x}"
+    )
 
 
 @cocotb.test()

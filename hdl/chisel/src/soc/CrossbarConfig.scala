@@ -78,6 +78,7 @@ class CrossbarConfig(itcmSize: MemorySize, dtcmSize: MemorySize) {
     val baseHosts = Seq(
       HostConfig("coralnpu_core", width = 128),
       HostConfig("spi2tlul", width = 128),
+      HostConfig("wide_spi2tlul", width = 128),
       HostConfig("dma", width = 128),
       HostConfig("ispyocto_m1", width = 64, clockDomain = "isp_axi_clk"),
       HostConfig("ispyocto_m2", width = 64, clockDomain = "isp_axi_clk"),
@@ -166,8 +167,10 @@ class CrossbarConfig(itcmSize: MemorySize, dtcmSize: MemorySize) {
         "ispyocto_ctrl",
         "clk_table"
       ),
-      "spi2tlul" -> Seq("coralnpu_device", "sram", "ddr_ctrl", "ddr_mem", "clk_table"),
-      "dma"      -> Seq(
+      "spi2tlul"      -> Seq("coralnpu_device", "sram", "ddr_ctrl", "ddr_mem", "clk_table"),
+      "wide_spi2tlul" -> Seq("coralnpu_device", "sram", "ddr_mem", "clk_table"),
+      // Omit read-only clk_table from dma so 32-bit clk_table stays within the 4-host TL_AIW=10 ID budget.
+      "dma" -> Seq(
         "sram",
         "coralnpu_device",
         "rom",
@@ -181,8 +184,7 @@ class CrossbarConfig(itcmSize: MemorySize, dtcmSize: MemorySize) {
         "spi_master_flash",
         "clint",
         "plic",
-        "ispyocto_ctrl",
-        "clk_table"
+        "ispyocto_ctrl"
       ),
       "ispyocto_m1" -> Seq("sram", "ddr_mem", "coralnpu_device"),
       "ispyocto_m2" -> Seq("sram", "ddr_mem", "coralnpu_device"),

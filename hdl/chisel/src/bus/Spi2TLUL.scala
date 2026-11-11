@@ -17,20 +17,20 @@ package bus
 import chisel3._
 import common.MuBi4
 
-class Spi2TLUL(p: TLULParameters) extends Module {
+class Spi2TLUL(p: TLULParameters, val dataWidth: Int = 1) extends Module {
   val tlul_p = p
   val io     = IO(new Bundle {
     val spi = new Bundle {
       val clk  = Input(Clock())
       val csb  = Input(Bool())
-      val mosi = Input(Bool())
-      val miso = Output(Bool())
+      val mosi = Input(UInt(dataWidth.W))
+      val miso = Output(UInt(dataWidth.W))
     }
     val tl        = new OpenTitanTileLink.Host2Device(p)
     val sys_rst_o = Output(Bool())
   })
 
-  val v2 = Module(new Spi2TLULV2(p))
+  val v2 = Module(new Spi2TLULV2(p, dataWidth))
 
   // Clock and reset wiring
   v2.io.spi_clk   := io.spi.clk
@@ -42,7 +42,7 @@ class Spi2TLUL(p: TLULParameters) extends Module {
 
   // MISO: always ready, output gated by valid
   v2.io.q_miso_pin.ready := true.B
-  io.spi.miso            := Mux(v2.io.q_miso_pin.valid, v2.io.q_miso_pin.bits, false.B)
+  io.spi.miso            := Mux(v2.io.q_miso_pin.valid, v2.io.q_miso_pin.bits, 0.U(dataWidth.W))
 
   val v2_a = v2.io.q_tl_a.bits
 
@@ -61,4 +61,11 @@ class Spi2TLUL(p: TLULParameters) extends Module {
   io.tl.d.ready      := v2.io.q_tl_d.ready
 
   io.sys_rst_o := v2.io.sys_rst_o
+}
+
+import common.ChiselEmitter
+
+object EmitWideSpi2TLUL extends App {
+  val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
+  ChiselEmitter.emit(new Spi2TLUL(tlul_p, dataWidth = 16), args)
 }

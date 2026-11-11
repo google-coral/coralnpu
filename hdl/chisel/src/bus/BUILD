@@ -116,6 +116,13 @@ chisel_cc_library(
 )
 
 chisel_cc_library(
+    name = "wide_spi2tlul_cc_library",
+    chisel_lib = ":bus",
+    emit_class = "bus.EmitWideSpi2TLUL",
+    module_name = "Spi2TLUL",
+)
+
+chisel_cc_library(
     name = "tlul_fifo_async_128_cc_library",
     chisel_lib = ":bus",
     emit_class = "bus.TlulFifoAsync128Emitter",
