@@ -39,16 +39,24 @@ void coralnpu_exception_handler() {
 }
 
 int main() {
-  float a  = 2.0f;
-  float pi = 3.14159265359f;
-  float res;
+  faulted   = 0;
+  mcause    = 0;
+  float a   = 2.0f;
+  float pi  = 3.14159265359f;
+  float sgn = 0.0f;
+  float sq  = 0.0f;
+  float res = 0.0f;
 
-  // Set FRM CSR from the global variable
-  // Multiply using dynamic rounding mode (dyn = 7 in rm field)
+  // Set FRM CSR from the global variable.
+  // Non-FRM instructions (fsgnj.s) remain valid regardless of frm, whereas
+  // dynamic-rounding instructions (fsqrt.s, fmul.s) must raise mcause = 2 when
+  // frm holds a reserved value (5..7).
   asm volatile(
       "csrw frm, %[frm];"
-      "fmul.s %[res], %[a], %[pi], dyn;"
-      : [res] "=f"(res)
+      "fsgnj.s %[sgn], %[a], %[pi];"
+      "fsqrt.s %[sq], %[sgn], dyn;"
+      "fmul.s %[res], %[sq], %[pi], dyn;"
+      : [sgn] "=&f"(sgn), [sq] "=&f"(sq), [res] "=f"(res)
       : [frm] "r"(frm), [a] "f"(a), [pi] "f"(pi));
 
   // Store result

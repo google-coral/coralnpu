@@ -78,12 +78,14 @@ class FloatInstruction(p: Parameters) extends Bundle {
   def requires_frm(): Bool = {
     opcode.isOneOf(FloatOpcode.MADD, FloatOpcode.MSUB, FloatOpcode.NMSUB, FloatOpcode.NMADD) ||
     ((opcode === FloatOpcode.OPFP) && (
-      (funct5 === "b00000".U) ||   // fadd
-        (funct5 === "b00001".U) || // fsub
-        (funct5 === "b00010".U) || // fmul
-        (funct5 === "b00011".U) || // fdiv
-        (funct5 === "b00100".U) || // fsqrt
-        (funct5 === "b11010".U)    // fcvt (both f->x and x->f)
+      (funct5 === "b00000".U) ||   // fadd.s
+        (funct5 === "b00001".U) || // fsub.s
+        (funct5 === "b00010".U) || // fmul.s
+        (funct5 === "b00011".U) || // fdiv.s
+        (funct5 === "b01011".U) || // fsqrt.s
+        (funct5 === "b01000".U) || // fcvt.s.bf16, fcvt.bf16.s
+        (funct5 === "b11000".U) || // fcvt.w.s, fcvt.wu.s
+        (funct5 === "b11010".U)    // fcvt.s.w, fcvt.s.wu
     ))
   }
 
@@ -127,6 +129,7 @@ object FloatInstruction {
   }
 
   def decode(p: Parameters, inst: UInt, addr: UInt): Valid[FloatInstruction] = {
+    val is_32b    = inst(1, 0) === "b11".U
     val in_opcode = inst(6, 2)
     // `fmt` is always 0 for FP32, 2 is for BF16 (if Zfbfmin is enabled)
     val fmt    = inst(26, 25)
@@ -137,10 +140,10 @@ object FloatInstruction {
     val rm     = inst(14, 12)
     val rd     = inst(11, 7)
 
-    // Guard load/store by the `width` field (encoded in `rm`).
+    // Guard load/store by the `width` field (encoded in `rm`): 010 (FLW/FSW) or 001 (FLH/FSH when Zfbfmin enabled).
     // Other values are reserved for D, Q, and V extensions.
-    val load_store_rm_valid = (rm === "b001".U) || (rm === "b010".U)
-    val opcode              = MuxLookup(in_opcode, MakeInvalid(FloatOpcode()))(
+    val load_store_rm_valid = (rm === "b010".U) || ((rm === "b001".U) && p.enableZfbfmin.B)
+    val raw_opcode          = MuxLookup(in_opcode, MakeInvalid(FloatOpcode()))(
       Seq(
         "b00001".U -> Mux(
           load_store_rm_valid,
@@ -159,13 +162,42 @@ object FloatInstruction {
         "b10011".U -> MakeValid(FloatOpcode.NMADD)
       )
     )
+    val opcode = MakeValid(is_32b && raw_opcode.valid, raw_opcode.bits)
 
-    val is_opfp     = opcode.bits === FloatOpcode.OPFP
-    val fcvt_s_bf16 = is_opfp && (funct5 === "b01000".U) && (rs2 === "b00110".U) && (fmt === 0.U)
-    val fcvt_bf16_s = is_opfp && (funct5 === "b01000".U) && (rs2 === "b01000".U) && (fmt === 2.U)
-    val fmv_h       =
-      is_opfp && (funct5 === "b11110".U || funct5 === "b11100".U) && (rs2 === "b00000".U) && (fmt === 2.U) && (rm === "b000".U)
-    val is_zfbfmin = (fcvt_s_bf16 || fcvt_bf16_s || fmv_h) && p.enableZfbfmin.B
+    val is_opfp     = opcode.valid && (opcode.bits === FloatOpcode.OPFP)
+    val fcvt_s_bf16 =
+      is_opfp && (funct5 === "b01000".U) && (rs2 === "b00110".U) && (fmt === 0.U) && p.enableZfbfmin.B
+    val fcvt_bf16_s =
+      is_opfp && (funct5 === "b01000".U) && (rs2 === "b01000".U) && (fmt === 2.U) && p.enableZfbfmin.B
+    val fmv_h =
+      is_opfp && (funct5 === "b11110".U || funct5 === "b11100".U) && (rs2 === "b00000".U) && (fmt === 2.U) && (rm === "b000".U) && p.enableZfbfmin.B
+    val is_zfbfmin = fcvt_s_bf16 || fcvt_bf16_s || fmv_h
+
+    val fcvt_int_rs2_valid = if (p.xlen == 64) (rs2(4, 2) === 0.U) else (rs2(4, 1) === 0.U)
+    val opfp_fp32_valid    = is_opfp && (fmt === 0.U) && MuxLookup(funct5, false.B)(
+      Seq(
+        "b00000".U -> true.B,                                     // fadd.s
+        "b00001".U -> true.B,                                     // fsub.s
+        "b00010".U -> true.B,                                     // fmul.s
+        "b00011".U -> true.B,                                     // fdiv.s
+        "b01011".U -> (rs2 === "b00000".U),                       // fsqrt.s
+        "b00100".U -> (rm <= "b010".U),                           // fsgnj.s, fsgnjn.s, fsgnjx.s
+        "b00101".U -> (rm <= "b001".U),                           // fmin.s, fmax.s
+        "b11000".U -> fcvt_int_rs2_valid,                         // fcvt.w.s, fcvt.wu.s
+        "b11100".U -> ((rs2 === "b00000".U) && (rm <= "b001".U)), // fmv.x.w, fclass.s
+        "b10100".U -> (rm <= "b010".U),                           // fle.s, flt.s, feq.s
+        "b11010".U -> fcvt_int_rs2_valid,                         // fcvt.s.w, fcvt.s.wu
+        "b11110".U -> ((rs2 === "b00000".U) && (rm === "b000".U)) // fmv.w.x
+      )
+    )
+    val is_r4_fp32 = opcode.valid &&
+      opcode.bits.isOneOf(
+        FloatOpcode.MADD,
+        FloatOpcode.MSUB,
+        FloatOpcode.NMSUB,
+        FloatOpcode.NMADD
+      ) &&
+      (fmt === 0.U(2.W))
 
     // TODO(atv): Hook scalar_rd and scalar_rs1 into scalar scoreboard
     // TODO(atv): FMV and FCLASS match the same... do we need to check RM too?
@@ -194,7 +226,7 @@ object FloatInstruction {
       FloatOpcode.NMADD,
       FloatOpcode.NMSUB
     ) ||
-      ((opcode.bits === FloatOpcode.OPFP) && MuxLookup(funct5, true.B)(
+      (is_opfp && MuxLookup(funct5, true.B)(
         Seq(
           "b11100".U -> false.B, // FMV.X.W
           "b11100".U -> false.B, // FCLASS
@@ -213,9 +245,8 @@ object FloatInstruction {
 
     MakeWireBundle[ValidIO[FloatInstruction]](
       Valid(new FloatInstruction(p)),
-      // Non-load/store must have fmt == 0 (FP32) or fmt == 2 (BF16, if Zfbfmin is enabled)
-      _.valid -> (opcode.valid && (opcode.bits === FloatOpcode.LOADFP || opcode.bits === FloatOpcode.STOREFP || (fmt === 0
-        .U(2.W)) || is_zfbfmin)),
+      _.valid -> (opcode.valid && (opcode.bits.isOneOf(FloatOpcode.LOADFP, FloatOpcode.STOREFP) ||
+        is_r4_fp32 || opfp_fp32_valid || is_zfbfmin)),
       _.bits.opcode     -> opcode.bits,
       _.bits.funct5     -> funct5,
       _.bits.src_fmt    -> src_fmt,

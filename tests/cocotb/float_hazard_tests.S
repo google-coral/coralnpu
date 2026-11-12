@@ -128,6 +128,35 @@ main:
     li t1, 0x41300000 # 11.0f
     bne t0, t1, fail
 
+    # =========================================================================
+    # Test 9: fmadd.s when rs3 = f8 (5'b01000) and rs2 = f6 (5'b00110)
+    # Regression test: R4 rs3/rs2 must not alias fcvt.s.bf16 src_fmt=FP16ALT.
+    # =========================================================================
+    fmv.s f8, f3  # f8 = 3.0f
+    fmv.s f6, f2  # f6 = 2.0f
+    fmv.s f4, f1  # f4 = stale 1.0f
+    flw f4, 12(sp) # load f4 = 4.0f
+    sb t2, 0(sp)
+    fmadd.s f5, f4, f6, f8, rne # 4.0f * 2.0f + 3.0f = 11.0f
+
+    fmv.x.w t0, f5
+    li t1, 0x41300000 # 11.0f
+    bne t0, t1, fail
+
+    # =========================================================================
+    # Test 10: Destination RAW on fd for fmadd.s when rs3 = f28 (5'b11100)
+    # Regression test: R4 rs3 must not assert scalar_rd and omit fd from
+    # floatRdScoreboard.
+    # =========================================================================
+    fmv.s f28, f3 # f28 = 3.0f
+    fmv.s f5, f1  # f5 = stale 1.0f
+    fmadd.s f5, f2, f2, f28, rne # 2.0f * 2.0f + 3.0f = 7.0f
+    fadd.s f7, f5, f1, rne       # 7.0f + 1.0f = 8.0f
+
+    fmv.x.w t0, f7
+    li t1, 0x41000000 # 8.0f
+    bne t0, t1, fail
+
     # Restore stack
     addi sp, sp, 32
     j pass
