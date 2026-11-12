@@ -14,6 +14,7 @@
 
 """Macro to build and run a CoralNPU V2 binary on the Verilator SoC simulation."""
 
+load("@coralnpu_host_cpus//:defs.bzl", "VERILATOR_THREADS")
 load("//rules:coralnpu_v2.bzl", "coralnpu_v2_binary")
 
 def _sim_test_impl(ctx):
@@ -136,6 +137,10 @@ def coralnpu_v2_sim_test(
 
     coralnpu_v2_binary(name = binary_name, srcs = srcs, tags = tags + ["manual"], **kwargs)
 
+    sim_tags = list(tags)
+    if not any([t.startswith("cpu:") for t in sim_tags]):
+        sim_tags.append("cpu:{}".format(VERILATOR_THREADS))
+
     _sim_test(
         name = name,
         elf = ":{}.elf".format(binary_name),
@@ -146,6 +151,6 @@ def coralnpu_v2_sim_test(
         itcm_size_kbytes = kwargs.get("itcm_size_kbytes", 1024 if highmem else 8),
         dtcm_size_kbytes = kwargs.get("dtcm_size_kbytes", 1024 if highmem else 32),
         size = size,
-        tags = tags + ["exclusive"],
+        tags = sim_tags,
         timeout = "long",
     )

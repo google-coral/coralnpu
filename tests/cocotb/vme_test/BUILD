@@ -56,6 +56,7 @@ coralflow_test(
         ":vme_vset_mtype_reset_test",
     ],
     hdl_toplevel = "VmeCoreMiniAxi",
+    shard_count = 4,
     targets = [
         "verilator",
         "vcs",

@@ -91,6 +91,7 @@ coralflow_test(
     srcs = ["sigmoid_bf16_cocotb_test.py"],
     elf = ":sigmoid_bf16_test.elf",
     highmem = True,
+    shard_count = 2,
     tags = ["manual"],
     targets = [
         "verilator",
@@ -114,6 +115,7 @@ coralflow_test(
     srcs = ["softmax_bf16_cocotb_test.py"],
     elf = ":softmax_bf16_test.elf",
     highmem = True,
+    shard_count = 2,
     tags = ["manual"],
     targets = [
         "verilator",

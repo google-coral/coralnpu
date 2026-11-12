@@ -91,6 +91,15 @@ def _effective_size(default_size, testcases):
             best = tc_size
     return best
 
+def _effective_shard_count(shard_count, testcases):
+    if not shard_count or shard_count <= 1:
+        return None
+    if testcases != None:
+        if len(testcases) <= 1:
+            return None
+        return min(shard_count, len(testcases))
+    return shard_count
+
 def _emit_rtl_target(
         name,
         sim,
@@ -111,6 +120,9 @@ def _emit_rtl_target(
         return
     single_kwargs = dict(kwargs)
     single_kwargs.pop("timeout", None)
+    eff_shards = _effective_shard_count(single_kwargs.pop("shard_count", None), testcases)
+    if eff_shards != None:
+        single_kwargs["shard_count"] = eff_shards
     env = list(extra_env)
     if testcases:
         env.append("CORALFLOW_TESTCASE=" + ",".join([
@@ -159,6 +171,11 @@ def _emit_py_test_target(
         return
     py_kwargs = dict(kwargs)
     py_kwargs.pop("timeout", None)
+    raw_shards = py_kwargs.pop("shard_count", None)
+    if backend != "npusim":
+        eff_shards = _effective_shard_count(raw_shards, testcases)
+        if eff_shards != None:
+            py_kwargs["shard_count"] = eff_shards
     precompile = py_kwargs.pop("precompile", "disabled")
     py_env = {
         "CORALFLOW_TARGET": backend,
@@ -307,6 +324,10 @@ def coralflow_test(
         If omitted, the macro uses the default model for `hdl_toplevel`.
       vcs_model: Optional target label for the VCS simulation model.
         If omitted, the macro uses the default model for `hdl_toplevel`.
+      **kwargs: Additional attributes forwarded to underlying test rules,
+        including `shard_count` (clamped to the backend's filtered `testcases`
+        count and forwarded to `verilator`, `vcs`, and `uvm`, while skipped for
+        `npusim` and `nexus_fpga`).
     """
     if targets == None:
         if highmem:

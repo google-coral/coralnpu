@@ -43,6 +43,7 @@ coralflow_test(
     exclude_testcases = {
         "uvm": ["rvv_bf16_matmul_c_test"],
     },
+    shard_count = 5,
     targets = [
         "verilator",
         "vcs",

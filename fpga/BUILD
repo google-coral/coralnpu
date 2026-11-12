@@ -849,7 +849,7 @@ py_test(
         ":rom_test_vmem",
     ],
     main = "sw/rom_boot/rom_boot_sim_test.py",
-    tags = ["exclusive"],
+    tags = ["cpu:{}".format(VERILATOR_THREADS)],
     deps = [
         "//utils/coralnpu_soc_loader:spi_driver",
         "@bazel_tools//tools/python/runfiles",
@@ -888,7 +888,7 @@ py_test(
         ":rom_test_highmem_vmem",
     ],
     main = "sw/rom_boot/rom_boot_sim_test.py",
-    tags = ["exclusive"],
+    tags = ["cpu:{}".format(VERILATOR_THREADS)],
     deps = [
         "//utils/coralnpu_soc_loader:spi_driver",
         "@bazel_tools//tools/python/runfiles",

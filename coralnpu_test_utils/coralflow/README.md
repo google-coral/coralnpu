@@ -138,3 +138,37 @@ bazel test //tests/cocotb:rvv_ml_ops_cocotb_test_npusim --test_filter=core_mini_
 ```
 
 To exclude a long-running test from wildcard `bazel test //...` runs unless explicitly requested, add `tags = ["manual"]` to `coralflow_test(...)`.
+
+## 5. Sharding Multi-Testcase Suites for CI (`shard_count`)
+
+`shard_count` is primarily intended for **CI execution** in conjunction with the repository's multi-worker CI sharding script ([`utils/shard_bazel_tests.py`](../../utils/shard_bazel_tests.py)):
+
+- **Across CI workers (`utils/shard_bazel_tests.py`)**: CI partitions `bazel test //...` targets across multiple worker machines, factoring each target's `size`, `timeout`, `cpu:N` tag, and `shard_count` into its estimated execution weight.
+- **Within a CI worker (`shard_count`)**: Without intra-target sharding, a single `coralflow_test` containing many slow RTL or UVM testcases runs sequentially in one simulator process and becomes the long-pole bottleneck on whichever CI worker receives it. Setting `shard_count = N` splits the suite across `N` parallel Bazel test shards on that worker.
+
+For day-to-day local development, you rarely need `shard_count` directly: `npusim` runs unsharded, and when debugging a single RTL testcase locally with `--test_filter=<name>`, you can pass `--test_sharding_strategy=disabled` so Bazel only launches one simulator instance.
+
+```python
+coralflow_test(
+    name = "test_rvv_ml_ops",
+    size = "enormous",
+    srcs = ["test_rvv_ml_ops.py"],
+    elf = "//tests/cocotb/rvv/ml_ops:rvv_mlop_tests",
+    exclude_testcases = {
+        "uvm": ["rvv_bf16_matmul_c_test"],
+    },
+    shard_count = 5,
+    targets = [
+        "verilator",
+        "vcs",
+        "uvm",
+        "nexus_fpga",
+    ],
+)
+```
+
+### Per-Backend Behavior and Sizing
+
+- **RTL and UVM targets (`verilator`, `vcs`, `uvm`)**: `shard_count` is forwarded to the underlying test rule (`runner.py` reads `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` and distributes enabled testcases round-robin across shards). When `testcases = [...]` is set on `coralflow_test`, `shard_count` is automatically clamped to the backend's filtered testcase count (and omitted if `<= 1`).
+- **Fast ISS and hardware targets (`npusim`, `nexus_fpga`)**: `shard_count` is skipped for `:<name>_npusim` (which runs all testcases in-process in seconds) and `:<name>_nexus_fpga` (`py_binary`).
+- **Sizing and verification**: Keep `shard_count` at or below the minimum number of enabled `@coralflow_test` functions across active backends (accounting for `exclude_testcases`, typically `2`–`8` shards). `utils/run_linters.sh` runs `python3 utils/shard_bazel_tests.py --verify` to ensure `shard_count` never exceeds the enabled testcase or decorator count and that all active tests are accounted for by the sharder.

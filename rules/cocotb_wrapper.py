@@ -18,6 +18,7 @@ import os
 import shutil
 from bazel_tools.tools.python.runfiles import runfiles
 import sys
+import tempfile
 from cocotb_tools.runner import get_runner
 from cocotb_tools.check_results import get_results
 
@@ -403,6 +404,11 @@ if __name__ == "__main__":
 
         sim_build = os.path.dirname(resolved_model)
         test_flags['build_dir'] = sim_build
+        test_tmpdir = os.environ.get("TEST_TMPDIR", "").strip()
+        if not test_flags.get('test_dir') and test_tmpdir:
+            test_flags['test_dir'] = tempfile.mkdtemp(
+                prefix="cocotb_test_", dir=test_tmpdir
+            )
 
         verilator_lib_dir = r.Rlocation(
             "coralnpu_pip_deps_cocotb/cocotb/libs", source_repo=""

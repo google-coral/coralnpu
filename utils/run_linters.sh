@@ -74,6 +74,7 @@ declare -A LINTER_IGNORE_REGEX=(
 
 # --- Initialization ---
 declare -A ALL_FILES=()
+BAZELRC_CHANGED=false
 LINT_TMP=$(mktemp -d)
 trap 'rm -rf "$LINT_TMP"' EXIT
 
@@ -99,6 +100,9 @@ add_file() {
     if [[ -f "${file}" ]]; then
         # Mark as seen
         ALL_FILES["${file}"]=1
+        if [[ "${file}" == ".bazelrc" ]]; then
+            BAZELRC_CHANGED=true
+        fi
         for linter in "${!LINTER_REGEX[@]}"; do
             if [[ "${file}" =~ ${LINTER_REGEX[${linter}]} ]]; then
                 # Check for ignore pattern
@@ -342,7 +346,7 @@ done
 LINTER_FILES=("${FILTERED_LINTER_FILES[@]}")
 
 if [[ ${#LINTER_FILES[@]} -eq 0 ]]; then
-    if [[ "${CHECK_LOCKFILE}" != "true" ]] && [[ ${#UNWRAPPED_COMMITS[@]} -eq 0 ]]; then
+    if [[ "${CHECK_LOCKFILE}" != "true" ]] && [[ ${#UNWRAPPED_COMMITS[@]} -eq 0 ]] && [[ "${BAZELRC_CHANGED}" != "true" ]] && [[ "${CI:-}" != "true" ]] && [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
         echo "✅ No relevant files changed. Skipping linters."
         exit 0
     fi
@@ -464,6 +468,21 @@ if [[ "${RUN_LOCKFILE_CHECK}" == "true" ]] && command -v bazel >/dev/null 2>&1; 
                 TOTAL_FAILED=$((TOTAL_FAILED + 1))
             fi
         fi
+    fi
+fi
+
+# --- Bazel Test Sharding Verification ---
+RUN_SHARD_CHECK=false
+if [[ "${FIX_MODE}" == "false" ]] && [[ -f "${REPO_ROOT}/MODULE.bazel" ]]; then
+    if [[ "${CI:-}" == "true" ]] || [[ "${GITHUB_ACTIONS:-}" == "true" ]] || [[ "${ALL_MODE}" == "true" ]] || [[ -f "${LINT_TMP}/buildifier" ]] || [[ -f "${LINT_TMP}/yapf" ]] || [[ "${BAZELRC_CHANGED}" == "true" ]]; then
+        RUN_SHARD_CHECK=true
+    fi
+fi
+
+if [[ "${RUN_SHARD_CHECK}" == "true" ]] && command -v bazel >/dev/null 2>&1; then
+    echo "🔍 Verifying Bazel test sharding completeness..."
+    if ! python3 "${SCRIPT_DIR}/shard_bazel_tests.py" --verify; then
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
     fi
 fi
 

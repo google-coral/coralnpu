@@ -210,6 +210,7 @@ coralflow_test(
         ":weights_files",
     ],
     highmem = True,
+    shard_count = 2,
     tags = ["manual"],
     targets = [
         "verilator",
@@ -233,6 +234,7 @@ coralflow_test(
         ":weights_files",
     ],
     highmem = True,
+    shard_count = 2,
     tags = ["manual"],
     targets = [
         "verilator",
@@ -256,6 +258,7 @@ coralflow_test(
         ":weights_files",
     ],
     highmem = True,
+    shard_count = 2,
     tags = ["manual"],
     targets = [
         "verilator",
@@ -279,6 +282,7 @@ coralflow_test(
         ":weights_files",
     ],
     highmem = True,
+    shard_count = 4,
     tags = ["manual"],
     targets = [
         "verilator",
@@ -302,6 +306,7 @@ coralflow_test(
         ":weights_files",
     ],
     highmem = True,
+    shard_count = 3,
     tags = ["manual"],
     targets = [
         "verilator",
@@ -326,6 +331,7 @@ coralflow_test(
     srcs = ["cocotb_tests/rvv_int8_matmul_cocotb_test.py"],
     elf = ":rvv_int8_matmul.elf",
     highmem = True,
+    shard_count = 2,
     tags = ["manual"],
     targets = [
         "npusim",

@@ -33,6 +33,18 @@ py_test(
     deps = [":measure_bazel_jobs"],
 )
 
+py_binary(
+    name = "shard_bazel_tests",
+    srcs = ["shard_bazel_tests.py"],
+)
+
+py_test(
+    name = "shard_bazel_tests_test",
+    size = "small",
+    srcs = ["shard_bazel_tests_test.py"],
+    deps = [":shard_bazel_tests"],
+)
+
 py_test(
     name = "check_macro_signatures_test",
     srcs = ["check_macro_signatures.py"],

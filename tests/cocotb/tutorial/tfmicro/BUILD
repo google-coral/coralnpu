@@ -112,6 +112,7 @@ coralflow_test(
         ],
     },
     highmem = True,
+    shard_count = 4,
     targets = [
         "npusim",
         "verilator",
@@ -174,6 +175,7 @@ coralflow_test(
         ],
     },
     highmem = True,
+    shard_count = 4,
     targets = [
         "npusim",
         "verilator",
@@ -216,6 +218,7 @@ coralflow_test(
         ],
     },
     highmem = True,
+    shard_count = 2,
     targets = [
         "npusim",
         "verilator",
@@ -242,6 +245,7 @@ coralflow_test(
     srcs = ["cocotb_fully_connected.py"],
     elf = ":fully_connected_test.elf",
     highmem = True,
+    shard_count = 2,
     targets = [
         "npusim",
         "verilator",

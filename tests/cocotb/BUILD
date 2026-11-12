@@ -328,6 +328,7 @@ coralflow_test(
         ],
     },
     hdl_toplevel = "CoreMiniAxi",
+    shard_count = 8,
     targets = [
         "verilator",
         "vcs",
@@ -381,6 +382,7 @@ coralflow_test(
         ],
     },
     hdl_toplevel = "RvvCoreMiniAxi",
+    shard_count = 8,
     targets = [
         "verilator",
         "vcs",
@@ -412,6 +414,7 @@ coralflow_test(
     srcs = ["core_mini_axi_debug.py"],
     data = COCOTB_DEBUG_TEST_BINARY_TARGETS,
     hdl_toplevel = "CoreMiniAxi",
+    shard_count = 4,
     targets = [
         "verilator",
         "vcs",
@@ -425,6 +428,7 @@ coralflow_test(
     srcs = ["core_mini_axi_debug.py"],
     data = COCOTB_DEBUG_TEST_BINARY_TARGETS,
     hdl_toplevel = "RvvCoreMiniAxi",
+    shard_count = 4,
     targets = [
         "verilator",
         "vcs",
@@ -450,6 +454,7 @@ coralflow_test(
         ],
     },
     hdl_toplevel = "RvvCoreMiniAxi",
+    shard_count = 8,
     targets = [
         "verilator",
         "vcs",
@@ -471,6 +476,7 @@ coralflow_test(
     srcs = ["rvv_assembly_cocotb_test.py"],
     data = ["//tests/cocotb/rvv:rvv_assem_tests"],
     hdl_toplevel = "RvvCoreMiniAxi",
+    shard_count = 8,
     targets = [
         "verilator",
     ],
@@ -525,6 +531,7 @@ coralflow_test(
     ],
     hdl_toplevel = "RvvCoreMiniHighmemAxi",
     highmem = True,
+    shard_count = 4,
     targets = [
         "verilator",
         "vcs",
@@ -549,6 +556,7 @@ coralflow_test(
         "//tests/cocotb/rvv/ml_ops:rvv_matmul_itcm512kb_dtcm512kb.elf",
     ],
     hdl_toplevel = "RvvCoreMini_ITCM512KB_DTCM512KBAxi",
+    shard_count = 3,
     targets = [
         "verilator",
         "vcs",
@@ -827,6 +835,7 @@ coralflow_test(
         ],
     },
     hdl_toplevel = "RvvCoreMiniAxi",
+    shard_count = 8,
     targets = [
         "verilator",
         "vcs",
@@ -853,6 +862,7 @@ coralflow_test(
         ],
     },
     hdl_toplevel = "VmeCoreMiniAxi",
+    shard_count = 8,
     targets = [
         "verilator",
         "vcs",
@@ -879,6 +889,7 @@ coralflow_test(
             "vmsge_vx_test",
         ],
     },
+    shard_count = 8,
     targets = [
         "verilator",
         "vcs",
@@ -899,6 +910,7 @@ coralflow_test(
         "//tests/cocotb/rvv/arithmetics:rvv_arith_tests",
     ],
     hdl_toplevel = "RvvCoreMiniAxi",
+    shard_count = 8,
     targets = [
         "verilator",
     ],
@@ -933,6 +945,7 @@ coralflow_test(
     exclude_testcases = {
         "uvm": ["core_mini_rvv_bf16_matmul_c_test"],
     },
+    shard_count = 5,
     targets = [
         "verilator",
         "vcs",
@@ -1068,6 +1081,7 @@ coralflow_test(
             "m4",
         ]
     ],
+    shard_count = 4,
     targets = [
         "verilator",
         "vcs",
@@ -1132,6 +1146,7 @@ coralflow_test(
     ],
     hdl_toplevel = "RvvCoreMiniHighmemAxi",
     highmem = True,
+    shard_count = 4,
     targets = [
         "verilator",
         "vcs",
@@ -1158,6 +1173,7 @@ coralflow_test(
         ],
     },
     hdl_toplevel = "CoreMiniAxi",
+    shard_count = 8,
     targets = [
         "verilator",
         "vcs",
@@ -1181,6 +1197,7 @@ coralflow_test(
         ],
     },
     hdl_toplevel = "RvvCoreMiniAxi",
+    shard_count = 8,
     targets = [
         "verilator",
         "vcs",
