@@ -14,6 +14,7 @@
 
 import argparse
 import cocotb_tools
+import glob
 import os
 import shutil
 from bazel_tools.tools.python.runfiles import runfiles
@@ -259,6 +260,16 @@ if __name__ == "__main__":
         test_args += test_arg.split(" ")
     test_flags['test_args'] = test_args
 
+    # The bazel rule joins a multi-entry test_module list into one
+    # space-separated shell token (rules/coco_tb.bzl:_pymodules_to_argstring),
+    # so argparse delivers a list whose only item may contain spaces. Split it
+    # the same way test_args is split above so cocotb receives distinct module
+    # names.
+    test_modules = []
+    for test_module in test_flags['test_module']:
+        test_modules += test_module.split(" ")
+    test_flags['test_module'] = test_modules
+
     if args.jobs:
         jobs = args.jobs
     else:
@@ -481,5 +492,25 @@ if __name__ == "__main__":
             os.environ.pop('COCOTB_TEST_FILTER', None)
 
     results_xml = runner.test(**test_flags)
+
+    # Verilator writes wave files (FST/VCD) into the sandboxed build_dir and
+    # they would be lost at sandbox teardown. Persist them into Bazel's
+    # undeclared outputs so callers can retrieve them from
+    # testlogs/<pkg>/<name>/test.outputs/.
+    if args.sim == "verilator" and args.waves:
+        output_dir = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
+        build_dir = test_flags.get("build_dir")
+        if output_dir and build_dir and os.path.isdir(build_dir):
+            for pattern in ("*.fst", "*.vcd"):
+                for src in glob.glob(os.path.join(build_dir, pattern)):
+                    dst = os.path.join(output_dir, os.path.basename(src))
+                    try:
+                        shutil.copy2(src, dst)
+                        print(f"[cocotb_wrapper] wave captured: {dst}")
+                    except OSError as exc:
+                        print(
+                            f"[cocotb_wrapper] warn: cannot copy {src}: {exc}"
+                        )
+
     (num_tests, num_failed) = get_results(results_xml)
     sys.exit(1 if (num_failed > 0 or num_tests == 0) else 0)
