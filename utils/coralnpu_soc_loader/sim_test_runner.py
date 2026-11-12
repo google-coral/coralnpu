@@ -159,6 +159,7 @@ class SimTestRunner:
             return 1
 
         port = find_free_port()
+        jtag_port = find_free_port()
         sim_env = os.environ.copy()
         sim_env["SPI_DPI_PORT"] = str(port)
 
@@ -175,13 +176,15 @@ class SimTestRunner:
 
         try:
             # Start simulator
-            sim_cmd = [sim_bin_path]
+            sim_cmd = [sim_bin_path, f"+jtagdpi_port={jtag_port}"]
             if self.trace_file:
                 sim_cmd.append(f"--trace={self.trace_file}")
             if self.loader_mode == "backdoor":
                 sim_cmd.append(f"--load_elf={self.elf_file}")
 
-            logging.warning(f"SIM_TEST: Starting simulator on port {port}")
+            logging.warning(
+                f"SIM_TEST: Starting simulator on SPI port {port}, JTAG port {jtag_port}"
+            )
             self.sim_proc = subprocess.Popen(
                 sim_cmd,
                 env=sim_env,
