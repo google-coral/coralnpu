@@ -41,10 +41,7 @@ def _chisel_emit_resource_estimator(_os, _input_size):
     return {"cpu": _CHISEL_RUN_CPUS, "memory": 2048}
 
 def _chisel_emit_verilog_impl(ctx):
-    rule_dir = ctx.bin_dir.path
-    if ctx.label.package:
-        rule_dir = rule_dir + "/" + ctx.label.package
-    args = ["--target-dir=" + rule_dir]
+    args = ["--target-dir=" + ctx.outputs.outs[0].dirname]
     for flag in ctx.attr.gen_flags:
         for tok in flag.split(" "):
             if tok:
