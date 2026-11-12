@@ -53,6 +53,11 @@ coralnpu_v2_binary(
 )
 
 coralnpu_v2_binary(
+    name = "load_fault_x0",
+    srcs = ["load_fault_x0.cc"],
+)
+
+coralnpu_v2_binary(
     name = "store_fault_0",
     srcs = ["store_fault_0.cc"],
 )
@@ -92,6 +97,7 @@ filegroup(
         ":instr_fault.elf",
         ":load_fault_0.elf",
         ":load_fault_1.elf",
+        ":load_fault_x0.elf",
         ":store_fault_0.elf",
         ":store_fault_1.elf",
         ":vectored_exception_trap.elf",

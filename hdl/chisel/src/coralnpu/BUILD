@@ -110,6 +110,19 @@ chisel_library(
     ],
 )
 
+chisel_test(
+    name = "coralnpu_retirement_buffer_tests",
+    size = "medium",
+    srcs = [
+        "RetirementBufferSpec.scala",
+    ],
+    deps = [
+        ":coralnpu_base",
+        ":retirement_buffer",
+        "//hdl/chisel/src/common:testing",
+    ],
+)
+
 chisel_library(
     name = "coralnpu_rvv",
     srcs = [

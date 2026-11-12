@@ -65,10 +65,11 @@ class RetirementBufferIO(p: Parameters) extends Bundle {
   *     all preceding instructions are completed.
   */
 class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
-  val io            = IO(new RetirementBufferIO(p))
-  val idxWidth      = p.retirementBufferIdxWidth
-  val noWriteRegIdx = ~0.U(idxWidth.W)
-  val storeRegIdx   = (noWriteRegIdx - 1.U)
+  val io             = IO(new RetirementBufferIO(p))
+  val idxWidth       = p.retirementBufferIdxWidth
+  val noWriteRegIdx  = ~0.U(idxWidth.W)
+  val storeRegIdx    = (noWriteRegIdx - 1.U)
+  val loadZeroRegIdx = 0.U(idxWidth.W)
   class Instruction extends Bundle {
     val addr = UInt(p.programCounterBits.W)                       // Program counter address
     val inst = if (mini) UInt(0.W) else UInt(p.instructionBits.W) // Instruction bits
@@ -179,7 +180,9 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     } else {
       false.B
     }
-    val store = scalarStore || floatStore || vectorStore
+    val store          = scalarStore || floatStore || vectorStore
+    val scalarLoadZero =
+      (finst.inst(6, 0) === "b0000011".U) && sValid && (sAddr === 0.U) && !isFault
 
     val instr = Wire(new Instruction)
     instr.addr := finst.addr
@@ -194,6 +197,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
         floatValid                -> (fAddr +& p.floatRegfileBaseAddr.U),
         (vectorValid)             -> (vAddr +& p.rvvRegfileBaseAddr.U),
         (sValid && sAddr =/= 0.U) -> sAddr,
+        scalarLoadZero            -> loadZeroRegIdx,
         store                     -> storeRegIdx
       )
     )
@@ -452,6 +456,14 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   // Note: The shift when committing instructions will be handled in a later block.
   val resultUpdate = Wire(Vec(bufferSize, Valid(new InstructionUpdate)))
 
+  val pendingLoadZero = VecInit((0 until bufferSize).map { j =>
+    (j.U < instBuffer.io.nEnqueued) && !resultBuffer(j).valid &&
+    (instBuffer.io.dataOut(j).idx === loadZeroRegIdx)
+  })
+  val firstPendingLoadZero = PriorityEncoder(pendingLoadZero)
+  val lsuLoadZeroDone      = io.writeDataScalar(p.instructionLanes + 1).valid &&
+    (io.writeDataScalar(p.instructionLanes + 1).bits.addr === 0.U)
+
   for (i <- 0 until bufferSize) {
     val bufferEntry = instBuffer.io.dataOut(i)
     val tagWidth    = log2Ceil(bufferSize)
@@ -465,7 +477,9 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
 
     // Check which incoming (scalar,float) write port matches this entry's needed address.
     val scalarWriteIdxMap =
-      io.writeDataScalar.map(x => x.valid && (x.bits.addr === bufferEntry.idx))
+      io.writeDataScalar.map(x =>
+        x.valid && (bufferEntry.idx =/= loadZeroRegIdx) && (x.bits.addr === bufferEntry.idx)
+      )
     val floatWriteIdxMap = io.writeDataFloat
       .map(y =>
         y.map(x =>
@@ -584,12 +598,16 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     // If the entry is active and its data dependency is met (or it has no dependency)...
     // Special care here for vector, as multiple instructions are allowed to be dispatched for the same destination register.
     // This differs from how the scalar/float scoreboards restrict dispatch.
+    val loadZeroReady =
+      (bufferEntry.idx === loadZeroRegIdx) && pendingLoadZero.asUInt.orR &&
+        (i.U === firstPendingLoadZero) && lsuLoadZeroDone
     val storeReady =
       (storeComplete.valid && storeComplete.bits === bufferEntry.addr) ||
         (bufferEntry.isVector && tileDe2RtMatch)
     val dataReady = (scalarWriteIdxMap.reduce(_ | _) || floatWriteIdxMap.reduce(
       _ | _
-    ) || vectorReady || nonWritingInstr || (bufferEntry.isTile && tileReady) || (storeInstr && storeReady))
+    ) || vectorReady || nonWritingInstr || loadZeroReady ||
+      (bufferEntry.isTile && tileReady) || (storeInstr && storeReady))
     val isControlFlow = bufferEntry.isControlFlow
     val isBranch      = bufferEntry.isBranch
     // For the last entry in the buffer, we can't see the next instruction yet (it hasn't been enqueued or wrapped visibly).
@@ -809,7 +827,11 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       debug.inst(i).bits.data := MuxOR(valid && !mini.B, resultUpdate(i).bits.result)
       debug.inst(i).bits.idx  := MuxOR(
         valid,
-        Mux(resultUpdate(i).bits.trap, noWriteRegIdx, instBuffer.io.dataOut(i).idx)
+        Mux(
+          resultUpdate(i).bits.trap || instBuffer.io.dataOut(i).idx === loadZeroRegIdx,
+          noWriteRegIdx,
+          instBuffer.io.dataOut(i).idx
+        )
       )
       debug.inst(i).bits.trap := MuxOR(valid, resultUpdate(i).bits.trap)
       val tagWidth = log2Ceil(bufferSize)
