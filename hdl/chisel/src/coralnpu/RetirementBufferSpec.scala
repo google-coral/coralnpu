@@ -398,6 +398,48 @@ class RetirementBufferSpec extends AnyFreeSpec with ChiselSim {
     dut.io.empty.expect(true.B)
   }
 
+  // Stores at the same PC from two loop iterations complete one per storeComplete.
+  private def testSamePcStoresCompleteInOrder(dut: RetirementBuffer, p: Parameters): Unit = {
+    resetDut(dut, p)
+
+    // Lanes 0 and 1: sw a1, 0(a0) (0x00b52023) at PC 0x20, from two loop iterations.
+    for (lane <- 0 until 2) {
+      dut.io.inst(lane).valid.poke(true.B)
+      dut.io.inst(lane).bits.addr.poke(0x20.U)
+      dut.io.inst(lane).bits.inst.poke(0x00b52023L.U)
+    }
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    // The LSU finishes the older store.
+    dut.io.storeComplete.valid.poke(true.B)
+    dut.io.storeComplete.bits.poke(0x20.U)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    // The registered storeComplete retires only the older store.
+    dut.io.debug.foreach { debug =>
+      debug.inst(0).valid.expect(true.B)
+      debug.inst(0).bits.pc.expect(0x20.U)
+      debug.inst(1).valid.expect(false.B)
+    }
+    dut.clock.step()
+    dut.io.empty.expect(false.B)
+
+    // The LSU finishes the younger store.
+    dut.io.storeComplete.valid.poke(true.B)
+    dut.io.storeComplete.bits.poke(0x20.U)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    dut.io.debug.foreach { debug =>
+      debug.inst(0).valid.expect(true.B)
+      debug.inst(0).bits.pc.expect(0x20.U)
+    }
+    dut.clock.step()
+    dut.io.empty.expect(true.B)
+  }
+
   "retirement buffer scenarios" in {
     val p = new Parameters()
     p.enableVerification = true
@@ -409,6 +451,7 @@ class RetirementBufferSpec extends AnyFreeSpec with ChiselSim {
       testDecodeFaultSkipsCompletedJump(dut, p)
       testLoadFaultMarksPendingEntry(dut, p)
       testDecodeFaultJumpRetires(dut, p)
+      testSamePcStoresCompleteInOrder(dut, p)
     }
   }
 
@@ -418,6 +461,7 @@ class RetirementBufferSpec extends AnyFreeSpec with ChiselSim {
     simulate(new RetirementBuffer(p, mini = true)) { dut =>
       testLoadZeroFault(dut, p)
       testDecodeFaultSkipsCompletedJump(dut, p)
+      testSamePcStoresCompleteInOrder(dut, p)
     }
   }
 }

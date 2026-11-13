@@ -470,6 +470,15 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   })
   val firstPendingPcFault = PriorityEncoder(pendingPcFaultMatch)
 
+  // A storeComplete completes only the oldest pending store at its PC, so that stores at the
+  // same PC from later loop iterations wait for their own storeComplete.
+  val pendingStorePcMatch = VecInit((0 until bufferSize).map { j =>
+    (j.U < instBuffer.io.nEnqueued) && !resultBuffer(j).valid &&
+    (instBuffer.io.dataOut(j).idx === storeRegIdx) &&
+    (instBuffer.io.dataOut(j).addr === storeComplete.bits)
+  })
+  val firstPendingStore = PriorityEncoder(pendingStorePcMatch)
+
   for (i <- 0 until bufferSize) {
     val bufferEntry = instBuffer.io.dataOut(i)
     val tagWidth    = log2Ceil(bufferSize)
@@ -612,7 +621,7 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       (bufferEntry.idx === loadZeroRegIdx) && pendingLoadZero.asUInt.orR &&
         (i.U === firstPendingLoadZero) && lsuLoadZeroDone
     val storeReady =
-      (storeComplete.valid && storeComplete.bits === bufferEntry.addr) ||
+      (storeComplete.valid && pendingStorePcMatch(i) && (i.U === firstPendingStore)) ||
         (bufferEntry.isVector && tileDe2RtMatch)
     val dataReady = (scalarWriteIdxMap.reduce(_ | _) || floatWriteIdxMap.reduce(
       _ | _

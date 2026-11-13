@@ -72,6 +72,11 @@ coralnpu_v2_binary(
     srcs = ["store_fault_1.cc"],
 )
 
+coralnpu_v2_binary(
+    name = "store_loop_fault",
+    srcs = ["store_loop_fault.cc"],
+)
+
 template_rule(
     coralnpu_v2_binary,
     {
@@ -106,6 +111,7 @@ filegroup(
         ":loop_fault_retire.elf",
         ":store_fault_0.elf",
         ":store_fault_1.elf",
+        ":store_loop_fault.elf",
         ":vectored_exception_trap.elf",
         ":vfwadd_trap.elf",
         ":vfwmul_trap.elf",
