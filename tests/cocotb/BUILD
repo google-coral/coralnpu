@@ -358,6 +358,8 @@ coralflow_test(
     data = COCOTB_TEST_BINARY_TARGETS,
     exclude_testcases = {
         "uvm": [
+            # MPACT reports a different mtval than RTL and Spike for this trap.
+            "branch_align_taken",
             "csr_behavior",
             "csr_illegal_write_test",
             "dma_memcpy_test",

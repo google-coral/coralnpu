@@ -101,6 +101,7 @@ class Bru(p: Parameters, first: Boolean) extends Module {
     val pc             = Output(UInt(p.programCounterBits.W))
     val target         = Flipped(new RegfileBranchTargetIO(p))
     val interlock      = Option.when(first)(Output(Bool()))
+    val bxx_fault      = Option.when(first)(Output(Valid(new FaultManagerOutput(p))))
 
     val fault_manager = Option.when(first)(Input(Valid(Flipped(new FaultManagerOutput(p)))))
   })
@@ -214,7 +215,16 @@ class Bru(p: Parameters, first: Boolean) extends Module {
     )
   )
 
-  io.taken.valid := stateReg.valid && (interrupt_taken || MuxLookup(op, pipeline0Taken)(
+  val bxxAlignFault = if (first) {
+    stateReg.valid && !io.csr.get.out.interrupt &&
+    op.isOneOf(BruOp.BEQ, BruOp.BNE, BruOp.BLT, BruOp.BGE, BruOp.BLTU, BruOp.BGEU) &&
+    isTaken && (stateReg.bits.originalTarget(1, 0) =/= 0.U)
+  } else { false.B }
+
+  io.taken.valid := stateReg.valid && (interrupt_taken || bxxAlignFault || MuxLookup(
+    op,
+    pipeline0Taken
+  )(
     Seq(
       BruOp.JAL   -> (true.B =/= stateReg.bits.fwd),
       BruOp.JALR  -> (true.B =/= stateReg.bits.fwd),
@@ -239,7 +249,7 @@ class Bru(p: Parameters, first: Boolean) extends Module {
   )
   io.pc := stateReg.bits.pcEx
 
-  io.taken.bits := Mux(interrupt_taken, mtvec, stateReg.bits.target)
+  io.taken.bits := Mux(interrupt_taken || bxxAlignFault, mtvec, stateReg.bits.target)
 
   io.rd.valid     := stateReg.valid && stateReg.bits.linkValid
   io.rd.bits.addr := stateReg.bits.linkAddr
@@ -247,7 +257,24 @@ class Bru(p: Parameters, first: Boolean) extends Module {
 
   if (first) {
     io.interlock.get := stateReg.valid &&
-      op.isOneOf(BruOp.EBREAK, BruOp.ECALL, BruOp.MPAUSE, BruOp.MRET, BruOp.FAULT)
+      (bxxAlignFault || op.isOneOf(
+        BruOp.EBREAK,
+        BruOp.ECALL,
+        BruOp.MPAUSE,
+        BruOp.MRET,
+        BruOp.FAULT
+      ))
+    io.bxx_fault.get.valid       := bxxAlignFault
+    io.bxx_fault.get.bits.mepc   := stateReg.bits.pcEx
+    io.bxx_fault.get.bits.mcause := 0.U
+    io.bxx_fault.get.bits.mtval  := stateReg.bits.originalTarget
+    io.bxx_fault.get.bits.decode := false.B
+    if (p.enableRvv) {
+      io.bxx_fault.get.bits.is_rvv.get  := false.B
+      io.bxx_fault.get.bits.rob_tag.get := 0.U
+      io.bxx_fault.get.bits.vstart.get  := MakeInvalid(0.U)
+    }
+
     // Usage Fault.
     val usageFault = stateReg.valid && op.isOneOf(BruOp.EBREAK)
 
@@ -255,7 +282,7 @@ class Bru(p: Parameters, first: Boolean) extends Module {
     io.csr.get.in.mode.bits  := CsrMode.Machine
 
     io.csr.get.in.mepc.valid :=
-      (stateReg.valid && (op === BruOp.ECALL)) ||
+      (stateReg.valid && (op === BruOp.ECALL || bxxAlignFault)) ||
         interrupt_taken ||
         io.fault_manager.get.valid
     io.csr.get.in.mepc.bits := MuxCase(
@@ -268,7 +295,8 @@ class Bru(p: Parameters, first: Boolean) extends Module {
     io.csr.get.in.mcause.valid := (stateReg.valid &&
       (
         usageFault ||
-          (op === BruOp.ECALL)
+          (op === BruOp.ECALL) ||
+          bxxAlignFault
       ) || interrupt_taken || io.fault_manager.get.valid)
 
     io.csr.get.in.mcause.bits := MuxCase(
@@ -277,6 +305,7 @@ class Bru(p: Parameters, first: Boolean) extends Module {
         // RISC-V standard exceptions.
         io.fault_manager.get.valid -> io.fault_manager.get.bits.mcause,
         (op === BruOp.ECALL)       -> 11.U,
+        bxxAlignFault              -> 0.U,
         // CoralNPU-specific things, use the custom reserved region of the encoding space.
         usageFault -> (24 + 1).U,
         // Asynchronous, so lowest priority.
@@ -287,12 +316,15 @@ class Bru(p: Parameters, first: Boolean) extends Module {
     io.csr.get.in.mtval.valid := (stateReg.valid &&
       (
         usageFault ||
-          (op === BruOp.ECALL)
+          (op === BruOp.ECALL) ||
+          bxxAlignFault
       ) || interrupt_taken || io.fault_manager.get.valid)
-    io.csr.get.in.mtval.bits := Mux(
-      io.fault_manager.get.valid,
-      io.fault_manager.get.bits.mtval,
-      0.U
+    io.csr.get.in.mtval.bits := MuxCase(
+      0.U,
+      Seq(
+        io.fault_manager.get.valid -> io.fault_manager.get.bits.mtval,
+        bxxAlignFault              -> stateReg.bits.originalTarget
+      )
     )
 
     // Pipeline will be halted.

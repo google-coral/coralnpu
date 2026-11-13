@@ -18,6 +18,16 @@ load("//rules:utils.bzl", "template_rule")
 package(default_visibility = ["//visibility:public"])
 
 coralnpu_v2_binary(
+    name = "branch_align_not_taken",
+    srcs = ["branch_align_not_taken.cc"],
+)
+
+coralnpu_v2_binary(
+    name = "branch_align_taken",
+    srcs = ["branch_align_taken.cc"],
+)
+
+coralnpu_v2_binary(
     name = "illegal",
     srcs = ["illegal.cc"],
 )
@@ -100,6 +110,8 @@ coralnpu_v2_binary(
 filegroup(
     name = "elf_files",
     srcs = [
+        ":branch_align_not_taken.elf",
+        ":branch_align_taken.elf",
         ":illegal.elf",
         ":instr_align_0.elf",
         ":instr_align_1.elf",

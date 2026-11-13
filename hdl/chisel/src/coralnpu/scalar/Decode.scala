@@ -191,10 +191,15 @@ class DecodedInstruction(p: Parameters) extends Bundle {
   def isDvu(): Bool   = { div || divu || rem || remu || divw || divuw || remw || remuw }
   def isFency(): Bool = { fencei || ebreak || wfi || mpause }
 
+  // A conditional branch whose target offset has bit 1 set (inst[8]). The target is misaligned,
+  // but the branch traps only if it is taken, which Bru decides.
+  def isMisalignedBr(): Bool = { isCondBr() && inst(8) }
+
   // Instructions that should dispatch out of slot 0, with no other instructions
   // dispatched on the same cycle.
   def forceSlot0Only(): Bool = {
-    isFency() || isCsr() || isFloat() || rvvReadsFloatRs1() || rvvWritesFrd() || isVtdiscard()
+    isFency() || isCsr() || isFloat() || rvvReadsFloatRs1() || rvvWritesFrd() || isVtdiscard() ||
+    isMisalignedBr()
   }
 
   // Checks if an instruction is a jump or changes context switch. Instructions
@@ -771,6 +776,8 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
       !io.retirement_buffer_trap_pending &&  // Stall dispatch when a trap is pending
       (!decodedInsts(i)
         .isCsr() || io.retirement_buffer_empty) && // CSRs must wait for ROB to be empty
+      // Branches with a misaligned target must wait for ROB to be empty, like CSRs.
+      (!decodedInsts(i).isMisalignedBr() || io.retirement_buffer_empty) &&
       singleStepInterlock(i) &&
       mpauseInterlock(i)
   )
@@ -876,9 +883,9 @@ class DispatchV2(p: Parameters) extends Dispatch(p) {
     val jalrFault = tryDispatch && bru.valid && (bru.bits === BruOp.JALR) && ((io
       .jalrTarget(i)
       .data & 0x2.U) =/= 0.U) && !io.branchTaken
-    val bxxFault = tryDispatch && bru.valid &&
-      bru.bits.isOneOf(BruOp.BEQ, BruOp.BNE, BruOp.BLT, BruOp.BGE, BruOp.BLTU, BruOp.BGEU) &&
-      ((bru_target & 0x3.U) =/= 0.U) && !io.branchTaken
+    // A conditional branch with a misaligned target faults only when taken, so Bru raises
+    // that fault after evaluating the branch condition.
+    val bxxFault = false.B
     io.jalFault(i)  := jalFault
     io.jalrFault(i) := jalrFault
     io.bxxFault(i)  := bxxFault

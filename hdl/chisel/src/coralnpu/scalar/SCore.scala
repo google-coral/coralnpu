@@ -108,7 +108,6 @@ class SCore(p: Parameters) extends Module {
     }
 
   }
-  rob_io.fault         := fault_manager.io.out
   rob_io.storeComplete := lsu.io.storeComplete
 
   dispatch.io.single_step := csr.io.dm.single_step || csr.io.dm.dcsr_step
@@ -119,6 +118,12 @@ class SCore(p: Parameters) extends Module {
   val bru = (0 until p.instructionLanes).map(x => Seq(Bru(p, x == 0))).reduce(_ ++ _)
   val mlu = Mlu(p)
   val dvu = Dvu(p)
+
+  rob_io.fault := Mux(
+    bru(0).io.bxx_fault.get.valid,
+    bru(0).io.bxx_fault.get,
+    fault_manager.io.out
+  )
 
   // Wire up the core.
   val branchTaken = bru.map(x => x.io.taken.valid).reduce(_ || _)

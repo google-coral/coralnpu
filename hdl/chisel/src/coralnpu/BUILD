@@ -275,6 +275,7 @@ chisel_test(
     size = "medium",
     srcs = [
         "scalar/DecodeTest.scala",
+        "scalar/DispatchBranchAlignTest.scala",
         "scalar/DispatchLsuInterlockTest.scala",
         "scalar/DispatchRvvInterlockTest.scala",
         "scalar/DispatchScoreboardTest.scala",
