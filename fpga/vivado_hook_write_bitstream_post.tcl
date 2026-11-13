@@ -194,6 +194,19 @@ proc create_final_mmi {bram_details_filename output_filename} {
     puts "Successfully converted $input_file to $output_file"
 }
 
+proc stage_artifact {src dst} {
+    if {![file exists $src]} {
+        puts "ERROR: Expected build artifact not found: $src"
+        exit 1
+    }
+    file mkdir [file dirname $dst]
+    file delete -force $dst
+    if {[catch {file link -hard $dst $src}]} {
+        file copy -force $src $dst
+    }
+    puts "INFO: Staged artifact $src -> $dst"
+}
+
 # Define paths relative to the bitstream implementation run directory
 set bit_file "./chip_nexus.bit"
 set mmi_file "./memories.mmi"
@@ -203,26 +216,37 @@ set elf_file "../../calibration_ddr.elf"
 set output_bin_file [string map {.bit .bin} $bit_file]
 set proc_instance "i_ddr4/inst/u_ddr4_mem_intfc/u_ddr_cal_riu/mcs0/inst/microblaze_I"
 
-# --- Step 1: Extract BRAM details ---
-# (Assuming this function writes to a path relative to the current working dir)
-extract_bram_details "bram_details.txt"
+if {[file exists "../../src/xilinx_ddr4_0_0.1_0"]} {
+    # --- Step 1: Extract BRAM details ---
+    extract_bram_details $bram_details_file
 
-# --- Step 2: Create the final MMI file ---
-create_final_mmi "bram_details.txt" "memories.mmi"
+    # --- Step 2: Create the final MMI file ---
+    create_final_mmi $bram_details_file $mmi_file
 
-# --- Step 3: Run updatemem to merge ELF data into the bitstream (in-place) ---
-puts "INFO: Running updatemem to update bitstream in-place..."
-set cmd [list updatemem -meminfo $mmi_file -data $elf_file -bit $bit_file -proc $proc_instance -out $bit_file -force]
+    # --- Step 3: Run updatemem to merge ELF data into the bitstream (in-place) ---
+    puts "INFO: Running updatemem to update bitstream in-place..."
+    set cmd [list updatemem -meminfo $mmi_file -data $elf_file -bit $bit_file -proc $proc_instance -out $bit_file -force]
 
-if {[catch {eval exec $cmd} result]} {
-    puts "ERROR: updatemem failed."
-    puts "  Command executed: $cmd"
-    puts "  Result: $result"
-    exit 1
+    if {[catch {eval exec $cmd} result]} {
+        puts "ERROR: updatemem failed."
+        puts "  Command executed: $cmd"
+        puts "  Result: $result"
+        exit 1
+    } else {
+        puts "INFO: updatemem completed successfully."
+        puts "  Bitstream updated: $bit_file"
+        puts "  Result: $result"
+    }
 } else {
-    puts "INFO: updatemem completed successfully."
-    puts "  Bitstream updated: $bit_file"
-    puts "  Result: $result"
+    puts "INFO: Xilinx DDR4 IP not present; skipping MicroBlaze updatemem stitch."
+    if {[file exists "./chip_nexus.mmi"]} {
+        file copy -force "./chip_nexus.mmi" $mmi_file
+    } else {
+        set mmi_out [open $mmi_file "w"]
+        puts $mmi_out {<?xml version="1.0" encoding="UTF-8"?>}
+        puts $mmi_out {<MemInfo Version="1" Minor="15"/>}
+        close $mmi_out
+    }
 }
 
 # --- Step 4: Convert the updated bitstream to BIN format ---
@@ -235,3 +259,29 @@ if {[catch {write_cfgmem -format BIN -disablebitswap -loadbit "up 0x0 $bit_file"
     puts "INFO: write_cfgmem completed successfully."
     puts "  Output BIN file written to: $output_bin_file"
 }
+
+# --- Step 5: Stage canonical artifacts into sibling exported/ dir for Bazel output_groups ---
+# Run directory is <build_dir>/<system>/synth-vivado/<system>.runs/impl_1, so
+# ../../../../exported resolves to <build_dir>/exported outside the <system>/ TreeArtifact.
+set export_dir [file normalize "../../../../exported"]
+file mkdir $export_dir
+
+stage_artifact $output_bin_file "${export_dir}/chip_nexus.bin"
+stage_artifact $bit_file "${export_dir}/chip_nexus.bit"
+stage_artifact $mmi_file "${export_dir}/memories.mmi"
+
+if {[file exists "./chip_nexus_postroute_physopt.dcp"]} {
+    stage_artifact "./chip_nexus_postroute_physopt.dcp" "${export_dir}/chip_nexus_postroute.dcp"
+} else {
+    stage_artifact "./chip_nexus_routed.dcp" "${export_dir}/chip_nexus_postroute.dcp"
+}
+
+if {[file exists "./chip_nexus_timing_summary_postroute_physopted.rpt"]} {
+    stage_artifact "./chip_nexus_timing_summary_postroute_physopted.rpt" "${export_dir}/chip_nexus_timing_summary.rpt"
+} else {
+    stage_artifact "./chip_nexus_routed_timing.rpt" "${export_dir}/chip_nexus_timing_summary.rpt"
+}
+
+stage_artifact "./chip_nexus_placed_utilization.rpt" "${export_dir}/chip_nexus_placed_utilization.rpt"
+stage_artifact "./chip_nexus_routed_congestion.rpt" "${export_dir}/chip_nexus_routed_congestion.rpt"
+stage_artifact "./chip_nexus_routed_status.rpt" "${export_dir}/chip_nexus_routed_status.rpt"

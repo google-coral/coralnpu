@@ -20,18 +20,20 @@ GCP_LOCATION="${LOCATION:-us}"
 AR_REPO="${REPO:-coralnpu-artifacts}"
 AR_PACKAGE="${PACKAGE:-coralnpu-bitstreams}"
 TARGET_FILE="${TARGET:-chip_nexus.bin}"
+WITH_CHECKPOINT=0
 LIMIT=10
 START_REF=""
 
 usage() {
     echo "Usage:"
-    echo "  get_bitstream.sh (--latest|--ref REF) [options]"
+    echo "  get_bitstream.sh [--ref REF] [--with-checkpoint] [options]"
     echo ""
     echo "Options:"
-    echo "  -r, --ref      The git reference to start searching from"
-    echo "  -n, --limit    Number of git commits to check back (default: ${LIMIT})"
-    echo "  --target       The name of the file to fetch (default: ${TARGET_FILE})"
-    echo "  -h, --help     Display this help message and exit"
+    echo "  -r, --ref              The git reference to start searching from"
+    echo "  -n, --limit            Number of git commits to check back (default: ${LIMIT})"
+    echo "  --target               Target variant name (default: ${TARGET_FILE})"
+    echo "  -c, --with-checkpoint  Also download post-route .dcp and .mmi artifacts"
+    echo "  -h, --help             Display this help message and exit"
     echo ""
     exit 1
 }
@@ -42,6 +44,8 @@ while [[ "$#" -gt 0 ]]; do
             LIMIT="$2"; shift 2 ;;
         --target)
             TARGET_FILE="chip_${2}.bin"; shift 2 ;;
+        -c|--with-checkpoint)
+            WITH_CHECKPOINT=1; shift ;;
         -r|--ref)
             START_REF="$2"; shift 2 ;;
         -h|--help)
@@ -86,20 +90,22 @@ mapfile -t SHA_LIST <<< "${SHAS}"
 EXPECTED_SHA="${SHA_LIST[0]}"
 COMMITS_BEHIND=0
 
+# Artifact Registry Generic format uses colons as delimiters.
+# In the HTTP REST API, these colons MUST be URL-encoded as %3A.
+AR_BASE_URL="https://artifactregistry.googleapis.com/download/v1"
+AR_BASE_URL+="/projects/${GCP_PROJECT}"
+AR_BASE_URL+="/locations/${GCP_LOCATION}"
+AR_BASE_URL+="/repositories/${AR_REPO}"
+
+TARGET_STEM="${TARGET_FILE%.bin}"
+
 for SHA in "${SHA_LIST[@]}"; do
     LAST_SHA="${SHA}"
-
-    # Artifact Registry Generic format uses colons as delimiters.
-    # In the HTTP REST API, these colons MUST be URL-encoded as %3A.
-    URL="https://artifactregistry.googleapis.com/download/v1"
-    URL+="/projects/${GCP_PROJECT}"
-    URL+="/locations/${GCP_LOCATION}"
-    URL+="/repositories/${AR_REPO}"
-    URL+="/files/${AR_PACKAGE}%3A${SHA}%3A${TARGET_FILE}:download?alt=media"
+    BIN_URL="${AR_BASE_URL}/files/${AR_PACKAGE}%3A${SHA}%3A${TARGET_FILE}:download?alt=media"
 
     echo "Checking commit ${SHA:0:8}..."
 
-    if curl -sL --fail -o "${PROJECT_ROOT}/fpga/bitstreams/${TARGET_FILE}" "${URL}"; then
+    if curl -sL --fail -o "${PROJECT_ROOT}/fpga/bitstreams/${TARGET_FILE}" "${BIN_URL}"; then
         echo "SUCCESS: Found artifact for commit ${SHA}"
         if [[ "${SHA}" == "${EXPECTED_SHA}" ]]; then
             echo "[NOTICE] Matched expected bitstream commit (${SHA:0:8}) for ${START_REF}."
@@ -109,6 +115,31 @@ for SHA in "${SHA_LIST[@]}"; do
             echo "[WARNING]   Fetched commit:  ${SHA}" >&2
         fi
         echo "File saved as: ${PROJECT_ROOT}/fpga/bitstreams/${TARGET_FILE}"
+
+        if [[ "${WITH_CHECKPOINT}" -eq 1 ]]; then
+            DCP_FILE="${TARGET_STEM}_postroute.dcp"
+            MMI_FILE="${TARGET_STEM}_memories.mmi"
+            DCP_OUT="${PROJECT_ROOT}/fpga/bitstreams/${DCP_FILE}"
+            MMI_OUT="${PROJECT_ROOT}/fpga/bitstreams/memories.mmi"
+            DCP_URL="${AR_BASE_URL}/files/${AR_PACKAGE}%3A${SHA}%3A${DCP_FILE}:download?alt=media"
+            MMI_URL="${AR_BASE_URL}/files/${AR_PACKAGE}%3A${SHA}%3A${MMI_FILE}:download?alt=media"
+            MMI_FALLBACK_URL="${AR_BASE_URL}/files/${AR_PACKAGE}%3A${SHA}%3Amemories.mmi:download?alt=media"
+
+            echo "Fetching post-route checkpoint (${DCP_FILE})..."
+            if ! curl -sL --fail -o "${DCP_OUT}" "${DCP_URL}"; then
+                echo "ERROR: Checkpoint ${DCP_FILE} not found for commit ${SHA}." >&2
+                exit 1
+            fi
+            echo "File saved as: ${DCP_OUT}"
+
+            echo "Fetching BRAM memory map..."
+            if curl -sL --fail -o "${MMI_OUT}" "${MMI_URL}" || \
+               curl -sL --fail -o "${MMI_OUT}" "${MMI_FALLBACK_URL}"; then
+                echo "File saved as: ${MMI_OUT}"
+            else
+                echo "WARNING: No memories.mmi artifact found for commit ${SHA}." >&2
+            fi
+        fi
         exit 0
     fi
 

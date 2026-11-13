@@ -68,7 +68,6 @@ set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE Explore [get_runs i
 set_param place.sliceLegEffortLimit 2000
 set_param route.enableGlobalHoldIter 1
 
-# If we see the Xilinx DDR core, register the post-bitstream hook to stitch the calibration FW.
-if {[file exists "${workroot}/src/xilinx_ddr4_0_0.1_0"]} {
-    set_property STEPS.WRITE_BITSTREAM.TCL.POST "${workroot}/vivado_hook_write_bitstream_post.tcl" [get_runs impl_1]
-}
+# Register the post-bitstream hook to stitch DDR4 calibration firmware when
+# present, convert the bitstream to BIN format, and stage Bazel output groups.
+set_property STEPS.WRITE_BITSTREAM.TCL.POST "${workroot}/vivado_hook_write_bitstream_post.tcl" [get_runs impl_1]

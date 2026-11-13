@@ -699,6 +699,28 @@ NEXUS_COMMON_CORES = [
     "//fpga/ip/ispyocto:ispyocto_core",
 ] + DDR_CORES
 
+_NEXUS_DEFAULT_OUTPUT_GROUPS = {
+    "all": ["com.google.coralnpu_fpga_chip_nexus_0.1/"],
+}
+
+_NEXUS_BITSTREAM_OUTPUT_GROUPS = {
+    "all": ["com.google.coralnpu_fpga_chip_nexus_0.1/"],
+    "bitstream": [
+        "exported/chip_nexus.bin",
+        "exported/chip_nexus.bit",
+    ],
+    "checkpoint": [
+        "exported/chip_nexus_postroute.dcp",
+        "exported/memories.mmi",
+    ],
+    "reports": [
+        "exported/chip_nexus_placed_utilization.rpt",
+        "exported/chip_nexus_routed_congestion.rpt",
+        "exported/chip_nexus_routed_status.rpt",
+        "exported/chip_nexus_timing_summary.rpt",
+    ],
+}
+
 # Generate Nexus build targets (bitstream, synth_only, and elab_only)
 _NEXUS_NAME_MAP = {
     "build_chip_nexus_" + build_type + c["suffix"] + b["suffix"]: {
@@ -715,6 +737,9 @@ _NEXUS_NAME_MAP = {
             "--MemInitFile=" + c["rom_vmem_file"],
             "--BootAddr=268435456",
         ] if b["is_rom"] else []) + (["--pnr=none"] if build_type in ("synth_only", "elab_only") else []),
+        "output_groups": (
+            _NEXUS_BITSTREAM_OUTPUT_GROUPS if build_type == "bitstream" else _NEXUS_DEFAULT_OUTPUT_GROUPS
+        ),
         "target": "elab" if build_type == "elab_only" else "synth",
     }
     for c in _NEXUS_CONFIGS
@@ -729,9 +754,6 @@ _NEXUS_NAME_MAP = {
 template_rule(
     fusesoc_build,
     _NEXUS_NAME_MAP,
-    output_groups = {
-        "all": ["com.google.coralnpu_fpga_chip_nexus_0.1/"],
-    },
     systems = ["com.google.coralnpu:fpga:chip_nexus:0.1"],
     tags = ["manual"],
 )
