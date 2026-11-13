@@ -33,3 +33,4 @@ dispatch.log
 results_*/
 synthesis/flow_runs.db
 synthesis/telemetry/
+telemetry_reports/

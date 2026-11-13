@@ -123,7 +123,7 @@ def _emit_rtl_target(
     eff_shards = _effective_shard_count(single_kwargs.pop("shard_count", None), testcases)
     if eff_shards != None:
         single_kwargs["shard_count"] = eff_shards
-    env = list(extra_env)
+    env = ["CORALFLOW_SUITE=" + name] + list(extra_env)
     if testcases:
         env.append("CORALFLOW_TESTCASE=" + ",".join([
             _parse_testcase(tc, size)[0]
@@ -178,6 +178,7 @@ def _emit_py_test_target(
             py_kwargs["shard_count"] = eff_shards
     precompile = py_kwargs.pop("precompile", "disabled")
     py_env = {
+        "CORALFLOW_SUITE": name,
         "CORALFLOW_TARGET": backend,
         "CORALFLOW_HIGHMEM": highmem_env,
     }
@@ -232,6 +233,7 @@ def _emit_fpga_target(
     precompile = fpga_kwargs.pop("precompile", "disabled")
     fpga_tags = _unique(["nexus_fpga", "manual"] + tags)
     fpga_env = {
+        "CORALFLOW_SUITE": name,
         "CORALFLOW_TARGET": "nexus_fpga",
         # Physical Nexus FPGA bitstream (chip_nexus.bin) is Highmem by default.
         "CORALFLOW_HIGHMEM": "1",
@@ -268,6 +270,7 @@ def _emit_fpga_target(
             "//coralnpu_test_utils/coralflow:run_fpga_pkg.sh",
             "//coralnpu_test_utils/coralflow:runner.py",
             "//coralnpu_test_utils/coralflow:standalone_runfiles.py",
+            "//coralnpu_test_utils/coralflow:telemetry.py",
             "//coralnpu_test_utils/sim_backends:common_utils.py",
             "//coralnpu_test_utils/sim_backends:fpga_test_fixture.py",
         ]),

@@ -147,6 +147,12 @@ build:no_lsu_mem_check --//tests/uvm:lsu_mem_check=false
 test:no_lsu_mem_check --//tests/uvm:lsu_mem_check=false
 run:no_lsu_mem_check --//tests/uvm:lsu_mem_check=false
 
+# Enable CoralFlow JSON telemetry output (test_telemetry.json / telemetry_reports/<suite>_<target>.json).
+build:coralflow_telemetry --test_env=CORALFLOW_TELEMETRY=1
+test:coralflow_telemetry --test_output=all
+test:coralflow_telemetry --nozip_undeclared_test_outputs
+run:coralflow_telemetry --run_env=CORALFLOW_TELEMETRY=1
+
 # Set preprocessor defines for tflite-micro.
 build --copt=-DTF_LITE_USE_GLOBAL_CMATH_FUNCTIONS
 build --copt=-DTF_LITE_USE_GLOBAL_MIN

@@ -24,6 +24,7 @@ py_library(
     srcs = [
         "base_fixture.py",
         "runner.py",
+        "telemetry.py",
     ],
     deps = [
         requirement("numpy"),
@@ -35,4 +36,5 @@ exports_files([
     "run_fpga_pkg.sh",
     "runner.py",
     "standalone_runfiles.py",
+    "telemetry.py",
 ])

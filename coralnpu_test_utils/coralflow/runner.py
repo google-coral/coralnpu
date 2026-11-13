@@ -25,6 +25,13 @@ import sys
 import time
 from typing import Any, Callable, Coroutine
 
+from coralnpu_test_utils.coralflow.telemetry import (
+    _format_display_path,
+    is_telemetry_enabled,
+    record_test_telemetry,
+    telemetry_cli_scope,
+)
+
 _ASYNC_FIXTURE_METHODS = {
     "check_memory_accessible",
     "load_elf_and_lookup_symbols",
@@ -174,17 +181,86 @@ _TARGET_METADATA = {
     "nexus_fpga": "Physical FPGA Silicon",
 }
 
+_BACKEND_SUFFIXES = (
+    "_nexus_fpga",
+    "_verilator",
+    "_npusim",
+    "_vcs",
+    "_uvm",
+    "_rtl",
+)
+_UNSET: Any = object()
+
 
 def _resolve_test_name(test_func: Callable[..., Any]) -> str:
     """Returns a clean module.function name for the test coroutine."""
-    func_name = getattr(test_func, "__qualname__", test_func.__name__)
+    qualname = getattr(test_func, "__qualname__", test_func.__name__)
+    func_name = test_func.__name__ if "<locals>" in qualname else qualname
     mod = getattr(test_func, "__module__", "")
-    if mod and mod != "__main__":
+    if mod and mod not in ("__main__", "coralnpu_test_utils.coralflow.runner"):
         return f"{mod}.{func_name}"
     if sys.argv and sys.argv[0]:
         script = os.path.splitext(os.path.basename(sys.argv[0]))[0]
-        return f"{script}.{func_name}"
+        if script:
+            return f"{script}.{func_name}"
     return func_name
+
+
+def _suite_from_test_target() -> str | None:
+    """Extracts the base suite name from Bazel's TEST_TARGET env var."""
+    test_target = os.environ.get("TEST_TARGET", "").strip()
+    if not test_target:
+        return None
+    target_name = test_target.rsplit(":", 1)[-1].strip()
+    if not target_name:
+        return None
+    for suffix in _BACKEND_SUFFIXES:
+        if target_name.endswith(suffix) and len(target_name) > len(suffix):
+            return target_name[:-len(suffix)]
+    return target_name
+
+
+def _split_suite_and_test(full_test_name: str) -> tuple[str, str]:
+    """Splits 'suite.test_func' into (suite, test_func), preferring target metadata."""
+    short_name = (
+        full_test_name.rsplit(".", 1)[1]
+        if "." in full_test_name else full_test_name
+    )
+
+    env_suite = os.environ.get("CORALFLOW_SUITE", "").strip()
+    if env_suite:
+        return env_suite, short_name
+
+    target_suite = _suite_from_test_target()
+    if target_suite:
+        return target_suite, short_name
+
+    if "." in full_test_name:
+        raw_suite = full_test_name.rsplit(".", 1)[0]
+        parts = [p for p in raw_suite.split(".") if p and p != "<locals>"]
+        if parts:
+            return ".".join(parts), short_name
+
+    if sys.argv and sys.argv[0]:
+        script = os.path.splitext(os.path.basename(sys.argv[0]))[0]
+        if script:
+            return script, short_name
+    return "coralflow", short_name
+
+
+def _classify_outcome(error_obj: BaseException | None) -> tuple[str, bool]:
+    """Classifies a test outcome as (status, is_passed)."""
+    if error_obj is None:
+        return "PASSED", True
+    exc_type = type(error_obj)
+    exc_name = exc_type.__name__
+    exc_mod = getattr(exc_type, "__module__", "")
+    if exc_name == "TestSuccess" and exc_mod.startswith("cocotb"):
+        return "PASSED", True
+    if (exc_name == "Skipped" and exc_mod.startswith("_pytest")) or (
+            exc_name == "SkipTest" and exc_mod.startswith("unittest")):
+        return "SKIPPED", False
+    return "FAILED", False
 
 
 def _format_and_print_banner(
@@ -193,21 +269,25 @@ def _format_and_print_banner(
     passed: bool,
     duration_sec: float,
     fixture: Any = None,
-    error: Exception | None = None,
+    error: BaseException | None = None,
     dut: Any = None,
+    telemetry_path: str | None = None,
+    cycles: int | None = _UNSET,
+    status: str | None = None,
 ) -> None:
     """Prints a standardized universal CoralFlow execution banner to stdout and logs."""
     normalized_target = target.lower().strip()
     backend_desc = _TARGET_METADATA.get(normalized_target, "Target Backend")
 
-    cycles = None
-    if passed and fixture and hasattr(fixture, "get_cycle_count"):
-        try:
-            cycles = fixture.get_cycle_count()
-        except Exception:
-            pass
+    if cycles is _UNSET:
+        cycles = None
+        if passed and fixture and hasattr(fixture, "get_cycle_count"):
+            try:
+                cycles = fixture.get_cycle_count()
+            except Exception:
+                pass
 
-    status_str = "PASSED" if passed else "FAILED"
+    status_str = status or ("PASSED" if passed else "FAILED")
     banner_lines = [
         "=" * 88,
         f"[CORALFLOW] TEST {status_str}: {test_name}",
@@ -218,8 +298,12 @@ def _format_and_print_banner(
     ]
     if cycles is not None:
         banner_lines.append(f"  Core Cycles      : {cycles:,} cycles")
+    if telemetry_path:
+        banner_lines.append(
+            f"  Telemetry File   : {_format_display_path(telemetry_path)}"
+        )
 
-    if error is not None:
+    if error is not None and status_str == "FAILED":
         err_cls = error.__class__.__name__
         first_line = str(error).strip().splitlines()[0] if str(error).strip(
         ) else "Test failed"
@@ -244,6 +328,74 @@ async def _close_fixture(fixture: Any) -> None:
         res = fixture.close()
         if asyncio.iscoroutine(res):
             await res
+
+
+async def _execute_test_with_telemetry(
+    test_func: Callable[..., Coroutine[Any, Any, None]],
+    fixture: Any,
+    test_name: str,
+    target: str,
+    dut: Any = None,
+) -> None:
+    """Executes a test coroutine on fixture and records telemetry if enabled."""
+    start_time = time.perf_counter()
+    error_obj: BaseException | None = None
+    try:
+        try:
+            await test_func(fixture)
+        except BaseException as e:
+            error_obj = e
+            raise
+        finally:
+            duration = time.perf_counter() - start_time
+            status_str, passed = _classify_outcome(error_obj)
+            cycles: int | None = None
+            if passed and fixture and hasattr(fixture, "get_cycle_count"):
+                try:
+                    cycles = fixture.get_cycle_count()
+                except Exception:
+                    cycles = None
+
+            telemetry_path: str | None = None
+            try:
+                if is_telemetry_enabled():
+                    suite, short_name = _split_suite_and_test(test_name)
+                    board_id = getattr(fixture, "usb_serial", None) or None
+                    err_summary = None
+                    if error_obj is not None and status_str == "FAILED":
+                        err_cls = error_obj.__class__.__name__
+                        first_line = (
+                            str(error_obj).strip().splitlines()[0]
+                            if str(error_obj).strip() else "Test failed"
+                        )
+                        err_summary = f"{err_cls}: {first_line}"
+                    telemetry_path = record_test_telemetry(
+                        suite=suite,
+                        test_name=short_name,
+                        target=target,
+                        status=status_str,
+                        cycles=cycles,
+                        wall_time_sec=duration,
+                        board_id=board_id,
+                        error=err_summary,
+                    )
+            except Exception as tel_err:
+                logging.warning("Failed to record test telemetry: %s", tel_err)
+
+            _format_and_print_banner(
+                test_name=test_name,
+                target=target,
+                passed=passed,
+                duration_sec=duration,
+                fixture=fixture,
+                error=error_obj,
+                dut=dut,
+                telemetry_path=telemetry_path,
+                cycles=cycles,
+                status=status_str,
+            )
+    finally:
+        await _close_fixture(fixture)
 
 
 _REGISTERED_TESTS: dict[str, Callable[..., None]] = {}
@@ -314,32 +466,13 @@ def coralflow_test(*args: Any, **fixture_kwargs: Any) -> Any:
                 fixture = await _create_fixture(
                     target, dut=dut, **fixture_kwargs
                 )
-                start_time = time.perf_counter()
-                try:
-                    await test_func(fixture)
-                    duration = time.perf_counter() - start_time
-                    _format_and_print_banner(
-                        test_name=test_name,
-                        target=target,
-                        passed=True,
-                        duration_sec=duration,
-                        fixture=fixture,
-                        dut=dut,
-                    )
-                except Exception as e:
-                    duration = time.perf_counter() - start_time
-                    _format_and_print_banner(
-                        test_name=test_name,
-                        target=target,
-                        passed=False,
-                        duration_sec=duration,
-                        fixture=fixture,
-                        error=e,
-                        dut=dut,
-                    )
-                    raise
-                finally:
-                    await _close_fixture(fixture)
+                await _execute_test_with_telemetry(
+                    test_func=test_func,
+                    fixture=fixture,
+                    test_name=test_name,
+                    target=target,
+                    dut=dut,
+                )
 
             return cocotb_wrapper
 
@@ -352,30 +485,12 @@ def coralflow_test(*args: Any, **fixture_kwargs: Any) -> Any:
 
                 async def _run() -> None:
                     fixture = await _create_fixture(target, **merged_kwargs)
-                    start_time = time.perf_counter()
-                    try:
-                        await test_func(fixture)
-                        duration = time.perf_counter() - start_time
-                        _format_and_print_banner(
-                            test_name=test_name,
-                            target=target,
-                            passed=True,
-                            duration_sec=duration,
-                            fixture=fixture,
-                        )
-                    except Exception as e:
-                        duration = time.perf_counter() - start_time
-                        _format_and_print_banner(
-                            test_name=test_name,
-                            target=target,
-                            passed=False,
-                            duration_sec=duration,
-                            fixture=fixture,
-                            error=e,
-                        )
-                        raise
-                    finally:
-                        await _close_fixture(fixture)
+                    await _execute_test_with_telemetry(
+                        test_func=test_func,
+                        fixture=fixture,
+                        test_name=test_name,
+                        target=target,
+                    )
 
                 asyncio.run(_run())
 
@@ -475,7 +590,7 @@ def coralflow_main(argv: list[str] | None = None) -> None:
 
     shard_index, total_shards = _resolve_shard_config()
 
-    parser = argparse.ArgumentParser(add_help=False)
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--testcase", default=None)
     parser.add_argument("-v", "--verbose", action="store_true", default=False)
     ns, _ = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
@@ -503,65 +618,68 @@ def coralflow_main(argv: list[str] | None = None) -> None:
         or os.environ.get("CORALFLOW_TESTCASE") or ""
     ).strip()
 
-    if (get_target_environment() == "uvm" and os.environ.get(
-            "CORALFLOW_UVM_BATCH", "").strip() in ("1", "true", "True")):
-        try:
-            elf_paths = _discover_uvm_batch_elfs(
-                excluded=excluded,
-                tc_filter=tc_filter,
-                shard_index=shard_index,
-                total_shards=total_shards,
-            )
-        except ValueError:
-            if not tc_filter or not any(
-                    req in name
-                    for req in (t.strip()
-                                for t in tc_filter.split(",")
-                                if t.strip())
-                    for name in _REGISTERED_TESTS):
-                raise
-            elf_paths = None
+    with telemetry_cli_scope(argv):
+        if (get_target_environment() == "uvm" and os.environ.get(
+                "CORALFLOW_UVM_BATCH", "").strip() in ("1", "true", "True")):
+            try:
+                elf_paths = _discover_uvm_batch_elfs(
+                    excluded=excluded,
+                    tc_filter=tc_filter,
+                    shard_index=shard_index,
+                    total_shards=total_shards,
+                )
+            except ValueError:
+                if not tc_filter or not any(
+                        req in name
+                        for req in (t.strip()
+                                    for t in tc_filter.split(",")
+                                    if t.strip())
+                        for name in _REGISTERED_TESTS):
+                    raise
+                elf_paths = None
 
-        if elf_paths is not None:
-            if not elf_paths:
+            if elf_paths is not None:
+                if not elf_paths:
+                    return
+
+                async def _uvm_batch_coro(fixture: Any) -> None:
+                    await fixture.run_batch(elf_paths, timeout_cycles=200000)
+
+                _uvm_batch_coro.__name__ = "uvm_batch_test"
+                _uvm_batch_coro.__qualname__ = "uvm_batch_test"
+                batch_wrapper = coralflow_test(_uvm_batch_coro)
+                batch_wrapper()
                 return
 
-            async def _uvm_batch_coro(fixture: Any) -> None:
-                await fixture.run_batch(elf_paths, timeout_cycles=200000)
+        available = {
+            name: fn
+            for name, fn in _REGISTERED_TESTS.items()
+            if name not in excluded
+        }
 
-            _uvm_batch_coro.__name__ = "uvm_batch_test"
-            _uvm_batch_coro.__qualname__ = "uvm_batch_test"
-            batch_wrapper = coralflow_test(_uvm_batch_coro)
-            batch_wrapper()
-            return
+        if not tc_filter:
+            selected = list(available.values())
+        else:
+            requested = [t.strip() for t in tc_filter.split(",") if t.strip()]
+            selected = []
+            for req in requested:
+                if req in excluded:
+                    continue
+                if req in available:
+                    selected.append(available[req])
+                else:
+                    matches = [
+                        fn for name, fn in available.items() if req in name
+                    ]
+                    if not matches:
+                        raise ValueError(
+                            f"No registered @coralflow_test matches testcase '{req}'. "
+                            f"Available: {list(available)}"
+                        )
+                    selected.extend(matches)
 
-    available = {
-        name: fn
-        for name, fn in _REGISTERED_TESTS.items()
-        if name not in excluded
-    }
+        if total_shards > 1:
+            selected = selected[shard_index::total_shards]
 
-    if not tc_filter:
-        selected = list(available.values())
-    else:
-        requested = [t.strip() for t in tc_filter.split(",") if t.strip()]
-        selected = []
-        for req in requested:
-            if req in excluded:
-                continue
-            if req in available:
-                selected.append(available[req])
-            else:
-                matches = [fn for name, fn in available.items() if req in name]
-                if not matches:
-                    raise ValueError(
-                        f"No registered @coralflow_test matches testcase '{req}'. "
-                        f"Available: {list(available)}"
-                    )
-                selected.extend(matches)
-
-    if total_shards > 1:
-        selected = selected[shard_index::total_shards]
-
-    for wrapper in selected:
-        wrapper()
+        for wrapper in selected:
+            wrapper()

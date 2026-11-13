@@ -117,6 +117,12 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         super().setUp()
+        from coralnpu_test_utils.coralflow.telemetry import (
+            reset_telemetry_session,
+        )
+
+        reset_telemetry_session()
+        self.addCleanup(reset_telemetry_session)
         self._orig_env = dict(os.environ)
         _REGISTERED_TESTS.clear()
 
@@ -545,6 +551,479 @@ class RunnerTest(unittest.IsolatedAsyncioTestCase):
         coralflow_main(argv=["--testcase", "b_test"])
         self.assertEqual(len(batch_calls), 1)
         self.assertEqual(batch_calls[0][0], ["pkg/b_test.elf"])
+
+    @mock.patch("coralnpu_test_utils.coralflow.runner._create_fixture")
+    def test_telemetry_nested_json_via_cli_and_env(self, mock_create):
+        import json
+        import tempfile
+        from coralnpu_test_utils.coralflow.telemetry import (
+            is_telemetry_enabled,
+            record_test_telemetry,
+        )
+
+        class FpgaMockFixture(MockFixture):
+            usb_serial = "NEXUS-0042"
+
+        mock_create.side_effect = lambda *args, **kwargs: FpgaMockFixture()
+
+        @coralflow_test
+        async def test_alpha(fixture: BaseCoralNPUFixture):
+            await fixture.run_to_halt()
+
+        @coralflow_test
+        async def test_beta(fixture: BaseCoralNPUFixture):
+            await fixture.run_to_halt()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_file = os.path.join(tmpdir, "custom_telemetry.json")
+            base_env = {
+                "GIT_COMMIT": "b6bf557f",
+                "CORALFLOW_TELEMETRY": "0",
+                "CORALFLOW_TELEMETRY_OUTPUT": "",
+                "BUILD_ID": "",
+                "TEST_UNDECLARED_OUTPUTS_DIR": "",
+            }
+            with mock.patch.dict(os.environ, base_env):
+                self.assertFalse(is_telemetry_enabled(argv=[]))
+                coralflow_main(
+                    argv=["--telemetry", "--telemetry-output", out_file]
+                )
+                # coralflow_main must not leak env mutations
+                self.assertEqual(os.environ["CORALFLOW_TELEMETRY"], "0")
+                self.assertEqual(os.environ["CORALFLOW_TELEMETRY_OUTPUT"], "")
+
+            self.assertTrue(os.path.exists(out_file))
+            # No stray .lock files in output directory
+            self.assertEqual(os.listdir(tmpdir), ["custom_telemetry.json"])
+
+            with open(out_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.assertEqual(data["git_commit"], "b6bf557f")
+            self.assertEqual(data["target"], "npusim")
+            self.assertEqual(data["board_id"], "NEXUS-0042")
+            self.assertNotIn("<locals>", data["suite"])
+            self.assertNotIn("is_cycle_accurate", data)
+            self.assertIn("timestamp", data)
+            self.assertIn("tests", data)
+            self.assertIn("test_alpha", data["tests"])
+            self.assertIn("test_beta", data["tests"])
+            self.assertEqual(data["tests"]["test_alpha"]["status"], "PASSED")
+            self.assertEqual(data["tests"]["test_alpha"]["cycles"], 42)
+            self.assertIsInstance(
+                data["tests"]["test_alpha"]["wall_time_sec"], float
+            )
+            self.assertEqual(data["tests"]["test_beta"]["status"], "PASSED")
+            self.assertEqual(data["tests"]["test_beta"]["cycles"], 42)
+
+            # Verify a failing test in the same session updates the report
+            record_test_telemetry(
+                suite=data["suite"],
+                test_name="test_gamma",
+                target="npusim",
+                status="FAILED",
+                cycles=None,
+                wall_time_sec=0.12,
+                output_path=out_file,
+                error="AssertionError: mismatch",
+            )
+
+            with open(out_file, "r", encoding="utf-8") as f:
+                updated = json.load(f)
+
+            self.assertIn("test_alpha", updated["tests"])
+            self.assertIn("test_beta", updated["tests"])
+            self.assertEqual(
+                updated["tests"]["test_gamma"]["status"], "FAILED"
+            )
+            self.assertIsNone(updated["tests"]["test_gamma"]["cycles"])
+            self.assertEqual(
+                updated["tests"]["test_gamma"]["error"],
+                "AssertionError: mismatch",
+            )
+
+    @mock.patch("coralnpu_test_utils.coralflow.runner.record_test_telemetry")
+    @mock.patch("coralnpu_test_utils.coralflow.runner._create_fixture")
+    def test_telemetry_error_does_not_skip_fixture_close(
+        self, mock_create, mock_record
+    ):
+        fixture_inst = MockFixture()
+        mock_create.return_value = fixture_inst
+        mock_record.side_effect = OSError("disk full")
+
+        @coralflow_test
+        async def test_failing_with_telemetry_io_error(
+            fixture: BaseCoralNPUFixture,
+        ):
+            raise RuntimeError("expected test failure")
+
+        with mock.patch.dict(os.environ, {"CORALFLOW_TELEMETRY": "1"}):
+            with self.assertRaisesRegex(RuntimeError, "expected test failure"):
+                coralflow_main(argv=[])
+
+        self.assertTrue(fixture_inst.closed)
+
+    @mock.patch("coralnpu_test_utils.coralflow.runner._create_fixture")
+    def test_telemetry_malformed_cli_args_do_not_mask_test_error(
+        self, mock_create
+    ):
+        for bad_argv in (
+            ["--telemetry=1"],
+            ["--telemetry-output"],
+            ["--tel"],
+        ):
+            _REGISTERED_TESTS.clear()
+            fixture_inst = MockFixture()
+            mock_create.return_value = fixture_inst
+
+            @coralflow_test
+            async def test_real_failure(fixture: BaseCoralNPUFixture):
+                raise RuntimeError("real test failure")
+
+            with mock.patch.dict(
+                    os.environ,
+                {
+                    "CORALFLOW_TELEMETRY": "0",
+                    "CORALFLOW_TELEMETRY_OUTPUT": "",
+                },
+            ):
+                with self.assertRaisesRegex(RuntimeError, "real test failure"):
+                    coralflow_main(argv=bad_argv)
+            self.assertTrue(fixture_inst.closed)
+
+    @mock.patch("coralnpu_test_utils.coralflow.runner._create_fixture")
+    def test_telemetry_cli_scope_overrides_sys_argv_without_env_leak(
+        self, mock_create
+    ):
+        import tempfile
+
+        mock_create.side_effect = lambda *args, **kwargs: MockFixture()
+
+        @coralflow_test
+        async def test_scoped(fixture: BaseCoralNPUFixture):
+            await fixture.run_to_halt()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_file = os.path.join(tmpdir, "old.json")
+            new_file = os.path.join(tmpdir, "new.json")
+            with mock.patch.object(
+                    sys, "argv",
+                ["prog.py", "--telemetry-output", old_file]), mock.patch.dict(
+                    os.environ,
+                    {
+                        "CORALFLOW_TELEMETRY": "0",
+                        "CORALFLOW_TELEMETRY_OUTPUT": "",
+                        "TEST_UNDECLARED_OUTPUTS_DIR": "",
+                    },
+                ):
+                coralflow_main(argv=["--telemetry-output", new_file])
+                self.assertEqual(os.environ["CORALFLOW_TELEMETRY"], "0")
+                self.assertEqual(os.environ["CORALFLOW_TELEMETRY_OUTPUT"], "")
+
+            self.assertFalse(os.path.exists(old_file))
+            self.assertTrue(os.path.exists(new_file))
+
+    def test_telemetry_default_paths_sandbox_vs_workspace(self):
+        import tempfile
+        from coralnpu_test_utils.coralflow.telemetry import (
+            _format_display_path,
+            get_default_telemetry_path,
+            record_test_telemetry,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            undeclared_dir = os.path.join(tmpdir, "undeclared_outputs")
+            ws_dir = os.path.join(tmpdir, "workspace")
+            work_dir = os.path.join(tmpdir, "working_dir")
+            os.makedirs(undeclared_dir, exist_ok=True)
+            os.makedirs(ws_dir, exist_ok=True)
+            os.makedirs(work_dir, exist_ok=True)
+
+            # In `bazel test` (TEST_UNDECLARED_OUTPUTS_DIR set, no BUILD_WORKSPACE_DIRECTORY):
+            with mock.patch.dict(
+                    os.environ,
+                {
+                    "TEST_UNDECLARED_OUTPUTS_DIR": undeclared_dir,
+                    "BUILD_WORKSPACE_DIRECTORY": "",
+                    "BUILD_WORKING_DIRECTORY": "",
+                    "CORALFLOW_TELEMETRY": "1",
+                    "CORALFLOW_TELEMETRY_OUTPUT": "",
+                },
+            ):
+                self.assertEqual(
+                    get_default_telemetry_path(
+                        suite="test_rvv_add", target="npusim", argv=[]
+                    ),
+                    os.path.join(undeclared_dir, "test_telemetry.json"),
+                )
+                # Non-path CORALFLOW_TELEMETRY values like 'enabled' or 'y'
+                # must NOT be treated as filenames.
+                for truthy in ("enabled", "y"):
+                    with mock.patch.dict(os.environ,
+                                         {"CORALFLOW_TELEMETRY": truthy}):
+                        self.assertEqual(
+                            get_default_telemetry_path(
+                                suite="test_rvv_add", target="npusim", argv=[]
+                            ),
+                            os.path.join(
+                                undeclared_dir, "test_telemetry.json"
+                            ),
+                        )
+
+                # Explicit path outside workspace/undeclared_dir mirrors to
+                # undeclared_dir and returns undeclared_file (with no .lock files).
+                ephemeral = os.path.join(tmpdir, "ephemeral.json")
+                returned = record_test_telemetry(
+                    suite="test_rvv_add",
+                    test_name="test_one",
+                    target="npusim",
+                    status="PASSED",
+                    cycles=10,
+                    wall_time_sec=0.01,
+                    output_path=ephemeral,
+                )
+                expected_undeclared = os.path.join(
+                    undeclared_dir, "test_telemetry.json"
+                )
+                self.assertEqual(returned, expected_undeclared)
+                self.assertTrue(os.path.exists(expected_undeclared))
+                self.assertEqual(
+                    os.listdir(undeclared_dir), ["test_telemetry.json"]
+                )
+
+            # In `bazel run` (BUILD_WORKSPACE_DIRECTORY & BUILD_WORKING_DIRECTORY set):
+            with mock.patch.dict(
+                    os.environ,
+                {
+                    "TEST_UNDECLARED_OUTPUTS_DIR": "",
+                    "BUILD_WORKSPACE_DIRECTORY": ws_dir,
+                    "BUILD_WORKING_DIRECTORY": work_dir,
+                    "CORALFLOW_TELEMETRY": "1",
+                    "CORALFLOW_TELEMETRY_OUTPUT": "",
+                },
+            ):
+                self.assertEqual(
+                    get_default_telemetry_path(
+                        suite="test_rvv_add", target="npusim", argv=[]
+                    ),
+                    os.path.join(
+                        ws_dir,
+                        "telemetry_reports",
+                        "test_rvv_add_npusim.json",
+                    ),
+                )
+                # Relative CLI output resolves against BUILD_WORKING_DIRECTORY
+                self.assertEqual(
+                    get_default_telemetry_path(
+                        suite="test_rvv_add",
+                        target="npusim",
+                        argv=["--telemetry-output", "report.json"],
+                    ),
+                    os.path.join(work_dir, "report.json"),
+                )
+                # Path-like CORALFLOW_TELEMETRY resolves against BUILD_WORKING_DIRECTORY
+                with mock.patch.dict(os.environ,
+                                     {"CORALFLOW_TELEMETRY": "sub/out.json"}):
+                    self.assertEqual(
+                        get_default_telemetry_path(
+                            suite="test_rvv_add", target="npusim", argv=[]
+                        ),
+                        os.path.join(work_dir, "sub", "out.json"),
+                    )
+                # Filename sanitization prevents traversal and angle brackets
+                sanitized = get_default_telemetry_path(
+                    suite="../../etc/foo.<locals>",
+                    target="../npusim",
+                    argv=[],
+                )
+                self.assertTrue(
+                    sanitized.startswith(
+                        os.path.join(ws_dir, "telemetry_reports") + os.sep
+                    )
+                )
+                self.assertNotIn("..", os.path.basename(sanitized))
+                self.assertNotIn("<", os.path.basename(sanitized))
+                self.assertNotIn(">", os.path.basename(sanitized))
+
+            # Verify sandbox execroot path formatting to bazel-testlogs/
+            sandbox_path = (
+                "/tmp/sandbox/execroot/_main/bazel-out/k8-fastbuild/"
+                "testlogs/tests/coralflow/test_rvv_add_npusim/test.outputs/test_telemetry.json"
+            )
+            self.assertEqual(
+                _format_display_path(sandbox_path),
+                "bazel-testlogs/tests/coralflow/test_rvv_add_npusim/test.outputs/test_telemetry.json",
+            )
+
+    def test_telemetry_suite_resolution_and_cache_isolation(self):
+        import json
+        import tempfile
+        from coralnpu_test_utils.coralflow.runner import _split_suite_and_test
+        from coralnpu_test_utils.coralflow.telemetry import (
+            record_test_telemetry,
+            reset_telemetry_session,
+        )
+
+        # CORALFLOW_SUITE takes highest priority
+        with mock.patch.dict(
+                os.environ,
+            {
+                "CORALFLOW_SUITE": "rvv_core_mini_axi_sim_cocotb",
+                "TEST_TARGET": "//tests/cocotb:other_target_verilator",
+            },
+        ):
+            self.assertEqual(
+                _split_suite_and_test("core_mini_axi_sim.test_add"),
+                ("rvv_core_mini_axi_sim_cocotb", "test_add"),
+            )
+
+        # TEST_TARGET strips backend suffix when CORALFLOW_SUITE is unset
+        with mock.patch.dict(
+                os.environ,
+            {
+                "CORALFLOW_SUITE": "",
+                "TEST_TARGET":
+                "//tests/cocotb:rvv_core_mini_axi_sim_cocotb_verilator",
+            },
+        ):
+            self.assertEqual(
+                _split_suite_and_test("core_mini_axi_sim.test_add"),
+                ("rvv_core_mini_axi_sim_cocotb", "test_add"),
+            )
+
+        # Fallback strips <locals> when both env vars are unset
+        with mock.patch.dict(os.environ,
+                             {"CORALFLOW_SUITE": "", "TEST_TARGET": ""}):
+            suite, test = _split_suite_and_test(
+                "runner_test.RunnerTest.fn.<locals>.test_add"
+            )
+            self.assertNotIn("<locals>", suite)
+            self.assertEqual(test, "test_add")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_file = os.path.join(tmpdir, "shared.json")
+            with mock.patch.dict(
+                    os.environ,
+                {
+                    "GIT_COMMIT": "newcommit",
+                    "TEST_UNDECLARED_OUTPUTS_DIR": "",
+                },
+            ):
+                record_test_telemetry(
+                    suite="suite_a",
+                    test_name="fresh_test",
+                    target="npusim",
+                    status="PASSED",
+                    cycles=10,
+                    wall_time_sec=0.02,
+                    output_path=out_file,
+                )
+                # Writing a different suite to the same path must not collide
+                # with suite_a's _PROCESS_REPORTS cache entry.
+                record_test_telemetry(
+                    suite="suite_b",
+                    test_name="other_test",
+                    target="verilator",
+                    status="PASSED",
+                    cycles=20,
+                    wall_time_sec=0.05,
+                    output_path=out_file,
+                )
+                with open(out_file, "r", encoding="utf-8") as f:
+                    other = json.load(f)
+                self.assertEqual(other["suite"], "suite_b")
+                self.assertEqual(other["target"], "verilator")
+                self.assertEqual(list(other["tests"].keys()), ["other_test"])
+
+            reset_telemetry_session()
+
+    @mock.patch("coralnpu_test_utils.coralflow.runner._create_fixture")
+    def test_telemetry_single_cycle_read_and_early_pass_classification(
+        self, mock_create
+    ):
+        import json
+        import tempfile
+
+        class CountingFixture(MockFixture):
+
+            def __init__(self):
+                super().__init__()
+                self.cycle_reads = 0
+
+            def get_cycle_count(self):
+                self.cycle_reads += 1
+                return 123
+
+        fixture_inst = CountingFixture()
+        mock_create.return_value = fixture_inst
+
+        @coralflow_test
+        async def test_single_read(fixture: BaseCoralNPUFixture):
+            await fixture.run_to_halt()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_file = os.path.join(tmpdir, "cycles.json")
+            with mock.patch.dict(
+                    os.environ,
+                {
+                    "TEST_UNDECLARED_OUTPUTS_DIR": "",
+                    "CORALFLOW_SUITE": "cycle_suite",
+                },
+            ):
+                coralflow_main(argv=["--telemetry-output", out_file])
+            # Hardware cycle counter must only be read once (not duplicated by banner)
+            self.assertEqual(fixture_inst.cycle_reads, 1)
+
+            # Verify cocotb.pass_test() TestSuccess BaseException records PASSED
+            _REGISTERED_TESTS.clear()
+            pass_fixture = CountingFixture()
+            mock_create.return_value = pass_fixture
+
+            TestSuccess = type(
+                "TestSuccess",
+                (BaseException, ),
+                {"__module__": "cocotb._test_functions"},
+            )
+
+            @coralflow_test
+            async def test_early_pass(fixture: BaseCoralNPUFixture):
+                raise TestSuccess("done early")
+
+            with mock.patch.dict(
+                    os.environ,
+                {
+                    "TEST_UNDECLARED_OUTPUTS_DIR": "",
+                    "CORALFLOW_SUITE": "cycle_suite",
+                },
+            ):
+                with self.assertRaises(TestSuccess):
+                    coralflow_main(argv=["--telemetry-output", out_file])
+
+            with open(out_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.assertEqual(
+                data["tests"]["test_early_pass"]["status"], "PASSED"
+            )
+            self.assertEqual(data["tests"]["test_early_pass"]["cycles"], 123)
+            self.assertNotIn("error", data["tests"]["test_early_pass"])
+            self.assertTrue(pass_fixture.closed)
+
+    def test_telemetry_atomic_write_cleans_tmp_on_failure(self):
+        import stat
+        import tempfile
+        from coralnpu_test_utils.coralflow.telemetry import _atomic_write_json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ok_file = os.path.join(tmpdir, "ok.json")
+            _atomic_write_json(ok_file, {"suite": "s"})
+            self.assertEqual(stat.S_IMODE(os.stat(ok_file).st_mode), 0o644)
+
+            out_file = os.path.join(tmpdir, "fail.json")
+            with mock.patch("os.replace",
+                            side_effect=OSError("rename failed")):
+                with self.assertRaises(OSError):
+                    _atomic_write_json(out_file, {"suite": "s"})
+            self.assertEqual(os.listdir(tmpdir), ["ok.json"])
 
 
 if __name__ == "__main__":
