@@ -28,6 +28,7 @@ package(default_visibility = ["//visibility:public"])
 chisel_library(
     name = "dma",
     srcs = [
+        "DmaBypassBuffer.scala",
         "DmaCore.scala",
         "DmaCsr.scala",
         "DmaDescriptors.scala",
@@ -62,6 +63,21 @@ chisel_cc_library(
     chisel_lib = ":dma",
     emit_class = "dma.DmaCsrEmitter",
     module_name = "DmaCsr",
+)
+
+chisel_cc_library(
+    name = "dma_bypass_buffer_cc_library",
+    chisel_lib = ":dma",
+    emit_class = "dma.DmaBypassBufferEmitter",
+    module_name = "DmaBypassBuffer",
+)
+
+verilator_cocotb_model(
+    name = "dma_bypass_buffer_model",
+    cflags = VERILATOR_BUILD_ARGS,
+    hdl_toplevel = "DmaBypassBuffer",
+    trace = True,
+    verilog_source = "//hdl/chisel/src/dma:DmaBypassBuffer.sv",
 )
 
 chisel_cc_library(

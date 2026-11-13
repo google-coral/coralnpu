@@ -55,7 +55,7 @@ class DmaCsr(p: TLULParameters) extends Module {
     val fillBusy      = Input(Bool())
     val drainBusy     = Input(Bool())
     val engineError   = Input(Bool())
-    val passRemaining = Input(UInt(DmaGeometry.pWidth(p).W)) // from fill, for PASS_REM
+    val passRemaining = Input(UInt(DmaGeometry.pWidth(p).W)) // from fill, for PASS_REM; 0 in bypass
     val abort         = Output(Bool())                       // to both engines
     val busy          = Output(Bool())
     val error         = Output(Bool())
@@ -152,6 +152,8 @@ class DmaCsr(p: TLULParameters) extends Module {
   fillMc.lastPassBeats := mcLastPassBeats
   // Forced, not taken from software: a smaller xfer_width would transpose and scramble the copy.
   fillMc.logElemSize := gMax.U
+  fillMc.bypass      := true.B
+  fillMc.totalBeats  := totalBeats
 
   val fillSt = Wire(new FillDescriptor(p))
   fillSt.srcAddr       := srcAddrReg
@@ -159,6 +161,8 @@ class DmaCsr(p: TLULParameters) extends Module {
   fillSt.passes        := beatsPerArea
   fillSt.lastPassBeats := stStride
   fillSt.logElemSize   := xferWidth
+  fillSt.bypass        := false.B
+  fillSt.totalBeats    := 0.U
 
   val drainMc = Wire(new DrainDescriptor(p))
   drainMc.dstAddr       := dstAddrReg
@@ -169,6 +173,8 @@ class DmaCsr(p: TLULParameters) extends Module {
   drainMc.passAdvance   := mcPassBytes
   drainMc.lastMask      := lastMask
   drainMc.maskAll       := false.B
+  drainMc.bypass        := true.B
+  drainMc.totalBeats    := totalBeats
 
   val drainSt = Wire(new DrainDescriptor(p))
   drainSt.dstAddr       := dstAddrReg
@@ -181,6 +187,8 @@ class DmaCsr(p: TLULParameters) extends Module {
   drainSt.passAdvance := N.U
   drainSt.lastMask    := lastMask
   drainSt.maskAll     := true.B
+  drainSt.bypass      := false.B
+  drainSt.totalBeats  := 0.U
 
   val fillDesc  = Mux(strided, fillSt, fillMc)
   val drainDesc = Mux(strided, drainSt, drainMc)
@@ -265,9 +273,10 @@ class DmaCsr(p: TLULParameters) extends Module {
 
   // Geometry checks guard on fire: that is when the engine actually takes the
   // descriptor, and config is frozen from start until then.
+  // Pass fields are unused in bypass, so only strided descriptors are checked.
   DmaChecks.passGeometry(
     p,
-    io.fillDesc.fire,
+    io.fillDesc.fire && !fillDesc.bypass,
     fillDesc.stride,
     fillDesc.passes,
     fillDesc.lastPassBeats

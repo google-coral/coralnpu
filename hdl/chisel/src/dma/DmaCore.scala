@@ -34,6 +34,11 @@ class DmaCore(deviceP: TLULParameters, hostP: TLULParameters) extends Module {
     s"hostP.o (${hostP.o}) leaves ${engineP.o} engine source bits; fill needs " +
       s"${DmaGeometry.sWidth(engineP)} to tag rows"
   )
+  require(
+    engineP.o >= DmaGeometry.bypassTagWidth,
+    s"hostP.o (${hostP.o}) leaves ${engineP.o} engine source bits; bypass needs " +
+      s"${DmaGeometry.bypassTagWidth} to tag ${DmaGeometry.bypassDepth} slots"
+  )
 
   val io = IO(new Bundle {
     val tl_device = Flipped(new TLULHost2Device[NoUser, NoUser](deviceP))
@@ -42,11 +47,14 @@ class DmaCore(deviceP: TLULParameters, hostP: TLULParameters) extends Module {
     val error     = Output(Bool())
   })
 
-  val buffer = Module(new TransposeBuffer(engineP))
-  val fill   = Module(new DmaFillEngine(engineP))
-  val drain  = Module(new DmaDrainEngine(engineP))
-  val csr    = Module(new DmaCsr(deviceP))
-  val arb    = Module(new TlulArbiter(engineP, M))
+  val buffer       = Module(new TransposeBuffer(engineP))
+  val bypassBuffer = Module(
+    new DmaBypassBuffer(Vec(engineP.w, UInt(8.W)), DmaGeometry.bypassDepth)
+  )
+  val fill  = Module(new DmaFillEngine(engineP))
+  val drain = Module(new DmaDrainEngine(engineP))
+  val csr   = Module(new DmaCsr(deviceP))
+  val arb   = Module(new TlulArbiter(engineP, M))
 
   // The engines no longer talk to each other. They stay in lockstep purely
   // through the buffer: cfg.ready stops fill from starting a pass before drain
@@ -58,6 +66,20 @@ class DmaCore(deviceP: TLULParameters, hostP: TLULParameters) extends Module {
   fill.io.cfg <> buffer.io.cfg
   fill.io.beat <> buffer.io.in
   buffer.io.out <> drain.io.beat
+
+  // Memcopy streams through the bypass buffer instead of the transpose buffer.
+  fill.io.bypassAlloc <> bypassBuffer.io.alloc
+  bypassBuffer.io.write := fill.io.bypassWrite
+  bypassBuffer.io.out <> drain.io.bypassBeat
+
+  // After a bus error, both engines finish with nothing outstanding but may
+  // leave filled slots behind; one clear pulse empties the buffer.
+  val xferFailed = csr.io.abort || fill.io.error || drain.io.error
+  bypassBuffer.io.clear := xferFailed && !fill.io.busy && !drain.io.busy && !bypassBuffer.io.empty
+  assert(
+    xferFailed || fill.io.busy || drain.io.busy || bypassBuffer.io.empty,
+    "Bypass buffer not empty after a clean job"
+  )
 
   arb.io.tl_h(0) <> fill.io.tl
   arb.io.tl_h(1) <> drain.io.tl

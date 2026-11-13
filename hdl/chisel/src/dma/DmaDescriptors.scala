@@ -27,6 +27,11 @@ object DmaGeometry {
   def sWidth(p: TLULParameters) = log2Ceil(p.w + 1)
   def lenBits                   = (new DmaLenFlags).xfer_len.getWidth
   def pWidth(p: TLULParameters) = lenBits - gMax(p) + 1
+  // Holds totalBeats = ceil(len / N) for the largest len.
+  def beatWidth(p: TLULParameters) = log2Ceil(((BigInt(1) << lenBits) + p.w - 1) / p.w + 1)
+  val bypassDepth                  = 16
+  def bypassTagWidth               = log2Ceil(bypassDepth)
+  def outstandingWidth             = log2Ceil(bypassDepth + 1)
 }
 
 object DmaChecks {
@@ -56,6 +61,9 @@ class FillDescriptor(val p: TLULParameters) extends Bundle {
   val lastPassBeats = UInt(DmaGeometry.sWidth(p).W) // Number of beats in the last pass
   val passes        = UInt(DmaGeometry.pWidth(p).W)
   val logElemSize   = UInt(DmaGeometry.eWidth(p).W)
+  // Memcopy streams through the bypass buffer; pass fields are then unused.
+  val bypass     = Bool()
+  val totalBeats = UInt(DmaGeometry.beatWidth(p).W)
 }
 
 class DrainDescriptor(val p: TLULParameters) extends Bundle {
@@ -66,8 +74,10 @@ class DrainDescriptor(val p: TLULParameters) extends Bundle {
   val rowPitch      = UInt(p.a.W)
   val passAdvance   = UInt(p.a.W)
   // Byte enables for the final beat; all-ones when areaSize is a whole multiple of p.w.
-  val lastMask = UInt(p.w.W)
-  val maskAll  = Bool()
+  val lastMask   = UInt(p.w.W)
+  val maskAll    = Bool()
+  val bypass     = Bool()
+  val totalBeats = UInt(DmaGeometry.beatWidth(p).W)
 }
 
 class DrainStatus(val p: TLULParameters) extends Bundle {
@@ -77,6 +87,9 @@ class DrainStatus(val p: TLULParameters) extends Bundle {
   val passRemaining = UInt(DmaGeometry.pWidth(p).W)
   val passBase      = UInt(p.a.W)
   val addr          = UInt(p.a.W)
+  // Bypass only: Puts issued this job, and Puts not yet acked.
+  val beats       = UInt(DmaGeometry.beatWidth(p).W)
+  val outstanding = UInt(DmaGeometry.outstandingWidth.W)
 }
 
 class FillStatus(val p: TLULParameters) extends Bundle {
@@ -86,6 +99,9 @@ class FillStatus(val p: TLULParameters) extends Bundle {
   val errSticky     = Bool()
   val passRemaining = UInt(DmaGeometry.pWidth(p).W)
   val srcBase       = UInt(p.a.W)
+  // Bypass only: Gets issued this job, and Gets not yet answered.
+  val beats       = UInt(DmaGeometry.beatWidth(p).W)
+  val outstanding = UInt(DmaGeometry.outstandingWidth.W)
 }
 
 // The LEN_FLAGS CSR word, mirroring len_flags in coralnpu_dma_descriptor_t.

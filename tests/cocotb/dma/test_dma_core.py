@@ -196,6 +196,7 @@ class TlulMemoryAgent:
         self.cycle = 0
         self.gets = 0
         self.puts = 0
+        self.puts_with_gets_pending = 0  # Puts accepted while a Get response was still owed
         self.error_addrs = set()
 
     # ------------------------------------------------------------- signals
@@ -269,6 +270,8 @@ class TlulMemoryAgent:
             })
         elif opcode in (OP_A_PUT_FULL, OP_A_PUT_PARTIAL):
             self.puts += 1
+            if any(r["opcode"] == OP_D_ACCESS_ACK_DATA for r in self.pending):
+                self.puts_with_gets_pending += 1
             data = int(self._sig("a_bits_data").value)
             if opcode == OP_A_PUT_FULL:
                 full = (1 << self.data_bytes) - 1
@@ -737,3 +740,74 @@ async def test_dma_strided_randomized(dut):
         )
 
     dut._log.info("strided randomized PASSED")
+
+
+@cocotb.test()
+async def test_dma_bypass_used(dut):
+    """Memcopy overlaps Gets and Puts, which the pass-by-pass path never does."""
+    agent = await setup(dut, min_latency=10, max_latency=10)
+    await run_and_check(dut, agent, length=1024)
+    assert agent.puts_with_gets_pending > 0, (
+        "no Put was accepted while a Get was outstanding: bypass not in use"
+    )
+    dut._log.info(
+        f"bypass used PASSED ({agent.puts_with_gets_pending} of {agent.puts} Puts "
+        f"overlapped outstanding Gets)"
+    )
+
+
+@cocotb.test()
+async def test_dma_bypass_bus_error(dut):
+    """A Get error mid-stream aborts cleanly; a retry after CLEAR_ERROR succeeds."""
+    agent = await setup(dut, min_latency=5, max_latency=15)
+    length = 1024
+    agent.preload_random(SRC_BASE, length)
+    agent.error_addrs.add(SRC_BASE + 20 * N)
+
+    await csr_write(dut, SRC_ADDR, SRC_BASE)
+    await csr_write(dut, DST_ADDR, DST_BASE)
+    await csr_write(dut, LEN_FLAGS, make_len_flags(length, GMAX))
+    await csr_write(dut, XFER_CFG, make_xfer_cfg(1))
+    await csr_write(dut, CTRL, CTRL_ENABLE | CTRL_CLEAR_ERR | CTRL_START)
+    status = await wait_done(dut, timeout_for(length, agent))
+
+    assert status & STATUS_ERROR, f"expected error, got 0x{status:02x}"
+    assert status & STATUS_XFER_ERR, f"expected xfer_error, got 0x{status:02x}"
+    assert not (
+        status & STATUS_DONE
+    ), f"done set on a failed transfer, 0x{status:02x}"
+
+    busy_drop_limit = 200
+    for _ in range(busy_drop_limit):
+        if int(dut.io_busy.value) == 0:
+            break
+        await RisingEdge(dut.clock)
+    assert int(dut.io_busy.value) == 0, (
+        f"busy still high {busy_drop_limit} cycles after the error was reported"
+    )
+    await ClockCycles(dut.clock, 2)
+    agent.assert_quiescent()
+
+    agent.error_addrs.clear()
+    await run_and_check(dut, agent, length=length, dst=DST_BASE + 0x10000)
+    dut._log.info("bypass bus error PASSED")
+
+
+@cocotb.test()
+async def test_dma_mode_switch(dut):
+    """Memcopy, strided, memcopy back to back: the switch between buffers is clean."""
+    agent = await setup(dut, min_latency=4, max_latency=40, reorder=True)
+    await run_and_check(dut, agent, length=1000, src=SRC_BASE, dst=DST_BASE)
+    await run_and_check(
+        dut,
+        agent,
+        length=120,
+        src=SRC_BASE + 0x4000,
+        dst=DST_BASE + 0x10000,
+        n_areas=3,
+        elem_size=1
+    )
+    await run_and_check(
+        dut, agent, length=777, src=SRC_BASE + 0x8000, dst=DST_BASE + 0x20000
+    )
+    dut._log.info("mode switch PASSED")

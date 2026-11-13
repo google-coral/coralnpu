@@ -213,15 +213,33 @@ core's DTCM.
 | module | role |
 |---|---|
 | `DmaCsr` | terminates `tl_device`; holds the register file; validates configuration and computes transfer geometry once at start |
-| `DmaFillEngine` | issues source `Get`s and writes responses into the transpose buffer |
-| `TransposeBuffer` | performs the de-interleave gather; in memcopy mode it is a pass-through |
-| `DmaDrainEngine` | reads the buffer and issues destination `Put`s |
+| `DmaFillEngine` | issues source `Get`s and writes responses into the transpose buffer, or the bypass buffer in memcopy |
+| `TransposeBuffer` | performs the de-interleave gather for strided transfers |
+| `DmaBypassBuffer` | 16-beat buffer that memcopy streams through instead of the transpose buffer |
+| `DmaDrainEngine` | reads the active buffer and issues destination `Put`s |
 | `TlulArbiter` | merges the fill and drain engines' requests onto the single `tl_host` port |
 | `DmaDescriptors` | shared bundle definitions used by the engines |
 
 The two engines run independent loops and do not hand off to each other. They
-are synchronised only through the transpose buffer's ready/valid handshakes, so
-those handshakes are load-bearing rather than incidental.
+are synchronised only through the buffers' ready/valid handshakes, so those
+handshakes are load-bearing rather than incidental.
+
+#### Memcopy bypass
+
+When `n_areas == 1` the transfer bypasses the transpose buffer and has no
+passes. It is one stream of `ceil(len / 16)` beats through `DmaBypassBuffer`,
+16 slots of one beat each:
+
+- Fill issues a `Get` whenever a slot is free and beats remain, tagged with
+  that slot. Responses may return in any order; each lands in its own slot.
+- Drain issues a `Put` whenever the oldest slot holds data, up to 16 `Put`s
+  awaiting acks. A slot frees as soon as its `Put` is issued.
+- `Get`s and `Put`s therefore overlap instead of alternating pass by pass.
+- On a bus error both engines stop issuing, wait for everything in flight, and
+  the buffer is cleared.
+
+Strided transfers (`n_areas > 1`) still use the transpose buffer. `PASS_REM`
+reads 0 during a memcopy, which has no passes.
 
 #### Additional terminology
 

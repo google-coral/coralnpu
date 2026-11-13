@@ -41,6 +41,35 @@ cocotb_test_suite(
     verilator_model = "//hdl/chisel/src/dma:transpose_buffer_model",
 )
 
+# BEGIN_TESTCASES_FOR_dma_bypass_buffer_cocotb_test
+DMA_BYPASS_BUFFER_TESTCASES = [
+    "test_bypass_fill_then_drain",
+    "test_bypass_out_of_order_writes",
+    "test_bypass_full_empty_edges",
+    "test_bypass_realloc_after_pop",
+    "test_bypass_alloc_write_pop_same_cycle",
+    "test_bypass_clear",
+    "test_bypass_randomized",
+]
+# END_TESTCASES_FOR_dma_bypass_buffer_cocotb_test
+
+cocotb_test_suite(
+    name = "dma_bypass_buffer_cocotb_test",
+    simulators = [
+        "verilator",
+    ],
+    testcases = DMA_BYPASS_BUFFER_TESTCASES,
+    testcases_vname = "DMA_BYPASS_BUFFER_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "DmaBypassBuffer",
+        "test_module": ["test_dma_bypass_buffer.py"],
+        "waves": True,
+        "default_testcase_size": "medium",
+        "size": "medium",
+    },
+    verilator_model = "//hdl/chisel/src/dma:dma_bypass_buffer_model",
+)
+
 # BEGIN_TESTCASES_FOR_dma_core_cocotb_test
 DMA_CORE_TESTCASES = [
     "test_dma_smoke",
@@ -58,6 +87,9 @@ DMA_CORE_TESTCASES = [
     "test_dma_strided_tail",
     "test_dma_error_gate",
     "test_dma_strided_randomized",
+    "test_dma_bypass_used",
+    "test_dma_bypass_bus_error",
+    "test_dma_mode_switch",
 ]
 # END_TESTCASES_FOR_dma_core_cocotb_test
 
