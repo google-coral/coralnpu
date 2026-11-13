@@ -201,7 +201,204 @@ class RetirementBufferSpec extends AnyFreeSpec with ChiselSim {
     dut.io.empty.expect(true.B)
   }
 
-  "scalar loads with rd = x0" in {
+  // A decode fault at a loop PC must not mark the older, completed jump at the same PC as trapped.
+  private def testDecodeFaultSkipsCompletedJump(dut: RetirementBuffer, p: Parameters): Unit = {
+    resetDut(dut, p)
+
+    // Iteration 0:
+    //   0x24: div x6, x1, x2    (0x0220c333, long-latency blocker on rd = x6)
+    //   0x28: xori a3, a3, 2    (0x0026c693, rd = x13)
+    //   0x2c: jalr zero, 0(a3)  (0x00068067, target = 0x20)
+    dut.io.inst(0).valid.poke(true.B)
+    dut.io.inst(0).bits.addr.poke(0x24.U)
+    dut.io.inst(0).bits.inst.poke(0x0220c333L.U)
+    dut.io.writeAddrScalar(0).valid.poke(true.B)
+    dut.io.writeAddrScalar(0).addr.poke(6.U)
+
+    dut.io.inst(1).valid.poke(true.B)
+    dut.io.inst(1).bits.addr.poke(0x28.U)
+    dut.io.inst(1).bits.inst.poke(0x0026c693L.U)
+    dut.io.writeAddrScalar(1).valid.poke(true.B)
+    dut.io.writeAddrScalar(1).addr.poke(13.U)
+
+    dut.io.inst(2).valid.poke(true.B)
+    dut.io.inst(2).bits.addr.poke(0x2c.U)
+    dut.io.inst(2).bits.inst.poke(0x00068067L.U)
+    dut.io.jump(2).poke(true.B)
+    dut.io.jalrTargets(2).poke(0x20.U)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    // Iteration 0's xori completes; Iteration 1 dispatches 0x20 (addi), 0x30 (sw), 0x28 (xori),
+    // confirming control-flow continuity for Iteration 0's jalr at 0x2c.
+    dut.io.writeDataScalar(1).valid.poke(true.B)
+    dut.io.writeDataScalar(1).bits.addr.poke(13.U)
+    dut.io.writeDataScalar(1).bits.data.poke(0x20.U)
+
+    dut.io.inst(0).valid.poke(true.B)
+    dut.io.inst(0).bits.addr.poke(0x20.U)
+    dut.io.inst(0).bits.inst.poke(0x00158593L.U)
+    dut.io.writeAddrScalar(0).valid.poke(true.B)
+    dut.io.writeAddrScalar(0).addr.poke(11.U)
+
+    dut.io.inst(1).valid.poke(true.B)
+    dut.io.inst(1).bits.addr.poke(0x30.U)
+    dut.io.inst(1).bits.inst.poke(0x00b42823L.U)
+
+    dut.io.inst(2).valid.poke(true.B)
+    dut.io.inst(2).bits.addr.poke(0x28.U)
+    dut.io.inst(2).bits.inst.poke(0x0026c693L.U)
+    dut.io.writeAddrScalar(2).valid.poke(true.B)
+    dut.io.writeAddrScalar(2).addr.poke(13.U)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    // Iteration 1's addi and xori complete, while Iteration 1's jalr at 0x2c faults at decode
+    // (misaligned target 0x22, ready = false -> noFire0Fault).
+    dut.io.writeDataScalar(0).valid.poke(true.B)
+    dut.io.writeDataScalar(0).bits.addr.poke(11.U)
+    dut.io.writeDataScalar(0).bits.data.poke(2.U)
+    dut.io.writeDataScalar(2).valid.poke(true.B)
+    dut.io.writeDataScalar(2).bits.addr.poke(13.U)
+    dut.io.writeDataScalar(2).bits.data.poke(0x22.U)
+
+    dut.io.inst(0).valid.poke(true.B)
+    dut.io.inst(0).ready.poke(false.B)
+    dut.io.inst(0).bits.addr.poke(0x2c.U)
+    dut.io.inst(0).bits.inst.poke(0x00068067L.U)
+    dut.io.jump(0).poke(true.B)
+    dut.io.jalrTargets(0).poke(0x22.U)
+
+    dut.io.fault.valid.poke(true.B)
+    dut.io.fault.bits.mepc.poke(0x2c.U)
+    dut.io.fault.bits.mcause.poke(0.U)
+    dut.io.fault.bits.mtval.poke(0x22.U)
+    dut.io.fault.bits.decode.poke(true.B)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    // Registered faultRetire fires this cycle.
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    // Iteration 0's div x6 completes; Iteration 0 (0x24, 0x28, 0x2c) and Iteration 1's 0x20
+    // must retire WITHOUT trapRetired so Iteration 1's store (0x30) and faulting jalr remain.
+    dut.io.writeDataScalar(p.instructionLanes).valid.poke(true.B)
+    dut.io.writeDataScalar(p.instructionLanes).bits.addr.poke(6.U)
+    dut.io.writeDataScalar(p.instructionLanes).bits.data.poke(99.U)
+    dut.io.trapRetired.expect(false.B)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    dut.io.empty.expect(false.B)
+
+    // Now Iteration 1's store at 0x30 finishes; Iteration 1 retires and pulses trapRetired
+    // on Iteration 1's faulting jalr at 0x2c.
+    dut.io.storeComplete.valid.poke(true.B)
+    dut.io.storeComplete.bits.poke(0x30.U)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    dut.io.trapRetired.expect(true.B)
+    dut.clock.step()
+
+    dut.io.empty.expect(true.B)
+  }
+
+  // A non-decode fault at a loop PC skips the completed older entry and marks the pending one.
+  private def testLoadFaultMarksPendingEntry(dut: RetirementBuffer, p: Parameters): Unit = {
+    val lsuPort = p.instructionLanes + 1
+    resetDut(dut, p)
+
+    // Enqueue:
+    //   0x0fc: div x6, x1, x2  (uncompleted blocker, rd = x6)
+    //   0x100: lw x5, 0(x10)   (Iteration 0 load, rd = x5)
+    //   0x100: lw x7, 0(x11)   (Iteration 1 load at same PC, rd = x7)
+    dut.io.inst(0).valid.poke(true.B)
+    dut.io.inst(0).bits.addr.poke(0x0fc.U)
+    dut.io.inst(0).bits.inst.poke(0x0220c333L.U)
+    dut.io.writeAddrScalar(0).valid.poke(true.B)
+    dut.io.writeAddrScalar(0).addr.poke(6.U)
+
+    dut.io.inst(1).valid.poke(true.B)
+    dut.io.inst(1).bits.addr.poke(0x100.U)
+    dut.io.inst(1).bits.inst.poke(0x00052283L.U)
+    dut.io.writeAddrScalar(1).valid.poke(true.B)
+    dut.io.writeAddrScalar(1).addr.poke(5.U)
+
+    dut.io.inst(2).valid.poke(true.B)
+    dut.io.inst(2).bits.addr.poke(0x100.U)
+    dut.io.inst(2).bits.inst.poke(0x0005a383L.U)
+    dut.io.writeAddrScalar(2).valid.poke(true.B)
+    dut.io.writeAddrScalar(2).addr.poke(7.U)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    // Iteration 0's lw x5 completes cleanly while div x6 is still running.
+    dut.io.writeDataScalar(lsuPort).valid.poke(true.B)
+    dut.io.writeDataScalar(lsuPort).bits.addr.poke(5.U)
+    dut.io.writeDataScalar(lsuPort).bits.data.poke(0x1111L.U)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    // Iteration 1's lw x7 at PC 0x100 raises an asynchronous load fault (decode = false).
+    dut.io.fault.valid.poke(true.B)
+    dut.io.fault.bits.mepc.poke(0x100.U)
+    dut.io.fault.bits.mcause.poke(5.U)
+    dut.io.fault.bits.mtval.poke(0xa0000000L.U)
+    dut.io.fault.bits.decode.poke(false.B)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    // faultRetire fires this cycle; complete div x6 on the next cycle and verify Iteration 0's
+    // lw x5 retires with trap=false while Iteration 1's lw x7 retires with trap=true.
+    dut.clock.step()
+    dut.io.writeDataScalar(p.instructionLanes).valid.poke(true.B)
+    dut.io.writeDataScalar(p.instructionLanes).bits.addr.poke(6.U)
+    dut.io.writeDataScalar(p.instructionLanes).bits.data.poke(42.U)
+    dut.io.debug.get.inst(0).valid.expect(true.B)
+    dut.io.debug.get.inst(0).bits.trap.expect(false.B)
+    dut.io.debug.get.inst(1).valid.expect(true.B)
+    dut.io.debug.get.inst(1).bits.pc.expect(0x100.U)
+    dut.io.debug.get.inst(1).bits.trap.expect(false.B)
+    dut.io.debug.get.inst(2).valid.expect(true.B)
+    dut.io.debug.get.inst(2).bits.pc.expect(0x100.U)
+    dut.io.debug.get.inst(2).bits.trap.expect(true.B)
+    dut.io.trapRetired.expect(true.B)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    dut.io.empty.expect(true.B)
+  }
+
+  // A decode-faulting jump retires its trap without waiting for the next fetch packet.
+  private def testDecodeFaultJumpRetires(dut: RetirementBuffer, p: Parameters): Unit = {
+    resetDut(dut, p)
+
+    // Misaligned jalr at slot 0 (noFire0Fault) followed by stalled fetch
+    // (inst(0).valid = false).
+    dut.io.inst(0).valid.poke(true.B)
+    dut.io.inst(0).ready.poke(false.B)
+    dut.io.inst(0).bits.addr.poke(0x300.U)
+    dut.io.inst(0).bits.inst.poke(0x00068067L.U)
+    dut.io.jump(0).poke(true.B)
+    dut.io.jalrTargets(0).poke(0x302.U)
+
+    dut.io.fault.valid.poke(true.B)
+    dut.io.fault.bits.mepc.poke(0x300.U)
+    dut.io.fault.bits.mcause.poke(0.U)
+    dut.io.fault.bits.mtval.poke(0x302.U)
+    dut.io.fault.bits.decode.poke(true.B)
+    dut.clock.step()
+    clearInputs(dut, p)
+
+    dut.io.trapRetired.expect(true.B)
+    dut.clock.step()
+
+    dut.io.empty.expect(true.B)
+  }
+
+  "retirement buffer scenarios" in {
     val p = new Parameters()
     p.enableVerification = true
 
@@ -209,14 +406,18 @@ class RetirementBufferSpec extends AnyFreeSpec with ChiselSim {
       testLoadZeroWaitsForLsu(dut, p)
       testBackToBackLoadZero(dut, p)
       testLoadZeroFault(dut, p)
+      testDecodeFaultSkipsCompletedJump(dut, p)
+      testLoadFaultMarksPendingEntry(dut, p)
+      testDecodeFaultJumpRetires(dut, p)
     }
   }
 
-  "scalar load with rd = x0 load fault (mini)" in {
+  "retirement buffer scenarios (mini)" in {
     val p = new Parameters()
 
     simulate(new RetirementBuffer(p, mini = true)) { dut =>
       testLoadZeroFault(dut, p)
+      testDecodeFaultSkipsCompletedJump(dut, p)
     }
   }
 }

@@ -464,6 +464,12 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
   val lsuLoadZeroDone      = io.writeDataScalar(p.instructionLanes + 1).valid &&
     (io.writeDataScalar(p.instructionLanes + 1).bits.addr === 0.U)
 
+  val pendingPcFaultMatch = VecInit((0 until bufferSize).map { j =>
+    (j.U < instBuffer.io.nEnqueued) && !(resultBuffer(j).valid && resultBuffer(j).bits.cfDone) &&
+    (instBuffer.io.dataOut(j).addr === faultRetire.bits.mepc)
+  })
+  val firstPendingPcFault = PriorityEncoder(pendingPcFaultMatch)
+
   for (i <- 0 until bufferSize) {
     val bufferEntry = instBuffer.io.dataOut(i)
     val tagWidth    = log2Ceil(bufferSize)
@@ -505,8 +511,12 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
       if (p.enableRvv) faultRetire.valid && faultRetire.bits.is_rvv.getOrElse(false.B) else false.B
     val rvvTagMatch =
       if (p.enableRvv) (faultRetire.bits.rob_tag.getOrElse(0.U) === pIdx) else false.B
+    val isNonDecodeFault = !faultRetire.bits.decode ||
+      (faultRetire.bits.mcause === 5.U) || (faultRetire.bits.mcause === 7.U)
+    val pcFaultMatch =
+      isNonDecodeFault && pendingPcFaultMatch.asUInt.orR && (i.U === firstPendingPcFault)
     val faultingInstr =
-      faultRetire.valid && Mux(isRvvFault, rvvTagMatch, bufferEntry.addr === faultRetire.bits.mepc)
+      faultRetire.valid && Mux(isRvvFault, rvvTagMatch, pcFaultMatch)
     // The entry is active if it's validly enqueued.
     val validBufferEntry = (i.U < instBuffer.io.nEnqueued)
 
@@ -648,7 +658,8 @@ class RetirementBuffer(p: Parameters, mini: Boolean = false) extends Module {
     val cfMatch = nextAddrValid && (targetMatch || (isBranch && fallthroughMatch))
     // CF instructions wait for the next instruction to be valid.
     // They are ready if matched, or if they mismatch (which leads to trap).
-    val cfReady = !isControlFlow || nextAddrValid
+    val cfReady = !isControlFlow || nextAddrValid ||
+      bufferEntry.trap || faultingInstr || resultBuffer(i).bits.trap
 
     // Update state:
     // We update valid (Data Done) if previously done, or if new data arrives.
