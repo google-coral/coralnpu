@@ -40,6 +40,12 @@ cc_toolchain_config(
         "-fno-omit-frame-pointer",
         # Clang specific flags
         "-Wno-deprecated-non-prototype",
+        # Pin the GCC installation so libstdc++ headers resolve under
+        # /usr/include/c++ even when a usrmerge /lib/gcc symlink lets
+        # clang's prefix scan land on the empty prefix inside a sandbox
+        # (which otherwise reports headers as /include/c++/13 and trips
+        # Bazel's absolute-include validator).
+        "--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13",
     ],
     compiler = "clang",
     cpu = "k8",
