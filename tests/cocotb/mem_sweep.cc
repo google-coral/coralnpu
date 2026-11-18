@@ -17,48 +17,59 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace {
-
-constexpr uintptr_t kItcmBase = 0x00000000;
-constexpr size_t kItcmSize    = 8 * 1024;
-constexpr uintptr_t kExtBase  = 0x20000000;
-constexpr size_t kExtSize     = 4 * 1024 * 1024;
-
 extern "C" uint8_t __heap_start__[];
 extern "C" uint8_t __heap_end__[];
 
-constexpr uint32_t kPatterns[] = {
+__attribute__((used, retain)) extern const uintptr_t kItcmBase = 0x00000000;
+__attribute__((used, retain)) extern const size_t kItcmSize    = 8 * 1024;
+__attribute__((used, retain)) extern const uintptr_t kExtBase  = 0x20000000;
+__attribute__((used, retain)) extern const size_t kExtSize     = 4 * 1024 * 1024;
+// Dense external-memory sweep window. Set to kExtSize (4 MB) to sweep all of
+// external memory; this is much slower in simulation.
+__attribute__((used, retain)) extern const size_t kExtWindow = 4 * 1024;
+
+extern const uint32_t kPatterns[] = {
     0x55555555u,
     0xAAAAAAAAu,
     0xFFFFFFFFu,
     0x00000000u,
 };
 
-void WriteAndReadRegion(uintptr_t base, size_t len) {
+volatile uint32_t sweep_errors;
+volatile uint32_t itcm_checksum;
+volatile uintptr_t dtcm_lo;
+volatile uintptr_t dtcm_hi;
+
+__attribute__((noinline)) void WriteAndReadRegion(uintptr_t base, size_t len) {
   for (uint32_t pat : kPatterns) {
     for (uintptr_t a = base; a < base + len; a += 4) {
       *reinterpret_cast<volatile uint32_t *>(a) = pat;
     }
     for (uintptr_t a = base; a < base + len; a += 4) {
-      (void)*reinterpret_cast<volatile uint32_t *>(a);
+      if (*reinterpret_cast<volatile uint32_t *>(a) != pat) {
+        sweep_errors = sweep_errors + 1;
+      }
     }
   }
 }
 
-void ReadItcm() {
+__attribute__((noinline)) void ReadItcm() {
+  uint32_t x = 0;
   for (uintptr_t a = kItcmBase; a < kItcmBase + kItcmSize; a += 4) {
-    (void)*reinterpret_cast<volatile uint32_t *>(a);
+    x ^= *reinterpret_cast<volatile uint32_t *>(a);
   }
+  itcm_checksum = x;
 }
 
-}  // namespace
-
 int main() {
-  const uintptr_t dtcm_lo = (reinterpret_cast<uintptr_t>(__heap_start__) + 3) & ~uintptr_t{3};
-  const uintptr_t dtcm_hi = reinterpret_cast<uintptr_t>(__heap_end__) & ~uintptr_t{3};
+  dtcm_lo = (reinterpret_cast<uintptr_t>(__heap_start__) + 3) & ~uintptr_t{3};
+  dtcm_hi = reinterpret_cast<uintptr_t>(__heap_end__) & ~uintptr_t{3};
   WriteAndReadRegion(dtcm_lo, dtcm_hi - dtcm_lo);
 
-  WriteAndReadRegion(kExtBase, kExtSize);
+  WriteAndReadRegion(kExtBase, kExtWindow);
+  for (uintptr_t a = kExtBase; a < kExtBase + kExtSize; a += kExtWindow) {
+    WriteAndReadRegion(a, 4);
+  }
 
   ReadItcm();
 

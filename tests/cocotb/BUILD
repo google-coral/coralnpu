@@ -319,14 +319,6 @@ coralflow_test(
     size = "large",
     srcs = ["core_mini_axi_sim.py"],
     data = COCOTB_TEST_BINARY_TARGETS,
-    exclude_testcases = {
-        "vcs": [
-            "core_mini_axi_mem_sweep_test",
-        ],
-        "verilator": [
-            "core_mini_axi_mem_sweep_test",
-        ],
-    },
     hdl_toplevel = "CoreMiniAxi",
     shard_count = 8,
     targets = [
@@ -375,12 +367,6 @@ coralflow_test(
             "vfwsub_trap",
             "zfbfmin_test",
             "zvfbf_test",
-        ],
-        "vcs": [
-            "core_mini_axi_mem_sweep_test",
-        ],
-        "verilator": [
-            "core_mini_axi_mem_sweep_test",
         ],
     },
     hdl_toplevel = "RvvCoreMiniAxi",
@@ -1166,14 +1152,6 @@ coralflow_test(
     size = "large",
     srcs = ["core_mini_axi_sim.py"],
     data = COCOTB_TEST_BINARY_TARGETS,
-    exclude_testcases = {
-        "vcs": [
-            "core_mini_axi_mem_sweep_test",
-        ],
-        "verilator": [
-            "core_mini_axi_mem_sweep_test",
-        ],
-    },
     hdl_toplevel = "CoreMiniAxi",
     shard_count = 8,
     targets = [
@@ -1190,14 +1168,6 @@ coralflow_test(
     size = "enormous",
     srcs = ["core_mini_axi_sim.py"],
     data = COCOTB_TEST_BINARY_TARGETS,
-    exclude_testcases = {
-        "vcs": [
-            "core_mini_axi_mem_sweep_test",
-        ],
-        "verilator": [
-            "core_mini_axi_mem_sweep_test",
-        ],
-    },
     hdl_toplevel = "RvvCoreMiniAxi",
     shard_count = 8,
     targets = [

@@ -1188,7 +1188,9 @@ async def core_mini_axi_mem_sweep_test(fixture):
     itcm_base, itcm_size = 0x00000, 8 * 1024
 
     elf_path = r.Rlocation("coralnpu_hw/tests/cocotb/mem_sweep.elf")
-    await fixture.load_elf_and_lookup_symbols(elf_path, [])
+    await fixture.load_elf_and_lookup_symbols(
+        elf_path, ["sweep_errors", "itcm_checksum"]
+    )
 
     from elftools.elf.elffile import ELFFile
     with open(elf_path, "rb") as f:
@@ -1208,8 +1210,18 @@ async def core_mini_axi_mem_sweep_test(fixture):
                         0xFFFFFFFF).astype(np.uint32)
         await fixture.write(fill_start, fill)
 
+    itcm = await fixture.read(itcm_base, itcm_size, dtype=np.uint32)
+    exp_itcm = int(np.bitwise_xor.reduce(itcm))
+
     await fixture.run_to_halt(timeout_cycles=100_000_000)
     assert not fixture.fault(), "core faulted during sweep"
+
+    errors = await fixture.read_word("sweep_errors")
+    assert errors == 0, f"{errors} readback mismatches"
+    itcm_checksum = await fixture.read_word("itcm_checksum")
+    assert itcm_checksum == exp_itcm, (
+        f"ITCM checksum mismatch: core {itcm_checksum:#x} vs host {exp_itcm:#x}"
+    )
 
 
 if __name__ == "__main__":
