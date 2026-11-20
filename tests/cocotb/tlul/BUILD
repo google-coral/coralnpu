@@ -164,6 +164,9 @@ cocotb_test_suite(
 TLUL_SOCKET_1N_TESTCASES = [
     "test_steering_and_locking",
     "test_error_response",
+    "test_error_response_get_opcode",
+    "test_error_response_held_under_backpressure",
+    "test_error_response_survives_arbitration",
     "test_random_backpressure",
 ]
 # END_TESTCASES_FOR_tlul_socket_1n_128_cocotb_test
@@ -373,6 +376,8 @@ verilator_cocotb_model(
 CORALNPU_XBAR_TESTCASES = [
     "test_coralnpu_core_to_sram",
     "test_coralnpu_core_to_invalid_addr",
+    "test_coralnpu_core_get_invalid_addr_opcode",
+    "test_coralnpu_core_invalid_addr_held_under_backpressure",
     "test_coralnpu_core_to_uart1",
     "test_test_host_32_to_coralnpu_device",
     "test_coralnpu_core_to_coralnpu_device",
