@@ -37,6 +37,15 @@ STR_TO_NP_TYPE = {
 }
 
 
+def _get_rng() -> np.random.Generator:
+    """Returns a NumPy generator seeded from COCOTB_RANDOM_SEED, RANDOM_SEED, or 42."""
+    raw_seed = (
+        os.environ.get("COCOTB_RANDOM_SEED") or os.environ.get("RANDOM_SEED")
+    )
+    seed = int(raw_seed) if raw_seed else 42
+    return np.random.default_rng(seed=seed)
+
+
 def reference_fma(x, y, z, symbol, rm="rne"):
     # Convert inputs to float64 to prevent double-rounding
     xf64 = np.float64(x)
@@ -114,6 +123,50 @@ def reference_fredosum(x, y):
     for i in range(len(x)):
         res += x[i]
     return np.array([res])
+
+
+def reference_fredusum_candidates(x, y):
+    """Returns all valid IEEE-754 float32 binary reduction tree sums for vfredusum.
+
+    RISC-V "V" Vector Extension v1.0, Section 14.3.2 (pp. 75-76), permits
+    vfredusum.vs to sum vs1[0] and active vs2 elements in any binary reduction
+    tree (including the ordered vfredosum sequence of Section 14.3.1, p. 75).
+    """
+    elems = [np.float32(y[0])] + [np.float32(v) for v in x]
+    n = len(elems)
+    if n > 8:
+        raise ValueError(
+            f"Exact fredusum tree enumeration supports at most 8 elements, got {n}"
+        )
+    dp = [set() for _ in range(1 << n)]
+    for i, val in enumerate(elems):
+        bits = 0x7fc00000 if np.isnan(val) else int(val.view(np.uint32))
+        dp[1 << i].add(bits)
+
+    with np.errstate(over="ignore", invalid="ignore"):
+        for mask in range(1, 1 << n):
+            if mask & (mask - 1) == 0:
+                continue
+            # Partition mask into disjoint non-empty subsets (sub, other).
+            # Keep the lowest set bit in sub to avoid duplicate symmetric pairs.
+            lowbit = mask & -mask
+            sub = (mask - 1) & mask
+            while sub:
+                if sub & lowbit:
+                    other = mask ^ sub
+                    for a_bits in dp[sub]:
+                        a = np.uint32(a_bits).view(np.float32)
+                        for b_bits in dp[other]:
+                            b = np.uint32(b_bits).view(np.float32)
+                            s = np.float32(a + b)
+                            bits = (
+                                0x7fc00000
+                                if np.isnan(s) else int(s.view(np.uint32))
+                            )
+                            dp[mask].add(bits)
+                sub = (sub - 1) & mask
+
+    return np.array(sorted(dp[(1 << n) - 1]), dtype=np.uint32).view(np.float32)
 
 
 def _get_math_result(
@@ -214,8 +267,10 @@ def _get_math_result(
         return reference_sra(x, y)
     elif symbol == "rem" or symbol == "remu":
         return reference_rem(x, y)
-    elif symbol == "redsum" or symbol == "fredusum":
+    elif symbol == "redsum":
         return y[0] + np.add.reduce(x)
+    elif symbol == "fredusum":
+        return reference_fredusum_candidates(x, y)
     elif symbol == "fredosum":
         return reference_fredosum(x, y)
     elif symbol == "redmin" or symbol == "fredmin":
@@ -258,6 +313,7 @@ async def arithmetic_m1_vanilla_ops_test(
     )
 
     r = runfiles.Create()
+    rng = _get_rng()
     test_elf_filter = os.environ.get("TEST_ELF")
     if test_elf_filter:
         m1_vanilla_op_elfs = [
@@ -284,20 +340,17 @@ async def arithmetic_m1_vanilla_ops_test(
             if np.issubdtype(np_type, np.integer):
                 min_value = np.iinfo(np_type).min
                 max_value = np.iinfo(np_type).max + 1  # One above.
-                input_1 = np.random.randint(
+                input_1 = rng.integers(
                     min_value, max_value, num_test_values, dtype=np_type
                 )
-                input_2 = np.random.randint(
+                input_2 = rng.integers(
                     min_value, max_value, num_test_values, dtype=np_type
                 )
                 input_d = np.zeros(num_test_values, dtype=np_type)
             else:
-                input_1 = np.random.uniform(-10, 10,
-                                            num_test_values).astype(np_type)
-                input_2 = np.random.uniform(-10, 10,
-                                            num_test_values).astype(np_type)
-                input_d = np.random.uniform(-10, 10,
-                                            num_test_values).astype(np_type)
+                input_1 = rng.uniform(-10, 10, num_test_values).astype(np_type)
+                input_2 = rng.uniform(-10, 10, num_test_values).astype(np_type)
+                input_d = rng.uniform(-10, 10, num_test_values).astype(np_type)
 
             if math_op in [
                     "fmacc",
@@ -417,6 +470,52 @@ async def float32_arithmetic_m1_vanilla_ops(fixture):
     )
 
 
+async def _run_and_verify_reduction_case(
+    fixture, resolved_symbols, math_op: str, np_type, input_1, input_2
+):
+    """Runs one RVV reduction test vector and checks the result."""
+    itemsize = np.dtype(np_type).itemsize
+    expected_output = np.asarray(
+        _get_math_result(input_1, input_2, math_op), dtype=np_type
+    )
+
+    await fixture.write('in_buf_1', input_1)
+    await fixture.write('scalar_input', input_2)
+    await fixture.write('out_buf', np.zeros(1, dtype=np_type))
+    await fixture.run_to_halt(timeout_cycles=1000000)
+    if "faulted" in resolved_symbols:
+        faulted = (await fixture.read('faulted', 4)).view(np.uint32)[0]
+        mcause = (await fixture.read('mcause', 4)).view(np.uint32)[0]
+        assert faulted == 0, f"Test faulted with mcause 0x{mcause:x} for op {math_op}"
+
+    actual_output = (await fixture.read("out_buf", itemsize)).view(np_type)
+    debug_msg = str({
+        "op": math_op,
+        "input_1": input_1,
+        "input_2": input_2,
+        "expected": expected_output,
+        "actual": actual_output,
+    })
+    if np.issubdtype(np_type, np.integer):
+        assert (actual_output == expected_output).all(), debug_msg
+    elif math_op == "fredusum":
+        actual_bits = actual_output.view(np.uint32)[0]
+        expected_bits = expected_output.view(np.uint32)
+        assert np.any(expected_bits == actual_bits), debug_msg
+    elif math_op == "fredosum":
+        actual_bits = actual_output.view(np.uint32)[0]
+        expected_bits = expected_output.view(np.uint32)[0]
+        assert actual_bits == expected_bits, debug_msg
+    else:
+        assert np.allclose(
+            actual_output,
+            expected_output,
+            rtol=1e-5,
+            atol=1e-8,
+            equal_nan=True
+        ), debug_msg
+
+
 async def reduction_m1_vanilla_ops_test(
     fixture, dtypes, math_ops: list, num_bytes: int
 ):
@@ -434,6 +533,7 @@ async def reduction_m1_vanilla_ops_test(
     pattern_extract = re.compile("rvv_(.*)_(.*)_m1.elf")
 
     r = runfiles.Create()
+    rng = _get_rng()
     with tqdm.tqdm(m1_vanilla_op_elfs) as t:
         for elf_name in t:
             t.set_postfix({"binary": os.path.basename(elf_name)})
@@ -447,54 +547,21 @@ async def reduction_m1_vanilla_ops_test(
             )
             math_op, dtype = pattern_extract.match(elf_name).groups()
             np_type = STR_TO_NP_TYPE[dtype]
-            itemsize = np.dtype(np_type).itemsize
             num_test_values = int(num_bytes / np.dtype(np_type).itemsize)
             if np.issubdtype(np_type, np.integer):
                 min_value = np.iinfo(np_type).min
                 max_value = np.iinfo(np_type).max + 1  # One above.
-                input_1 = np.random.randint(
+                input_1 = rng.integers(
                     min_value, max_value, num_test_values, dtype=np_type
                 )
-                input_2 = np.random.randint(
-                    min_value, max_value, 1, dtype=np_type
-                )
+                input_2 = rng.integers(min_value, max_value, 1, dtype=np_type)
             else:
-                input_1 = np.random.uniform(-10, 10,
-                                            num_test_values).astype(np_type)
-                input_2 = np.random.uniform(-10, 10, 1).astype(np_type)
+                input_1 = rng.uniform(-10, 10, num_test_values).astype(np_type)
+                input_2 = rng.uniform(-10, 10, 1).astype(np_type)
 
-            expected_output = np.asarray(
-                _get_math_result(input_1, input_2, math_op), dtype=np_type
+            await _run_and_verify_reduction_case(
+                fixture, resolved_symbols, math_op, np_type, input_1, input_2
             )
-
-            await fixture.write('in_buf_1', input_1)
-            await fixture.write('scalar_input', input_2)
-            await fixture.write('out_buf', np.zeros(1, dtype=np_type))
-            await fixture.run_to_halt(timeout_cycles=1000000)
-            if "faulted" in resolved_symbols:
-                faulted = (await fixture.read('faulted', 4)).view(np.uint32)[0]
-                mcause = (await fixture.read('mcause', 4)).view(np.uint32)[0]
-                assert faulted == 0, f"Test faulted with mcause 0x{mcause:x} for op {math_op}"
-
-            actual_output = (await fixture.read("out_buf",
-                                                itemsize)).view(np_type)
-            debug_msg = str({
-                "op": math_op,
-                "input_1": input_1,
-                "input_2": input_2,
-                "expected": expected_output,
-                "actual": actual_output,
-            })
-            if np.issubdtype(np_type, np.integer):
-                assert (actual_output == expected_output).all(), debug_msg
-            else:
-                assert np.allclose(
-                    actual_output,
-                    expected_output,
-                    rtol=1e-5,
-                    atol=1e-8,
-                    equal_nan=True
-                ), debug_msg
 
 
 @coralflow_test
@@ -517,6 +584,51 @@ async def float32_reduction_m1_vanilla_ops(fixture):
     )
 
 
+@coralflow_test
+async def float32_reduction_m1_directed_ops(fixture):
+    """Tests directed float32 reduction edge cases for vfredusum and vfredosum."""
+    directed_cases = [
+        # Catastrophic cancellation where valid binary reduction trees yield
+        # three distinct float32 sums (0xbc779c00, 0xbc779e00, 0xbc77a000).
+        (
+            np.array([-4.6628437, -6.711429, 9.174596, 6.432929],
+                     dtype=np.float32),
+            np.array([-4.248365], dtype=np.float32),
+        ),
+        # Exact cancellation to +0.0 under RNE.
+        (
+            np.array([1.0, -1.0, 2.0, -2.0], dtype=np.float32),
+            np.array([-0.0], dtype=np.float32),
+        ),
+        # All -0.0 operands must preserve -0.0 (0x80000000) under RNE.
+        (
+            np.array([-0.0, -0.0, -0.0, -0.0], dtype=np.float32),
+            np.array([-0.0], dtype=np.float32),
+        ),
+        # Mixed +0.0 and -0.0 operands must yield +0.0 (0x00000000) under RNE.
+        (
+            np.array([0.0, -0.0, -0.0, -0.0], dtype=np.float32),
+            np.array([-0.0], dtype=np.float32),
+        ),
+    ]
+
+    r = runfiles.Create()
+    for math_op in ["fredusum", "fredosum"]:
+        elf_path = r.Rlocation(
+            f"coralnpu_hw/tests/cocotb/rvv/arithmetics/rvv_{math_op}_float_m1.elf"
+        )
+        resolved_symbols = await fixture.load_elf_and_lookup_symbols(
+            elf_path,
+            ["in_buf_1", "scalar_input", "out_buf"],
+            optional_symbols=["faulted", "mcause"],
+        )
+        for input_1, input_2 in directed_cases:
+            await _run_and_verify_reduction_case(
+                fixture, resolved_symbols, math_op, np.float32, input_1,
+                input_2
+            )
+
+
 async def reduction_m1_failure_test(
     fixture, dtypes, math_ops: list[str], num_bytes: int
 ):
@@ -531,6 +643,7 @@ async def reduction_m1_failure_test(
     pattern_extract = re.compile("rvv_(.*)_(.*)_m1.elf")
 
     r = runfiles.Create()
+    rng = _get_rng()
 
     with tqdm.tqdm(m1_failure_op_elfs) as t:
         for elf_name in t:
@@ -553,16 +666,13 @@ async def reduction_m1_failure_test(
             if np.issubdtype(np_type, np.integer):
                 min_value = np.iinfo(np_type).min
                 max_value = np.iinfo(np_type).max + 1  # One above.
-                input_1 = np.random.randint(
+                input_1 = rng.integers(
                     min_value, max_value, num_test_values, dtype=np_type
                 )
-                input_2 = np.random.randint(
-                    min_value, max_value, 1, dtype=np_type
-                )
+                input_2 = rng.integers(min_value, max_value, 1, dtype=np_type)
             else:
-                input_1 = np.random.uniform(-10, 10,
-                                            num_test_values).astype(np_type)
-                input_2 = np.random.uniform(-10, 10, 1).astype(np_type)
+                input_1 = rng.uniform(-10, 10, num_test_values).astype(np_type)
+                input_2 = rng.uniform(-10, 10, 1).astype(np_type)
 
             await fixture.write('in_buf_1', input_1)
             await fixture.write('scalar_input', input_2)
@@ -614,6 +724,7 @@ async def _widen_math_ops_test_impl(
     pattern_extract = re.compile("rvv_widen_(.*)_(.*)_(.*).elf")
 
     r = runfiles.Create()
+    rng = _get_rng()
     with tqdm.tqdm(widen_op_elfs) as t:
         for elf_name in t:
             t.set_postfix({"binary": os.path.basename(elf_name)})
@@ -631,10 +742,10 @@ async def _widen_math_ops_test_impl(
 
             min_value = np.iinfo(in_np_type).min
             max_value = np.iinfo(in_np_type).max + 1  # One above.
-            input_1 = np.random.randint(
+            input_1 = rng.integers(
                 min_value, max_value, num_test_values, dtype=in_np_type
             )
-            input_2 = np.random.randint(
+            input_2 = rng.integers(
                 min_value, max_value, num_test_values, dtype=in_np_type
             )
             expected_output = np.asarray(
@@ -696,7 +807,7 @@ async def test_narrowing_math_op(
                   for c in cases}),
     )
 
-    rng = np.random.default_rng()
+    rng = _get_rng()
     for c in tqdm.tqdm(cases):
         impl = c['impl']
         vl = c['vl']
@@ -1076,6 +1187,7 @@ async def vnclip_vxsat_test(fixture):
 @coralflow_test
 async def ternary_op_vx(fixture):
     r = runfiles.Create()
+    rng = _get_rng()
     test_binaries = [
         ("vmacc_vx_test.elf", SAME_TYPE_TEST_CASES, lambda x, y, z: x + y * z),
         (
@@ -1126,7 +1238,6 @@ async def ternary_op_vx(fixture):
                     )
                     continue
                 for vl in [1, vlmax]:
-                    rng = np.random.default_rng()
                     if np.issubdtype(vs1_dtype, np.integer):
                         vs1_data = rng.integers(
                             np.iinfo(vs1_dtype).min,
@@ -1202,6 +1313,7 @@ async def ternary_op_vx(fixture):
 @coralflow_test
 async def comparison_op_vx(fixture):
     r = runfiles.Create()
+    rng = _get_rng()
     test_binaries = [
         ("vmseq_vx_test.elf", SAME_TYPE_TEST_CASES, np.equal),
         ("vmsne_vx_test.elf", SAME_TYPE_TEST_CASES, np.not_equal),
@@ -1223,7 +1335,6 @@ async def comparison_op_vx(fixture):
 
             for test_fn_name, vlmax, vs2_dtype, xs2_dtype, _ in test_cases:
                 for vl in [1, vlmax]:
-                    rng = np.random.default_rng()
                     vs2_data = rng.integers(
                         np.iinfo(vs2_dtype).min,
                         np.iinfo(vs2_dtype).max + 1,
@@ -1263,6 +1374,7 @@ async def comparison_op_vx(fixture):
 @coralflow_test
 async def comparison_op_vv(fixture):
     r = runfiles.Create()
+    rng = _get_rng()
     test_binaries = [
         ("vmseq_vv_test.elf", SAME_TYPE_TEST_CASES, np.equal),
         ("vmsne_vv_test.elf", SAME_TYPE_TEST_CASES, np.not_equal),
@@ -1282,7 +1394,6 @@ async def comparison_op_vv(fixture):
 
             for test_fn_name, vlmax, vs2_dtype, vs1_dtype, _ in test_cases:
                 for vl in [1, vlmax]:
-                    rng = np.random.default_rng()
                     vs2_data = rng.integers(
                         np.iinfo(vs2_dtype).min,
                         np.iinfo(vs2_dtype).max + 1,
@@ -1319,6 +1430,7 @@ async def comparison_op_vv(fixture):
 @coralflow_test
 async def carry_op_vx(fixture):
     r = runfiles.Create()
+    rng = _get_rng()
     test_binaries = [
         ("vadc_vxm_test.elf", SAME_TYPE_TEST_CASES, reference_adc),
         ("vsbc_vxm_test.elf", SAME_TYPE_TEST_CASES, reference_sbc),
@@ -1337,7 +1449,6 @@ async def carry_op_vx(fixture):
 
             for test_fn_name, vlmax, vs2_dtype, xs2_dtype, vd_dtype in test_cases:
                 for vl in [1, vlmax]:
-                    rng = np.random.default_rng()
                     vs2_data = rng.integers(
                         np.iinfo(vs2_dtype).min,
                         np.iinfo(vs2_dtype).max + 1,
@@ -1378,6 +1489,7 @@ async def carry_op_vx(fixture):
 @coralflow_test
 async def merge_op_vv(fixture):
     r = runfiles.Create()
+    rng = _get_rng()
     test_binary = "vmerge_vv_test.elf"
     test_binary_path = r.Rlocation(
         f"coralnpu_hw/tests/cocotb/rvv/arithmetics/{test_binary}"
@@ -1390,7 +1502,6 @@ async def merge_op_vv(fixture):
 
     for test_fn_name, vlmax, vs2_dtype, vs1_dtype, vd_dtype in SAME_TYPE_TEST_CASES:
         for vl in [1, vlmax]:
-            rng = np.random.default_rng()
             vs2_data = rng.integers(
                 np.iinfo(vs2_dtype).min,
                 np.iinfo(vs2_dtype).max + 1,
@@ -1434,6 +1545,7 @@ async def _widen_wide_math_ops_test_impl(
     Each test performs a widen wide math op loading vs2 (wide) and vs1 (narrow) or xs2 (narrow)
     """
     r = runfiles.Create()
+    rng = _get_rng()
     for math_op in math_ops:
         for in_dtype_str, out_dtype_str in dtypes:
             elf_name = f"vw{math_op}_wv_test.elf"
@@ -1462,7 +1574,6 @@ async def _widen_wide_math_ops_test_impl(
 
             # VLEN=128, LMUL=1
             vl = min(num_test_values, 128 // sew)
-            rng = np.random.default_rng()
             vs2_data = rng.integers(
                 np.iinfo(out_dtype).min,
                 np.iinfo(out_dtype).max + 1,
@@ -1515,6 +1626,7 @@ async def widen_wide_math_ops_test(fixture):
 async def extension_op_test(fixture):
     """Test vsext and vzext instructions."""
     r = runfiles.Create()
+    rng = _get_rng()
     test_binaries = [
         ("vsext_vf2_test.elf", 2, True),
         ("vsext_vf4_test.elf", 4, True),
@@ -1549,7 +1661,6 @@ async def extension_op_test(fixture):
                 continue
 
             vl = 128 // out_sew  # Process full register group at M1
-            rng = np.random.default_rng()
             vs1_data = rng.integers(
                 np.iinfo(in_dtype).min,
                 np.iinfo(in_dtype).max + 1,
@@ -1585,6 +1696,7 @@ async def extension_op_test(fixture):
 async def immediate_op_test(fixture):
     """Test instructions with immediate operands (.vi)."""
     r = runfiles.Create()
+    rng = _get_rng()
 
     test_binaries = [
         ("vadd_vi_test.elf", np.add),
@@ -1625,7 +1737,6 @@ async def immediate_op_test(fixture):
             if fn_name not in resolved_symbols:
                 continue
 
-            rng = np.random.default_rng()
             vs1_data = rng.integers(
                 np.iinfo(vs1_dtype).min,
                 np.iinfo(vs1_dtype).max + 1,
@@ -1953,6 +2064,7 @@ FLOAT_CROSS_CONVERT_TEST_CASES = [
 @coralflow_test
 async def binary_op_vx(fixture):
     r = runfiles.Create()
+    rng = _get_rng()
     test_binaries = [
         ("vadd_vx_test.elf", SAME_TYPE_TEST_CASES, np.add),
         ("vsadd_vx_test.elf", SAME_TYPE_TEST_CASES, reference_sadd),
@@ -2026,7 +2138,6 @@ async def binary_op_vx(fixture):
             for test_fn_name, vlmax, vs1_dtype, xs2_dtype, vd_dtype in test_cases:
                 for vl in [1, vlmax - 1, vlmax]:
                     # Write random data to vs1 and xs2
-                    rng = np.random.default_rng()
                     if np.issubdtype(vs1_dtype, np.integer):
                         vs1_data = rng.integers(
                             np.iinfo(vs1_dtype).min,
@@ -2098,7 +2209,7 @@ async def binary_op_vx(fixture):
 @coralflow_test
 async def float_comparison_op(fixture):
     r = runfiles.Create()
-    rng = np.random.default_rng(seed=42)
+    rng = _get_rng()
     test_binaries = [
         (
             "vmfeq_vv_test.elf",
@@ -2210,7 +2321,7 @@ async def float_comparison_op(fixture):
 @coralflow_test
 async def float_misc_op(fixture):
     r = runfiles.Create()
-    rng = np.random.default_rng(seed=42)
+    rng = _get_rng()
     test_binaries = [
         (
             "vfclass_v_test.elf",
@@ -2392,7 +2503,7 @@ async def float_misc_op(fixture):
 @coralflow_test
 async def float_convert_op(fixture):
     r = runfiles.Create()
-    rng = np.random.default_rng(seed=42)
+    rng = _get_rng()
     test_binaries = [
         (
             "vfcvt_f_x_v_test.elf",
