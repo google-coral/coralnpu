@@ -105,7 +105,8 @@ class TlulWidthBridge(val host_p: TLULParameters, val device_p: TLULParameters) 
         Seq(
           s_match_d -> MakeWireBundle[OpenTitanTileLink.D_Channel](
             new OpenTitanTileLink.D_Channel(host_p),
-            d => d -> io.tl_d.d.bits
+            d => d -> io.tl_d.d.bits,
+            _.error -> (io.tl_d.d.bits.error || Mux(s_match_h, false.B, d_resp_reg(s).error))
           ),
           s_match_h -> 0.U.asTypeOf(new OpenTitanTileLink.D_Channel(host_p))
         )
@@ -175,15 +176,22 @@ class TlulWidthBridge(val host_p: TLULParameters, val device_p: TLULParameters) 
     val is_write = io.tl_h.a.bits.opcode === TLULOpcodesA.PutFullData.asUInt ||
       io.tl_h.a.bits.opcode === TLULOpcodesA.PutPartialData.asUInt
     val address_offset = io.tl_h.a.bits.address(log2Ceil(hostBytes) - 1, 0)
-    val size_in_bytes  = 1.U << io.tl_h.a.bits.size
-    val read_mask      = (((1.U << size_in_bytes) - 1.U) << address_offset)(hostBytes - 1, 0)
+    val max_host_size  = log2Ceil(hostBytes)
+    val size_bits      = log2Ceil(max_host_size) max 1
+    val size_in_bytes  = 1.U << io.tl_h.a.bits.size(size_bits - 1, 0)
+    val read_mask_base = Mux(
+      io.tl_h.a.bits.size >= max_host_size.U,
+      Fill(hostBytes, 1.U(1.W)),
+      ((1.U((hostBytes + 1).W) << size_in_bytes) - 1.U)(hostBytes - 1, 0)
+    )
+    val read_mask      = (read_mask_base << address_offset)(hostBytes - 1, 0)
     val effective_mask = Mux(is_write, io.tl_h.a.bits.mask, read_mask)
 
     val device_size_cap = log2Ceil(device_p.w).U
     val full_mask       = ((1 << narrowBytes) - 1).U
 
-    val is_wide_transaction = io.tl_h.a.bits.size > device_size_cap
-    val host_beat_idx       = io.tl_h.a.bits.address(log2Ceil(hostBytes) - 1, log2Ceil(narrowBytes))
+    val has_any_mask  = effective_mask.orR
+    val host_beat_idx = io.tl_h.a.bits.address(log2Ceil(hostBytes) - 1, log2Ceil(narrowBytes))
 
     require(
       device_p.o >= (host_p.o + log2Ceil(ratio)),
@@ -213,8 +221,7 @@ class TlulWidthBridge(val host_p: TLULParameters, val device_p: TLULParameters) 
       narrow_req.param := io.tl_h.a.bits.param
       narrow_req.size  := device_size_cap
 
-      val beat_source_offset = Mux(is_wide_transaction, i.U, host_beat_idx)
-      narrow_req.source := Cat(io.tl_h.a.bits.source, beat_source_offset(log2Ceil(ratio) - 1, 0))
+      narrow_req.source := Cat(io.tl_h.a.bits.source, i.U(log2Ceil(ratio).W))
 
       narrow_req.address := (io.tl_h.a.bits.address & ~((hostBytes - 1)
         .U(32.W))) + (i * narrowBytes).U
@@ -227,7 +234,7 @@ class TlulWidthBridge(val host_p: TLULParameters, val device_p: TLULParameters) 
 
       req_gen.io.a_i := narrow_req
       beats(i).bits  := req_gen.io.a_o
-      beats(i).valid := Mux(is_wide_transaction, true.B, i.U === host_beat_idx)
+      beats(i).valid := Mux(has_any_mask, narrow_mask.orR, i.U === host_beat_idx)
     }
 
     req_fifo.io.in.bits  := beats
