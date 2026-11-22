@@ -16,6 +16,7 @@ package coralnpu.rvv
 
 import chisel3._
 import chisel3.util._
+import common.BitWidthForInt
 import coralnpu.{MtypeWriteDataIO, Parameters, RegfileReadDataIO, RegfileWriteDataIO}
 
 object RvvCore {
@@ -753,7 +754,7 @@ class RvvCoreWrapper(p: Parameters)
 
     // Config state
     val configStateValid = Output(Bool())
-    val configVl         = Output(UInt(log2Ceil(p.rvvVlen + 1).W))
+    val configVl         = Output(UInt(BitWidthForInt(p.rvvVlen)))
     val configVstart     = Output(UInt(log2Ceil(p.rvvVlen).W))
     val configMa         = Output(Bool())
     val configTa         = Output(Bool())

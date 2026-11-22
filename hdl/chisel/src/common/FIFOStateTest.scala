@@ -15,18 +15,17 @@
 package common
 
 import chisel3._
-import chisel3.util._
 import chisel3.simulator.scalatest.ChiselSim
 import org.scalatest.freespec.AnyFreeSpec
 
 class FIFOStateTestWrapper(t: UInt, n: Int, capacity: Int) extends Module {
   val io = IO(new Bundle {
-    val enqValid = Input(UInt(log2Ceil(n + 1).W))
+    val enqValid = Input(UInt(BitWidthForInt(n)))
     val enqData  = Input(Vec(n, t))
-    val deqReady = Input(UInt(log2Ceil(n + 1).W))
+    val deqReady = Input(UInt(BitWidthForInt(n)))
     val flush    = Input(Bool())
 
-    val nEnqueued = Output(UInt(log2Ceil(capacity + 1).W))
+    val nEnqueued = Output(UInt(BitWidthForInt(capacity)))
     val dataOut   = Output(Vec(n, t))
   })
 

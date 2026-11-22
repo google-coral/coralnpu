@@ -41,8 +41,8 @@ class InstructionBuffer[T <: Data](val gen: T, val n: Int, val window: Int) exte
     val out    = Vec(n, Decoupled(gen))
     val flush  = Input(Bool())
 
-    val nEnqueued = Output(UInt(log2Ceil(window + 1).W))
-    val nSpace    = Output(UInt(log2Ceil(window + 1).W))
+    val nEnqueued = Output(UInt(BitWidthForInt(window)))
+    val nSpace    = Output(UInt(BitWidthForInt(window)))
   })
   dontTouch(io)
 

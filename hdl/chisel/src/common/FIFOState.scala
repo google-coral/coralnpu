@@ -22,7 +22,7 @@ class FIFOState[T <: Data](val size: Int, gen: T) extends Bundle {
   // State of our FIFO object
   val head   = UInt(log2Ceil(size).W)
   val tail   = UInt(log2Ceil(size).W)
-  val count  = UInt(log2Ceil(size + 1).W)
+  val count  = UInt(BitWidthForInt(size))
   val buffer = Vec(size, gen)
 
   // Helper methods
