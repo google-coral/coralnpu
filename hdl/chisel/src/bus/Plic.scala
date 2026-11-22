@@ -80,7 +80,8 @@ class Plic(p: TLULParameters, numInterrupts: Int = 31, priorityWidth: Int = 3) e
 
   // --- Claim / Complete Signals ---
   val id_bits         = log2Up(numInterrupts + 1)
-  val actual_claim_id = Mux(tl_a_read_fire && addr === CLAIM.asUInt, max_id, 0.U)
+  val claimable_id    = Mux(max_prio > threshold, max_id, 0.U)
+  val actual_claim_id = Mux(tl_a_read_fire && addr === CLAIM.asUInt, claimable_id, 0.U)
   val complete_id     =
     Mux(tl_a_write_fire && addr === CLAIM.asUInt, tl_a.bits.data(id_bits - 1, 0), 0.U)
 
@@ -151,7 +152,7 @@ class Plic(p: TLULParameters, numInterrupts: Int = 31, priorityWidth: Int = 3) e
       (addr === LE.asUInt)                                   -> le,
       (addr === ENABLE.asUInt)                               -> enable,
       (addr === THRESHOLD.asUInt)                            -> threshold,
-      (addr === CLAIM.asUInt)                                -> max_id
+      (addr === CLAIM.asUInt)                                -> claimable_id
     )
   )
 
