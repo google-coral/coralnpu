@@ -71,11 +71,14 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
 
   val r_beats_left   = RegInit(VecInit(Seq.fill(1 << p.o)(0.U(8.W))))
   val r_burst_active = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
+  val r_inflight     = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
 
   val id_conflict = !r_unroll_busy && r_burst_active(r_req.id)
+  val r_can_step  = !r_inflight(r_unroll_id)
 
   val read_stream = Wire(Decoupled(new TileLink_A_ChannelBase(tlul_p, userAGen)))
-  read_stream.valid                := (r_valid && !id_conflict) || r_unroll_busy
+  read_stream.valid :=
+    (!r_unroll_busy && r_valid && !id_conflict) || (r_unroll_busy && r_can_step)
   read_stream.bits.opcode          := TLULOpcodesA.Get.asUInt
   read_stream.bits.param           := 0.U
   read_stream.bits.size            := r_current_size
@@ -105,7 +108,10 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   r_unroll_burst := Mux(r_start, r_req.burst, r_unroll_burst)
   r_unroll_prot  := Mux(r_start, r_req.prot, r_unroll_prot)
 
-  read_addr_q.ready := read_stream.ready && !id_conflict && (!r_unroll_busy && r_req.len === 0.U || r_unroll_busy && r_unroll_len === 0.U)
+  read_addr_q.ready := read_stream.ready && (
+    (!r_unroll_busy && !id_conflict && r_req.len === 0.U) ||
+      (r_unroll_busy && r_can_step && r_unroll_len === 0.U)
+  )
 
   // Write Burst Unroller
   val w_unroll_busy  = RegInit(false.B)
@@ -129,12 +135,15 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   val w_beats_left   = RegInit(VecInit(Seq.fill(1 << p.o)(0.U(8.W))))
   val w_burst_active = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
   val w_err_accum    = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
+  val w_inflight     = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
 
   val w_id_conflict = !w_unroll_busy && w_burst_active(w_req.id)
+  val w_can_step    = !w_inflight(w_unroll_id)
   val w_valid       = write_addr_q.valid && write_data_q.valid && !w_id_conflict
 
   val write_stream = Wire(Decoupled(new TileLink_A_ChannelBase(tlul_p, userAGen)))
-  write_stream.valid := w_valid || (w_unroll_busy && write_data_q.valid)
+  write_stream.valid :=
+    (!w_unroll_busy && w_valid) || (w_unroll_busy && w_can_step && write_data_q.valid)
 
   val byte_offset   = if (p.w > 1) w_current_addr(log2Ceil(p.w) - 1, 0) else 0.U
   val expected_strb = (((1.U << (1.U << w_current_size)) - 1.U) << byte_offset)(p.w - 1, 0)
@@ -179,8 +188,14 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
   w_unroll_burst := Mux(w_start, w_req.burst, w_unroll_burst)
   w_unroll_prot  := Mux(w_start, w_req.prot, w_unroll_prot)
 
-  write_addr_q.ready := write_stream.ready && write_data_q.valid && !w_id_conflict && w_last
-  write_data_q.ready := write_stream.ready && (!w_unroll_busy && !w_id_conflict || w_unroll_busy)
+  write_addr_q.ready := write_stream.ready && write_data_q.valid && (
+    (!w_unroll_busy && !w_id_conflict && w_req.len === 0.U) ||
+      (w_unroll_busy && w_can_step && w_unroll_len === 0.U)
+  )
+  write_data_q.ready := write_stream.ready && (
+    (!w_unroll_busy && !w_id_conflict && write_addr_q.valid) ||
+      (w_unroll_busy && w_can_step)
+  )
 
   // Reads are given higher priority.
   val arb = Module(new CoralNPURRArbiter(new TileLink_A_ChannelBase(tlul_p, userAGen), 2))
@@ -226,7 +241,15 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
 
   for (i <- 0 until (1 << p.o)) {
     val is_r_req  = r_start && r_req.id === i.U
+    val is_r_beat = r_fire && r_current_id === i.U
     val is_r_resp = io.tl_d.fire && d_is_read && d_source === i.U
+    r_inflight(i) := MuxCase(
+      r_inflight(i),
+      Seq(
+        (is_r_beat && !is_r_resp) -> true.B,
+        (!is_r_beat && is_r_resp) -> false.B
+      )
+    )
 
     r_burst_active(i) := Mux(
       is_r_req,
@@ -240,7 +263,15 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
     )
 
     val is_w_req  = w_start && w_req.id === i.U
+    val is_w_beat = w_fire && w_current_id === i.U
     val is_w_resp = io.tl_d.fire && d_is_write && d_source === i.U
+    w_inflight(i) := MuxCase(
+      w_inflight(i),
+      Seq(
+        (is_w_beat && !is_w_resp) -> true.B,
+        (!is_w_beat && is_w_resp) -> false.B
+      )
+    )
 
     w_burst_active(i) := Mux(
       is_w_req,

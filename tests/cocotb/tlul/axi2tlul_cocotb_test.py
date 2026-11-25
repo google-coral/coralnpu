@@ -429,27 +429,28 @@ async def test_write_burst(dut):
     cocotb.start_soon(driver_waddr())
     cocotb.start_soon(driver_wdata())
 
-    # Check A channel TLul puts
+    # Check A channel TLul puts interleaved with D channel acks
+    # (TileLink-UL allows at most one in-flight beat per source ID).
+    dut.io_axi_write_resp_ready.value = 1
     for beat in range(test_len + 1):
         while True:
+            await ReadOnly()
             if dut.io_tl_a_valid.value:
                 assert dut.io_tl_a_bits_opcode.value == TLUL_OpcodeA.PutFullData
                 assert int(dut.io_tl_a_bits_address.value) == test_addr + (
                     beat * 32
                 )
                 assert dut.io_tl_a_bits_source.value == test_source
+                await RisingEdge(dut.clock)
                 break
             await RisingEdge(dut.clock)
+
+        # Ensure no duplicate in-flight beat with the same source fires before tl_d response
+        await ReadOnly()
+        if beat < test_len:
+            assert dut.io_tl_a_valid.value == 0
         await RisingEdge(dut.clock)
 
-    # Wait a bit
-    await ClockCycles(dut.clock, 2)
-    dut.io_tl_a_ready.value = 0
-
-    # Send D channel acks
-    dut.io_axi_write_resp_ready.value = 1
-
-    for beat in range(test_len + 1):
         dut.io_tl_d_valid.value = 1
         dut.io_tl_d_bits_opcode.value = TLUL_OpcodeD.AccessAck
         dut.io_tl_d_bits_source.value = test_source
@@ -458,17 +459,16 @@ async def test_write_burst(dut):
         dut.io_tl_d_bits_sink.value = 0
         dut.io_tl_d_bits_data.value = 0
         dut.io_tl_d_bits_error.value = 0
-
-        await RisingEdge(dut.clock)
-        while True:
-            if dut.io_tl_d_ready.value:
-                break
-            await RisingEdge(dut.clock)
-
+        await ReadOnly()
+        assert dut.io_tl_d_ready.value == 1
         if beat == test_len:
             assert dut.io_axi_write_resp_valid.value == 1
         else:
             assert dut.io_axi_write_resp_valid.value == 0
+        await RisingEdge(dut.clock)
+        dut.io_tl_d_valid.value = 0
+
+    dut.io_tl_a_ready.value = 0
 
     await RisingEdge(dut.clock)
     dut.io_tl_d_valid.value = 0
@@ -514,25 +514,28 @@ async def test_read_burst(dut):
 
     cocotb.start_soon(driver_raddr())
 
-    # Check A channel Get requests
+    # Check A channel Get requests interleaved with D channel AccessAckData responses
+    # (TileLink-UL allows at most one in-flight beat per source ID).
+    dut.io_axi_read_data_ready.value = 1
     for beat in range(test_len + 1):
         while True:
+            await ReadOnly()
             if dut.io_tl_a_valid.value:
                 assert dut.io_tl_a_bits_opcode.value == TLUL_OpcodeA.Get
                 assert int(dut.io_tl_a_bits_address.value) == test_addr + (
                     beat * 32
                 )
                 assert dut.io_tl_a_bits_source.value == test_source
+                await RisingEdge(dut.clock)
                 break
             await RisingEdge(dut.clock)
+
+        # Ensure no duplicate in-flight beat with the same source fires before tl_d response
+        await ReadOnly()
+        if beat < test_len:
+            assert dut.io_tl_a_valid.value == 0
         await RisingEdge(dut.clock)
 
-    dut.io_tl_a_ready.value = 0
-
-    # Handle D channel AccessAckData responses
-    dut.io_axi_read_data_ready.value = 1
-
-    for beat in range(test_len + 1):
         dut.io_tl_d_valid.value = 1
         dut.io_tl_d_bits_opcode.value = TLUL_OpcodeD.AccessAckData
         dut.io_tl_d_bits_source.value = test_source
@@ -541,18 +544,18 @@ async def test_read_burst(dut):
         dut.io_tl_d_bits_size.value = test_size
         dut.io_tl_d_bits_sink.value = 0
         dut.io_tl_d_bits_error.value = 0
-
+        await ReadOnly()
+        assert dut.io_tl_d_ready.value == 1
+        assert dut.io_axi_read_data_valid.value == 1
+        assert dut.io_axi_read_data_bits_data.value == 0x11223344 + beat
+        if beat == test_len:
+            assert dut.io_axi_read_data_bits_last.value == 1
+        else:
+            assert dut.io_axi_read_data_bits_last.value == 0
         await RisingEdge(dut.clock)
-        while True:
-            if dut.io_tl_d_ready.value:
-                assert dut.io_axi_read_data_valid.value == 1
-                assert dut.io_axi_read_data_bits_data.value == 0x11223344 + beat
-                if beat == test_len:
-                    assert dut.io_axi_read_data_bits_last.value == 1
-                else:
-                    assert dut.io_axi_read_data_bits_last.value == 0
-                break
-            await RisingEdge(dut.clock)
+        dut.io_tl_d_valid.value = 0
+
+    dut.io_tl_a_ready.value = 0
 
     await RisingEdge(dut.clock)
     dut.io_tl_d_valid.value = 0
