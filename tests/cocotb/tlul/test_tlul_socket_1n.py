@@ -14,7 +14,7 @@
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, ClockCycles, Combine, with_timeout
+from cocotb.triggers import FallingEdge, RisingEdge, ClockCycles, Combine, Timer, with_timeout
 import random
 
 from coralnpu_test_utils.TileLinkULInterface import create_a_channel_req
@@ -167,6 +167,144 @@ async def test_error_response(dut):
         assert env.scoreboard.errors == 0, f"Scoreboard detected {env.scoreboard.errors} errors"
     finally:
         await env.stop()
+
+
+def _init_direct_drive(dut, n):
+    """Puts every socket input in a known idle state, with no agents attached."""
+    dut.io_tl_h_a_valid.value = 0
+    dut.io_tl_h_d_ready.value = 1
+    dut.io_dev_select_i.value = n
+    for i in range(n):
+        getattr(dut, f"io_tl_d_{i}_a_ready").value = 1
+        getattr(dut, f"io_tl_d_{i}_d_valid").value = 0
+
+
+def _num_devices(dut):
+    n = 0
+    while hasattr(dut, f"io_tl_d_{n}_a_valid"):
+        n += 1
+    return n
+
+
+def _drive_host_a(dut, req):
+    dut.io_tl_h_a_valid.value = 1
+    for prop in ["opcode", "param", "size", "source", "address", "mask",
+                 "data"]:
+        getattr(dut, f"io_tl_h_a_bits_{prop}").value = req[prop]
+
+
+async def _sample_host_d(dut):
+    """Lets combinational logic settle after a falling-edge drive, then samples."""
+    await Timer(1, "ns")
+    return {
+        "valid": int(dut.io_tl_h_d_valid.value),
+        "ready": int(dut.io_tl_h_d_ready.value),
+        "opcode": int(dut.io_tl_h_d_bits_opcode.value),
+        "source": int(dut.io_tl_h_d_bits_source.value),
+        "error": int(dut.io_tl_h_d_bits_error.value),
+    }
+
+
+async def _fire_host_request(dut, req):
+    """Drives one request across a rising edge and returns after it has fired."""
+    _drive_host_a(dut, req)
+    await Timer(1, "ns")
+    assert dut.io_tl_h_a_ready.value == 1, "control: request was not accepted"
+    await FallingEdge(dut.clock)
+    dut.io_tl_h_a_valid.value = 0
+
+
+@cocotb.test()
+async def test_error_response_get_opcode(dut):
+    """A Get routed to the error responder must be answered with AccessAckData."""
+    await setup_dut(dut)
+    n = _num_devices(dut)
+    _init_direct_drive(dut, n)
+    await FallingEdge(dut.clock)
+
+    req = create_a_channel_req(address=0xBAD0, source=42, is_read=True)
+    await _fire_host_request(dut, req)
+    d = await _sample_host_d(dut)
+
+    assert d["valid"] == 1, f"control: no error response observed: {d}"
+    assert d["source"] == 42 and d["error"] == 1, f"control: {d}"
+    assert d["opcode"] == 1, (
+        f"Get answered with D opcode {d['opcode']}, expected AccessAckData (1)"
+    )
+
+
+@cocotb.test()
+async def test_error_response_held_under_backpressure(dut):
+    """An error response must stay valid until the host accepts it."""
+    await setup_dut(dut)
+    n = _num_devices(dut)
+    _init_direct_drive(dut, n)
+    dut.io_tl_h_d_ready.value = 0
+    await FallingEdge(dut.clock)
+
+    req = create_a_channel_req(address=0xBAD0, data=0xBAD, mask=0xF, source=42)
+    await _fire_host_request(dut, req)
+
+    stall_cycles = 8
+    trace = []
+    for _ in range(stall_cycles):
+        trace.append((await _sample_host_d(dut))["valid"])
+        await FallingEdge(dut.clock)
+
+    assert trace[0] == 1, f"control: no error response observed: {trace}"
+    assert trace == [1] * stall_cycles, (
+        f"d_valid dropped while d_ready=0, per-cycle d_valid={trace}"
+    )
+
+    dut.io_tl_h_d_ready.value = 1
+    d = await _sample_host_d(dut)
+    assert d["valid"] == 1 and d["source"] == 42 and d["error"] == 1, f"{d}"
+    await FallingEdge(dut.clock)
+    d = await _sample_host_d(dut)
+    assert d["valid"] == 0, "error response delivered more than once"
+
+
+@cocotb.test()
+async def test_error_response_survives_arbitration(dut):
+    """An error response that loses D arbitration must not be lost."""
+    await setup_dut(dut)
+    n = _num_devices(dut)
+    _init_direct_drive(dut, n)
+    await FallingEdge(dut.clock)
+
+    # An outstanding request to device 0, which has not responded yet.
+    dut.io_dev_select_i.value = 0
+    await _fire_host_request(
+        dut,
+        create_a_channel_req(address=0x1000, data=1, mask=0xF, source=1),
+    )
+
+    # A second request to an unmapped target.
+    dut.io_dev_select_i.value = n
+    await _fire_host_request(
+        dut,
+        create_a_channel_req(address=0xBAD0, data=2, mask=0xF, source=42),
+    )
+
+    # Device 0 responds in the cycle the error response first becomes valid.
+    dut.io_tl_d_0_d_valid.value = 1
+    dut.io_tl_d_0_d_bits_opcode.value = 0
+    dut.io_tl_d_0_d_bits_source.value = 1
+    dut.io_tl_d_0_d_bits_size.value = 2
+
+    delivered = []
+    for _ in range(8):
+        d = await _sample_host_d(dut)
+        if d["valid"] and d["ready"]:
+            delivered.append(d["source"])
+        await FallingEdge(dut.clock)
+        dut.io_tl_d_0_d_valid.value = 0
+
+    assert delivered.count(1) == 1, f"control: device response: {delivered}"
+    assert delivered.count(42) == 1, (
+        f"responses delivered to host by source: {delivered}, "
+        "error response for source 42 was lost"
+    )
 
 
 @cocotb.test()
