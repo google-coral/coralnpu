@@ -82,11 +82,17 @@ class TLUL2Axi[A_USER <: Data, D_USER <: Data](
     io.tl_d <> Queue(d_channel_arb.io.out, 2)
   }
 
-  class TxInfo extends Bundle {
-    val size = UInt(p_tl_remapped.z.W)
-  }
-  val read_tx_info_q  = Module(new Queue(new TxInfo, entries = maxReadTx))
-  val write_tx_info_q = Module(new Queue(new TxInfo, entries = maxWriteTx))
+  val numAxiIds      = 1 << axiIdWidth
+  val read_tx_size   = RegInit(VecInit(Seq.fill(numAxiIds)(0.U(p_tl_remapped.z.W))))
+  val read_tx_busy   = RegInit(VecInit(Seq.fill(numAxiIds)(false.B)))
+  val read_inflight  = RegInit(0.U(log2Ceil(maxReadTx + 1).W))
+  val write_tx_size  = RegInit(VecInit(Seq.fill(numAxiIds)(0.U(p_tl_remapped.z.W))))
+  val write_tx_busy  = RegInit(VecInit(Seq.fill(numAxiIds)(false.B)))
+  val write_inflight = RegInit(0.U(log2Ceil(maxWriteTx + 1).W))
+
+  val req_id        = tl_a_q_remapped.bits.source
+  val read_can_enq  = !read_tx_busy(req_id) && (read_inflight < maxReadTx.U)
+  val write_can_enq = !write_tx_busy(req_id) && (write_inflight < maxWriteTx.U)
 
   // --- Queue for incoming TileLink A-Channel requests ---
   val is_get = tl_a_q_remapped.bits.opcode === TLULOpcodesA.Get.asUInt
@@ -109,7 +115,7 @@ class TLUL2Axi[A_USER <: Data, D_USER <: Data](
     case _ => 0.U(3.W)
   }
 
-  aw_q.io.enq.valid := tl_a_q_remapped.valid && is_put && w_q.io.enq.ready && write_tx_info_q.io.enq.ready
+  aw_q.io.enq.valid := tl_a_q_remapped.valid && is_put && w_q.io.enq.ready && write_can_enq
   aw_q.io.enq.bits.addr   := tl_a_q_remapped.bits.address
   aw_q.io.enq.bits.id     := tl_a_q_remapped.bits.source
   aw_q.io.enq.bits.len    := 0.U
@@ -121,7 +127,7 @@ class TLUL2Axi[A_USER <: Data, D_USER <: Data](
   aw_q.io.enq.bits.qos    := 0.U
   aw_q.io.enq.bits.region := 0.U
 
-  w_q.io.enq.valid := tl_a_q_remapped.valid && is_put && aw_q.io.enq.ready && write_tx_info_q.io.enq.ready
+  w_q.io.enq.valid := tl_a_q_remapped.valid && is_put && aw_q.io.enq.ready && write_can_enq
   w_q.io.enq.bits.data := tl_a_q_remapped.bits.data
   w_q.io.enq.bits.strb := tl_a_q_remapped.bits.mask
   w_q.io.enq.bits.last := true.B
@@ -130,7 +136,7 @@ class TLUL2Axi[A_USER <: Data, D_USER <: Data](
   io.axi.write.data <> w_q.io.deq
 
   // Drive AXI read channel for Get requests
-  io.axi.read.addr.valid      := tl_a_q_remapped.valid && is_get && read_tx_info_q.io.enq.ready
+  io.axi.read.addr.valid      := tl_a_q_remapped.valid && is_get && read_can_enq
   io.axi.read.addr.bits.addr  := tl_a_q_remapped.bits.address
   io.axi.read.addr.bits.id    := tl_a_q_remapped.bits.source
   io.axi.read.addr.bits.len   := 0.U                      // No bursting
@@ -139,8 +145,8 @@ class TLUL2Axi[A_USER <: Data, D_USER <: Data](
   io.axi.read.addr.bits.prot  := a_prot                   // Instruction/data protection
 
   // Dequeue from TileLink queue when AXI transaction is accepted
-  val get_ready = io.axi.read.addr.ready && read_tx_info_q.io.enq.ready
-  val put_ready = aw_q.io.enq.ready && w_q.io.enq.ready && write_tx_info_q.io.enq.ready
+  val get_ready = io.axi.read.addr.ready && read_can_enq
+  val put_ready = aw_q.io.enq.ready && w_q.io.enq.ready && write_can_enq
   tl_a_q_remapped.ready := (is_get && get_ready) || (is_put && put_ready)
 
   io.axi.write.addr.bits.lock   := 0.U
@@ -153,12 +159,31 @@ class TLUL2Axi[A_USER <: Data, D_USER <: Data](
   io.axi.read.addr.bits.region  := 0.U
 
   // --- Response Path ---
+  val r_id = io.axi.read.data.bits.id.asUInt
+  val b_id = io.axi.write.resp.bits.id.asUInt
 
-  read_tx_info_q.io.enq.valid     := tl_a_q_remapped.valid && is_get && io.axi.read.addr.ready
-  read_tx_info_q.io.enq.bits.size := Mux((axiDataBits == 256).B, 5.U, tl_a_q_remapped.bits.size)
+  val read_enq_fire  = tl_a_q_remapped.fire && is_get
+  val read_deq_fire  = io.axi.read.data.fire
+  val write_enq_fire = tl_a_q_remapped.fire && is_put
+  val write_deq_fire = io.axi.write.resp.fire
 
-  write_tx_info_q.io.enq.valid := tl_a_q_remapped.valid && is_put && aw_q.io.enq.ready && w_q.io.enq.ready
-  write_tx_info_q.io.enq.bits.size := Mux((axiDataBits == 256).B, 5.U, tl_a_q_remapped.bits.size)
+  when(read_enq_fire) {
+    read_tx_size(req_id) := tl_a_q_remapped.bits.size
+    read_tx_busy(req_id) := true.B
+  }
+  when(read_deq_fire) {
+    read_tx_busy(r_id) := false.B
+  }
+  read_inflight := read_inflight + read_enq_fire.asUInt - read_deq_fire.asUInt
+
+  when(write_enq_fire) {
+    write_tx_size(req_id) := tl_a_q_remapped.bits.size
+    write_tx_busy(req_id) := true.B
+  }
+  when(write_deq_fire) {
+    write_tx_busy(b_id) := false.B
+  }
+  write_inflight := write_inflight + write_enq_fire.asUInt - write_deq_fire.asUInt
 
   // --- TileLink D-Channel (Response) Generation ---
   val read_response  = Wire(Decoupled(new TileLink_D_ChannelBase(p_tl_remapped, userDGen)))
@@ -167,34 +192,31 @@ class TLUL2Axi[A_USER <: Data, D_USER <: Data](
   // AXI Read Response -> TileLink AccessAckData
   read_response.bits.opcode := TLULOpcodesD.AccessAckData.asUInt
   read_response.bits.param  := 0.U
-  read_response.bits.size   := read_tx_info_q.io.deq.bits.size
-  read_response.bits.source := io.axi.read.data.bits.id.asUInt
+  read_response.bits.size   := read_tx_size(r_id)
+  read_response.bits.source := r_id
   read_response.bits.sink   := 0.U
   read_response.bits.data   := io.axi.read.data.bits.data
   read_response.bits.error  := io.axi.read.data.bits.resp =/= 0.U
   read_response.bits.user   := 0.U.asTypeOf(read_response.bits.user)
-  read_response.valid       := io.axi.read.data.valid && read_tx_info_q.io.deq.valid
+  read_response.valid       := io.axi.read.data.valid && read_tx_busy(r_id)
 
   // AXI Write Response -> TileLink AccessAck
   write_response.bits.opcode := TLULOpcodesD.AccessAck.asUInt
   write_response.bits.param  := 0.U
-  write_response.bits.size   := write_tx_info_q.io.deq.bits.size
-  write_response.bits.source := io.axi.write.resp.bits.id.asUInt
+  write_response.bits.size   := write_tx_size(b_id)
+  write_response.bits.source := b_id
   write_response.bits.sink   := 0.U
   write_response.bits.data   := 0.U
   write_response.bits.error  := io.axi.write.resp.bits.resp =/= 0.U
   write_response.bits.user   := 0.U.asTypeOf(write_response.bits.user)
-  write_response.valid       := io.axi.write.resp.valid && write_tx_info_q.io.deq.valid
+  write_response.valid       := io.axi.write.resp.valid && write_tx_busy(b_id)
 
   d_channel_arb.io.in(0) <> read_response
   d_channel_arb.io.in(1) <> write_response
 
   // Drive ready signals
-  io.axi.read.data.ready      := d_channel_arb.io.in(0).ready
-  read_tx_info_q.io.deq.ready := io.axi.read.data.valid && d_channel_arb.io.in(0).ready
-
-  io.axi.write.resp.ready      := d_channel_arb.io.in(1).ready
-  write_tx_info_q.io.deq.ready := d_channel_arb.io.in(1).ready && io.axi.write.resp.valid
+  io.axi.read.data.ready  := d_channel_arb.io.in(0).ready && read_tx_busy(r_id)
+  io.axi.write.resp.ready := d_channel_arb.io.in(1).ready && write_tx_busy(b_id)
 
 }
 

@@ -191,6 +191,7 @@ async def test_put_request(dut):
 
     assert dut.io_tl_d_valid.value, "TL D_VALID should be high"
     assert dut.io_tl_d_bits_opcode.value == TLUL_OpcodeD.AccessAck, "TL D_OPCODE should be AccessAck"
+    assert dut.io_tl_d_bits_size.value == test_size, "TL D_SIZE is incorrect"
     assert dut.io_tl_d_bits_source.value == test_source, "TL D_SOURCE is incorrect"
     assert not dut.io_tl_d_bits_error.value, "TL D_ERROR should be low"
     dut.io_tl_d_ready.value = 0
@@ -275,6 +276,7 @@ async def test_get_request(dut):
 
     assert dut.io_tl_d_valid.value, "TL D_VALID should be high"
     assert dut.io_tl_d_bits_opcode.value == TLUL_OpcodeD.AccessAckData, "TL D_OPCODE should be AccessAckData"
+    assert dut.io_tl_d_bits_size.value == test_size, "TL D_SIZE is incorrect"
     assert dut.io_tl_d_bits_source.value == test_source, "TL D_SOURCE is incorrect"
     assert dut.io_tl_d_bits_data.value == test_data, "TL D_DATA is incorrect"
     assert not dut.io_tl_d_bits_error.value, "TL D_ERROR should be low"
@@ -453,6 +455,7 @@ async def test_put_then_get(dut):
 
     await RisingEdge(dut.clock)
     dut.io_axi_write_resp_valid.value = 1
+    dut.io_axi_write_resp_bits_id.value = put_source
     await wait_for_signal(
         dut.clock, dut.io_axi_write_resp_ready, timeout_cycles
     )
@@ -462,6 +465,7 @@ async def test_put_then_get(dut):
     await RisingEdge(dut.clock)
     assert dut.io_tl_d_valid.value, "TL D_VALID should be high for Put"
     assert dut.io_tl_d_bits_opcode.value == TLUL_OpcodeD.AccessAck, "TL D_OPCODE should be AccessAck for Put"
+    assert dut.io_tl_d_bits_size.value == put_size, "TL D_SIZE should match Put size"
     dut.io_tl_d_ready.value = 0
 
     #
@@ -484,6 +488,7 @@ async def test_put_then_get(dut):
 
     await RisingEdge(dut.clock)
     dut.io_axi_read_data_valid.value = 1
+    dut.io_axi_read_data_bits_id.value = get_source
     dut.io_axi_read_data_bits_data.value = get_data
     await wait_for_signal(
         dut.clock, dut.io_axi_read_data_ready, timeout_cycles
@@ -494,6 +499,7 @@ async def test_put_then_get(dut):
     await RisingEdge(dut.clock)
     assert dut.io_tl_d_valid.value, "TL D_VALID should be high for Get"
     assert dut.io_tl_d_bits_opcode.value == TLUL_OpcodeD.AccessAckData, "TL D_OPCODE should be AccessAckData for Get"
+    assert dut.io_tl_d_bits_size.value == get_size, "TL D_SIZE should match Get size"
     dut.io_tl_d_ready.value = 0
 
     # Allow a few extra cycles for waveform viewing.
